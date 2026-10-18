@@ -1,0 +1,39 @@
+{
+  "name": "player",
+  "productName": "Player",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop music player: local library now, yt-dlp powered YouTube streaming later.",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "npm run typecheck && electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "typecheck:node": "tsc -p tsconfig.node.json --noEmit",
+    "typecheck:web": "tsc -p tsconfig.web.json --noEmit",
+    "smoke": "tsx --tsconfig tsconfig.node.json tools/smoke.ts",
+    "runtime:check": "electron tools/runtime-check.cjs",
+    "selftest": "electron . --selftest",
+    "clean": "node -e \"require('fs').rmSync('out',{recursive:true,force:true})\""
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^44.8.0",
+    "electron-vite": "^6.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  },
+  "dependencies": {
+    "music-metadata": "^12.2.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  }
+}

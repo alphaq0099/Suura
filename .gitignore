@@ -1,0 +1,16 @@
+node_modules/
+out/
+dist/
+release/
+*.log
+.vite/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local scratch: annotated screenshots and pasted console output from testing on
+# this machine. Never part of the project, and a screenshot of a real library is
+# not something to publish in a repo.
+/*.png
+/testreport.txt
