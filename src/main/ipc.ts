@@ -1,5 +1,6 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { IPC } from '@shared/ipc'
+import { clampPlaylistIndexWidth } from '@shared/playlists'
 import type {
   AppSettings,
   ArtworkFit,
@@ -192,6 +193,13 @@ export function sanitizeSettingsPatch(input: unknown): DeepPartial<AppSettings> 
       engine.cookiesFromBrowser = source.cookiesFromBrowser
     }
     patch.engine = engine
+  }
+
+  if (isPlainObject(input.playlists)) {
+    const source = input.playlists
+    if (typeof source.indexWidth === 'number' && Number.isFinite(source.indexWidth)) {
+      patch.playlists = { indexWidth: clampPlaylistIndexWidth(source.indexWidth) }
+    }
   }
 
   return patch

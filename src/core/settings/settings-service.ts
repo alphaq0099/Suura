@@ -1,6 +1,7 @@
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { mkdirSync } from 'node:fs'
+import { DEFAULT_PLAYLIST_INDEX_WIDTH } from '@shared/playlists'
 import type { AppSettings, DeepPartial } from '@shared/types'
 import type { Logger } from '../logging/logger'
 
@@ -19,6 +20,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // because unchanged files are never opened.
   library: {
     watchForChanges: true
+  },
+  playlists: {
+    indexWidth: DEFAULT_PLAYLIST_INDEX_WIDTH
   },
   // Square + cropped is the default because it is what the library rows and the
   // bar have always looked like; `contain` is there for anyone who would rather

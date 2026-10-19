@@ -283,6 +283,11 @@ export function App() {
     [update]
   )
 
+  const setPlaylistIndexWidth = useCallback(
+    (width: number): void => updateSettings({ playlists: { indexWidth: width } }),
+    [updateSettings]
+  )
+
   if (!settings) {
     return (
       <div className="boot-screen">
@@ -357,6 +362,8 @@ export function App() {
           isPlaying={player.isPlaying}
           singleClick={settings.interaction.librarySingleClick}
           doubleClick={settings.interaction.libraryDoubleClick}
+          indexWidth={settings.playlists.indexWidth}
+          onIndexWidthChange={setPlaylistIndexWidth}
           onSelect={playlists.select}
           onCreate={playlists.create}
           onRename={playlists.rename}

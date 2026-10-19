@@ -228,6 +228,17 @@ export interface LibrarySettings {
   watchForChanges: boolean
 }
 
+/**
+ * Playlists-view layout preferences. The index width lives in settings rather
+ * than in component state because the view unmounts when another view is
+ * opened: a hand-picked width that resets on every visit is worse than no
+ * resizing at all.
+ */
+export interface PlaylistSettings {
+  /** Width of the list of playlists, in CSS pixels. */
+  indexWidth: number
+}
+
 export interface AppSettings {
   libraryFolders: string[]
   volume: number
@@ -235,6 +246,7 @@ export interface AppSettings {
   shuffle: boolean
   theme: ThemeMode
   library: LibrarySettings
+  playlists: PlaylistSettings
   visuals: VisualSettings
   interaction: InteractionSettings
   retention: RetentionSettings

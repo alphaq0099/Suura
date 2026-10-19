@@ -72,6 +72,12 @@ export interface TrackListProps {
    * so the caller can open a menu where the pointer is.
    */
   onRowContextMenu?: (track: Track, index: number, at: { x: number; y: number }) => void
+  /**
+   * False drops the Format column: a playlist is about which recordings are in
+   * it, not which container each one came in, and the width is better spent on
+   * the title and the artist.
+   */
+  showFormat?: boolean
 }
 
 interface Column {
@@ -122,7 +128,8 @@ export function TrackList(props: TrackListProps) {
     reorder,
     onRemove,
     removeLabel = 'Remove from this list',
-    onRowContextMenu
+    onRowContextMenu,
+    showFormat = true
   } = props
 
   const scrollerRef = useRef<HTMLDivElement | null>(null)
@@ -326,11 +333,12 @@ export function TrackList(props: TrackListProps) {
   }
 
   const activeId = tracks[activeIndex] ? `track-row-${activeIndex}` : undefined
+  const columns = showFormat ? COLUMNS : COLUMNS.filter((column) => column.className !== 'col-format')
 
   return (
-    <div className={onRemove ? 'track-list has-remove' : 'track-list'}>
+    <div className={['track-list', onRemove ? 'has-remove' : '', showFormat ? '' : 'no-format'].filter(Boolean).join(' ')}>
       <div className="track-head" role="row">
-        {COLUMNS.map((column) => (
+        {columns.map((column) => (
           <div
             key={column.className}
             role="columnheader"
@@ -362,7 +370,7 @@ export function TrackList(props: TrackListProps) {
         role="grid"
         tabIndex={0}
         aria-rowcount={total}
-        aria-colcount={COLUMNS.length}
+        aria-colcount={columns.length}
         aria-multiselectable
         aria-activedescendant={activeId}
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
@@ -457,9 +465,11 @@ export function TrackList(props: TrackListProps) {
                   <div role="gridcell" className="cell col-album" title={track.album ?? undefined}>
                     {track.album ?? '—'}
                   </div>
-                  <div role="gridcell" className="cell col-format">
-                    {formatAudioSummary(track.codec, track.bitrateKbps)}
-                  </div>
+                  {showFormat ? (
+                    <div role="gridcell" className="cell col-format">
+                      {formatAudioSummary(track.codec, track.bitrateKbps)}
+                    </div>
+                  ) : null}
                   <div role="gridcell" className="cell col-time">
                     {formatDuration(track.durationMs)}
                   </div>

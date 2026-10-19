@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { LibraryClickAction, Playlist, PlaylistDetail, Track } from '@shared/types'
 import { formatCount, formatDuration } from '@shared/format'
+import {
+  DEFAULT_PLAYLIST_INDEX_WIDTH,
+  PLAYLIST_INDEX_MAX,
+  PLAYLIST_INDEX_MIN,
+  clampPlaylistIndexWidth
+} from '@shared/playlists'
 import { messageOf } from '../api'
 import { TrackList, describeClickAction } from './TrackList'
 import { PlayIcon, PlaylistIcon, PlusIcon, PencilIcon, TrashIcon } from './Icons'
@@ -15,6 +22,9 @@ export interface PlaylistsViewProps {
   isPlaying: boolean
   singleClick: LibraryClickAction
   doubleClick: LibraryClickAction
+  /** Width of the list of playlists, in CSS pixels. */
+  indexWidth: number
+  onIndexWidthChange: (width: number) => void
   onSelect: (playlistId: number) => void
   /** The menu's creator: resolves to the new playlist, or throws a readable error. */
   onCreate: (name: string) => Promise<Playlist>
@@ -56,6 +66,8 @@ export function PlaylistsView(props: PlaylistsViewProps) {
     isPlaying,
     singleClick,
     doubleClick,
+    indexWidth: storedIndexWidth,
+    onIndexWidthChange,
     onSelect,
     onCreate,
     onRename,
@@ -75,7 +87,92 @@ export function PlaylistsView(props: PlaylistsViewProps) {
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<number>>(() => new Set<number>())
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
+  const [indexWidth, setIndexWidth] = useState(() => clampPlaylistIndexWidth(storedIndexWidth))
+  const [draggingSplitter, setDraggingSplitter] = useState(false)
   const newNameRef = useRef<HTMLInputElement | null>(null)
+  const layoutRef = useRef<HTMLDivElement | null>(null)
+  const dragRef = useRef<{ startX: number; startWidth: number; width: number } | null>(null)
+
+  /**
+   * The widest the index may get before the track list has no room left. The
+   * pane needs ~440px; the splitter itself takes 16px. The layout collapses to
+   * one column below 1040px, so this is only consulted while both are showing.
+   */
+  const maxIndexWidth = useCallback((): number => {
+    const layoutWidth = layoutRef.current?.getBoundingClientRect().width ?? 0
+    return Math.max(PLAYLIST_INDEX_MIN, Math.min(PLAYLIST_INDEX_MAX, Math.floor(layoutWidth) - 456))
+  }, [])
+
+  const commitIndexWidth = useCallback(
+    (apply: boolean): void => {
+      const drag = dragRef.current
+      if (!drag) return
+      dragRef.current = null
+      setDraggingSplitter(false)
+      if (apply) onIndexWidthChange(drag.width)
+    },
+    [onIndexWidthChange]
+  )
+
+  const startDrag = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>): void => {
+      if (event.button !== 0) return
+      event.preventDefault()
+      dragRef.current = { startX: event.clientX, startWidth: indexWidth, width: indexWidth }
+      setDraggingSplitter(true)
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId)
+      } catch {
+        // A synthesized event has no active pointer to capture; the handlers on
+        // the element still see the moves, which is all the self-test needs.
+      }
+    },
+    [indexWidth]
+  )
+
+  const moveDrag = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>): void => {
+      const drag = dragRef.current
+      if (!drag) return
+      const width = Math.min(clampPlaylistIndexWidth(drag.startWidth + (event.clientX - drag.startX)), maxIndexWidth())
+      drag.width = width
+      setIndexWidth(width)
+    },
+    [maxIndexWidth]
+  )
+
+  const resetIndexWidth = useCallback((): void => {
+    const width = clampPlaylistIndexWidth(DEFAULT_PLAYLIST_INDEX_WIDTH)
+    setIndexWidth(width)
+    onIndexWidthChange(width)
+  }, [onIndexWidthChange])
+
+  const onSplitterKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+      let next: number
+      switch (event.key) {
+        case 'ArrowLeft':
+          next = indexWidth - 16
+          break
+        case 'ArrowRight':
+          next = indexWidth + 16
+          break
+        case 'Home':
+          next = PLAYLIST_INDEX_MIN
+          break
+        case 'End':
+          next = maxIndexWidth()
+          break
+        default:
+          return
+      }
+      event.preventDefault()
+      const width = Math.max(PLAYLIST_INDEX_MIN, Math.min(next, maxIndexWidth()))
+      setIndexWidth(width)
+      onIndexWidthChange(width)
+    },
+    [indexWidth, maxIndexWidth, onIndexWidthChange]
+  )
 
   const tracks = useMemo(() => detail?.items.map((item) => item.track) ?? [], [detail])
   const entryIdFor = useCallback(
@@ -172,7 +269,11 @@ export function PlaylistsView(props: PlaylistsViewProps) {
       ) : null}
       {error ? <div className="banner error">{error}</div> : null}
 
-      <div className="playlists-layout">
+      <div
+        className={draggingSplitter ? 'playlists-layout dragging' : 'playlists-layout'}
+        ref={layoutRef}
+        style={{ '--playlist-index-width': `${indexWidth}px` } as CSSProperties}
+      >
         <aside className="playlist-index" aria-label="Playlists">
           {creating ? (
             <form
@@ -287,6 +388,31 @@ export function PlaylistsView(props: PlaylistsViewProps) {
           ) : null}
         </aside>
 
+        <div
+          className={draggingSplitter ? 'playlist-splitter dragging' : 'playlist-splitter'}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize the list of playlists"
+          aria-valuemin={PLAYLIST_INDEX_MIN}
+          aria-valuemax={PLAYLIST_INDEX_MAX}
+          aria-valuenow={indexWidth}
+          tabIndex={0}
+          title="Drag to resize · double-click to reset"
+          onPointerDown={startDrag}
+          onPointerMove={moveDrag}
+          onPointerUp={(event) => {
+            try {
+              event.currentTarget.releasePointerCapture(event.pointerId)
+            } catch {
+              // Already released.
+            }
+            commitIndexWidth(true)
+          }}
+          onPointerCancel={() => commitIndexWidth(false)}
+          onDoubleClick={resetIndexWidth}
+          onKeyDown={onSplitterKeyDown}
+        />
+
         <div className="playlist-pane">
           {!detail ? (
             <div className="empty-state">
@@ -399,6 +525,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                     void onRemoveItems([itemId])
                   }}
                   removeLabel="Remove from playlist"
+                  showFormat={false}
                 />
               )}
 

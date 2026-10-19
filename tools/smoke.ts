@@ -28,6 +28,7 @@ import { isPathInside, localContentKey, normalizePath } from '@core/library/cont
 import { artworkKeyFor, extractArtwork, extensionForMime } from '@core/library/artwork'
 import { LocalFileResolver } from '@engine/local-file-resolver'
 import { getEngineStatus } from '@engine/sidecar/engine-status'
+import { PLAYLIST_INDEX_MAX, PLAYLIST_INDEX_MIN, clampPlaylistIndexWidth } from '@shared/playlists'
 import { parseMediaUrl } from '@shared/media-url'
 import { buildArtworkUrl, parseArtworkUrl } from '@shared/artwork-url'
 import { formatAudioSummary, formatCodec } from '@shared/format'
@@ -688,6 +689,16 @@ async function main(): Promise<void> {
     library.removeFolder(musicDir)
     checkEqual('removing a folder forgets its tracks', library.list().tracks.length, 0)
     checkEqual('removing a folder clears the setting', settings.get().libraryFolders.length, 0)
+
+    // --- the playlist index width ----------------------------------------
+    // The width lives in settings because the Playlists view unmounts on every
+    // trip to another view; a fresh service reading the same file proves it
+    // survives the part that matters.
+    settings.update({ playlists: { indexWidth: 321 } })
+    const reread = new SettingsService(paths.config, silentLogger)
+    checkEqual('the playlist index width survives a reload', reread.get().playlists.indexWidth, 321)
+    checkEqual('a width below the minimum is clamped', clampPlaylistIndexWidth(10), PLAYLIST_INDEX_MIN)
+    checkEqual('a width above the maximum is clamped', clampPlaylistIndexWidth(9999), PLAYLIST_INDEX_MAX)
 
     // --- persistence ------------------------------------------------------
     database.close()

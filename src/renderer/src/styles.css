@@ -434,6 +434,15 @@ input[type='radio'] {
   --track-columns: 56px minmax(0, 1fr) 168px 168px 118px 64px var(--track-actions, 58px);
   --row-height: 38px;
 
+  /* Columns are chosen by the width of the list, not of the window. The same
+     list sits in panes of very different widths (the library takes what the
+     sidebar leaves; a playlist takes what its index leaves), so a window-wide
+     breakpoint is wrong for both: a 1180px window leaves a playlist list barely
+     660px, where the fixed columns alone used to consume the title's whole
+     share. Querying the list itself makes every pane choose its own layout. */
+  container-type: inline-size;
+  container-name: track-list;
+
   flex: 1;
   min-height: 0;
   display: flex;
@@ -442,6 +451,12 @@ input[type='radio'] {
   border-radius: var(--radius);
   background: #12141d;
   overflow: hidden;
+}
+
+/* A playlist has no Format column: which container a recording arrived in is a
+   library fact, and the 118px are worth more to the title and the artist. */
+.track-list.no-format {
+  --track-columns: 56px minmax(0, 1fr) 168px 168px 64px var(--track-actions, 58px);
 }
 
 .track-head,
@@ -467,7 +482,11 @@ input[type='radio'] {
   height: 34px;
   display: flex;
   align-items: center;
+  /* A last line of defence: if a column is ever narrower than its label, the
+     label is clipped rather than painted over its neighbour. The container
+     queries below keep that from happening in the first place. */
   min-width: 0;
+  overflow: hidden;
 }
 
 .head-cell.col-index,
@@ -695,26 +714,52 @@ input[type='radio'] {
   padding: 2px;
 }
 
-/* When the window is too narrow to show them comfortably, the least important
+/* When the list is too narrow to show them comfortably, the least important
    columns are dropped instead of squeezing every column down to an ellipsis.
-   The thresholds keep the title above ~250px: the fixed columns total 624px
-   (456px without Album, 288px without either). */
-@media (max-width: 1150px) {
-  .track-list {
+   The thresholds leave the title at least ~220px: its share is what is left
+   after the fixed columns, and those total 632px with Format (544px without)
+   and 464px after Album goes (376px without Format). The two variants need
+   their own thresholds because a playlist saves Format's 118px. */
+@container track-list (max-width: 852px) {
+  .track-list:not(.no-format) .track-head,
+  .track-list:not(.no-format) .track-row {
     --track-columns: 56px minmax(0, 1fr) 168px 118px 64px var(--track-actions, 58px);
   }
 
-  .col-album {
+  .track-list:not(.no-format) .col-album {
     display: none;
   }
 }
 
-@media (max-width: 1000px) {
-  .track-list {
+@container track-list (max-width: 764px) {
+  .track-list.no-format .track-head,
+  .track-list.no-format .track-row {
+    --track-columns: 56px minmax(0, 1fr) 168px 64px var(--track-actions, 58px);
+  }
+
+  .track-list.no-format .col-album {
+    display: none;
+  }
+}
+
+@container track-list (max-width: 684px) {
+  .track-list:not(.no-format) .track-head,
+  .track-list:not(.no-format) .track-row {
     --track-columns: 56px minmax(0, 1fr) 118px 64px var(--track-actions, 58px);
   }
 
-  .col-artist {
+  .track-list:not(.no-format) .col-artist {
+    display: none;
+  }
+}
+
+@container track-list (max-width: 596px) {
+  .track-list.no-format .track-head,
+  .track-list.no-format .track-row {
+    --track-columns: 56px minmax(0, 1fr) 64px var(--track-actions, 58px);
+  }
+
+  .track-list.no-format .col-artist {
     display: none;
   }
 }
@@ -1992,8 +2037,50 @@ input[type='radio'] {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
-  gap: 16px;
+  /* The index is a splitter column away from the tracks, not a gap: dragging the
+     splitter changes the first track directly. The stored width is clamped by
+     what is left after the tracks' 440px and the splitter's 16px, so a width
+     picked in a wide window cannot swallow the pane after the window shrinks. */
+  grid-template-columns:
+    clamp(160px, var(--playlist-index-width, 240px), calc(100% - 456px))
+    16px
+    minmax(0, 1fr);
+}
+
+.playlists-layout.dragging,
+.playlists-layout.dragging * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+.playlist-splitter {
+  position: relative;
+  touch-action: none;
+  cursor: col-resize;
+  outline: none;
+}
+
+/* A hairline in the middle of the 16px hit area: invisible until the pointer is
+   over it, so the pane boundary still reads as whitespace. */
+.playlist-splitter::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 7px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background 120ms ease;
+}
+
+.playlist-splitter:hover::before,
+.playlist-splitter.dragging::before {
+  background: var(--border);
+}
+
+.playlist-splitter:focus-visible::before {
+  background: var(--accent);
 }
 
 /* Two panes stop being worth it once the track list loses more to its columns
@@ -2003,6 +2090,10 @@ input[type='radio'] {
   .playlists-layout {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .playlist-splitter {
+    display: none;
   }
 
   .playlist-index {

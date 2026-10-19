@@ -1303,6 +1303,14 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     // "Save as playlist". The point is that a playlist's *order* survives the
     // whole path from a gesture to SQLite and back, because that is the part no
     // unit test can see.
+    //
+    // The window is 1200x780 here on purpose: above the 1040px point where the
+    // index moves beside the list, and narrow enough that the playlist list is
+    // left with ~670px once the sidebar and the index have taken their share.
+    // That is the width where the fixed columns used to eat the title column
+    // whole (a 1180px window on a 125%-scaled display looks exactly like this).
+    window.setSize(1200, 780)
+    await delay(400)
     const lists = await evaluate<{
       emptyState: boolean
       created: boolean
@@ -1318,6 +1326,14 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       keyboardOrder: string
       dropLine: boolean
       dragOrder: string
+      listWidth: number
+      titleWidth: number
+      artistWidth: number
+      headerOverflow: boolean
+      formatVisible: boolean
+      indexBefore: number
+      indexDragged: number
+      indexKeyboardDelta: number
       viewOverflow: number
       listOverflow: number
       actionsInside: boolean
@@ -1451,9 +1467,47 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          }
          out.dragOrder = titles().join(' | ')
 
+         // --- columns respond to the width of the list itself, not the window:
+         // at this window size the playlist list is only ~670px wide, and the
+         // title must still have a column (see the container queries in
+         // styles.css). A playlist also has no Format column.
+         const listEl = pick('.playlist-pane .track-list')
+         const titleCell = pick('.playlist-pane .track-row .col-title')
+         const artistCell = pick('.playlist-pane .track-row .col-artist')
+         const headCells = [...document.querySelectorAll('.playlist-pane .head-cell')].filter((el) => el.offsetWidth > 0)
+         out.listWidth = listEl ? Math.round(listEl.getBoundingClientRect().width) : -1
+         out.titleWidth = titleCell ? Math.round(titleCell.getBoundingClientRect().width) : -1
+         out.artistWidth = artistCell ? Math.round(artistCell.getBoundingClientRect().width) : -1
+         out.headerOverflow = headCells.some((el) => el.scrollWidth > el.clientWidth + 1)
+         out.formatVisible = Boolean(pick('.playlist-pane .col-format'))
+
+         // --- the index is resizable: a pointer drag, then two arrow keys
+         const splitter = pick('.playlist-splitter')
+         const indexPane = pick('.playlist-index')
+         const indexBox = () => (indexPane ? Math.round(indexPane.getBoundingClientRect().width) : -1)
+         const beforeDrag = indexBox()
+         if (splitter) {
+           splitter.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerId: 1, clientX: 300, clientY: 300 }))
+           await sleep(80)
+           splitter.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 1, clientX: 364, clientY: 300 }))
+           await sleep(80)
+           splitter.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1, clientX: 364, clientY: 300 }))
+           await sleep(700)
+         }
+         out.indexBefore = beforeDrag
+         out.indexDragged = beforeDrag < 0 ? -1 : indexBox() - beforeDrag
+         const beforeKeys = indexBox()
+         if (splitter) {
+           splitter.focus()
+           splitter.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowLeft' }))
+           await sleep(120)
+           splitter.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowLeft' }))
+           await sleep(700)
+         }
+         out.indexKeyboardDelta = beforeKeys < 0 ? 0 : indexBox() - beforeKeys
+
          // --- nothing spills out of the pane at this window size
          const viewEl = pick('.playlists-view')
-         const listEl = pick('.playlist-pane .track-list')
          const scroller = pick('.playlist-pane .list-scroll')
          if (viewEl) out.viewOverflow = viewEl.scrollWidth - viewEl.clientWidth
          if (scroller) out.listOverflow = scroller.scrollWidth - scroller.clientWidth
@@ -1537,6 +1591,32 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       lists.dropLine && lists.dragOrder === 'Selftest Tone | Selftest Silent',
       'dragging a row onto another moves it there, with a drop line while it hovers',
       lists.dragOrder
+    )
+    record(
+      lists.listWidth > 0 && lists.titleWidth >= 200 && !lists.headerOverflow,
+      'the title keeps its column when the list is narrow, and no header label paints over another',
+      `list ${lists.listWidth}px, title ${lists.titleWidth}px, header overflow ${lists.headerOverflow}`
+    )
+    record(
+      !lists.formatVisible && lists.artistWidth > 100,
+      'a playlist shows the artist and drops the format column',
+      `format ${lists.formatVisible}, artist ${lists.artistWidth}px`
+    )
+    record(
+      lists.indexDragged >= 50,
+      'dragging the splitter widens the playlist index',
+      `moved ${lists.indexDragged}px`
+    )
+    record(
+      lists.indexKeyboardDelta === -32,
+      'arrow keys resize the playlist index by one step each',
+      `moved ${lists.indexKeyboardDelta}px`
+    )
+    record(
+      container.settings.get().playlists.indexWidth ===
+        lists.indexBefore + lists.indexDragged + lists.indexKeyboardDelta,
+      'the chosen index width is written to settings',
+      `stored ${container.settings.get().playlists.indexWidth}px`
     )
     record(
       lists.viewOverflow === 0 && lists.listOverflow === 0 && lists.actionsInside,
