@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { LibraryClickAction, SortDirection, Track, TrackSortField } from '@shared/types'
 import { formatAudioSummary, formatDuration } from '@shared/format'
+import { useRowReorder } from '../hooks/useRowReorder'
 import { ArtworkImage } from './ArtworkImage'
-import { PlayIcon, RevealIcon, SortIcon, SpinnerIcon } from './Icons'
+import { PlayIcon, RevealIcon, SortIcon, SpinnerIcon, TrashIcon } from './Icons'
 
 /** How a configured click action reads in a tooltip or a footnote. */
 export function describeClickAction(action: LibraryClickAction): string {
@@ -45,11 +46,32 @@ export interface TrackListProps {
   onSelectAll: () => void
   onClearSelection: () => void
   onReveal: (trackId: number) => void
-  onRequestMore: () => void
+  /**
+   * Asks for the next page. Omitted when the whole list is already in hand — a
+   * playlist, which is loaded in one request because its order is the data.
+   */
+  onRequestMore?: () => void
   /** What a single click on a row does. */
   singleClick: LibraryClickAction
   /** What a double click on a row does. */
   doubleClick: LibraryClickAction
+  /**
+   * False for a list whose order is the user's own. The header stays, the sort
+   * buttons do not: a hand-ordered list that can be re-sorted by clicking a
+   * column cannot keep an order.
+   */
+  sortable?: boolean
+  /** Turns rows into draggable items. Alt+arrow does the same thing from the keyboard. */
+  reorder?: { onMove: (fromIndex: number, toIndex: number) => void }
+  /** Adds a "Remove from this list" action to every row. */
+  onRemove?: (track: Track) => void
+  /** What the remove action says, e.g. "Remove from playlist". */
+  removeLabel?: string
+  /**
+   * Right-click (or Shift+F10) on a row. The coordinates are page coordinates,
+   * so the caller can open a menu where the pointer is.
+   */
+  onRowContextMenu?: (track: Track, index: number, at: { x: number; y: number }) => void
 }
 
 interface Column {
@@ -95,13 +117,31 @@ export function TrackList(props: TrackListProps) {
     onReveal,
     onRequestMore,
     singleClick,
-    doubleClick
+    doubleClick,
+    sortable = true,
+    reorder,
+    onRemove,
+    removeLabel = 'Remove from this list',
+    onRowContextMenu
   } = props
 
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewport, setViewport] = useState(480)
   const [activeIndex, setActiveIndex] = useState(0)
+
+  const drag = useRowReorder({
+    enabled: Boolean(reorder),
+    itemCount: tracks.length,
+    rowHeight: ROW_HEIGHT,
+    scroller: scrollerRef,
+    onMove: (fromIndex, toIndex) => {
+      reorder?.onMove(fromIndex, toIndex)
+      // The cursor follows the row that moved, so a second Alt+arrow continues
+      // from where the first one left it.
+      setActiveIndex(toIndex)
+    }
+  })
 
   /**
    * Runs a configured gesture.
@@ -150,6 +190,7 @@ export function TrackList(props: TrackListProps) {
 
   // Fetch the next page once the window reaches the end of what is loaded.
   useEffect(() => {
+    if (!onRequestMore) return
     if (tracks.length === 0) return
     if (end >= tracks.length - 1 && tracks.length < total) onRequestMore()
   }, [end, tracks.length, total, onRequestMore])
@@ -213,13 +254,26 @@ export function TrackList(props: TrackListProps) {
     }
     switch (event.key) {
       case 'ArrowDown':
+      case 'ArrowUp': {
+        // Alt turns the row cursor into a row *move*, which is the keyboard
+        // equivalent of dragging: there is no other way to reorder a list with
+        // the keyboard, and a pointer-only feature is half a feature.
+        if (event.altKey && reorder) {
+          take()
+          const delta = event.key === 'ArrowDown' ? 1 : -1
+          const to = drag.targetFor(activeIndex, delta)
+          const moved = tracks[activeIndex]
+          if (to !== null && moved) {
+            reorder.onMove(activeIndex, to)
+            setActiveIndex(to)
+            scrollRowIntoView(to)
+          }
+          break
+        }
         take()
-        moveActive(activeIndex + 1)
+        moveActive(activeIndex + (event.key === 'ArrowDown' ? 1 : -1))
         break
-      case 'ArrowUp':
-        take()
-        moveActive(activeIndex - 1)
-        break
+      }
       case 'PageDown':
         take()
         moveActive(activeIndex + page)
@@ -251,6 +305,21 @@ export function TrackList(props: TrackListProps) {
         take()
         onClearSelection()
         break
+      // The keyboard's own context-menu key, and Shift+F10 for keyboards that do
+      // not have one. The row's position is read from the DOM so the menu opens
+      // where the row is, exactly as a right-click would.
+      case 'ContextMenu':
+      case 'F10': {
+        const wantsMenu = event.key === 'ContextMenu' || event.shiftKey
+        const track = tracks[activeIndex]
+        if (!wantsMenu || !onRowContextMenu || !track) break
+        const row = document.getElementById(`track-row-${activeIndex}`)
+        if (!row) break
+        take()
+        const rect = row.getBoundingClientRect()
+        onRowContextMenu(track, activeIndex, { x: rect.left + 48, y: rect.top + rect.height })
+        break
+      }
       default:
         break
     }
@@ -259,7 +328,7 @@ export function TrackList(props: TrackListProps) {
   const activeId = tracks[activeIndex] ? `track-row-${activeIndex}` : undefined
 
   return (
-    <div className="track-list">
+    <div className={onRemove ? 'track-list has-remove' : 'track-list'}>
       <div className="track-head" role="row">
         {COLUMNS.map((column) => (
           <div
@@ -268,7 +337,7 @@ export function TrackList(props: TrackListProps) {
             className={`head-cell ${column.className}`}
             aria-sort={column.field && sort === column.field ? (direction === 'asc' ? 'ascending' : 'descending') : undefined}
           >
-            {column.field ? (
+            {column.field && sortable ? (
               <button
                 type="button"
                 className="sort-button"
@@ -306,11 +375,15 @@ export function TrackList(props: TrackListProps) {
               const isCurrent = track.id === currentTrackId
               const isSelected = selectedIds.has(track.id)
               const isActive = index === activeIndex
+              const isDragging = drag.draggingIndex === index
+              const dropEdge = drag.dropAt && drag.dropAt.index === index ? drag.dropAt.edge : null
               const rowClass = [
                 'track-row',
                 isCurrent ? 'current' : '',
                 isSelected ? 'selected' : '',
-                isActive ? 'active' : ''
+                isActive ? 'active' : '',
+                isDragging ? 'dragging' : '',
+                dropEdge ? `drop-${dropEdge}` : ''
               ]
                 .filter(Boolean)
                 .join(' ')
@@ -324,6 +397,11 @@ export function TrackList(props: TrackListProps) {
                   aria-selected={isSelected}
                   className={rowClass}
                   style={{ height: ROW_HEIGHT }}
+                  draggable={Boolean(reorder) || undefined}
+                  onDragStart={(event) => drag.start(event, index)}
+                  onDragOver={(event) => drag.over(event, index)}
+                  onDrop={(event) => drag.drop(event, index)}
+                  onDragEnd={() => drag.end()}
                   onClick={(event) => {
                     // The keyboard cursor follows the pointer whatever the action
                     // is: it is where the arrow keys will start from, not a
@@ -336,7 +414,15 @@ export function TrackList(props: TrackListProps) {
                     if (doubleClickRepeats && isCurrent && isPlaying) return
                     applyClickAction(doubleClick, index, track, event.ctrlKey || event.metaKey || event.shiftKey)
                   }}
-                  title={`Click: ${describeClickAction(singleClick)} · Double-click: ${describeClickAction(doubleClick)}`}
+                  onContextMenu={(event) => {
+                    if (!onRowContextMenu) return
+                    event.preventDefault()
+                    setActiveIndex(index)
+                    onRowContextMenu(track, index, { x: event.clientX, y: event.clientY })
+                  }}
+                  title={`Click: ${describeClickAction(singleClick)} · Double-click: ${describeClickAction(
+                    doubleClick
+                  )}${reorder ? ' · Drag or Alt+↑/↓ to reorder' : ''}`}
                 >
                   <div role="gridcell" className="cell col-index">
                     {isCurrent && isPlaying ? (
@@ -378,6 +464,20 @@ export function TrackList(props: TrackListProps) {
                     {formatDuration(track.durationMs)}
                   </div>
                   <div role="gridcell" className="cell col-actions">
+                    {onRemove ? (
+                      <button
+                        type="button"
+                        className="icon-button subtle"
+                        title={removeLabel}
+                        aria-label={`${removeLabel}: ${track.title}`}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onRemove(track)
+                        }}
+                      >
+                        <TrashIcon />
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className="icon-button subtle"

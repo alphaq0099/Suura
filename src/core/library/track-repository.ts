@@ -2,7 +2,7 @@ import type { LibraryStats, ListTracksQuery, SourceKind, Track, TrackPage, Track
 import { isPathInside, normalizePath } from './content-key'
 import type { SqlDatabase } from '../db/driver'
 
-interface TrackRow {
+export interface TrackRow {
   id: number
   source_kind: string
   source_id: string | null
@@ -85,12 +85,46 @@ export interface ScanRunSummary {
   pruned: number
 }
 
-const TRACK_COLUMNS = `
-  id, source_kind, source_id, content_key, title, artist, album_artist, album,
-  track_no, disc_no, year, genre, duration_ms, codec, bitrate_kbps, sample_rate,
-  channels, file_size, file_mtime_ms, file_path, artwork_key, added_at, updated_at,
-  play_count, last_played_at
-`
+const TRACK_COLUMN_NAMES = [
+  'id',
+  'source_kind',
+  'source_id',
+  'content_key',
+  'title',
+  'artist',
+  'album_artist',
+  'album',
+  'track_no',
+  'disc_no',
+  'year',
+  'genre',
+  'duration_ms',
+  'codec',
+  'bitrate_kbps',
+  'sample_rate',
+  'channels',
+  'file_size',
+  'file_mtime_ms',
+  'file_path',
+  'artwork_key',
+  'added_at',
+  'updated_at',
+  'play_count',
+  'last_played_at'
+] as const
+
+/**
+ * The track column list, optionally qualified for a join (`trackColumns('t')`).
+ *
+ * Exported because the playlist queries join tracks, and a second hand-written
+ * copy of this list would silently lose a column the first time one is added.
+ */
+export function trackColumns(alias = ''): string {
+  const prefix = alias.length > 0 ? `${alias}.` : ''
+  return TRACK_COLUMN_NAMES.map((name) => prefix + name).join(', ')
+}
+
+const TRACK_COLUMNS = trackColumns()
 
 const DEFAULT_ORDER = `
   CASE WHEN artist IS NULL OR artist = '' THEN 1 ELSE 0 END, artist COLLATE NOCASE,
@@ -145,7 +179,8 @@ export function buildFtsQuery(input: string): string | null {
   return terms.map((term) => `"${term}"*`).join(' AND ')
 }
 
-function mapTrack(row: TrackRow): Track {
+/** Maps a joined `tracks` row into the shape the rest of the app speaks. */
+export function mapTrackRow(row: TrackRow): Track {
   return {
     id: row.id,
     sourceKind: row.source_kind === 'youtube' ? 'youtube' : 'local',
@@ -179,7 +214,7 @@ export class TrackRepository {
 
   getById(id: number): Track | null {
     const row = this.db.prepare(`SELECT ${TRACK_COLUMNS} FROM tracks WHERE id = ?`).get<TrackRow>(id)
-    return row ? mapTrack(row) : null
+    return row ? mapTrackRow(row) : null
   }
 
   list(query: ListTracksQuery = {}): TrackPage {
@@ -196,14 +231,14 @@ export class TrackRepository {
       const total = this.db
         .prepare(`SELECT COUNT(*) AS total FROM tracks ${where}`)
         .get<{ total: number }>(ftsQuery)
-      return { tracks: rows.map(mapTrack), total: total?.total ?? 0 }
+      return { tracks: rows.map(mapTrackRow), total: total?.total ?? 0 }
     }
 
     const rows = this.db
       .prepare(`SELECT ${TRACK_COLUMNS} FROM tracks ORDER BY ${order} LIMIT ? OFFSET ?`)
       .all<TrackRow>(limit, offset)
     const total = this.db.prepare('SELECT COUNT(*) AS total FROM tracks').get<{ total: number }>()
-    return { tracks: rows.map(mapTrack), total: total?.total ?? 0 }
+    return { tracks: rows.map(mapTrackRow), total: total?.total ?? 0 }
   }
 
   stats(): LibraryStats {

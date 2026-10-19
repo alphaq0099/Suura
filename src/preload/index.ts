@@ -45,6 +45,28 @@ const api: PlayerApi = {
 
   getArtwork: (trackId: number) => ipcRenderer.invoke(IPC.libraryArtwork, trackId) as Promise<string | null>,
 
+  listPlaylists: () => ipcRenderer.invoke(IPC.playlistsList),
+
+  createPlaylist: (name: string) => ipcRenderer.invoke(IPC.playlistsCreate, name),
+
+  renamePlaylist: (playlistId: number, name: string) =>
+    ipcRenderer.invoke(IPC.playlistsRename, playlistId, name),
+
+  deletePlaylist: (playlistId: number) => ipcRenderer.invoke(IPC.playlistsDelete, playlistId) as Promise<void>,
+
+  getPlaylist: (playlistId: number) => ipcRenderer.invoke(IPC.playlistsDetail, playlistId),
+
+  addTracksToPlaylist: (playlistId: number, trackIds: number[]) =>
+    ipcRenderer.invoke(IPC.playlistsAddTracks, playlistId, trackIds),
+
+  removePlaylistItems: (playlistId: number, itemIds: number[]) =>
+    ipcRenderer.invoke(IPC.playlistsRemoveItems, playlistId, itemIds),
+
+  movePlaylistItem: (playlistId: number, itemId: number, toIndex: number) =>
+    ipcRenderer.invoke(IPC.playlistsMoveItem, playlistId, itemId, toIndex),
+
+  clearPlaylist: (playlistId: number) => ipcRenderer.invoke(IPC.playlistsClear, playlistId),
+
   resolveSource: (trackId: number) => ipcRenderer.invoke(IPC.mediaResolve, trackId),
 
   reportPlayback: (trackId: number, playedMs: number, completed: boolean) =>

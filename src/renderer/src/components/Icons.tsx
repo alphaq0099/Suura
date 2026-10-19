@@ -236,6 +236,44 @@ export function CloseIcon({ size = 14 }: IconProps) {
   )
 }
 
+/** A list on a page, with a note: a playlist rather than the queue. */
+export function PlaylistIcon({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <path d="M9 6h11M9 12h11M9 18h11" />
+      <path d="M4 6h.01M4 12h.01M4 18h.01" />
+    </svg>
+  )
+}
+
+/** Adds to something: the "new playlist" and "add to playlist" affordances. */
+export function PlusIcon({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  )
+}
+
+/** Renames something. */
+export function PencilIcon({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3Z" />
+      <path d="M14.5 6.5 17.5 9.5" />
+    </svg>
+  )
+}
+
+/** A grip, drawn in the row gutter as the hint that a row can be dragged. */
+export function GripIcon({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <path d="M9 6h.01M9 12h.01M9 18h.01M15 6h.01M15 12h.01M15 18h.01" />
+    </svg>
+  )
+}
+
 /** Collapses the full-screen player back into the bar. */
 export function ChevronDownIcon({ size = 18 }: IconProps) {
   return (

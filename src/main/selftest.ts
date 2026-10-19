@@ -706,12 +706,13 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       jumped: boolean
       panelStayedOpen: boolean
       escapeHidPanel: boolean
+      panelCloseState: string
       escapeKeptWindow: boolean
       escapeClosedWindow: boolean
     }>(
       window,
       `(async () => {
-         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, volumeBeforeWheel: -1, volumeAfterWheel: -1, volumeWheelTop: -1, volumeWheelBottom: -1, wheelCancelled: false, panelClosedByOutsidePress: false, panelStayedOpenOnInsidePress: false, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false }
+         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, volumeBeforeWheel: -1, volumeAfterWheel: -1, volumeWheelTop: -1, volumeWheelBottom: -1, wheelCancelled: false, panelClosedByOutsidePress: false, panelStayedOpenOnInsidePress: false, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false, panelCloseState: '' }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (selector) => document.querySelector(selector)
          const press = (element) => { if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
@@ -732,6 +733,20 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          const thumb = () => pick('.player-art')
          const art = () => pick('.np-art')
          const panel = () => pick('.np-queue-panel')
+         // The panel hides on a 360ms transition, and the computed style only
+         // reports it once a frame has been produced. Under load (or on a
+         // throttled window) that can take longer than any fixed wait, so the
+         // checks below poll for the settled state instead of guessing at a
+         // number - what matters is that the panel ends up shut, not when.
+         const panelHidden = async (timeoutMs) => {
+           const deadline = Date.now() + timeoutMs
+           for (;;) {
+             const node = panel()
+             if (node && getComputedStyle(node).visibility === 'hidden') return true
+             if (Date.now() > deadline) return false
+             await new Promise((resolve) => setTimeout(resolve, 50))
+           }
+         }
          const rows = () => [...document.querySelectorAll('.np-queue-row')]
          const dialog = () => pick('.now-playing')
          const pressEscape = () => {
@@ -906,7 +921,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          // ---- the queue panel ----------------------------------------------
          // It has to be in the DOM to animate, and out of the way when closed, so
          // "hidden" is the check rather than "absent".
-         out.panelAtRest = panel() ? getComputedStyle(panel()).visibility === 'hidden' : false
+         out.panelAtRest = await panelHidden(2000)
          out.queueRows = rows().length
          out.queueLabels = rows()
            .slice(0, 2)
@@ -961,7 +976,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          }
          pressAt(pick('.np-stage'))
          await sleep(400)
-         out.panelClosedByOutsidePress = panel() ? getComputedStyle(panel()).visibility === 'hidden' : false
+         out.panelClosedByOutsidePress = await panelHidden(2000)
+         out.panelCloseState = panel() ? (panel().className + ' / ' + getComputedStyle(panel()).visibility + ' / stage ' + Boolean(pick('.np-stage')) + ' / queueBtn ' + Boolean(pick('.np-queue'))) : 'no panel'
          press(pick('.np-queue'))
          await sleep(400)
          pressAt(rows().length ? rows()[0] : null)
@@ -972,7 +988,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          // panel first, then the window.
          pressEscape()
          await sleep(400)
-         out.escapeHidPanel = panel() ? getComputedStyle(panel()).visibility === 'hidden' : false
+         out.escapeHidPanel = await panelHidden(2000)
          out.escapeKeptWindow = Boolean(dialog())
          pressEscape()
          await sleep(500)
@@ -1043,7 +1059,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     )
     record(
       visuals.panelClosedByOutsidePress,
-      'pressing the black space or the artwork shuts the queue panel'
+      'pressing the black space or the artwork shuts the queue panel',
+      visuals.panelCloseState
     )
     record(visuals.panelStayedOpenOnInsidePress, 'pressing inside the queue panel leaves it open')
     record(
@@ -1278,6 +1295,263 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     )
     await rm(ignoredPath, { force: true })
     container.settings.update({ library: { watchForChanges: true } })
+
+    // ---- 14. playlists ----------------------------------------------------
+    // Everything here goes through the real controls: the sidebar entry, the
+    // create form, the selection bar's menu, the row's context menu, Alt+arrow,
+    // a synthesized drag, the row's remove button, and the player window's
+    // "Save as playlist". The point is that a playlist's *order* survives the
+    // whole path from a gesture to SQLite and back, because that is the part no
+    // unit test can see.
+    const lists = await evaluate<{
+      emptyState: boolean
+      created: boolean
+      sidebarCount: string
+      menuOpened: boolean
+      addedViaBar: boolean
+      barStatus: string
+      contextMenuOpened: boolean
+      addedViaContext: boolean
+      contextStatus: string
+      countAfterAdds: number
+      rowsAfterAdds: number
+      keyboardOrder: string
+      dropLine: boolean
+      dragOrder: string
+      viewOverflow: number
+      listOverflow: number
+      actionsInside: boolean
+      rowsAfterRemove: number
+      playedTitle: string
+      renamed: string
+      queueMenuOpened: boolean
+      queueStatus: string
+      countAfterQueueSave: number
+      deleted: boolean
+      emptyAfterDelete: boolean
+    }>(
+      window,
+      `(async () => {
+         const out = {
+           emptyState: false, created: false, sidebarCount: '', menuOpened: false,
+           addedViaBar: false, barStatus: '', contextMenuOpened: false,
+           addedViaContext: false, contextStatus: '', countAfterAdds: -1,
+           rowsAfterAdds: -1, keyboardOrder: '', dropLine: false, dragOrder: '',
+           viewOverflow: -1, listOverflow: -1, actionsInside: false,
+           rowsAfterRemove: -1, playedTitle: '', renamed: '', queueMenuOpened: false,
+           queueStatus: '', countAfterQueueSave: -1, deleted: false, emptyAfterDelete: false
+         }
+         const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+         const pick = (s) => document.querySelector(s)
+         const pickAll = (s) => [...document.querySelectorAll(s)]
+         const press = (el) => { if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
+         const nav = (label) => {
+           const b = pickAll('.nav-item').find((el) => (el.textContent || '').trim().startsWith(label))
+           if (b) b.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+           return Boolean(b)
+         }
+         const text = (el) => ((el || {}).textContent || '')
+         const setInput = (el, value) => {
+           if (!el) return false
+           const desc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')
+           desc.set.call(el, value)
+           el.dispatchEvent(new Event('input', { bubbles: true }))
+           return true
+         }
+         const titles = () => pickAll('.track-row .row-title-text').map((el) => el.textContent)
+         const rowFor = (title) => pickAll('.track-row').find((row) => text(row.querySelector('.row-title-text')) === title)
+         const barTitle = () => text(pick('.player-title'))
+         const buttonWith = (scope, label) => pickAll(scope + ' button').find((el) => text(el).trim().indexOf(label) === 0)
+         const countInIndex = () => {
+           const raw = text(pick('.playlist-count')).replace(/[^0-9]/g, '')
+           return raw.length > 0 ? Number(raw) : -1
+         }
+         const menuItem = (scope, name) => {
+           const menu = pick(scope)
+           if (!menu) return null
+           return [...menu.querySelectorAll('.atp-item')].find((el) => text(el.querySelector('.atp-name')) === name) || null
+         }
+
+         // --- the view exists and starts empty
+         nav('Playlists')
+         await sleep(450)
+         out.emptyState = Boolean(pick('.playlists-view')) && text(pick('.empty-state h2')) === 'No playlists yet'
+
+         // --- create one through the form
+         press(buttonWith('.view-header', 'New playlist'))
+         await sleep(250)
+         setInput(pick('.playlist-input'), 'Selftest Mix')
+         await sleep(150)
+         press(pick('.playlist-new button[type="submit"]'))
+         await sleep(600)
+         out.created = text(pick('.playlist-name')) === 'Selftest Mix'
+         out.sidebarCount = text(pickAll('.nav-item').find((el) => text(el).trim().indexOf('Playlists') === 0).querySelector('.nav-count')).trim()
+
+         // --- add a track from the library's selection bar
+         nav('Library')
+         await sleep(450)
+         press(rowFor('Selftest Tone'))
+         await sleep(300)
+         const addButton = buttonWith('.selection-bar', 'Add to playlist')
+         out.menuOpened = Boolean(addButton)
+         press(addButton)
+         await sleep(300)
+         press(menuItem('.add-to-playlist', 'Selftest Mix'))
+         await sleep(450)
+         out.barStatus = text(pick('.atp-status')).trim()
+         out.addedViaBar = out.barStatus.indexOf('1 track added') === 0
+
+         // --- add the other one through the row's context menu
+         const silentRow = rowFor('Selftest Silent')
+         if (silentRow) {
+           const box = silentRow.getBoundingClientRect()
+           silentRow.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: box.left + 60, clientY: box.top + 12 }))
+         }
+         await sleep(350)
+         const context = pick('.context-menu')
+         out.contextMenuOpened = Boolean(context)
+         press(context ? [...context.querySelectorAll('.context-item')].find((el) => text(el).indexOf('Add to playlist') >= 0) : null)
+         await sleep(300)
+         press(menuItem('.context-menu .add-to-playlist', 'Selftest Mix'))
+         await sleep(450)
+         out.contextStatus = text(pick('.context-menu .atp-status')).trim()
+         out.addedViaContext = out.contextStatus.indexOf('1 track added') === 0
+         await sleep(1500)
+
+         // --- the playlist now holds both, in the order they were added
+         nav('Playlists')
+         await sleep(550)
+         out.countAfterAdds = countInIndex()
+         out.rowsAfterAdds = titles().length
+
+         // --- Alt+Down moves the focused row down one place
+         const grid = pick('.list-scroll')
+         if (grid) grid.focus()
+         await sleep(200)
+         if (grid) {
+           grid.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', altKey: true, bubbles: true }))
+         }
+         await sleep(600)
+         out.keyboardOrder = titles().join(' | ')
+
+         // --- a drag: row two dropped on the top half of row one
+         const rows = pickAll('.track-row')
+         if (rows.length === 2) {
+           const data = new DataTransfer()
+           const fromRow = rows[1]
+           const toRow = rows[0]
+           const box = toRow.getBoundingClientRect()
+           fromRow.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: data }))
+           await sleep(150)
+           toRow.dispatchEvent(new DragEvent('dragover', { bubbles: true, dataTransfer: data, clientX: box.left + 60, clientY: box.top + 4 }))
+           await sleep(200)
+           out.dropLine = Boolean(pick('.track-row.drop-before'))
+           toRow.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer: data, clientX: box.left + 60, clientY: box.top + 4 }))
+           await sleep(700)
+         }
+         out.dragOrder = titles().join(' | ')
+
+         // --- nothing spills out of the pane at this window size
+         const viewEl = pick('.playlists-view')
+         const listEl = pick('.playlist-pane .track-list')
+         const scroller = pick('.playlist-pane .list-scroll')
+         if (viewEl) out.viewOverflow = viewEl.scrollWidth - viewEl.clientWidth
+         if (scroller) out.listOverflow = scroller.scrollWidth - scroller.clientWidth
+         const actionsCell = pick('.track-row .col-actions')
+         const actionButtons = actionsCell ? [...actionsCell.querySelectorAll('button')] : []
+         const lastButton = actionButtons[actionButtons.length - 1]
+         if (listEl && lastButton) {
+           out.actionsInside = lastButton.getBoundingClientRect().right <= listEl.getBoundingClientRect().right + 1
+         }
+
+         // --- remove one row with its own button
+         const secondRow = pickAll('.track-row')[1]
+         press(secondRow ? secondRow.querySelector('button[title="Remove from playlist"]') : null)
+         await sleep(600)
+         out.rowsAfterRemove = titles().length
+
+         // --- play the playlist
+         press(buttonWith('.playlist-pane-head', 'Play'))
+         await sleep(800)
+         out.playedTitle = barTitle()
+
+         // --- rename it
+         press(pick('.playlist-row .icon-button[title="Rename playlist"]'))
+         await sleep(300)
+         setInput(pick('.playlist-rename .playlist-input'), 'Selftest Renamed')
+         await sleep(150)
+         press(pick('.playlist-rename button[type="submit"]'))
+         await sleep(500)
+         out.renamed = text(pick('.playlist-name'))
+
+         // --- save the queue as a playlist from the player window
+         nav('Library')
+         await sleep(400)
+         const toneRow = rowFor('Selftest Tone')
+         if (toneRow) toneRow.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+         await sleep(700)
+         press(pick('.player-track'))
+         await sleep(700)
+         press(pick('.np-queue'))
+         await sleep(500)
+         press(pick('.np-queue-save'))
+         await sleep(350)
+         const queueMenu = pick('.np-queue-panel .add-to-playlist')
+         out.queueMenuOpened = Boolean(queueMenu)
+         press(menuItem('.np-queue-panel .add-to-playlist', 'Selftest Renamed'))
+         await sleep(500)
+         out.queueStatus = text(pick('.np-queue-panel .atp-status')).trim()
+         press(pick('.np-close'))
+         await sleep(600)
+         nav('Playlists')
+         await sleep(500)
+         out.countAfterQueueSave = countInIndex()
+
+         // --- delete it (the bin asks once)
+         press(pick('.playlist-row .icon-button[title="Delete playlist"]'))
+         await sleep(250)
+         press(pick('.playlist-row .icon-button[aria-label^="Confirm deleting"]'))
+         await sleep(700)
+         out.deleted = !pick('.playlist-row')
+         out.emptyAfterDelete = text(pick('.empty-state h2')) === 'No playlists yet'
+         return out
+       })()`
+    )
+
+    record(lists.emptyState, 'the Playlists view starts with an empty state')
+    record(lists.created, 'a playlist can be created from the form', lists.created)
+    record(lists.sidebarCount === '1', 'the sidebar counts the playlists', lists.sidebarCount)
+    record(lists.menuOpened && lists.addedViaBar, 'the selection bar adds the selected tracks to a playlist', lists.barStatus)
+    record(lists.contextMenuOpened && lists.addedViaContext, 'a row’s context menu adds that track to a playlist', lists.contextStatus)
+    record(
+      lists.countAfterAdds === 2 && lists.rowsAfterAdds === 2,
+      'the playlist lists what was added, in the order it was added',
+      `${lists.countAfterAdds} in the index, ${lists.rowsAfterAdds} rows`
+    )
+    record(
+      lists.keyboardOrder === 'Selftest Silent | Selftest Tone',
+      'Alt+Down moves the focused row down one place',
+      lists.keyboardOrder
+    )
+    record(
+      lists.dropLine && lists.dragOrder === 'Selftest Tone | Selftest Silent',
+      'dragging a row onto another moves it there, with a drop line while it hovers',
+      lists.dragOrder
+    )
+    record(
+      lists.viewOverflow === 0 && lists.listOverflow === 0 && lists.actionsInside,
+      'the playlist fits its pane: no sideways overflow, every row button inside the card',
+      `view ${lists.viewOverflow}, list ${lists.listOverflow}, actions inside ${lists.actionsInside}`
+    )
+    record(lists.rowsAfterRemove === 1, 'a row can be removed from the playlist', lists.rowsAfterRemove)
+    record(lists.playedTitle === 'Selftest Tone', 'playing a playlist puts it in the queue', lists.playedTitle)
+    record(lists.renamed === 'Selftest Renamed', 'a playlist can be renamed', lists.renamed)
+    record(
+      lists.queueMenuOpened && lists.queueStatus.length > 0 && lists.countAfterQueueSave === 2,
+      'the queue can be saved as a playlist from the player window',
+      `${lists.queueStatus || 'no status'} · count ${lists.countAfterQueueSave}`
+    )
+    record(lists.deleted && lists.emptyAfterDelete, 'deleting a playlist needs a confirmation and removes it')
   } catch (error) {
     failures += 1
     console.log(`SELFTEST FAIL  harness threw: ${describe(error)}`)

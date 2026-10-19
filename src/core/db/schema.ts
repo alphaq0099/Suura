@@ -138,5 +138,50 @@ export const MIGRATIONS: readonly Migration[] = [
       // "none".
       db.exec(`ALTER TABLE tracks ADD COLUMN artwork_key TEXT`)
     }
+  },
+  {
+    version: 3,
+    name: 'playlists',
+    up: (db) => {
+      // Playlists are hand-ordered, so `position` is the order and is the only
+      // thing that matters. It is stored with gaps (see `PlaylistRepository`)
+      // rather than as a dense 0..n-1 sequence: inserting between two rows then
+      // costs one UPDATE instead of renumbering everything below it, which is
+      // the difference between a drag landing instantly and rewriting a large
+      // playlist on every drop.
+      //
+      // `sort_order` orders the *list of playlists* in the sidebar, which is a
+      // separate concern from the order of tracks inside one.
+      db.exec(`
+        CREATE TABLE playlists (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          name        TEXT    NOT NULL,
+          created_at  INTEGER NOT NULL,
+          updated_at  INTEGER NOT NULL,
+          sort_order  INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE UNIQUE INDEX idx_playlists_name ON playlists(name COLLATE NOCASE);
+        CREATE INDEX idx_playlists_order ON playlists(sort_order, id);
+
+        -- ON DELETE CASCADE is the whole answer to "what happens to a playlist
+        -- when the file is gone": while local tracks have no notion of being
+        -- temporarily unavailable, an entry for a row that no longer exists is
+        -- only ever a dangling reference. The unique index keeps the same track
+        -- out of the same playlist twice, which is what every "Add to playlist"
+        -- action that is clicked twice means.
+        CREATE TABLE playlist_items (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+          track_id    INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+          position    INTEGER NOT NULL,
+          added_at    INTEGER NOT NULL
+        );
+
+        CREATE UNIQUE INDEX idx_playlist_items_track ON playlist_items(playlist_id, track_id);
+        CREATE INDEX idx_playlist_items_order ON playlist_items(playlist_id, position);
+        CREATE INDEX idx_playlist_items_track_id ON playlist_items(track_id);
+      `)
+    }
   }
 ]

@@ -1,15 +1,20 @@
 import type { RefObject } from 'react'
+import { useState } from 'react'
 import type {
+  AddTracksOutcome,
   LibraryClickAction,
   LibraryStats,
+  Playlist,
   ScanProgress,
   SortDirection,
   Track,
   TrackSortField
 } from '@shared/types'
 import { formatBytes, formatCount, formatTimestamp } from '@shared/format'
+import { AddToPlaylistMenu } from './AddToPlaylistMenu'
+import { TrackContextMenu } from './TrackContextMenu'
 import { TrackList, describeClickAction } from './TrackList'
-import { CloseIcon, FolderIcon, PlayIcon, RefreshIcon, SearchIcon, SpinnerIcon } from './Icons'
+import { CloseIcon, FolderIcon, PlayIcon, PlaylistIcon, RefreshIcon, SearchIcon, SpinnerIcon } from './Icons'
 
 export interface LibraryViewProps {
   tracks: Track[]
@@ -43,6 +48,17 @@ export interface LibraryViewProps {
   /** What a click on a row does. See `LibraryClickAction`. */
   singleClick: LibraryClickAction
   doubleClick: LibraryClickAction
+  playlists: Playlist[]
+  onAddTracksToPlaylist: (playlistId: number, trackIds: number[]) => Promise<AddTracksOutcome>
+  onCreatePlaylist: (name: string) => Promise<Playlist>
+}
+
+/** Where the "Add to playlist" menu is open, and what it is for. */
+interface AddMenuState {
+  x: number
+  y: number
+  trackIds: number[]
+  heading: string
 }
 
 export function LibraryView(props: LibraryViewProps) {
@@ -75,8 +91,14 @@ export function LibraryView(props: LibraryViewProps) {
     onClearSelection,
     onRequestMore,
     singleClick,
-    doubleClick
+    doubleClick,
+    playlists,
+    onAddTracksToPlaylist,
+    onCreatePlaylist
   } = props
+
+  const [addMenu, setAddMenu] = useState<AddMenuState | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ track: Track; x: number; y: number } | null>(null)
 
   const hasFolders = folders.length > 0
   const searching = search.trim().length > 0
@@ -163,6 +185,21 @@ export function LibraryView(props: LibraryViewProps) {
             <PlayIcon size={14} />
             <span>Play selected</span>
           </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect()
+              setAddMenu({
+                x: rect.left,
+                y: rect.bottom + 6,
+                trackIds: [...selectedIds],
+                heading: `${formatCount(selectedIds.size)} selected`
+              })
+            }}
+          >
+            <PlaylistIcon size={14} />
+            <span>Add to playlist</span>
+          </button>
           {selectedIds.size < tracks.length ? (
             <button type="button" onClick={onSelectAll}>
               <span>Select all loaded ({formatCount(tracks.length)})</span>
@@ -219,6 +256,12 @@ export function LibraryView(props: LibraryViewProps) {
           onRequestMore={onRequestMore}
           singleClick={singleClick}
           doubleClick={doubleClick}
+          onRowContextMenu={(track, _index, at) => {
+            // Right-clicking a row that is not selected acts on that row alone:
+            // the menu belongs to the row under the pointer, not to a selection
+            // the user cannot see from here.
+            setContextMenu({ track, x: at.x, y: at.y })
+          }}
         />
       )}
 
@@ -228,6 +271,36 @@ export function LibraryView(props: LibraryViewProps) {
           {describeClickAction(singleClick)}, double-click: {describeClickAction(doubleClick)}.{' '}
           {sort ? 'Sorting is applied to the whole library.' : ''}
         </p>
+      ) : null}
+
+      {addMenu ? (
+        <AddToPlaylistMenu
+          playlists={playlists}
+          trackIds={addMenu.trackIds}
+          heading={addMenu.heading}
+          at={{ x: addMenu.x, y: addMenu.y }}
+          onAdd={onAddTracksToPlaylist}
+          onCreate={onCreatePlaylist}
+          onClose={() => setAddMenu(null)}
+        />
+      ) : null}
+
+      {contextMenu ? (
+        <TrackContextMenu
+          track={contextMenu.track}
+          at={{ x: contextMenu.x, y: contextMenu.y }}
+          playlists={playlists}
+          onAddTracks={onAddTracksToPlaylist}
+          onCreatePlaylist={onCreatePlaylist}
+          onPlay={() => {
+            // The menu belongs to a row in this list, so the index always exists;
+            // the guard is only against a list that changed under the menu.
+            const index = tracks.findIndex((track) => track.id === contextMenu.track.id)
+            if (index >= 0) onPlay(index)
+          }}
+          onReveal={() => onReveal(contextMenu.track.id)}
+          onClose={() => setContextMenu(null)}
+        />
       ) : null}
     </section>
   )

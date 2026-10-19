@@ -30,11 +30,24 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
 
-function toTrackId(value: unknown): number {
+function toId(value: unknown, what: string): number {
   if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
-    throw new Error('Invalid track id.')
+    throw new Error(`Invalid ${what} id.`)
   }
   return value
+}
+
+function toTrackId(value: unknown): number {
+  return toId(value, 'track')
+}
+
+/** A list of ids from the renderer, or the request is refused outright. */
+function toIdList(value: unknown, what: string): number[] {
+  const valid =
+    Array.isArray(value) &&
+    value.every((entry) => typeof entry === 'number' && Number.isInteger(entry) && entry > 0)
+  if (!valid) throw new Error(`Expected a list of ${what} ids.`)
+  return [...new Set(value as number[])]
 }
 
 const RETENTION_MODES: RetentionMode[] = ['stream', 'cache', 'keep']
@@ -254,5 +267,56 @@ export function registerIpcHandlers(container: AppContainer): void {
     const status = await getEngineStatus(settings.get().engine)
     log.debug('engine status probed', { ready: status.ready })
     return status
+  })
+
+  // ---- playlists --------------------------------------------------------
+  // Every mutation answers with the playlist as it now stands. A hand-ordered
+  // list has no client-side rule that could predict where a drop landed, so the
+  // rule lives in one place (PlaylistService) and the view is told the result.
+  ipcMain.handle(IPC.playlistsList, () => container.playlists.list())
+
+  ipcMain.handle(IPC.playlistsCreate, (_event, name: unknown) => {
+    if (typeof name !== 'string') throw new Error('Invalid playlist name.')
+    return container.playlists.create(name)
+  })
+
+  ipcMain.handle(IPC.playlistsRename, (_event, playlistId: unknown, name: unknown) => {
+    if (typeof name !== 'string') throw new Error('Invalid playlist name.')
+    return container.playlists.rename(toId(playlistId, 'playlist'), name)
+  })
+
+  ipcMain.handle(IPC.playlistsDelete, (_event, playlistId: unknown) => {
+    container.playlists.delete(toId(playlistId, 'playlist'))
+  })
+
+  ipcMain.handle(IPC.playlistsDetail, (_event, playlistId: unknown) =>
+    container.playlists.detail(toId(playlistId, 'playlist'))
+  )
+
+  ipcMain.handle(IPC.playlistsAddTracks, (_event, playlistId: unknown, trackIds: unknown) => {
+    const id = toId(playlistId, 'playlist')
+    const result = container.playlists.addTracks(id, toIdList(trackIds, 'track'))
+    // The counts matter to the caller — "3 added, 2 already there" is a better
+    // answer than a silent nothing when the button is clicked twice.
+    return { detail: container.playlists.detail(id), added: result.added, skipped: result.skipped }
+  })
+
+  ipcMain.handle(IPC.playlistsRemoveItems, (_event, playlistId: unknown, itemIds: unknown) => {
+    const id = toId(playlistId, 'playlist')
+    container.playlists.removeItems(id, toIdList(itemIds, 'entry'))
+    return container.playlists.detail(id)
+  })
+
+  ipcMain.handle(IPC.playlistsMoveItem, (_event, playlistId: unknown, itemId: unknown, toIndex: unknown) => {
+    const id = toId(playlistId, 'playlist')
+    if (typeof toIndex !== 'number' || !Number.isFinite(toIndex)) throw new Error('Invalid position.')
+    container.playlists.moveItem(id, toId(itemId, 'entry'), toIndex)
+    return container.playlists.detail(id)
+  })
+
+  ipcMain.handle(IPC.playlistsClear, (_event, playlistId: unknown) => {
+    const id = toId(playlistId, 'playlist')
+    container.playlists.clear(id)
+    return container.playlists.detail(id)
   })
 }

@@ -5,12 +5,15 @@
  * compile error instead of a runtime "no handler registered for ..." crash.
  */
 import type {
+  AddTracksOutcome,
   AppPaths,
   AppSettings,
   DeepPartial,
   EngineStatus,
   LibraryStats,
   ListTracksQuery,
+  Playlist,
+  PlaylistDetail,
   ResolvedSource,
   ScanProgress,
   TrackPage
@@ -30,6 +33,15 @@ export const IPC = {
   libraryRemoveFolder: 'library:remove-folder',
   libraryRevealTrack: 'library:reveal-track',
   libraryArtwork: 'library:artwork',
+  playlistsList: 'playlists:list',
+  playlistsCreate: 'playlists:create',
+  playlistsRename: 'playlists:rename',
+  playlistsDelete: 'playlists:delete',
+  playlistsDetail: 'playlists:detail',
+  playlistsAddTracks: 'playlists:add-tracks',
+  playlistsRemoveItems: 'playlists:remove-items',
+  playlistsMoveItem: 'playlists:move-item',
+  playlistsClear: 'playlists:clear',
   mediaResolve: 'media:resolve',
   mediaReportPlay: 'media:report-play',
   engineStatus: 'engine:status'
@@ -99,6 +111,19 @@ export interface PlayerApi {
    * renderer can call it for every row it renders without hammering the disk.
    */
   getArtwork(trackId: number): Promise<string | null>
+  /** Playlists in sidebar order, each with its entry count. */
+  listPlaylists(): Promise<Playlist[]>
+  createPlaylist(name: string): Promise<Playlist>
+  renamePlaylist(playlistId: number, name: string): Promise<Playlist>
+  deletePlaylist(playlistId: number): Promise<void>
+  /** A playlist's tracks in playlist order. */
+  getPlaylist(playlistId: number): Promise<PlaylistDetail | null>
+  /** Appends tracks, skipping ones already there. */
+  addTracksToPlaylist(playlistId: number, trackIds: number[]): Promise<AddTracksOutcome>
+  removePlaylistItems(playlistId: number, itemIds: number[]): Promise<PlaylistDetail | null>
+  /** Moves an entry to an index in the *resulting* order. */
+  movePlaylistItem(playlistId: number, itemId: number, toIndex: number): Promise<PlaylistDetail | null>
+  clearPlaylist(playlistId: number): Promise<PlaylistDetail | null>
   resolveSource(trackId: number): Promise<ResolvedSource>
   reportPlayback(trackId: number, playedMs: number, completed: boolean): Promise<void>
   getEngineStatus(): Promise<EngineStatus>

@@ -4,12 +4,14 @@ import { api, messageOf } from './api'
 import { LibraryView } from './components/LibraryView'
 import { NowPlayingView } from './components/NowPlayingView'
 import { PlayerBar } from './components/PlayerBar'
+import { PlaylistsView } from './components/PlaylistsView'
 import { QueueView } from './components/QueueView'
 import { SettingsView } from './components/SettingsView'
 import { Sidebar, type ViewName } from './components/Sidebar'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useLibrary } from './hooks/useLibrary'
 import { usePlayer } from './hooks/usePlayer'
+import { usePlaylists } from './hooks/usePlaylists'
 import { useSettings } from './hooks/useSettings'
 
 /** Volume is written on this trailing edge so dragging the slider is not 60 writes. */
@@ -31,6 +33,7 @@ export function App() {
 
   const { settings, error: settingsError, update, reload } = useSettings()
   const library = useLibrary()
+  const playlists = usePlaylists()
   const {
     tracks,
     total,
@@ -295,7 +298,13 @@ export function App() {
       data-artwork-shape={settings.visuals.artworkShape}
       data-artwork-size={settings.visuals.artworkSize}
     >
-      <Sidebar view={view} stats={stats} queueLength={player.queue.length} onSelect={setView} />
+      <Sidebar
+        view={view}
+        stats={stats}
+        queueLength={player.queue.length}
+        playlistCount={playlists.playlists.length}
+        onSelect={setView}
+      />
 
       {view === 'library' ? (
         <LibraryView
@@ -328,6 +337,30 @@ export function App() {
           onRequestMore={loadMore}
           singleClick={settings.interaction.librarySingleClick}
           doubleClick={settings.interaction.libraryDoubleClick}
+          playlists={playlists.playlists}
+          onAddTracksToPlaylist={playlists.addTracks}
+          onCreatePlaylist={playlists.create}
+        />
+      ) : view === 'playlists' ? (
+        <PlaylistsView
+          playlists={playlists.playlists}
+          selectedId={playlists.selectedId}
+          detail={playlists.detail}
+          loading={playlists.loading}
+          error={playlists.error}
+          currentTrackId={player.current?.id ?? null}
+          isPlaying={player.isPlaying}
+          singleClick={settings.interaction.librarySingleClick}
+          doubleClick={settings.interaction.libraryDoubleClick}
+          onSelect={playlists.select}
+          onCreate={playlists.create}
+          onRename={playlists.rename}
+          onDelete={playlists.remove}
+          onClear={playlists.clear}
+          onRemoveItems={playlists.removeItems}
+          onMoveItem={playlists.moveItem}
+          onPlay={(queue, index) => player.playQueue(queue, index)}
+          onReveal={(trackId) => void revealTrack(trackId)}
         />
       ) : view === 'queue' ? (
         <QueueView
@@ -406,6 +439,9 @@ export function App() {
           onToggleShuffle={toggleShuffle}
           onJumpQueue={player.jumpTo}
           onClose={closeNowPlaying}
+          playlists={playlists.playlists}
+          onAddTracksToPlaylist={playlists.addTracks}
+          onCreatePlaylist={playlists.create}
         />
       ) : null}
     </div>

@@ -39,11 +39,14 @@ Working today:
 - Deleting or moving files is reflected on the next full scan.
 - **The folders are watched**: an album copied in appears by itself, and a file that disappears is forgotten, without
   pressing Rescan. Watching can be switched off in Settings for a library on a slow or network drive.
+- **Playlists**: create, rename and delete them; add tracks from the library's selection bar, from a row's right-click
+  (or Shift+F10) menu, or save the whole queue as a playlist from the player window. Rows are reordered by dragging or
+  with Alt+↑/↓, and a playlist's order is kept exactly as the user set it.
 - Settings persist to `config.json`; retention and engine settings are stored and validated but not yet acted on.
 - The engine layer reports whether `yt-dlp` and `ffmpeg` are present and runnable (used from M3).
 
-Not built yet (deliberately): playlists, resuming the last session, gapless playback, SMTC / tray icon, the yt-dlp
-resolver, caching, downloads, packaging.
+Not built yet (deliberately): resuming the last session, gapless playback, SMTC / tray icon, the yt-dlp resolver,
+caching, downloads, packaging, playlist import/export and smart playlists.
 
 ---
 
@@ -77,9 +80,9 @@ Four independent checks, from cheapest to most convincing:
 | Command | What it proves |
 |---|---|
 | `npm run typecheck` | Both TypeScript projects (`node` and `web`) compile under `strict` + `noUncheckedIndexedAccess`. |
-| `npm run smoke` | **127 checks** against the real core: builds a throwaway library with ffmpeg, indexes it, rescans it, searches it, sorts and pages it, extracts cover art from a real file, resolves a playable URL, exercises range parsing, queue rules and display formatting, deletes a file to prove pruning, and watches a real folder to prove that a file appearing or disappearing triggers an incremental scan by itself. No Electron involved. |
+| `npm run smoke` | **160 checks** against the real core: builds a throwaway library with ffmpeg, indexes it, rescans it, searches it, sorts and pages it, extracts cover art from a real file, resolves a playable URL, exercises range parsing, queue rules and display formatting, deletes a file to prove pruning, and watches a real folder to prove that a file appearing or disappearing triggers an incremental scan by itself. No Electron involved. |
 | `npm run runtime:check` | The three runtime bets still hold **inside Electron**: `node:sqlite` exists, FTS5 works, and `music-metadata` (ESM-only) loads from CommonJS. Run this after every Electron upgrade. |
-| `npm run selftest` | **96 end-to-end checks**: launches the real app against a throwaway data directory, confirms React mounted, indexes two generated audio files (one with an embedded cover) *through the IPC bridge*, then **actually decodes, plays and seeks one** through the `player-media://` protocol. It drives the real UI — a click selects, a double click plays, the queue view lists the queue, the repeat/shuffle buttons cycle, clicking the now-playing area opens the full-window player (and asserts its backdrop really is the blurred, brightened cover with no hard separator over the controls), and Escape closes it **through its exit animation**. Clicking the queue button slides the panel in, and the panel's own rows, scroll fit and gradient shadow are checked before a press on the black space or the artwork shuts it again (a press inside it does not), and Escape unwinds one layer at a time. It then changes the artwork and click-behaviour settings through the actual `<select>` elements in Settings and measures what the DOM did with them — the box takes a 3:2 cover's proportions, the size presets resize it, and a single click plays or selects depending on what the setting says. It seeks the player bar's scrubber twice in a row, paused and playing, and asserts the bar shows the position just chosen rather than the one before it. It also checks that the player bar's ambience spans the whole bar rather than the now-playing tile, and clicks the volume button to prove it mutes and restores, then rolls the wheel over the control to check that one notch moves the level five percent, that it stops at the ends of the scale, and that the scroll is swallowed rather than passed on. Then it copies a real file into the watched folder and deletes it again, asserting that the library indexed and then forgot it with no user action at all, and that switching watching off really does stop it. Finally it resizes the window to 1200x780 and 940x580 and asserts that **no view, including the player window, overflows sideways** — the only thing that catches a layout that slides out of the window. Exits non-zero on failure. |
+| `npm run selftest` | **110 end-to-end checks**: launches the real app against a throwaway data directory, confirms React mounted, indexes two generated audio files (one with an embedded cover) *through the IPC bridge*, then **actually decodes, plays and seeks one** through the `player-media://` protocol. It drives the real UI — a click selects, a double click plays, the queue view lists the queue, the repeat/shuffle buttons cycle, clicking the now-playing area opens the full-window player (and asserts its backdrop really is the blurred, brightened cover with no hard separator over the controls), and Escape closes it **through its exit animation**. Clicking the queue button slides the panel in, and the panel's own rows, scroll fit and gradient shadow are checked before a press on the black space or the artwork shuts it again (a press inside it does not), and Escape unwinds one layer at a time. It then changes the artwork and click-behaviour settings through the actual `<select>` elements in Settings and measures what the DOM did with them — the box takes a 3:2 cover's proportions, the size presets resize it, and a single click plays or selects depending on what the setting says. It seeks the player bar's scrubber twice in a row, paused and playing, and asserts the bar shows the position just chosen rather than the one before it. It also checks that the player bar's ambience spans the whole bar rather than the now-playing tile, and clicks the volume button to prove it mutes and restores, then rolls the wheel over the control to check that one notch moves the level five percent, that it stops at the ends of the scale, and that the scroll is swallowed rather than passed on. Then it copies a real file into the watched folder and deletes it again, asserting that the library indexed and then forgot it with no user action at all, and that switching watching off really does stop it. Then it creates a playlist through the form, adds tracks from the library's selection bar and from a row's context menu, reorders it with Alt+Down and a synthesized drag (with its drop line), removes a row, plays it, renames it, saves the queue as a playlist from the player window, and deletes it. It also resizes the window to 1200x780 and 940x580 and asserts that **no view, including the player window, overflows sideways**, and that the playlist's row buttons stay inside its card — the only thing that catches a layout that slides out of the window. Exits non-zero on failure. |
 
 
 The self-test is the one that matters most. A renderer that fails to mount, or a protocol handler that refuses every
@@ -332,12 +335,34 @@ docs/adr/               architecture decision records
   has been deleted, so the filter only applies to a file being *written*: a rename is always interesting, since a folder
   called `Album.2024` reads as a file.
 
+- **A playlist's order is a number, and the number has room in it.** Entries are stored 1024 apart rather than as 0, 1, 2,
+  3, so dropping a row between two others is one `UPDATE` at the midpoint instead of renumbering everything below the drop.
+  Ten successive drops into the same gap still fit; when a gap finally closes, the playlist is renumbered in one
+  transaction and the drop lands by index. The service, not the view, decides where a drop lands, and every mutation
+  answers with the playlist as it now stands — a hand-ordered list has no client-side rule that could predict the result.
+  The one exception is a drag, which is applied optimistically and then replaced by the answer, so the row lands under the
+  pointer instead of snapping back for a round trip.
+
+- **Rows are dragged with the platform's own drag events**, not a pointer-tracking reimplementation: the row stays a plain
+  div, and the browser draws the drag image and handles the thresholds. `dragover` has to call `preventDefault()` or no
+  drop is ever delivered, the drop line is an inset shadow (rows live in a translated window inside a scroller), and a
+  `dragend` listener on the window cleans up a drag whose source row scrolled out of view. Alt+↑/↓ is the keyboard
+  equivalent, not a fallback: it moves the row the keyboard cursor is on.
+
+- **Playlists cascade.** An entry is a reference to a track row, and local tracks have no "temporarily unavailable" state
+  yet, so `ON DELETE CASCADE` means a pruned track leaves every playlist with it rather than leaving a row that points at
+  nothing. The scan already refuses to prune folders it could not enumerate, so an unmounted drive does not quietly trim
+  playlists.
+
 ---
 
 ## Known gaps
 
-- No playlists yet, and no "select all N matching" (selection covers the loaded rows).
+- No playlist import/export (M3U/JSON, M6), no smart playlists (M5), and no per-playlist retention override.
+- No "select all N matching" (selection covers the loaded rows).
 - No resume: the queue and the playing track are not remembered across a restart.
+- A playlist is loaded whole rather than paged: fine for thousands of rows because the list is virtualized, but a
+  100 000-track playlist would still cross the IPC bridge in one message.
 - Watching only covers the session it runs in: files added or removed while the app was closed are picked up by the next
   scan (adding a folder, or Rescan). A folder that is missing when watching starts — an unmounted drive — is watched only
   after the folder list changes or the app is restarted; `fs.watch` needs the directory to exist.
@@ -347,6 +372,6 @@ docs/adr/               architecture decision records
 
 ## Next steps
 
-1. Finish M1: file watching, playlists, and gapless playback.
+1. Finish M1: resuming the last session, then a 10 000-track timing check.
 2. The yt-dlp engine spike from ROADMAP.md §13, which is unblocked: `npm run smoke` already shows both binaries found.
 3. Then M3 (streaming resolver), M4 (retention: cache / keep).

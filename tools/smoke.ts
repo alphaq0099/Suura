@@ -20,6 +20,8 @@ import { latestVersion, openLibraryDatabase } from '@core/db/database'
 import { TrackRepository, buildFtsQuery, type ScanRunSummary } from '@core/library/track-repository'
 import { LibraryService } from '@core/library/library-service'
 import { FolderWatcher, isLibraryEvent, type FolderWatchEvent } from '@core/library/folder-watcher'
+import { PlaylistRepository } from '@core/library/playlist-repository'
+import { PlaylistService } from '@core/library/playlist-service'
 import { isPathInside, localContentKey, normalizePath } from '@core/library/content-key'
 import { artworkKeyFor, extractArtwork, extensionForMime } from '@core/library/artwork'
 import { LocalFileResolver } from '@engine/local-file-resolver'
@@ -441,6 +443,114 @@ async function main(): Promise<void> {
       checkEqual('an album with no cached key reports none', repo.artworkKeyForAlbum('Fixtures Vol 1', 'Smoke Artist'), null)
     }
 
+    // --- playlists ----------------------------------------------------------
+    // A playlist is a hand-ordered list, so almost everything worth testing is
+    // about order: what an append does, what a drop between two rows does, and
+    // what happens when drops into the same gap run out of room between them.
+    const playlists = new PlaylistService(new PlaylistRepository(database.db), repo, silentLogger)
+    const titlesOf = (playlistId: number): string[] =>
+      (playlists.detail(playlistId)?.items ?? []).map((item) => item.track.title)
+    const entryIdsOf = (playlistId: number): number[] =>
+      (playlists.detail(playlistId)?.items ?? []).map((item) => item.id)
+
+    const allIds = library.list().tracks.map((track) => track.id)
+    const allTitles = library.list().tracks.map((track) => track.title)
+
+    const road = playlists.create('  Road   Trip  ')
+    checkEqual('a playlist name is trimmed and collapsed', road.name, 'Road Trip')
+    checkEqual('a new playlist is empty', road.trackCount, 0)
+
+    const appended = playlists.addTracks(road.id, allIds)
+    checkEqual('every track was added', appended.added, allIds.length)
+    checkEqual('the playlist keeps the order the tracks were added in', titlesOf(road.id).join(' | '), allTitles.join(' | '))
+    checkEqual('the entry count follows the contents', playlists.detail(road.id)?.playlist.trackCount, allIds.length)
+
+    const repeated = playlists.addTracks(road.id, [allIds[0] as number, 999_999])
+    checkEqual('adding a track that is already there adds nothing', repeated.added, 0)
+    checkEqual('the duplicate and the track that does not exist are both skipped', repeated.skipped, 2)
+    checkEqual('skipping changed nothing', titlesOf(road.id).length, allIds.length)
+
+    // Moving: `toIndex` is the index in the order *after* the move, which is what
+    // a drop position means on screen.
+    const entries = entryIdsOf(road.id)
+    playlists.moveItem(road.id, entries[3] as number, 0)
+    checkEqual(
+      'the last entry can be moved to the front',
+      titlesOf(road.id).join(' | '),
+      [allTitles[3], allTitles[0], allTitles[1], allTitles[2]].join(' | ')
+    )
+    playlists.moveItem(road.id, entries[3] as number, 3)
+    checkEqual('and back to the end', titlesOf(road.id).join(' | '), allTitles.join(' | '))
+    playlists.moveItem(road.id, entries[0] as number, 2)
+    checkEqual(
+      'an entry can be dropped into the middle',
+      titlesOf(road.id).join(' | '),
+      [allTitles[1], allTitles[2], allTitles[0], allTitles[3]].join(' | ')
+    )
+    checkEqual('moving an entry where it already is reports nothing to do', playlists.moveItem(road.id, entries[0] as number, 2), false)
+    playlists.moveItem(road.id, entries[0] as number, 0)
+    checkEqual('the playlist is back to its original order', titlesOf(road.id).join(' | '), allTitles.join(' | '))
+
+    // Positions start 1024 apart and each drop into the same place halves the gap,
+    // so dropping between the same two neighbours repeatedly is the path that has
+    // to renumber the playlist. The order must come out the same either way.
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const current = entryIdsOf(road.id)
+      playlists.moveItem(road.id, current[0] as number, 1)
+    }
+    checkEqual('repeated drops into the same gap keep the order exact', titlesOf(road.id).join(' | '), allTitles.join(' | '))
+    checkEqual('and lose nothing', titlesOf(road.id).length, allIds.length)
+
+    // Entries are addressed by entry id, never by track id: the same track can sit
+    // in two playlists, and a removal has to mean one of them.
+    const other = playlists.create('Other')
+    playlists.addTracks(other.id, [allIds[0] as number])
+    checkEqual('the same track can live in two playlists', playlists.detail(other.id)?.items.length, 1)
+    const foreignEntry = entryIdsOf(other.id)[0] as number
+    checkEqual('removing an entry through the wrong playlist removes nothing', playlists.removeItems(road.id, [foreignEntry]), 0)
+    checkEqual('the other playlist is untouched', playlists.detail(other.id)?.items.length, 1)
+    checkEqual('and so is the first', playlists.detail(road.id)?.items.length, allIds.length)
+
+    const renamed = playlists.rename(other.id, 'Driving')
+    checkEqual('a playlist can be renamed', renamed.name, 'Driving')
+    check('the list shows the new name', playlists.list().some((entry) => entry.name === 'Driving'))
+    checkEqual('playlists are listed with their counts', playlists.list().map((entry) => entry.trackCount).join(','), `${allIds.length},1`)
+
+    let duplicateName: string | null = null
+    try {
+      playlists.create('driving')
+    } catch (error) {
+      duplicateName = (error as Error).message
+    }
+    check(
+      'a duplicate name is refused with a readable message, not a SQLite error',
+      Boolean(duplicateName?.includes('already a playlist')),
+      duplicateName ?? 'no error was thrown'
+    )
+    let emptyName: string | null = null
+    try {
+      playlists.create('   ')
+    } catch (error) {
+      emptyName = (error as Error).message
+    }
+    check('an empty name is refused', Boolean(emptyName?.includes('needs a name')), emptyName ?? 'no error was thrown')
+
+    let missingPlaylist: string | null = null
+    try {
+      playlists.addTracks(987_654, [allIds[0] as number])
+    } catch (error) {
+      missingPlaylist = (error as Error).message
+    }
+    check(
+      'adding to a playlist that does not exist is refused',
+      Boolean(missingPlaylist?.includes('no longer exists')),
+      missingPlaylist ?? 'no error was thrown'
+    )
+
+    playlists.delete(other.id)
+    checkEqual('deleting a playlist removes it', playlists.detail(other.id), null)
+    checkEqual('and takes its entries with it', playlists.list().length, 1)
+
     // --- folder watching ---------------------------------------------------
     // Watching is what lets the library keep up with the disk on its own, and it
     // does that by turning any change into a whole-library scan: the scan skips
@@ -502,6 +612,7 @@ async function main(): Promise<void> {
     // Pruning is deliberately limited to full library scans, so a scan of one
     // folder can never delete rows belonging to another.
     if (subject) {
+      const beforePrune = playlists.detail(road.id)?.items.length ?? 0
       await unlink(subject.path)
       const singleScan = await library.scan(musicDir)
       checkEqual('a single-folder scan does not prune', singleScan.tracks, 4)
@@ -509,7 +620,20 @@ async function main(): Promise<void> {
       checkEqual('a full library scan prunes the deleted file', fullScan.tracks, 3)
       checkEqual('the full scan reported one pruned row', repo.lastScanRun()?.pruned ?? -1, 1)
       check('the surviving tracks are still present', library.list().tracks.some((track) => track.title === 'Test Tone B'))
+      // A playlist entry is a reference to a track row, so when the row goes the
+      // entry goes with it rather than dangling.
+      const afterPrune = playlists.detail(road.id)?.items.length ?? -1
+      checkEqual('the pruned track left the playlist with it', afterPrune, beforePrune - 1)
+      checkEqual('the playlist count agrees with its contents', playlists.detail(road.id)?.playlist.trackCount, afterPrune)
+      checkEqual('the rest of the playlist survived', titlesOf(road.id).length, afterPrune)
     }
+
+    // --- clearing a playlist ----------------------------------------------
+    const beforeClear = titlesOf(road.id).length
+    const cleared = playlists.clear(road.id)
+    checkEqual('clearing removes every entry', cleared, beforeClear)
+    checkEqual('a cleared playlist is empty', playlists.detail(road.id)?.items.length, 0)
+    checkEqual('clearing keeps the playlist itself', playlists.list().length, 1)
 
     // --- removal of a whole folder ---------------------------------------
     library.removeFolder(musicDir)

@@ -6,6 +6,8 @@ import { openLibraryDatabase, type DatabaseHandle } from '@core/db/database'
 import { TrackRepository } from '@core/library/track-repository'
 import { LibraryService } from '@core/library/library-service'
 import { FolderWatcher } from '@core/library/folder-watcher'
+import { PlaylistRepository } from '@core/library/playlist-repository'
+import { PlaylistService } from '@core/library/playlist-service'
 import { LocalFileResolver } from '@engine/local-file-resolver'
 import { ResolverRegistry } from '@engine/resolver'
 import { IPC_EVENTS } from '@shared/ipc'
@@ -27,6 +29,7 @@ export interface AppContainer {
   repo: TrackRepository
   library: LibraryService
   watcher: FolderWatcher
+  playlists: PlaylistService
   resolvers: ResolverRegistry
   artwork: ArtworkService
   dispose(): void
@@ -62,6 +65,11 @@ export function createContainer(): AppContainer {
     onLibraryChanged: () => broadcast(IPC_EVENTS.libraryChanged, null)
   })
 
+  // Playlists read tracks, so they take the same repository the library writes
+  // through: pruning a track drops its playlist entries by foreign key, and the
+  // two can never disagree about what a track id means.
+  const playlists = new PlaylistService(new PlaylistRepository(database.db), repo, log.child('playlists'))
+
   // Both the folder list and the switch live in settings, so one listener keeps
   // the watchers in step with them — including the case where a folder is added
   // or removed while the app is running.
@@ -88,6 +96,7 @@ export function createContainer(): AppContainer {
     repo,
     library,
     watcher,
+    playlists,
     resolvers,
     artwork,
     dispose: () => {

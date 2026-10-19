@@ -279,7 +279,8 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
 - [x] Queue management (add to queue, jump, remove, clear)
 - [x] File watching for changes: an OS watcher per folder, debounced, turning any change into an incremental scan that
       prunes what disappeared; a setting to turn it off for slow or network drives
-- [ ] Basic playlists (create, rename, add/remove, reorder)
+- [x] Basic playlists: create, rename, delete; add from the library selection bar, a row's context menu or the queue in
+      the player window; remove entries; reorder by drag or Alt+↑/↓ with a gap-based position that keeps the order exact
 - [ ] Persist play state; resume last session on start
 **Exit:** 10,000-track library is fast, searchable and pleasant; audio starts in < 300 ms.
 

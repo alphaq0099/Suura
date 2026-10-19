@@ -72,6 +72,18 @@ button.primary:hover:not(:disabled) {
   border-color: var(--accent-strong);
 }
 
+button.primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+/* Buttons inside a popover or a sidebar row: the default padding is sized for a
+   header, not for something sitting next to an input. */
+button.small {
+  padding: 5px 10px;
+  font-size: 12.5px;
+}
+
 input,
 select {
   font: inherit;
@@ -359,6 +371,11 @@ input[type='radio'] {
   margin-left: auto;
 }
 
+/* A link that asks a second time before doing something destructive. */
+.link-button.danger {
+  color: var(--danger);
+}
+
 .link-button:hover {
   background: transparent;
   text-decoration: underline;
@@ -404,11 +421,17 @@ input[type='radio'] {
 
 /* ---------- track list (virtualized) ---------- */
 
+/* A list whose rows carry a remove button needs room for two icons; the default
+   column is sized for the reveal button alone. */
+.track-list.has-remove {
+  --track-actions: 88px;
+}
+
 /* One source of truth for the column widths: the header and every row are the
    same grid, so they line up without a <table>. Hiding a column in a media query
    therefore has to redefine the template as well as hide the cells. */
 .track-list {
-  --track-columns: 56px minmax(0, 1fr) 168px 168px 118px 64px 58px;
+  --track-columns: 56px minmax(0, 1fr) 168px 168px 118px 64px var(--track-actions, 58px);
   --row-height: 38px;
 
   flex: 1;
@@ -678,7 +701,7 @@ input[type='radio'] {
    (456px without Album, 288px without either). */
 @media (max-width: 1150px) {
   .track-list {
-    --track-columns: 56px minmax(0, 1fr) 168px 118px 64px 58px;
+    --track-columns: 56px minmax(0, 1fr) 168px 118px 64px var(--track-actions, 58px);
   }
 
   .col-album {
@@ -688,7 +711,7 @@ input[type='radio'] {
 
 @media (max-width: 1000px) {
   .track-list {
-    --track-columns: 56px minmax(0, 1fr) 118px 64px 58px;
+    --track-columns: 56px minmax(0, 1fr) 118px 64px var(--track-actions, 58px);
   }
 
   .col-artist {
@@ -1959,4 +1982,349 @@ input[type='radio'] {
     width: 48px;
     height: 48px;
   }
+}
+
+/* ---------- playlists ---------- */
+
+/* The index and the tracks sit side by side and each scrolls on its own: a long
+   playlist must not push the list of playlists off the top of the screen. */
+.playlists-layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: 16px;
+}
+
+/* Two panes stop being worth it once the track list loses more to its columns
+   than it keeps for titles: the index becomes a strip above the list, which
+   still scrolls on its own when there are many playlists. */
+@media (max-width: 1040px) {
+  .playlists-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .playlist-index {
+    max-height: 180px;
+  }
+}
+
+.playlist-index {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #12141d;
+}
+
+.playlist-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  border-radius: var(--radius-sm);
+  padding: 1px 2px;
+}
+
+.playlist-row:hover {
+  background: var(--bg-hover);
+}
+
+.playlist-row.active {
+  background: #1d2440;
+}
+
+.playlist-open {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 9px;
+  background: transparent;
+  border-color: transparent;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  color: var(--text-dim);
+}
+
+.playlist-open:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text);
+}
+
+.playlist-row.active .playlist-open {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.playlist-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playlist-count {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.playlist-row .icon-button {
+  padding: 5px;
+}
+
+.playlist-row .icon-button.danger {
+  color: var(--danger);
+}
+
+.playlist-new,
+.playlist-rename {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 8px;
+}
+
+.playlist-hint {
+  margin: 6px 4px 0;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  line-height: 1.5;
+}
+
+.playlist-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.playlist-pane-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.playlist-pane-head h2 {
+  margin: 0 0 3px;
+  font-size: 17px;
+}
+
+/* ---------- drag to reorder ---------- */
+
+/* The cursor is the only affordance a draggable row gets: a grip in the gutter
+   would take width from the title for something the footnote already explains. */
+.track-row[draggable='true'] {
+  cursor: grab;
+}
+
+.track-row.dragging {
+  opacity: 0.4;
+}
+
+/* The drop line is an inset shadow rather than a positioned element: rows live in
+   a translated window inside a scroller, and an absolutely positioned marker
+   would have to be re-measured on every scroll for no gain. */
+.track-row.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.track-row.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.track-row.active.drop-before {
+  box-shadow: inset 2px 0 0 var(--accent), inset 0 2px 0 var(--accent);
+}
+
+.track-row.active.drop-after {
+  box-shadow: inset 2px 0 0 var(--accent), inset 0 -2px 0 var(--accent);
+}
+
+/* ---------- add to playlist (popover) ---------- */
+
+.add-to-playlist {
+  position: absolute;
+  z-index: 40;
+  display: grid;
+  gap: 4px;
+  width: 260px;
+  padding: 6px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 40px rgb(0 0 0 / 55%);
+}
+
+/* Opened at the pointer, so it is taken out of the host's flow entirely. */
+.add-to-playlist.fixed {
+  position: fixed;
+  z-index: 60;
+}
+
+/* Inside the player window's queue panel, where the panel is already the
+   containing block: stretched to its width rather than floating over it. */
+.np-queue-panel > .add-to-playlist {
+  position: absolute;
+  top: 58px;
+  left: 10px;
+  right: 10px;
+  width: auto;
+  z-index: 3;
+}
+
+/* Styled as a plain list: it is already inside a popover, and borders inside a
+   border read as a form. */
+.context-menu > .add-to-playlist {
+  position: static;
+  width: auto;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.atp-head {
+  padding: 6px 8px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.atp-list {
+  max-height: 240px;
+  overflow-y: auto;
+  display: grid;
+  gap: 1px;
+}
+
+.atp-empty {
+  padding: 8px;
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+.atp-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  background: transparent;
+  border-color: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  text-align: left;
+}
+
+.atp-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: transparent;
+  color: var(--text);
+}
+
+.atp-item.new {
+  color: var(--text-dim);
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.atp-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.atp-count {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.atp-foot {
+  border-top: 1px solid var(--border);
+  padding-top: 4px;
+}
+
+.atp-new-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 2px;
+}
+
+.atp-new-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.atp-status {
+  padding: 5px 8px;
+  font-size: 12px;
+  color: var(--ok);
+}
+
+.atp-error {
+  padding: 5px 8px;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+/* ---------- track context menu ---------- */
+
+.context-menu {
+  position: fixed;
+  z-index: 60;
+  display: grid;
+  gap: 1px;
+  width: 240px;
+  padding: 6px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 40px rgb(0 0 0 / 55%);
+}
+
+.context-head {
+  padding: 7px 9px 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  background: transparent;
+  border-color: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  text-align: left;
+}
+
+.context-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: transparent;
+  color: var(--text);
 }

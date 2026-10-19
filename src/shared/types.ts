@@ -94,6 +94,41 @@ export interface LibraryStats {
   lastScanAt: number | null
 }
 
+export interface Playlist {
+  id: number
+  name: string
+  createdAt: number
+  updatedAt: number
+  /**
+   * How many tracks are in it. Carried on the playlist itself so the sidebar can
+   * show the count for every playlist without loading any of their contents.
+   */
+  trackCount: number
+}
+
+/**
+ * One row of a playlist, in playlist order.
+ *
+ * The id is the *entry's* id, not the track's: the same track may sit in several
+ * playlists, and removing or moving one has to name which of them it means.
+ */
+export interface PlaylistItem {
+  id: number
+  track: Track
+}
+
+export interface PlaylistDetail {
+  playlist: Playlist
+  items: PlaylistItem[]
+}
+
+/** What adding tracks did, so the UI can say "3 added, 2 already there". */
+export interface AddTracksOutcome {
+  detail: PlaylistDetail | null
+  added: number
+  skipped: number
+}
+
 export interface ScanProgress {
   phase: 'enumerating' | 'reading' | 'done'
   /** Files discovered on disk that look like audio. */

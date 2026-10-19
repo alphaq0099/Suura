@@ -6,12 +6,13 @@ import {
   type KeyboardEvent,
   type PointerEvent
 } from 'react'
-import type { ArtworkFit, RepeatMode, Track } from '@shared/types'
+import type { AddTracksOutcome, ArtworkFit, Playlist, RepeatMode, Track } from '@shared/types'
 import { buildArtworkUrl } from '@shared/artwork-url'
 import { formatCount, formatDuration } from '@shared/format'
 import { useArtwork } from '../hooks/useArtwork'
 import { useWheelVolume } from '../hooks/useWheelVolume'
 import { ArtworkImage } from './ArtworkImage'
+import { AddToPlaylistMenu } from './AddToPlaylistMenu'
 import { SeekBar } from './SeekBar'
 import {
   ChevronDownIcon,
@@ -52,6 +53,9 @@ export interface NowPlayingViewProps {
   onToggleShuffle: () => void
   onJumpQueue: (position: number) => void
   onClose: () => void
+  playlists: Playlist[]
+  onAddTracksToPlaylist: (playlistId: number, trackIds: number[]) => Promise<AddTracksOutcome>
+  onCreatePlaylist: (name: string) => Promise<Playlist>
   /** True while the exit animation plays, before this view is unmounted. */
   closing?: boolean
 }
@@ -99,6 +103,9 @@ export function NowPlayingView(props: NowPlayingViewProps) {
     onToggleShuffle,
     onJumpQueue,
     onClose,
+    playlists,
+    onAddTracksToPlaylist,
+    onCreatePlaylist,
     closing = false
   } = props
 
@@ -106,6 +113,7 @@ export function NowPlayingView(props: NowPlayingViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const currentRowRef = useRef<HTMLButtonElement | null>(null)
   const [queueOpen, setQueueOpen] = useState(false)
+  const [saveMenuOpen, setSaveMenuOpen] = useState(false)
 
   // Mute is deliberately not a stored setting. It is only "the volume is zero,
   // but remember what it was", so unmuting restores the level the user actually
@@ -232,7 +240,29 @@ export function NowPlayingView(props: NowPlayingViewProps) {
             <span className="np-queue-meta">
               {formatCount(queue.length)} tracks · {formatDuration(queueTotalMs)}
             </span>
+            <button
+              type="button"
+              className="link-button np-queue-save"
+              disabled={queue.length === 0}
+              onClick={(event) => {
+                event.stopPropagation()
+                setSaveMenuOpen(true)
+              }}
+            >
+              Save as playlist…
+            </button>
           </header>
+
+          {saveMenuOpen ? (
+            <AddToPlaylistMenu
+              playlists={playlists}
+              trackIds={queue.map((track) => track.id)}
+              heading={`Queue · ${formatCount(queue.length)} tracks`}
+              onAdd={onAddTracksToPlaylist}
+              onCreate={onCreatePlaylist}
+              onClose={() => setSaveMenuOpen(false)}
+            />
+          ) : null}
           <ol className="np-queue-list">
             {queue.map((track, index) => (
               <li key={`${track.id}-${index}`}>
