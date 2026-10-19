@@ -54,7 +54,7 @@ import { buildArtworkUrl, parseArtworkUrl } from '@shared/artwork-url'
 import { formatAudioSummary, formatCodec } from '@shared/format'
 import { nextDecision, shuffleFrom, shuffled } from '@shared/queue'
 import { parseRangeHeader } from '@shared/range'
-import { onlineEntryToTrack } from '@shared/online'
+import { isImportedPlaylistTrackId, onlineEntryToTrack, onlinePlaylistItemToTrack } from '@shared/online'
 import { sanitizeFilePart, savePathParts } from '@shared/files'
 
 const execFileAsync = promisify(execFile)
@@ -1319,6 +1319,10 @@ async function main(): Promise<void> {
       checkEqual('online: the stream track names the video', mapped?.sourceId, 'bbbbbbbbbbb')
       checkEqual('online: the stream track id is negative and derived from the row', mapped?.id, top ? -top.id : null)
       check('online: the stream track has no file', mapped?.filePath === null)
+      check(
+        'online: a history row is not mistaken for an imported entry',
+        mapped === null || !isImportedPlaylistTrackId(mapped.id)
+      )
 
       // A cover is downloaded after the row exists, so the key is written on a
       // later pass. That is also what repairs rows added before thumbnails decoded.
@@ -1331,6 +1335,40 @@ async function main(): Promise<void> {
       checkEqual('online: removing a link forgets it', repo.count(), 1)
       checkEqual('online: clearing removes the rest', repo.clear(), 1)
       checkEqual('online: the history is empty again', repo.list().length, 0)
+
+      // Importing a list takes its entries back out of the history, so a 50-track
+      // import can never leave 50 echoes of itself behind.
+      repo.upsert(
+        {
+          videoId: 'ccccccccccc',
+          title: 'Third Song',
+          artist: null,
+          album: null,
+          durationMs: null,
+          sourceUrl: youtubeWatchUrl('ccccccccccc'),
+          artworkKey: null
+        },
+        5000
+      )
+      repo.upsert(
+        {
+          videoId: 'ddddddddddd',
+          title: 'Fourth Song',
+          artist: null,
+          album: null,
+          durationMs: null,
+          sourceUrl: youtubeWatchUrl('ddddddddddd'),
+          artworkKey: null
+        },
+        5001
+      )
+      checkEqual(
+        'online: removing by video id forgets only what it names',
+        repo.removeByVideoIds(['ccccccccccc', 'eeeeeeeeeee']),
+        1
+      )
+      checkEqual('online: the history keeps the rows that were not named', repo.count(), 1)
+      checkEqual('online: removing a missing video id is harmless', repo.removeByVideoIds(['zzzzzzzzzzz']), 0)
     } finally {
       handle.close()
       await rm(root, { recursive: true, force: true }).catch(() => undefined)
@@ -1374,6 +1412,12 @@ async function main(): Promise<void> {
       const item = repo.findItemByVideo('bbbbbbbbbbb')
       checkEqual('online lists: a video can be found for its first play', item?.artist, 'Christina Perri')
       checkEqual('online lists: the found entry names its album', item?.album, 'head or heart')
+
+      const entryTrack = item ? onlinePlaylistItemToTrack(item, album) : null
+      check(
+        'online lists: an entry is recognised as an imported track',
+        entryTrack !== null && isImportedPlaylistTrackId(entryTrack.id)
+      )
 
       const reimported = repo.upsert(
         {

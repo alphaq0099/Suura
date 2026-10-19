@@ -317,6 +317,80 @@ input[type='radio'] {
   gap: 8px;
 }
 
+/* The imported list that is playing. It is a strip rather than a notice: it has
+   to name the current track and follow the queue as it advances, so the text is
+   two lines and only the tail of the list title is ever clipped. */
+.banner.playing-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  border-color: #2c3d63;
+  background: linear-gradient(90deg, #182238, #141a2a);
+}
+
+.playing-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 0 rgb(77 214 161 / 45%);
+  animation: playing-pulse 1.8s ease-out infinite;
+}
+
+.playing-dot.paused {
+  background: var(--text-faint);
+  animation: none;
+  box-shadow: none;
+}
+
+@keyframes playing-pulse {
+  70% {
+    box-shadow: 0 0 0 7px rgb(77 214 161 / 0%);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(77 214 161 / 0%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .playing-dot {
+    animation: none;
+  }
+}
+
+.playing-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.playing-label {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playing-track {
+  font-size: 13px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playing-count {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
 .scan-line {
   display: flex;
   align-items: center;
@@ -1402,6 +1476,18 @@ input[type='radio'] {
   accent-color: var(--text-dim);
 }
 
+/* The icon is the mute toggle, matching the full-window player; the slider beside
+   it stays the level. The button is trimmed to the icon's own footprint so the
+   cluster does not get wider for the privilege. */
+.player-volume .volume-toggle {
+  padding: 2px;
+  color: inherit;
+}
+
+.player-volume .volume-toggle[aria-pressed='true'] {
+  color: var(--text-faint);
+}
+
 /* Toggle buttons (shuffle, repeat) read as "on" without shouting. */
 .icon-button.toggle-on {
   color: var(--accent);
@@ -2364,9 +2450,28 @@ input[type='radio'] {
   flex-wrap: wrap;
 }
 
+/* Cover beside the title, not above it: the pane is wide and short, and a taller
+   header block would push the first row down for nothing. */
+.playlist-pane-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.playlist-pane-titles {
+  min-width: 0;
+}
+
+.playlist-cover {
+  flex: none;
+  border-radius: 8px;
+}
+
 .playlist-pane-head h2 {
   margin: 0 0 3px;
   font-size: 17px;
+  overflow-wrap: anywhere;
 }
 
 /* ---------- drag to reorder ---------- */

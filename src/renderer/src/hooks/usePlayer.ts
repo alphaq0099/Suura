@@ -181,6 +181,10 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     const previous = currentTrackRef.current
     if (previous && previous.id !== current.id) {
       onReportRef.current(previous.id, Math.round(element.currentTime * 1000), false)
+      // Cut the outgoing track off now. A stream resolve takes seconds, and the
+      // old source stays attached until it answers: without this the previous
+      // song keeps playing over the spinner, so Next looks like it did nothing.
+      element.pause()
     }
     currentTrackRef.current = current
 

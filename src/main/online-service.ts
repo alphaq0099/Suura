@@ -34,13 +34,11 @@ export interface OnlineService {
   /** Records that a link has just been played. */
   touch(videoId: string): void
   /**
-   * Records a play, creating the history row when it does not exist.
+   * Records that an existing history row has been played, lifting it up the list.
    *
-   * Imported tracks deliberately do not fill the history at import time: history
-   * is what was played, and a 200-track import would bury everything else. The
-   * first play is what puts the track in the log, with the album the playlist
-   * gave it. A video with neither a history row nor a playlist entry is left
-   * alone — there is nothing truthful to write.
+   * Never creates a row: the history is the set of links the user added, and a
+   * playlist entry is not one of them. Playing a track from an imported list must
+   * not echo it into the history, where the list already holds it.
    */
   rememberPlay(videoId: string): void
   remove(id: number): void
@@ -98,7 +96,7 @@ const MAX_ARTWORK_DOWNLOADS = 4
  *
  * Playback is not this service's job — it only warms the resolver cache on the
  * way through, so pressing play on the row right after pasting is instant. Saving
- * a row to the library is M4 and will grow next to it.
+ * a row to the library is the download service's job, next to this one.
  */
 export function createOnlineService(deps: {
   resolver: YouTubeResolver
@@ -253,26 +251,11 @@ export function createOnlineService(deps: {
     },
 
     rememberPlay(videoId) {
-      const now = deps.now?.() ?? Date.now()
-      if (!deps.repo.getByVideoId(videoId)) {
-        // The fields come from our own copy of the imported playlist, never from
-        // the renderer: the resolve request only names a video id.
-        const item = deps.playlists.findItemByVideo(videoId)
-        if (!item) return
-        deps.repo.upsert(
-          {
-            videoId,
-            title: item.title,
-            artist: item.artist,
-            album: item.album,
-            durationMs: item.durationMs,
-            sourceUrl: youtubeWatchUrl(videoId),
-            artworkKey: videoArtwork.get(videoId) ?? null
-          },
-          now
-        )
-      }
-      deps.repo.touch(videoId, now)
+      // No row means this was never a link the user added: an imported entry, a
+      // saved copy, or a queue row left over from a list. There is nothing
+      // truthful to write, and writing it would bury the real history.
+      if (!deps.repo.getByVideoId(videoId)) return
+      deps.repo.touch(videoId, deps.now?.() ?? Date.now())
       deps.onChange?.()
     },
 
@@ -344,6 +327,12 @@ export function createOnlineService(deps: {
         })),
         deps.now?.() ?? Date.now()
       )
+
+      // This list is now the home for these tracks. Any history row a play had
+      // already created for one of them is an echo of the same song, so it goes —
+      // importing a list never leaves copies of its entries in the history.
+      const removed = deps.repo.removeByVideoIds(info.entries.map((entry) => entry.videoId))
+      if (removed > 0) deps.log.info('import took echoes out of the history', { listId: link.listId, removed })
 
       deps.onChange?.()
       return { playlist: withCover(stored), items: deps.playlists.items(stored.id) }

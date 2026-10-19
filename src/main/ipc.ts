@@ -1,5 +1,6 @@
 import { BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import { IPC } from '@shared/ipc'
+import { isImportedPlaylistTrackId } from '@shared/online'
 import { clampPlaylistIndexWidth } from '@shared/playlists'
 import type {
   AppSettings,
@@ -361,10 +362,12 @@ export function registerIpcHandlers(container: AppContainer): void {
   ipcMain.handle(IPC.mediaResolve, async (_event, input: unknown) => {
     const request = toResolvableTrack(input)
     if (request.sourceKind === 'youtube') {
-      // Resolving is what "playing" means for a link: it is the first moment the
-      // user's intent is unambiguous, so it is when the history row is lifted —
-      // or created, for a track that only existed inside an imported playlist.
-      if (request.sourceId) container.online.rememberPlay(request.sourceId)
+      // Resolving is what "playing" means for a link, so it is when the history
+      // row is lifted. An imported entry is not a link the user added: it lives
+      // in its list, and playing it must not also push a copy into history.
+      if (request.sourceId && !isImportedPlaylistTrackId(request.id)) {
+        container.online.rememberPlay(request.sourceId)
+      }
       return container.resolvers.resolve(request)
     }
     const track = library.trackById(request.id)

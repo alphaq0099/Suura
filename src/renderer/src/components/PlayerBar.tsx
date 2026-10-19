@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { RepeatMode, Track } from '@shared/types'
 import { buildArtworkUrl } from '@shared/artwork-url'
 import { useArtwork } from '../hooks/useArtwork'
@@ -14,7 +15,8 @@ import {
   RepeatOneIcon,
   ShuffleIcon,
   SpinnerIcon,
-  VolumeIcon
+  VolumeIcon,
+  VolumeMuteIcon
 } from './Icons'
 
 export interface PlayerBarProps {
@@ -68,6 +70,16 @@ export function PlayerBar(props: PlayerBarProps) {
   const artworkKey = useArtwork(current)
   // The volume cluster answers the wheel as well as the slider's own drag.
   const volumeBoxRef = useWheelVolume(volume, onVolume)
+
+  // Mute is not a stored setting: it is only "the volume is zero, remember what
+  // it was", so unmuting restores the level the user actually chose. The icon is
+  // the toggle, matching the full-window player, so a click on it is not a no-op.
+  const lastAudibleRef = useRef(volume > 0 ? volume : 0.8)
+  useEffect(() => {
+    if (volume > 0) lastAudibleRef.current = volume
+  }, [volume])
+  const muted = volume === 0
+  const toggleMute = (): void => onVolume(muted ? lastAudibleRef.current : 0)
 
   return (
     <footer className="player-bar">
@@ -178,7 +190,16 @@ export function PlayerBar(props: PlayerBarProps) {
           <QueueIcon />
           {queueLength > 0 ? <span className="queue-count">{queueLength}</span> : null}
         </button>
-        <VolumeIcon />
+        <button
+          type="button"
+          className="icon-button volume-toggle"
+          onClick={toggleMute}
+          title={muted ? 'Unmute' : 'Mute'}
+          aria-label={muted ? 'Unmute' : 'Mute'}
+          aria-pressed={muted}
+        >
+          {muted ? <VolumeMuteIcon /> : <VolumeIcon />}
+        </button>
         <input
           type="range"
           min={0}

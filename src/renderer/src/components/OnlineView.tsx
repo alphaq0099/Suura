@@ -51,6 +51,18 @@ interface Notice {
   text: string
 }
 
+/**
+ * The imported list that supplied the queue that is playing.
+ *
+ * Kept so the view can say which list is on and name the track it is on right
+ * now: the list itself is not a history row, so nothing else on screen ties the
+ * two together.
+ */
+interface PlayingList {
+  title: string
+  tracks: Track[]
+}
+
 interface MenuState {
   entry: OnlineTrack
   x: number
@@ -101,6 +113,7 @@ export function OnlineView(props: OnlineViewProps) {
   const [offer, setOffer] = useState<ListOffer | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const [menu, setMenu] = useState<MenuState | null>(null)
+  const [playingList, setPlayingList] = useState<PlayingList | null>(null)
 
   const inputRef = useRef<HTMLInputElement | null>(null)
   // Bumped per submit so an answer that arrives after a newer paste is ignored.
@@ -121,6 +134,16 @@ export function OnlineView(props: OnlineViewProps) {
   useEffect(() => {
     void refreshSaved(historyVideoIds)
   }, [historyVideoIds, refreshSaved])
+
+  // The imported list playing right now, matched by video id: the banner holds the
+  // list's own copy of each track while the player holds another, so identity is
+  // the id and never the object.
+  const liveTrack =
+    playingList && currentVideoId
+      ? (playingList.tracks.find((track) => track.sourceId === currentVideoId) ?? null)
+      : null
+  let liveIndex = -1
+  if (playingList && liveTrack) liveIndex = playingList.tracks.indexOf(liveTrack)
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -151,16 +174,19 @@ export function OnlineView(props: OnlineViewProps) {
           setUrl('')
           setOffer(null)
           const tracks = detail.items.map((item) => onlinePlaylistItemToTrack(item, detail.playlist))
-          if (mode === 'play') onPlay(tracks, 0)
-          else onQueue(tracks)
-          const noun =
-            detail.playlist.kind === 'album' ? 'album' : detail.playlist.kind === 'mix' ? 'mix' : 'playlist'
-          setNotice({
-            kind: 'info',
-            text: `${detail.playlist.title} · ${formatCount(tracks.length)} tracks from that ${noun} ${
-              mode === 'play' ? 'are playing' : 'were added to the queue'
-            }.`
-          })
+          if (mode === 'play') {
+            onPlay(tracks, 0)
+            // The banner names the list and follows the track it is on; a static
+            // "are playing" notice went stale the moment the first track ended.
+            setPlayingList({ title: detail.playlist.title, tracks })
+            setNotice(null)
+          } else {
+            onQueue(tracks)
+            setNotice({
+              kind: 'info',
+              text: `${detail.playlist.title} · ${formatCount(tracks.length)} tracks were added to the queue.`
+            })
+          }
         } catch (cause) {
           if (token !== submitTokenRef.current) return
           setPending({ url: linkText, kind: 'list', mode, error: messageOf(cause) })
@@ -184,6 +210,7 @@ export function OnlineView(props: OnlineViewProps) {
           // Play the new row and the rows below it, so Next keeps walking the
           // history instead of dead-ending after one track.
           const rest = entriesRef.current.filter((item) => item.id !== entry.id).map(onlineEntryToTrack)
+          setPlayingList(null)
           onPlay([track, ...rest], 0)
         } else {
           onQueue([track])
@@ -230,6 +257,7 @@ export function OnlineView(props: OnlineViewProps) {
 
   const playAt = (index: number): void => {
     if (index < 0 || index >= entries.length) return
+    setPlayingList(null)
     onPlay(entries.slice(index).map(onlineEntryToTrack), 0)
   }
 
@@ -352,6 +380,28 @@ export function OnlineView(props: OnlineViewProps) {
           </button>
         </div>
       </form>
+
+      {playingList && liveTrack ? (
+        <div className="banner playing-banner">
+          <span className={isPlaying ? 'playing-dot' : 'playing-dot paused'} aria-hidden="true" />
+          <span className="playing-text">
+            <span className="playing-label">
+              {isPlaying ? 'Playing' : 'Paused'} · {playingList.title}
+            </span>
+            <span className="playing-track" title={liveTrack.title}>
+              {liveTrack.title}
+            </span>
+          </span>
+          {liveIndex >= 0 ? (
+            <span className="playing-count">
+              {liveIndex + 1} / {playingList.tracks.length}
+            </span>
+          ) : null}
+          <button type="button" className="link-button" onClick={() => setPlayingList(null)}>
+            Hide
+          </button>
+        </div>
+      ) : null}
 
       {offer ? (
         <div className="banner import-offer">

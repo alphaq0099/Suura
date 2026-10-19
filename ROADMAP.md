@@ -277,7 +277,8 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
       as a panel inside the window, slid in by the button that opened it and dismissed by a press anywhere outside it
 - [x] Visuals settings: artwork square or circular, cropped to a square or given the cover's own shape, and sized from
       small to extra large; ambient player-bar background masked to no hard edge; volume as mute-on-click with the
-      slider revealed on hover, and a wheel over the control nudging it by five percent
+      slider revealed on hover, and a wheel over the control nudging it by five percent; the player bar's own speaker
+      icon is the same kind of toggle
 - [x] Click behaviour setting: single click and double click each choose select / play / select-and-play / nothing
 - [x] Playback: play/pause/next/prev/seek, volume, shuffle, repeat (off/all/one)
 - [x] Queue management (add to queue, jump, remove, clear)
@@ -320,8 +321,9 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
       becomes a row at once (*Resolving…*), then fills in; **Add to queue** / **Play now**, per-row album/artist/duration,
       a right-click menu (Play, Add to queue, Copy link, Remove) and a **Streaming** badge in the player bar. Rows show a
       cached thumbnail, fetched from the video id the first time the row is drawn (and repaired if an earlier pass failed).
-      Saving a row into the library is deferred to M4. The history is links, not files, so it survives a restart and a
-      cache wipe.
+      Saving a row into the library is M4 (done). The history is links, not files, so it survives a restart and a cache
+      wipe, and it holds only links the user added — playing a track out of an imported list never echoes it there, and
+      importing a list withdraws any row a play had already made for one of its entries.
 **Exit:** 50 hand-picked YouTube links play directly, ≥ 90% on first attempt, < 3 s to first audio, and seeking works.
 *Status: the 20-link sample resolves 20/20, and playback with seeking works end-to-end in the app through the Online
 view. The median resolve is 8.8 s and only 20 of the 50 links have been run. The `< 3 s` number needs a resident sidecar

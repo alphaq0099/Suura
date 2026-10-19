@@ -855,6 +855,10 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       volumeWheelTop: number
       volumeWheelBottom: number
       wheelCancelled: boolean
+      barVolumeBefore: number
+      barVolumeMuted: number
+      barMutePressed: string
+      barVolumeRestored: number
       panelClosedByOutsidePress: boolean
       panelStayedOpenOnInsidePress: boolean
       popoverHidden: boolean
@@ -876,7 +880,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     }>(
       window,
       `(async () => {
-         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, volumeBeforeWheel: -1, volumeAfterWheel: -1, volumeWheelTop: -1, volumeWheelBottom: -1, wheelCancelled: false, panelClosedByOutsidePress: false, panelStayedOpenOnInsidePress: false, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false, panelCloseState: '' }
+         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, volumeBeforeWheel: -1, volumeAfterWheel: -1, volumeWheelTop: -1, volumeWheelBottom: -1, wheelCancelled: false, barVolumeBefore: -1, barVolumeMuted: -1, barMutePressed: '', barVolumeRestored: -1, panelClosedByOutsidePress: false, panelStayedOpenOnInsidePress: false, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false, panelCloseState: '' }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (selector) => document.querySelector(selector)
          const press = (element) => { if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
@@ -1157,6 +1161,20 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          pressEscape()
          await sleep(500)
          out.escapeClosedWindow = !dialog()
+
+         // The bar's own speaker icon is a toggle too. It used to be decoration:
+         // clicking it did nothing while the full-window player's icon did the
+         // same job, which is the sort of inconsistency a user reads as a bug.
+         const barSlider = () => document.querySelector('.player-volume input[type="range"]')
+         const barToggle = () => document.querySelector('.player-volume .volume-toggle')
+         out.barVolumeBefore = barSlider() ? Number(barSlider().value) : -1
+         press(barToggle())
+         await sleep(300)
+         out.barVolumeMuted = barSlider() ? Number(barSlider().value) : -1
+         out.barMutePressed = barToggle() ? String(barToggle().getAttribute('aria-pressed')) : ''
+         press(barToggle())
+         await sleep(300)
+         out.barVolumeRestored = barSlider() ? Number(barSlider().value) : -1
          return out
        })()`
     )
@@ -1232,6 +1250,14 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       'Escape shuts the panel without shutting the player window'
     )
     record(visuals.escapeClosedWindow, 'Escape shuts the player window once the panel is shut')
+    record(
+      visuals.barVolumeBefore > 0 &&
+        visuals.barVolumeMuted === 0 &&
+        visuals.barMutePressed === 'true' &&
+        visuals.barVolumeRestored === visuals.barVolumeBefore,
+      'the player bar speaker icon mutes and restores like the full-window player',
+      `${visuals.barVolumeBefore} -> ${visuals.barVolumeMuted} -> ${visuals.barVolumeRestored} (pressed=${visuals.barMutePressed})`
+    )
 
     // ---- 12. artwork size and click behaviour ---------------------------
     // Both preferences only matter for what they change on screen, so both are
@@ -2035,12 +2061,13 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       indexCount: string
       rowsAfterRemove: number
       playedTitle: string
+      hasCover: boolean
       groupEmpty: boolean
       emptyAfterDelete: boolean
     }>(
       window,
       `(async () => {
-         const out = { groupTitles: '', onlineRows: -1, kind: '', paneTitle: '', titles: '', note: '', hasReimport: false, hasClear: false, hasSaveAll: false, rowSaveButtons: 0, rowRevealButtons: 0, indexCount: '', rowsAfterRemove: -1, playedTitle: '', groupEmpty: false, emptyAfterDelete: false }
+         const out = { groupTitles: '', onlineRows: -1, kind: '', paneTitle: '', titles: '', note: '', hasReimport: false, hasClear: false, hasSaveAll: false, rowSaveButtons: 0, rowRevealButtons: 0, indexCount: '', rowsAfterRemove: -1, playedTitle: '', hasCover: false, groupEmpty: false, emptyAfterDelete: false }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (s) => document.querySelector(s)
          const pickAll = (s) => [...document.querySelectorAll(s)]
@@ -2067,6 +2094,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.paneTitle = text(pick('.playlist-pane-head h2')).trim()
          out.titles = pickAll('.track-row .row-title-text').map((el) => text(el)).join(' | ')
          out.note = text(pick('.playlist-note')).trim()
+         out.hasCover = Boolean(pick('.playlist-pane-head .playlist-cover'))
          const buttons = pickAll('.playlist-pane-head button')
          out.hasReimport = buttons.some((el) => text(el).trim().indexOf('Re-import') === 0)
          out.hasClear = buttons.some((el) => text(el).trim().indexOf('Clear') === 0)
@@ -2130,6 +2158,16 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       onlineLists.playedTitle === 'Online Tone Two',
       'playing an imported album queues its remaining tracks, not the history',
       onlineLists.playedTitle
+    )
+    record(
+      onlineLists.hasCover,
+      'the opened list shows a cover beside its title',
+      `cover ${onlineLists.hasCover}`
+    )
+    record(
+      container.onlineRepo.count() === 0,
+      'playing an imported entry does not echo it into the Online history',
+      container.onlineRepo.count()
     )
     record(
       onlineLists.groupEmpty && onlineLists.emptyAfterDelete,

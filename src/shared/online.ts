@@ -48,6 +48,18 @@ export function onlineEntryToTrack(entry: OnlineTrack): Track {
  */
 const PLAYLIST_TRACK_ID_OFFSET = 1_000_000
 
+/**
+ * True for a queue row that came from an imported playlist.
+ *
+ * The main process uses this to tell the two kinds of stream track apart: a
+ * history row is a link the user added, and playing it is activity worth logging;
+ * a playlist entry already lives in its list, so playing it must not also drop a
+ * copy into the history.
+ */
+export function isImportedPlaylistTrackId(id: number): boolean {
+  return id <= -PLAYLIST_TRACK_ID_OFFSET
+}
+
 export function onlinePlaylistItemToTrack(item: OnlinePlaylistItem, playlist: OnlinePlaylist): Track {
   const album = playlist.kind === 'album'
   return {

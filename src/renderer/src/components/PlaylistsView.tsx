@@ -18,6 +18,7 @@ import {
 } from '@shared/playlists'
 import { messageOf } from '../api'
 import type { UseDownloadsResult } from '../hooks/useDownloads'
+import { ArtworkImage } from './ArtworkImage'
 import { TrackList, describeClickAction } from './TrackList'
 import { PlayIcon, PlaylistIcon, PlusIcon, PencilIcon, QueueIcon, RefreshIcon, SpinnerIcon, TrashIcon, DownloadIcon } from './Icons'
 
@@ -364,6 +365,10 @@ export function PlaylistsView(props: PlaylistsViewProps) {
 
   const totalLists = playlists.length + onlinePlaylists.length
 
+  // The opened list's cover: an album's own sleeve when it has one, otherwise the
+  // first track's picture, which is the best cover a hand-made list or a mix has.
+  const headerTrack = tracks[0] ?? null
+
   const selectionBar =
     selectedIds.size > 0 ? (
       <div className="banner selection-bar">
@@ -633,12 +638,21 @@ export function PlaylistsView(props: PlaylistsViewProps) {
           {showingOnline && onlineDetail ? (
             <>
               <div className="playlist-pane-head">
-                <div>
-                  <h2>{onlineDetail.playlist.title}</h2>
-                  <p className="subtitle">
-                    {subtitle}
-                    {onlineDetail.playlist.owner ? ` · ${onlineDetail.playlist.owner}` : ''}
-                  </p>
+                <div className="playlist-pane-heading">
+                  <ArtworkImage
+                    track={headerTrack}
+                    artworkKey={onlineDetail.playlist.coverKey ?? undefined}
+                    size={64}
+                    iconSize={24}
+                    className="playlist-cover"
+                  />
+                  <div className="playlist-pane-titles">
+                    <h2>{onlineDetail.playlist.title}</h2>
+                    <p className="subtitle">
+                      {subtitle}
+                      {onlineDetail.playlist.owner ? ` · ${onlineDetail.playlist.owner}` : ''}
+                    </p>
+                  </div>
                 </div>
                 <div className="header-actions">
                   <button type="button" onClick={() => onPlay(tracks, 0)} disabled={tracks.length === 0}>
@@ -772,9 +786,12 @@ export function PlaylistsView(props: PlaylistsViewProps) {
           ) : (
             <>
               <div className="playlist-pane-head">
-                <div>
-                  <h2>{detail.playlist.name}</h2>
-                  <p className="subtitle">{subtitle}</p>
+                <div className="playlist-pane-heading">
+                  <ArtworkImage track={headerTrack} size={64} iconSize={24} className="playlist-cover" />
+                  <div className="playlist-pane-titles">
+                    <h2>{detail.playlist.name}</h2>
+                    <p className="subtitle">{subtitle}</p>
+                  </div>
                 </div>
                 <div className="header-actions">
                   <button type="button" onClick={() => onPlay(tracks, 0)} disabled={tracks.length === 0}>

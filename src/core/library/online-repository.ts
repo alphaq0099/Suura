@@ -149,6 +149,24 @@ export class OnlineRepository {
     this.db.prepare('DELETE FROM online_tracks WHERE id = ?').run(id)
   }
 
+  /**
+   * Forgets the history row for each of these videos, if it has one.
+   *
+   * History is for links the user added. An imported list is its own home for its
+   * entries, so importing it takes back any row a play had already made — without
+   * touching the list, which is where those tracks still live.
+   */
+  removeByVideoIds(videoIds: readonly string[]): number {
+    const unique = [...new Set(videoIds)].filter((id) => id.length > 0)
+    let removed = 0
+    for (let at = 0; at < unique.length; at += 400) {
+      const batch = unique.slice(at, at + 400)
+      const placeholders = batch.map(() => '?').join(', ')
+      removed += this.db.prepare(`DELETE FROM online_tracks WHERE video_id IN (${placeholders})`).run(...batch).changes
+    }
+    return removed
+  }
+
   clear(): number {
     return this.db.prepare('DELETE FROM online_tracks').run().changes
   }
