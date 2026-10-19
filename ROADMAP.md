@@ -255,12 +255,16 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
 
 ### M0 — Foundations & Decisions  *(~1 week)*
 **Goal:** every irreversible choice is made and written down.
-- [ ] Choose the stack (§3) and record it in an ADR (Architecture Decision Record)
-- [ ] Decide the player engine and the primary streaming approach (A/B/C above)
-- [ ] Wireframe the 6 core screens: Library, Now Playing, Queue, Search, Downloads, Settings
-- [ ] Write the `IMediaResolver` interface and the IPC event schema (as a spec, not code)
-- [ ] Verify yt-dlp + ffmpeg work as sidecars on a clean Windows machine; measure resolve latency and success rate on 20 representative videos
-- [ ] Legal/ToS note drafted (§10)
+- [x] Choose the stack (§3) and record it in an ADR (Architecture Decision Record)
+- [x] Decide the player engine and the primary streaming approach (A/B/C above)
+- [ ] Wireframe the 6 core screens: Library, Now Playing, Queue, Search, Downloads, Settings — five are built; Downloads
+      arrives with M4
+- [x] Write the `IMediaResolver` interface and the IPC event schema (as a spec, not code) — built, not just specified:
+      `src/engine/resolver.ts` and `src/shared/ipc.ts`
+- [ ] Verify yt-dlp + ffmpeg work as sidecars on a clean Windows machine; measure resolve latency and success rate on 20
+      representative videos — presence is checked by `npm run smoke`, and the first timings are in
+      [`docs/notes/yt-dlp-spike.md`](./docs/notes/yt-dlp-spike.md); the 20-video sample is still open
+- [x] Legal/ToS note drafted (§10) — in the README under **Scope and legal**
 **Exit:** a one-page architecture doc + stack ADR + working sidecar smoke test.
 
 ### M1 — Local Library MVP  *(~2–3 weeks)*

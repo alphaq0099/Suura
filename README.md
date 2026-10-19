@@ -7,7 +7,7 @@ The full plan lives in [`ROADMAP.md`](./ROADMAP.md). This README covers what is 
 
 ---
 
-## Status: M1 in progress — a usable local music player
+## Status: M1 complete — a usable local music player
 
 Working today:
 
@@ -49,6 +49,23 @@ Working today:
 
 Not built yet (deliberately): gapless playback, SMTC / tray icon, the yt-dlp resolver, caching, downloads, packaging,
 playlist import/export and smart playlists.
+
+---
+
+## Scope and legal
+
+This is a music player, not a media downloader. The streaming phase is shaped to keep that true:
+
+- **Streaming is the default; downloading is opt-in.** The retention setting defaults to stream-only, and nothing is
+  kept on disk unless the user chooses it. (The setting is stored today; the download path itself arrives in M4.)
+- **There is no catalogue browser**, and no search against YouTube. A track is something the user brings: a local file,
+  and later a link of their own.
+- **`yt-dlp` is a sidecar, not the product.** It is named where it is configured, keeps its own licence and version, and
+  the app does not bundle or fetch anything that circumvents DRM or paywalls.
+- **The user carries the responsibility.** Downloading with `yt-dlp` can violate YouTube's Terms of Service and
+  copyright law where the user lives. The app ships no media, and the download path is off by default.
+
+Playing local files the user already owns is unaffected by any of this.
 
 ---
 
@@ -389,6 +406,8 @@ docs/adr/               architecture decision records
 
 ## Next steps
 
-1. Finish M1: a 10 000-track timing check (time to first audio under 300 ms).
-2. The yt-dlp engine spike from ROADMAP.md §13, which is unblocked: `npm run smoke` already shows both binaries found.
-3. Then M3 (streaming resolver), M4 (retention: cache / keep).
+1. The yt-dlp engine spike from ROADMAP.md §13: [`docs/notes/yt-dlp-spike.md`](./docs/notes/yt-dlp-spike.md) has the
+   first measurements (startup ~2 s, audio-only resolve 7–11 s, stream URL works with ranges), and the reasons the 3 s
+   target needs either a prefetch or a revised number.
+2. Then M3 (streaming resolver), M4 (retention: cache / keep).
+3. M0 leftovers: the Downloads wireframe (it arrives with M4) and the 20-video success-rate sample.
