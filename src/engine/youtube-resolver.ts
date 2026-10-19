@@ -100,6 +100,20 @@ export class YouTubeResolver implements MediaResolver {
     return { track: draftOf(info), source: this.sourceFor(info) }
   }
 
+  /**
+   * Resolves the video now without registering a proxy token.
+   *
+   * The 7-10 s sidecar run is the whole wait between two queued tracks; doing it
+   * while the current one plays means pressing Next (or hitting the end) only pays
+   * for the CDN round trip. No token is registered because nothing is playing yet:
+   * `resolve` registers one when the track is actually reached, and it will find
+   * this info already in the cache.
+   */
+  async prefetch(track: ResolvableTrack): Promise<void> {
+    if (!track.sourceId) return
+    await this.infoFor(track.sourceId)
+  }
+
   private sourceFor(info: YtMediaInfo): ResolvedSource {
     const token = this.proxy.register(info.videoId, upstreamOf(info))
     return {

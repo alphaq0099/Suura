@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import type { DownloadProgress, OnlinePlaylistDetail, OnlineTrack, Track } from '@shared/types'
 import { formatCount, formatDuration } from '@shared/format'
 import { onlineEntryToTrack, onlinePlaylistItemToTrack } from '@shared/online'
+import type { PlayingList } from '@shared/online'
 import { describeYouTubeRefusal, parseYouTubeLink, youtubeListUrl } from '@shared/youtube'
 import { api, messageOf } from '../api'
 import type { UseDownloadsResult } from '../hooks/useDownloads'
@@ -27,6 +28,12 @@ export interface OnlineViewProps {
   /** The video id that is playing, when the current track is a stream. */
   currentVideoId: string | null
   isPlaying: boolean
+  /**
+   * The imported list whose tracks are playing, held by the app so this strip is
+   * still here after a trip to another view and back.
+   */
+  playingList: PlayingList | null
+  onPlayingListChange: (list: PlayingList | null) => void
   onAddLink: (url: string) => Promise<OnlineTrack>
   /** Fetches and stores a playlist, album or mix. */
   onImportList: (url: string) => Promise<OnlinePlaylistDetail>
@@ -49,18 +56,6 @@ interface Pending {
 interface Notice {
   kind: 'info' | 'error'
   text: string
-}
-
-/**
- * The imported list that supplied the queue that is playing.
- *
- * Kept so the view can say which list is on and name the track it is on right
- * now: the list itself is not a history row, so nothing else on screen ties the
- * two together.
- */
-interface PlayingList {
-  title: string
-  tracks: Track[]
 }
 
 interface MenuState {
@@ -97,6 +92,8 @@ export function OnlineView(props: OnlineViewProps) {
     historyError,
     currentVideoId,
     isPlaying,
+    playingList,
+    onPlayingListChange,
     onAddLink,
     onImportList,
     onRemove,
@@ -113,7 +110,6 @@ export function OnlineView(props: OnlineViewProps) {
   const [offer, setOffer] = useState<ListOffer | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const [menu, setMenu] = useState<MenuState | null>(null)
-  const [playingList, setPlayingList] = useState<PlayingList | null>(null)
 
   const inputRef = useRef<HTMLInputElement | null>(null)
   // Bumped per submit so an answer that arrives after a newer paste is ignored.
@@ -178,7 +174,7 @@ export function OnlineView(props: OnlineViewProps) {
             onPlay(tracks, 0)
             // The banner names the list and follows the track it is on; a static
             // "are playing" notice went stale the moment the first track ended.
-            setPlayingList({ title: detail.playlist.title, tracks })
+            onPlayingListChange({ title: detail.playlist.title, tracks })
             setNotice(null)
           } else {
             onQueue(tracks)
@@ -210,7 +206,7 @@ export function OnlineView(props: OnlineViewProps) {
           // Play the new row and the rows below it, so Next keeps walking the
           // history instead of dead-ending after one track.
           const rest = entriesRef.current.filter((item) => item.id !== entry.id).map(onlineEntryToTrack)
-          setPlayingList(null)
+          onPlayingListChange(null)
           onPlay([track, ...rest], 0)
         } else {
           onQueue([track])
@@ -223,7 +219,7 @@ export function OnlineView(props: OnlineViewProps) {
         if (token === submitTokenRef.current) setBusy(false)
       }
     },
-    [onAddLink, onImportList, onPlay, onQueue]
+    [onAddLink, onImportList, onPlay, onQueue, onPlayingListChange]
   )
 
   const submit = (event: FormEvent): void => {
@@ -257,7 +253,7 @@ export function OnlineView(props: OnlineViewProps) {
 
   const playAt = (index: number): void => {
     if (index < 0 || index >= entries.length) return
-    setPlayingList(null)
+    onPlayingListChange(null)
     onPlay(entries.slice(index).map(onlineEntryToTrack), 0)
   }
 
@@ -397,7 +393,7 @@ export function OnlineView(props: OnlineViewProps) {
               {liveIndex + 1} / {playingList.tracks.length}
             </span>
           ) : null}
-          <button type="button" className="link-button" onClick={() => setPlayingList(null)}>
+          <button type="button" className="link-button" onClick={() => onPlayingListChange(null)}>
             Hide
           </button>
         </div>

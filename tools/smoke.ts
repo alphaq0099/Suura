@@ -36,6 +36,7 @@ import { getEngineStatus } from '@engine/sidecar/engine-status'
 import type { YtInfoProvider, YtMediaInfo } from '@engine/sidecar/yt-dlp'
 import { buildInfoArgs, buildPlaylistArgs, buildDownloadArgs, parsePlaylist } from '@engine/sidecar/yt-dlp'
 import { RemoteStreamProxy, type UpstreamMedia } from '@engine/stream-proxy'
+import { ResolverRegistry } from '@engine/resolver'
 import { YouTubeResolver } from '@engine/youtube-resolver'
 import { PLAYLIST_INDEX_MAX, PLAYLIST_INDEX_MIN, clampPlaylistIndexWidth } from '@shared/playlists'
 import { parseMediaUrl } from '@shared/media-url'
@@ -1233,6 +1234,16 @@ async function main(): Promise<void> {
       await resolver.resolve({ id: -1, sourceKind: 'youtube', sourceId: 'dQw4w9WgXcQ', filePath: null })
       checkEqual('youtube: an expired URL is resolved again', infoCalls, 2)
 
+      // A prefetch is the next track's resolve, run while the current one plays.
+      // It has to warm exactly the cache playback reads, so the play that follows
+      // costs an IPC round trip and no sidecar.
+      clock = Date.now()
+      const beforePrefetch = infoCalls
+      await resolver.prefetch({ id: -2, sourceKind: 'youtube', sourceId: 'aaaaaaaaaaa', filePath: null })
+      checkEqual('youtube: prefetching the next track warms the cache', infoCalls, beforePrefetch + 1)
+      await resolver.resolve({ id: -2, sourceKind: 'youtube', sourceId: 'aaaaaaaaaaa', filePath: null })
+      checkEqual('youtube: a prefetched track needs no second sidecar', infoCalls, beforePrefetch + 1)
+
       let rejected = false
       try {
         await resolver.resolveLink('https://example.com/watch?v=dQw4w9WgXcQ')
@@ -1243,6 +1254,63 @@ async function main(): Promise<void> {
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()))
     }
+  }
+
+  // --- the resolver registry ----------------------------------------------
+  // Prefetch is optional on a resolver and best-effort at the registry, so an
+  // unclaimed track, a resolver that cannot warm anything, and a warm-up that
+  // throws must all be quiet no-ops rather than errors.
+  {
+    const registry = new ResolverRegistry()
+    let warmed = 0
+    let resolved = 0
+    registry.register({
+      id: 'has-prefetch',
+      capabilities: { streaming: true, search: false, download: false },
+      canResolve: (track) => track.sourceKind === 'youtube',
+      resolve: async () => {
+        resolved += 1
+        throw new Error('the registry test never resolves')
+      },
+      prefetch: async () => {
+        warmed += 1
+      }
+    })
+    registry.register({
+      id: 'no-prefetch',
+      capabilities: { streaming: true, search: false, download: false },
+      canResolve: (track) => track.sourceKind === 'local',
+      resolve: async () => {
+        resolved += 1
+        throw new Error('the registry test never resolves')
+      }
+    })
+
+    await registry.prefetch({ id: -3, sourceKind: 'youtube', sourceId: 'dQw4w9WgXcQ', filePath: null })
+    checkEqual('resolvers: a prefetch reaches the resolver that claims the track', warmed, 1)
+    await registry.prefetch({ id: 1, sourceKind: 'local', sourceId: null, filePath: 'C:\\music\\a.flac' })
+    checkEqual('resolvers: a resolver without a prefetch is simply skipped', warmed, 1)
+    checkEqual('resolvers: a prefetch is a warm-up, not a resolve', resolved, 0)
+
+    const failing = new ResolverRegistry()
+    failing.register({
+      id: 'failing-prefetch',
+      capabilities: { streaming: true, search: false, download: false },
+      canResolve: () => true,
+      resolve: async () => {
+        throw new Error('the registry test never resolves')
+      },
+      prefetch: async () => {
+        throw new Error('the sidecar is not installed')
+      }
+    })
+    let threw = false
+    try {
+      await failing.prefetch({ id: -5, sourceKind: 'youtube', sourceId: 'dQw4w9WgXcQ', filePath: null })
+    } catch {
+      threw = true
+    }
+    check('resolvers: a failed prefetch never reaches the caller', !threw)
   }
 
   // --- the online history -------------------------------------------------

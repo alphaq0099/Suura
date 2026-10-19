@@ -317,17 +317,26 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
 - [x] Error taxonomy & user-facing messages (expired URL, bot check, geo-block, unavailable, network)
 - [x] Re-resolve on failure/expiry, transparent to the player
 - [x] Resolve-result metadata cache (avoid re-resolving the same video within a session)
+- [x] Next-track prefetch: four seconds into a stream the player asks the main process to resolve the entry it will
+      play next (`media:prefetch` → `ResolverRegistry.prefetch` → `YouTubeResolver.prefetch`), filling the cache the
+      play will read without registering a token, recording history or failing the caller. A video id is asked for once
+      per session and the timer dies with the track, so skimming a queue does not spawn a sidecar per row. Only the
+      resolve is brought forward; the bytes are still streamed on demand.
 - [x] Paste surface: a dedicated **Online** view (sidebar, under Library) with a persistent link history — a pasted link
       becomes a row at once (*Resolving…*), then fills in; **Add to queue** / **Play now**, per-row album/artist/duration,
       a right-click menu (Play, Add to queue, Copy link, Remove) and a **Streaming** badge in the player bar. Rows show a
       cached thumbnail, fetched from the video id the first time the row is drawn (and repaired if an earlier pass failed).
       Saving a row into the library is M4 (done). The history is links, not files, so it survives a restart and a cache
       wipe, and it holds only links the user added — playing a track out of an imported list never echoes it there, and
-      importing a list withdraws any row a play had already made for one of its entries.
+      importing a list withdraws any row a play had already made for one of its entries. After an import & play, a strip
+      names the list and the track it is on; it is held by the app, not by the view, so visiting another view and coming
+      back keeps it, and playing an imported list from the Playlists window lights it up as well.
 **Exit:** 50 hand-picked YouTube links play directly, ≥ 90% on first attempt, < 3 s to first audio, and seeking works.
 *Status: the 20-link sample resolves 20/20, and playback with seeking works end-to-end in the app through the Online
-view. The median resolve is 8.8 s and only 20 of the 50 links have been run. The `< 3 s` number needs a resident sidecar
-or a prefetch-based definition; see [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-dlp-sample.md).*
+view. The median resolve is 8.8 s and only 20 of the 50 links have been run. A queued mix no longer pays that cost
+between tracks — the next entry is resolved while the current one plays — so a transition only waits for the CDN's
+first bytes; the first play of a session still pays the sidecar run. The `< 3 s` number needs a resident sidecar or a
+prefetch-based definition; see [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-dlp-sample.md).*
 
 ### M4 — Retention: Cache & Download  *(~3 weeks)*
 **Goal:** the "keep it or not" requirement, fully realised.

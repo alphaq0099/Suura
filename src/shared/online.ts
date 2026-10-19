@@ -60,6 +60,19 @@ export function isImportedPlaylistTrackId(id: number): boolean {
   return id <= -PLAYLIST_TRACK_ID_OFFSET
 }
 
+/**
+ * The imported list whose tracks are the queue that is playing.
+ *
+ * Held by the app rather than the view that started it, so the strip naming the
+ * list — and the track it is on — survives a trip to another view and back. The
+ * tracks are a snapshot, not a live read: the list can be deleted while its queue
+ * is still playing.
+ */
+export interface PlayingList {
+  title: string
+  tracks: Track[]
+}
+
 export function onlinePlaylistItemToTrack(item: OnlinePlaylistItem, playlist: OnlinePlaylist): Track {
   const album = playlist.kind === 'album'
   return {

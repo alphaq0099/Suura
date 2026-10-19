@@ -10,6 +10,7 @@ import type {
 } from '@shared/types'
 import { formatCount, formatDuration } from '@shared/format'
 import { onlinePlaylistItemToTrack } from '@shared/online'
+import type { PlayingList } from '@shared/online'
 import {
   DEFAULT_PLAYLIST_INDEX_WIDTH,
   PLAYLIST_INDEX_MAX,
@@ -56,6 +57,11 @@ export interface PlaylistsViewProps {
   onPlay: (tracks: Track[], index: number) => void
   /** Appends these tracks to the queue without replacing it. */
   onQueue: (tracks: Track[]) => void
+  /**
+   * Records which imported list is playing, so the Online view can name it even
+   * after the user has been elsewhere. `null` means what is playing is not a list.
+   */
+  onPlayingListChange: (list: PlayingList | null) => void
   onReveal: (trackId: number) => void
   /** Saving imported entries into the library, shared with the Online view. */
   downloads: UseDownloadsResult
@@ -113,6 +119,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
     onRemoveOnlineItem,
     onPlay,
     onQueue,
+    onPlayingListChange,
     onReveal,
     downloads
   } = props
@@ -330,12 +337,26 @@ export function PlaylistsView(props: PlaylistsViewProps) {
     setSelectedIds(new Set<number>())
   }, [entryIdFor, onlineEntryIdFor, onRemoveItems, onRemoveOnlineItem, selectedIds, showingOnline, tracks])
 
+  /**
+   * Plays a set of tracks and says where they came from.
+   *
+   * A track list does not carry the list it was read from, so an imported pane has
+   * to hand its title over here; a hand-made playlist passes `null` and clears it.
+   */
+  const playList = useCallback(
+    (queue: Track[], index: number, list: PlayingList | null): void => {
+      onPlayingListChange(list)
+      onPlay(queue, index)
+    },
+    [onPlay, onPlayingListChange]
+  )
+
   const playSelected = useCallback((): void => {
     const index = tracks.findIndex((track) => selectedIds.has(track.id))
     if (index < 0) return
     const chosen = tracks.filter((track) => selectedIds.has(track.id))
-    onPlay(chosen, 0)
-  }, [onPlay, selectedIds, tracks])
+    playList(chosen, 0, showingOnline && onlineDetail ? { title: onlineDetail.playlist.title, tracks } : null)
+  }, [playList, onlineDetail, selectedIds, showingOnline, tracks])
 
   const reimport = useCallback(async (): Promise<void> => {
     if (!onlineDetail) return
@@ -655,7 +676,13 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                   </div>
                 </div>
                 <div className="header-actions">
-                  <button type="button" onClick={() => onPlay(tracks, 0)} disabled={tracks.length === 0}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      playList(tracks, 0, { title: onlineDetail.playlist.title, tracks })
+                    }
+                    disabled={tracks.length === 0}
+                  >
                     <PlayIcon size={14} />
                     <span>Play</span>
                   </button>
@@ -730,7 +757,9 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                   selectedIds={selectedIds}
                   loadingMore={loading}
                   onToggleSort={() => undefined}
-                  onActivate={(index) => onPlay(tracks, index)}
+                  onActivate={(index) =>
+                    playList(tracks, index, { title: onlineDetail.playlist.title, tracks })
+                  }
                   onSelect={(trackId, mode) =>
                     setSelectedIds((previous) => {
                       if (mode === 'replace') return new Set([trackId])
@@ -794,7 +823,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                   </div>
                 </div>
                 <div className="header-actions">
-                  <button type="button" onClick={() => onPlay(tracks, 0)} disabled={tracks.length === 0}>
+                  <button type="button" onClick={() => playList(tracks, 0, null)} disabled={tracks.length === 0}>
                     <PlayIcon size={14} />
                     <span>Play</span>
                   </button>
@@ -839,7 +868,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                   selectedIds={selectedIds}
                   loadingMore={loading}
                   onToggleSort={() => undefined}
-                  onActivate={(index) => onPlay(tracks, index)}
+                  onActivate={(index) => playList(tracks, index, null)}
                   onSelect={(trackId, mode) =>
                     setSelectedIds((previous) => {
                       if (mode === 'replace') return new Set([trackId])

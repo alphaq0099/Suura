@@ -68,7 +68,10 @@ Every one:
    extraction and network. A resident sidecar would help, but on its own it would not reach the M3 exit target of
    “< 3 s to first audio”.
 4. **Prefetch is the useful lever.** The app resolves when the link is pasted, so pressing Play is a cache hit. In the
-   app probe below, the second resolve took **1 ms**.
+   app probe below, the second resolve took **1 ms**. The player now uses the same lever for queueing: four seconds into
+   a stream it resolves the next entry in the background, so the 7–10 s lands inside the song the user is already
+   listening to and the transition costs only the CDN round trip. It does not rescue the *first* play of a session, which
+   still starts the sidecar from cold.
 5. **The 8.8 s is wall-clock from paste.** If M3's exit criterion is read literally, it needs either a resident worker
    with much of the extraction pre-warmed, or a revised definition measured from “Play” rather than from “paste”. That
    decision belongs with the 50-link run, not with this sample.

@@ -64,6 +64,7 @@ export const IPC = {
   playbackSave: 'playback:save',
   playbackClear: 'playback:clear',
   mediaResolve: 'media:resolve',
+  mediaPrefetch: 'media:prefetch',
   onlineList: 'online:list',
   onlineAddLink: 'online:add-link',
   onlineRemove: 'online:remove',
@@ -178,6 +179,14 @@ export interface PlayerApi {
   /** Forgets the saved queue, so the next start is empty. */
   clearPlayback(): void
   resolveSource(track: ResolvableTrack): Promise<ResolvedSource>
+  /**
+   * Warms the resolver for a track that will probably play next.
+   *
+   * Fire-and-forget: it is a guess about the queue, so the caller does not care
+   * whether it succeeds, and resolving early is the difference between a next
+   * track that starts at once and one that waits for a sidecar run.
+   */
+  prefetchSource(track: ResolvableTrack): Promise<void>
   /** Every remembered link, newest activity first. */
   listOnline(): Promise<OnlineTrack[]>
   /**

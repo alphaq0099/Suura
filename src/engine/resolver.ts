@@ -28,6 +28,15 @@ export interface MediaResolver {
   readonly capabilities: ResolverCapabilities
   canResolve(track: ResolvableTrack): boolean
   resolve(track: ResolvableTrack): Promise<ResolvedSource>
+  /**
+   * Does the expensive part of `resolve` now so a later one is cheap.
+   *
+   * Optional: a resolver whose resolve is instant (a local file) has nothing to
+   * warm, and one that cannot know the next track's URL ahead of time simply
+   * leaves this out. Anything it does must be invisible — it is a guess, not a
+   * play, so it never fails the caller and never records activity.
+   */
+  prefetch?(track: ResolvableTrack): Promise<void>
 }
 
 export class ResolverRegistry {
@@ -57,5 +66,27 @@ export class ResolverRegistry {
     const source = await resolver.resolve(track)
     this.onWarn('resolved track', { trackId: track.id, resolver: resolver.id, durationMs: Date.now() - started })
     return source
+  }
+
+  /**
+   * Warms the cache for a track that is likely to play next.
+   *
+   * Best-effort by design: a prefetch is a guess, so an unclaimed track, a
+   * resolver without a prefetch and a failed warm-up are all simply nothing.
+   */
+  async prefetch(track: ResolvableTrack): Promise<void> {
+    const resolver = this.forTrack(track)
+    if (!resolver?.prefetch) return
+    const started = Date.now()
+    try {
+      await resolver.prefetch(track)
+      this.onWarn('prefetched track', {
+        trackId: track.id,
+        resolver: resolver.id,
+        durationMs: Date.now() - started
+      })
+    } catch (error) {
+      this.onWarn('prefetch failed', { trackId: track.id, resolver: resolver.id, error })
+    }
   }
 }

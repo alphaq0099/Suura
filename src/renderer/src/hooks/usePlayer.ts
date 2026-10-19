@@ -6,6 +6,14 @@ import { api, messageOf } from '../api'
 /** Replaying within this many seconds goes to the previous track instead. */
 const RESTART_THRESHOLD_S = 3
 
+/**
+ * How long a stream plays before the next track's resolve starts in the background.
+ *
+ * Late enough that skimming a queue does not spawn a sidecar per skipped track,
+ * early enough that a listener who settles in gets the whole warm-up for free.
+ */
+const PREFETCH_DELAY_MS = 4000
+
 export interface UsePlayerOptions {
   initialVolume: number
   /** From settings; changing it re-orders the live queue without interrupting playback. */
@@ -130,6 +138,8 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
    * render in between needs to see it.
    */
   const resumeRef = useRef<number | null>(null)
+  /** Video ids already warmed this session, so a re-render never re-asks. */
+  const prefetchedRef = useRef(new Set<string>())
 
   useEffect(() => {
     onReportRef.current = onReport
@@ -317,6 +327,39 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     element.addEventListener('ended', handleEnded)
     return () => element.removeEventListener('ended', handleEnded)
   }, [audio, advance])
+
+  // Resolve the next stream while this one plays.
+  //
+  // The sidecar run is 7-10 s and it is the entire wait between two queued tracks;
+  // the audio itself, once the URL exists, starts in well under a second. Doing the
+  // resolve early moves that cost into a song the user is already listening to, so
+  // Next is a buffer, not a download. It is deliberately late (a few seconds in)
+  // and dropped on every track change: a user who is skipping through a playlist is
+  // not going to reach any of these tracks, and each warm-up costs a subprocess.
+  // The current track may be a local file with a stream behind it, so the guard is
+  // on the *next* entry rather than on what is playing now.
+  useEffect(() => {
+    if (!current || !isPlaying) return
+    const timer = setTimeout(() => {
+      const decision = nextDecision(indexRef.current, entriesRef.current.length, repeatRef.current, false)
+      if (decision.kind !== 'play') return
+      const upcoming = entriesRef.current[decision.position]
+      if (!upcoming || upcoming.sourceKind !== 'youtube' || !upcoming.sourceId) return
+      if (prefetchedRef.current.has(upcoming.sourceId)) return
+      // Recorded before the call: a failure is not worth retrying on the next
+      // render, and asking twice for the same video would spawn two sidecars.
+      prefetchedRef.current.add(upcoming.sourceId)
+      void api
+        .prefetchSource({
+          id: upcoming.id,
+          sourceKind: upcoming.sourceKind,
+          sourceId: upcoming.sourceId,
+          filePath: upcoming.filePath
+        })
+        .catch(() => undefined)
+    }, PREFETCH_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [current, isPlaying])
 
   // Shuffle is a setting, so it can change while something is playing. Rebuild
   // the order around the current track instead of restarting playback.

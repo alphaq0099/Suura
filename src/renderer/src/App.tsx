@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AppPaths, AppSettings, DeepPartial, EngineStatus } from '@shared/types'
+import type { PlayingList } from '@shared/online'
 import { api, messageOf } from './api'
 import { LibraryView } from './components/LibraryView'
 import { NowPlayingView } from './components/NowPlayingView'
@@ -34,6 +35,14 @@ export function App() {
   const [engineStatus, setEngineStatus] = useState<EngineStatus | null>(null)
   const [engineLoading, setEngineLoading] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  /**
+   * The imported list whose tracks are playing, if any.
+   *
+   * It lives here rather than in the Online view because that view unmounts on a
+   * view switch: a strip that vanished the moment the user looked at Playlists
+   * would not be an indicator of anything.
+   */
+  const [playingList, setPlayingList] = useState<PlayingList | null>(null)
 
   const { settings, error: settingsError, update, reload } = useSettings()
   const library = useLibrary()
@@ -372,6 +381,8 @@ export function App() {
           historyError={online.error}
           currentVideoId={player.current?.sourceKind === 'youtube' ? (player.current.sourceId ?? null) : null}
           isPlaying={player.isPlaying}
+          playingList={playingList}
+          onPlayingListChange={setPlayingList}
           onAddLink={online.addLink}
           onImportList={online.importList}
           onRemove={online.remove}
@@ -409,6 +420,7 @@ export function App() {
           onRemoveOnlineItem={playlists.removeOnlineItem}
           onPlay={(queue, index) => player.playQueue(queue, index)}
           onQueue={player.enqueue}
+          onPlayingListChange={setPlayingList}
           onReveal={(trackId) => void revealTrack(trackId)}
           downloads={downloads}
         />

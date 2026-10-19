@@ -77,6 +77,8 @@ const api: PlayerApi = {
 
   resolveSource: (track) => ipcRenderer.invoke(IPC.mediaResolve, track),
 
+  prefetchSource: (track) => ipcRenderer.invoke(IPC.mediaPrefetch, track) as Promise<void>,
+
   listOnline: () => ipcRenderer.invoke(IPC.onlineList),
 
   addOnlineLink: (url: string) => ipcRenderer.invoke(IPC.onlineAddLink, url),

@@ -375,6 +375,14 @@ export function registerIpcHandlers(container: AppContainer): void {
     return container.resolvers.resolve(track)
   })
 
+  // The next track's resolve, run while the current one plays. Deliberately not
+  // `mediaResolve`: a guess about the queue is not a play, so it must not lift a
+  // history row or fail the caller when it does not work out.
+  ipcMain.handle(IPC.mediaPrefetch, async (_event, input: unknown) => {
+    const request = toResolvableTrack(input)
+    await container.resolvers.prefetch(request)
+  })
+
   // ---- online history --------------------------------------------------
   // A pasted link becomes a row before it is ever played or saved. Resolving it
   // here is deliberate: the answer warms the cache playback will read, so the

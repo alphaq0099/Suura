@@ -1499,8 +1499,12 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     // left with ~670px once the sidebar and the index have taken their share.
     // That is the width where the fixed columns used to eat the title column
     // whole (a 1180px window on a 125%-scaled display looks exactly like this).
+    // A display that cannot give us 1040 CSS pixels (1024 DIP at 150% here) clamps
+    // the window, and the layout then stacks by design; the splitter checks below
+    // assert that collapse instead of a drag that cannot happen.
     window.setSize(1200, 780)
     await delay(400)
+    const widthBeforeSplitter = container.settings.get().playlists.indexWidth
     const lists = await evaluate<{
       emptyState: boolean
       created: boolean
@@ -1524,6 +1528,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       indexBefore: number
       indexDragged: number
       indexKeyboardDelta: number
+      layoutWidth: number
+      viewportWidth: number
+      twoPanes: boolean
+      splitterHidden: boolean
+      indexFullWidth: boolean
       viewOverflow: number
       listOverflow: number
       actionsInside: boolean
@@ -1671,12 +1680,25 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.headerOverflow = headCells.some((el) => el.scrollWidth > el.clientWidth + 1)
          out.formatVisible = Boolean(pick('.playlist-pane .col-format'))
 
-         // --- the index is resizable: a pointer drag, then two arrow keys
+         // --- the index is resizable: a pointer drag, then two arrow keys.
+         // Below 1040 CSS pixels the layout stacks and the splitter is display:none
+         // (styles.css), so there is no two-column width to drag. Assert the
+         // collapse instead: a drag that cannot happen is not a failure.
          const splitter = pick('.playlist-splitter')
+         const layoutPane = pick('.playlists-layout')
          const indexPane = pick('.playlist-index')
+         out.layoutWidth = layoutPane ? Math.round(layoutPane.getBoundingClientRect().width) : -1
+         out.viewportWidth = window.innerWidth
+         out.twoPanes = out.viewportWidth >= 1040
+         out.splitterHidden = Boolean(splitter) && getComputedStyle(splitter).display === 'none'
+         out.indexFullWidth =
+           Boolean(indexPane) &&
+           Boolean(layoutPane) &&
+           Math.abs(indexPane.getBoundingClientRect().width - layoutPane.getBoundingClientRect().width) < 2
+
          const indexBox = () => (indexPane ? Math.round(indexPane.getBoundingClientRect().width) : -1)
          const beforeDrag = indexBox()
-         if (splitter) {
+         if (splitter && out.twoPanes) {
            splitter.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerId: 1, clientX: 300, clientY: 300 }))
            await sleep(80)
            splitter.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 1, clientX: 364, clientY: 300 }))
@@ -1687,7 +1709,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.indexBefore = beforeDrag
          out.indexDragged = beforeDrag < 0 ? -1 : indexBox() - beforeDrag
          const beforeKeys = indexBox()
-         if (splitter) {
+         if (splitter && out.twoPanes) {
            splitter.focus()
            splitter.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowLeft' }))
            await sleep(120)
@@ -1793,18 +1815,24 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       `format ${lists.formatVisible}, artist ${lists.artistWidth}px`
     )
     record(
-      lists.indexDragged >= 50,
-      'dragging the splitter widens the playlist index',
-      `moved ${lists.indexDragged}px`
+      lists.twoPanes ? lists.indexDragged >= 50 : lists.splitterHidden,
+      'the splitter resizes the index when two panes fit, and is hidden when they do not',
+      lists.twoPanes
+        ? `moved ${lists.indexDragged}px (before ${lists.indexBefore}, layout ${lists.layoutWidth}, viewport ${lists.viewportWidth})`
+        : `${lists.splitterHidden ? 'hidden' : 'visible'} at a ${lists.viewportWidth}px viewport`
     )
     record(
-      lists.indexKeyboardDelta === -32,
-      'arrow keys resize the playlist index by one step each',
-      `moved ${lists.indexKeyboardDelta}px`
+      lists.twoPanes ? lists.indexKeyboardDelta === -32 : lists.indexFullWidth,
+      'arrow keys step the index by 16px each, or a narrow window stacks it above the list',
+      lists.twoPanes
+        ? `moved ${lists.indexKeyboardDelta}px`
+        : `index ${lists.indexBefore}px of ${lists.layoutWidth}px`
     )
     record(
-      container.settings.get().playlists.indexWidth ===
-        lists.indexBefore + lists.indexDragged + lists.indexKeyboardDelta,
+      lists.twoPanes
+        ? container.settings.get().playlists.indexWidth ===
+          lists.indexBefore + lists.indexDragged + lists.indexKeyboardDelta
+        : container.settings.get().playlists.indexWidth === widthBeforeSplitter,
       'the chosen index width is written to settings',
       `stored ${container.settings.get().playlists.indexWidth}px`
     )
@@ -2062,12 +2090,15 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       rowsAfterRemove: number
       playedTitle: string
       hasCover: boolean
+      bannerVisible: boolean
+      bannerLabel: string
+      bannerTrack: string
       groupEmpty: boolean
       emptyAfterDelete: boolean
     }>(
       window,
       `(async () => {
-         const out = { groupTitles: '', onlineRows: -1, kind: '', paneTitle: '', titles: '', note: '', hasReimport: false, hasClear: false, hasSaveAll: false, rowSaveButtons: 0, rowRevealButtons: 0, indexCount: '', rowsAfterRemove: -1, playedTitle: '', hasCover: false, groupEmpty: false, emptyAfterDelete: false }
+         const out = { groupTitles: '', onlineRows: -1, kind: '', paneTitle: '', titles: '', note: '', hasReimport: false, hasClear: false, hasSaveAll: false, rowSaveButtons: 0, rowRevealButtons: 0, indexCount: '', rowsAfterRemove: -1, playedTitle: '', hasCover: false, bannerVisible: false, bannerLabel: '', bannerTrack: '', groupEmpty: false, emptyAfterDelete: false }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (s) => document.querySelector(s)
          const pickAll = (s) => [...document.querySelectorAll(s)]
@@ -2121,6 +2152,15 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          const groupGone = onlineGroup()
          out.groupEmpty = Boolean(groupGone) && groupGone.querySelectorAll('.playlist-row').length === 0
          out.emptyAfterDelete = text(pick('.empty-state h2')).trim() === 'No playlists yet'
+
+         // The strip naming the playing list belongs to the app, not to the Online
+         // view: leaving Playlists and coming back must not lose it, which is
+         // exactly what happened when the state lived in the view.
+         nav('Online')
+         await sleep(700)
+         out.bannerVisible = Boolean(pick('.playing-banner'))
+         out.bannerLabel = text(pick('.playing-banner .playing-label')).trim()
+         out.bannerTrack = text(pick('.playing-banner .playing-track')).trim()
          return out
        })()`
     )
@@ -2168,6 +2208,16 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       container.onlineRepo.count() === 0,
       'playing an imported entry does not echo it into the Online history',
       container.onlineRepo.count()
+    )
+    record(
+      onlineLists.bannerVisible,
+      'the strip naming the playing list survives a trip to another view',
+      `visible ${onlineLists.bannerVisible}`
+    )
+    record(
+      onlineLists.bannerLabel.includes('Selftest Album') && onlineLists.bannerTrack === 'Online Tone Two',
+      'the strip names the list being played and the track it is on',
+      `${onlineLists.bannerLabel} / ${onlineLists.bannerTrack}`
     )
     record(
       onlineLists.groupEmpty && onlineLists.emptyAfterDelete,
