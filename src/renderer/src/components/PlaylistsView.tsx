@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
-import type { LibraryClickAction, Playlist, PlaylistDetail, Track } from '@shared/types'
+import type {
+  LibraryClickAction,
+  OnlinePlaylist,
+  OnlinePlaylistDetail,
+  Playlist,
+  PlaylistDetail,
+  Track
+} from '@shared/types'
 import { formatCount, formatDuration } from '@shared/format'
+import { onlinePlaylistItemToTrack } from '@shared/online'
 import {
   DEFAULT_PLAYLIST_INDEX_WIDTH,
   PLAYLIST_INDEX_MAX,
@@ -10,12 +18,16 @@ import {
 } from '@shared/playlists'
 import { messageOf } from '../api'
 import { TrackList, describeClickAction } from './TrackList'
-import { PlayIcon, PlaylistIcon, PlusIcon, PencilIcon, TrashIcon } from './Icons'
+import { PlayIcon, PlaylistIcon, PlusIcon, PencilIcon, QueueIcon, RefreshIcon, SpinnerIcon, TrashIcon } from './Icons'
 
 export interface PlaylistsViewProps {
   playlists: Playlist[]
   selectedId: number | null
   detail: PlaylistDetail | null
+  /** Playlists imported from a link, newest first. */
+  onlinePlaylists: OnlinePlaylist[]
+  selectedOnlineId: number | null
+  onlineDetail: OnlinePlaylistDetail | null
   loading: boolean
   error: string | null
   currentTrackId: number | null
@@ -26,6 +38,7 @@ export interface PlaylistsViewProps {
   indexWidth: number
   onIndexWidthChange: (width: number) => void
   onSelect: (playlistId: number) => void
+  onSelectOnline: (playlistId: number) => void
   /** The menu's creator: resolves to the new playlist, or throws a readable error. */
   onCreate: (name: string) => Promise<Playlist>
   onRename: (playlistId: number, name: string) => Promise<void>
@@ -33,8 +46,14 @@ export interface PlaylistsViewProps {
   onClear: (playlistId: number) => Promise<void>
   onRemoveItems: (itemIds: number[]) => Promise<void>
   onMoveItem: (itemId: number, toIndex: number) => Promise<void>
+  /** Fetches the source list again and stores a fresh snapshot. */
+  onReimportOnline: (playlistId: number) => Promise<unknown>
+  onDeleteOnline: (playlistId: number) => Promise<void>
+  onRemoveOnlineItem: (itemId: number) => Promise<void>
   /** Replaces the queue with these tracks, starting at `index`. */
   onPlay: (tracks: Track[], index: number) => void
+  /** Appends these tracks to the queue without replacing it. */
+  onQueue: (tracks: Track[]) => void
   onReveal: (trackId: number) => void
 }
 
@@ -43,6 +62,12 @@ function totalDuration(tracks: Track[]): string {
   if (known.length === 0) return ''
   const ms = known.reduce((sum, track) => sum + (track.durationMs ?? 0), 0)
   return ` · ${formatDuration(ms)}`
+}
+
+function listKindLabel(playlist: OnlinePlaylist): string {
+  if (playlist.kind === 'album') return 'Album'
+  if (playlist.kind === 'mix') return 'Mix'
+  return 'Playlist'
 }
 
 /**
@@ -60,6 +85,9 @@ export function PlaylistsView(props: PlaylistsViewProps) {
     playlists,
     selectedId,
     detail,
+    onlinePlaylists,
+    selectedOnlineId,
+    onlineDetail,
     loading,
     error,
     currentTrackId,
@@ -69,13 +97,18 @@ export function PlaylistsView(props: PlaylistsViewProps) {
     indexWidth: storedIndexWidth,
     onIndexWidthChange,
     onSelect,
+    onSelectOnline,
     onCreate,
     onRename,
     onDelete,
     onClear,
     onRemoveItems,
     onMoveItem,
+    onReimportOnline,
+    onDeleteOnline,
+    onRemoveOnlineItem,
     onPlay,
+    onQueue,
     onReveal
   } = props
 
@@ -86,7 +119,9 @@ export function PlaylistsView(props: PlaylistsViewProps) {
   const [actionError, setActionError] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<number>>(() => new Set<number>())
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
+  const [confirmDeleteOnline, setConfirmDeleteOnline] = useState<number | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
+  const [reimporting, setReimporting] = useState(false)
   const [indexWidth, setIndexWidth] = useState(() => clampPlaylistIndexWidth(storedIndexWidth))
   const [draggingSplitter, setDraggingSplitter] = useState(false)
   const newNameRef = useRef<HTMLInputElement | null>(null)
@@ -174,10 +209,29 @@ export function PlaylistsView(props: PlaylistsViewProps) {
     [indexWidth, maxIndexWidth, onIndexWidthChange]
   )
 
-  const tracks = useMemo(() => detail?.items.map((item) => item.track) ?? [], [detail])
+  // An imported playlist is a snapshot of someone else's order: selecting it
+  // clears the hand-made selection, so Remove can never act on hidden entries.
+  const showingOnline = selectedOnlineId !== null && onlineDetail !== null && onlineDetail.playlist.id === selectedOnlineId
+
+  const tracks = useMemo(() => {
+    if (showingOnline && onlineDetail) {
+      return onlineDetail.items.map((item) => onlinePlaylistItemToTrack(item, onlineDetail.playlist))
+    }
+    return detail?.items.map((item) => item.track) ?? []
+  }, [detail, onlineDetail, showingOnline])
+
   const entryIdFor = useCallback(
     (trackId: number): number | null => detail?.items.find((item) => item.track.id === trackId)?.id ?? null,
     [detail]
+  )
+
+  const onlineEntryIdFor = useCallback(
+    (trackId: number): number | null => {
+      if (!onlineDetail) return null
+      const index = tracks.findIndex((track) => track.id === trackId)
+      return index >= 0 ? (onlineDetail.items[index]?.id ?? null) : null
+    },
+    [onlineDetail, tracks]
   )
 
   // A different playlist is a different selection: carrying one over would let
@@ -185,8 +239,10 @@ export function PlaylistsView(props: PlaylistsViewProps) {
   useEffect(() => {
     setSelectedIds(new Set<number>())
     setConfirmDelete(null)
+    setConfirmDeleteOnline(null)
     setConfirmClear(false)
-  }, [selectedId])
+    setReimporting(false)
+  }, [selectedId, selectedOnlineId])
 
   const submitNew = useCallback(async (): Promise<void> => {
     const trimmed = newName.trim()
@@ -222,12 +278,16 @@ export function PlaylistsView(props: PlaylistsViewProps) {
   const removeSelected = useCallback((): void => {
     const ids = tracks
       .filter((track) => selectedIds.has(track.id))
-      .map((track) => entryIdFor(track.id))
+      .map((track) => (showingOnline ? onlineEntryIdFor(track.id) : entryIdFor(track.id)))
       .filter((id): id is number => id !== null)
     if (ids.length === 0) return
-    void onRemoveItems(ids)
+    if (showingOnline) {
+      void Promise.all(ids.map((id) => onRemoveOnlineItem(id)))
+    } else {
+      void onRemoveItems(ids)
+    }
     setSelectedIds(new Set<number>())
-  }, [entryIdFor, onRemoveItems, selectedIds, tracks])
+  }, [entryIdFor, onlineEntryIdFor, onRemoveItems, onRemoveOnlineItem, selectedIds, showingOnline, tracks])
 
   const playSelected = useCallback((): void => {
     const index = tracks.findIndex((track) => selectedIds.has(track.id))
@@ -236,7 +296,58 @@ export function PlaylistsView(props: PlaylistsViewProps) {
     onPlay(chosen, 0)
   }, [onPlay, selectedIds, tracks])
 
-  const subtitle = detail ? `${formatCount(tracks.length)} tracks${totalDuration(tracks)}` : ''
+  const reimport = useCallback(async (): Promise<void> => {
+    if (!onlineDetail) return
+    setReimporting(true)
+    setActionError(null)
+    try {
+      await onReimportOnline(onlineDetail.playlist.id)
+      setSelectedIds(new Set<number>())
+    } catch (cause) {
+      setActionError(messageOf(cause))
+    } finally {
+      setReimporting(false)
+    }
+  }, [onlineDetail, onReimportOnline])
+
+  const kindLabel =
+    onlineDetail?.playlist.kind === 'album'
+      ? 'Album'
+      : onlineDetail?.playlist.kind === 'mix'
+        ? 'Mix'
+        : 'Online playlist'
+  const subtitle = showingOnline
+    ? `${formatCount(tracks.length)} tracks${totalDuration(tracks)} · ${kindLabel}`
+    : detail
+      ? `${formatCount(tracks.length)} tracks${totalDuration(tracks)}`
+      : ''
+
+  const totalLists = playlists.length + onlinePlaylists.length
+
+  const selectionBar =
+    selectedIds.size > 0 ? (
+      <div className="banner selection-bar">
+        <span>
+          <strong>{formatCount(selectedIds.size)}</strong> selected
+        </span>
+        <button type="button" onClick={playSelected}>
+          <PlayIcon size={14} />
+          <span>Play selected</span>
+        </button>
+        <button type="button" onClick={removeSelected}>
+          <TrashIcon size={14} />
+          <span>{showingOnline ? 'Remove from this playlist' : 'Remove from playlist'}</span>
+        </button>
+        <button type="button" className="link-button" onClick={() => setSelectedIds(new Set<number>())}>
+          Clear
+        </button>
+      </div>
+    ) : null
+
+  const onlineTruncated =
+    onlineDetail !== null &&
+    onlineDetail.playlist.totalCount !== null &&
+    onlineDetail.playlist.totalCount > onlineDetail.playlist.trackCount
 
   return (
     <section className="main-view playlists-view">
@@ -244,11 +355,9 @@ export function PlaylistsView(props: PlaylistsViewProps) {
         <div className="view-heading">
           <h1>Playlists</h1>
           <p className="subtitle">
-            {playlists.length === 0
-              ? 'Collect tracks from your library into your own order.'
-              : playlists.length === 1
-                ? '1 playlist'
-                : `${formatCount(playlists.length)} playlists`}
+            {totalLists === 0
+              ? 'Collect tracks from your library into your own order, or import a playlist from a link.'
+              : `${formatCount(playlists.length)} custom · ${formatCount(onlinePlaylists.length)} online`}
           </p>
         </div>
         <div className="header-actions">
@@ -306,7 +415,15 @@ export function PlaylistsView(props: PlaylistsViewProps) {
             </form>
           ) : null}
 
-          {playlists.map((playlist) => (
+          <div className="playlist-group" role="group" aria-label="Custom playlists">
+            <h2 className="playlist-group-title">
+              Custom <span className="playlist-group-count">{formatCount(playlists.length)}</span>
+            </h2>
+            {playlists.length === 0 ? (
+              <p className="playlist-group-empty">Nothing here yet. Create one below the search box.</p>
+            ) : null}
+
+            {playlists.map((playlist) => (
             <div
               key={playlist.id}
               className={playlist.id === selectedId ? 'playlist-row active' : 'playlist-row'}
@@ -340,7 +457,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                 <>
                   <button type="button" className="playlist-open" onClick={() => onSelect(playlist.id)}>
                     <span className="playlist-name" title={playlist.name}>
-                      {playlist.name}
+                      <span className="playlist-title">{playlist.name}</span>
                     </span>
                     <span className="playlist-count">{formatCount(playlist.trackCount)}</span>
                   </button>
@@ -386,6 +503,66 @@ export function PlaylistsView(props: PlaylistsViewProps) {
           {confirmDelete !== null ? (
             <p className="playlist-hint">Click the bin again to delete the playlist. Tracks stay in your library.</p>
           ) : null}
+          </div>
+
+          <div className="playlist-group" role="group" aria-label="Online playlists">
+            <h2 className="playlist-group-title">
+              Online <span className="playlist-group-count">{formatCount(onlinePlaylists.length)}</span>
+            </h2>
+            {onlinePlaylists.length === 0 ? (
+              <p className="playlist-group-empty">
+                Playlists, albums and mixes imported from a link appear here.
+              </p>
+            ) : null}
+
+            {onlinePlaylists.map((playlist) => (
+              <div
+                key={playlist.id}
+                className={playlist.id === selectedOnlineId ? 'playlist-row active' : 'playlist-row'}
+              >
+                <button
+                  type="button"
+                  className="playlist-open"
+                  onClick={() => onSelectOnline(playlist.id)}
+                  title={playlist.owner ? `${playlist.title} · ${playlist.owner}` : playlist.title}
+                >
+                  <span className="playlist-name">
+                    <span className="playlist-title">{playlist.title}</span>
+                    <span className={`playlist-kind ${playlist.kind}`}>{listKindLabel(playlist)}</span>
+                  </span>
+                  <span className="playlist-count">{formatCount(playlist.trackCount)}</span>
+                </button>
+                {confirmDeleteOnline === playlist.id ? (
+                  <button
+                    type="button"
+                    className="icon-button subtle danger"
+                    title="Remove this imported playlist"
+                    aria-label={`Confirm removing ${playlist.title}`}
+                    onClick={() => void onDeleteOnline(playlist.id)}
+                  >
+                    <TrashIcon />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="icon-button subtle"
+                    title="Remove imported playlist"
+                    aria-label={`Remove ${playlist.title}`}
+                    onClick={() => setConfirmDeleteOnline(playlist.id)}
+                  >
+                    <TrashIcon />
+                  </button>
+                )}
+              </div>
+            ))}
+
+            {confirmDeleteOnline !== null ? (
+              <p className="playlist-hint">
+                Click the bin again to remove the imported playlist. Nothing is downloaded, so your library does not
+                change.
+              </p>
+            ) : null}
+          </div>
         </aside>
 
         <div
@@ -414,13 +591,115 @@ export function PlaylistsView(props: PlaylistsViewProps) {
         />
 
         <div className="playlist-pane">
-          {!detail ? (
+          {showingOnline && onlineDetail ? (
+            <>
+              <div className="playlist-pane-head">
+                <div>
+                  <h2>{onlineDetail.playlist.title}</h2>
+                  <p className="subtitle">
+                    {subtitle}
+                    {onlineDetail.playlist.owner ? ` · ${onlineDetail.playlist.owner}` : ''}
+                  </p>
+                </div>
+                <div className="header-actions">
+                  <button type="button" onClick={() => onPlay(tracks, 0)} disabled={tracks.length === 0}>
+                    <PlayIcon size={14} />
+                    <span>Play</span>
+                  </button>
+                  <button type="button" onClick={() => onQueue(tracks)} disabled={tracks.length === 0}>
+                    <QueueIcon size={14} />
+                    <span>Add all</span>
+                  </button>
+                  <button type="button" onClick={() => void reimport()} disabled={reimporting}>
+                    {reimporting ? <SpinnerIcon /> : <RefreshIcon />}
+                    <span>{reimporting ? 'Re-importing…' : 'Re-import'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={
+                      confirmDeleteOnline === onlineDetail.playlist.id ? 'link-button danger' : 'link-button'
+                    }
+                    onClick={() => {
+                      if (confirmDeleteOnline !== onlineDetail.playlist.id) {
+                        setConfirmDeleteOnline(onlineDetail.playlist.id)
+                        return
+                      }
+                      setConfirmDeleteOnline(null)
+                      void onDeleteOnline(onlineDetail.playlist.id)
+                    }}
+                  >
+                    {confirmDeleteOnline === onlineDetail.playlist.id ? 'Remove playlist?' : 'Remove'}
+                  </button>
+                </div>
+              </div>
+
+              {onlineTruncated ? (
+                <p className="playlist-note">
+                  YouTube lists {formatCount(onlineDetail.playlist.totalCount ?? 0)} tracks; this import kept the
+                  first {formatCount(onlineDetail.playlist.trackCount)}. The limit is in Settings → Engine.
+                </p>
+              ) : null}
+
+              {selectionBar}
+
+              {tracks.length === 0 ? (
+                <div className="empty-state">
+                  <PlaylistIcon size={32} />
+                  <h2>This imported playlist is empty</h2>
+                  <p>Every entry was removed, or YouTube no longer offers them. Re-import to take a fresh snapshot.</p>
+                </div>
+              ) : (
+                <TrackList
+                  tracks={tracks}
+                  total={tracks.length}
+                  sort={null}
+                  direction="asc"
+                  currentTrackId={currentTrackId}
+                  isPlaying={isPlaying}
+                  selectedIds={selectedIds}
+                  loadingMore={loading}
+                  onToggleSort={() => undefined}
+                  onActivate={(index) => onPlay(tracks, index)}
+                  onSelect={(trackId, mode) =>
+                    setSelectedIds((previous) => {
+                      if (mode === 'replace') return new Set([trackId])
+                      const next = new Set(previous)
+                      if (next.has(trackId)) next.delete(trackId)
+                      else next.add(trackId)
+                      return next
+                    })
+                  }
+                  onSelectAll={() => setSelectedIds(new Set(tracks.map((track) => track.id)))}
+                  onClearSelection={() => setSelectedIds(new Set<number>())}
+                  onReveal={onReveal}
+                  singleClick={singleClick}
+                  doubleClick={doubleClick}
+                  sortable={false}
+                  onRemove={(track) => {
+                    const itemId = onlineEntryIdFor(track.id)
+                    if (itemId === null) return
+                    void onRemoveOnlineItem(itemId)
+                  }}
+                  removeLabel="Remove from this playlist"
+                  showFormat={false}
+                />
+              )}
+
+              {tracks.length > 0 ? (
+                <p className="table-footnote">
+                  Imported playlists keep their source order, so drag-to-reorder is off. Click:{' '}
+                  {describeClickAction(singleClick)}, double-click: {describeClickAction(doubleClick)}. Nothing here is
+                  downloaded until you save it to the library (M4).
+                </p>
+              ) : null}
+            </>
+          ) : !detail ? (
             <div className="empty-state">
               <PlaylistIcon size={32} />
-              <h2>{playlists.length === 0 ? 'No playlists yet' : 'Pick a playlist'}</h2>
+              <h2>{totalLists === 0 ? 'No playlists yet' : 'Pick a playlist'}</h2>
               <p>
-                {playlists.length === 0
-                  ? 'Create one, then add tracks from the library — select some rows and choose “Add to playlist”.'
+                {totalLists === 0
+                  ? 'Create one, then add tracks from the library — select some rows and choose “Add to playlist”. Or paste a playlist link in Online.'
                   : 'Choose one on the left to see what is in it.'}
               </p>
               {playlists.length === 0 ? (
@@ -442,6 +721,10 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                     <PlayIcon size={14} />
                     <span>Play</span>
                   </button>
+                  <button type="button" onClick={() => onQueue(tracks)} disabled={tracks.length === 0}>
+                    <QueueIcon size={14} />
+                    <span>Add all</span>
+                  </button>
                   <button
                     type="button"
                     className={confirmClear ? 'link-button danger' : 'link-button'}
@@ -460,24 +743,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                 </div>
               </div>
 
-              {selectedIds.size > 0 ? (
-                <div className="banner selection-bar">
-                  <span>
-                    <strong>{formatCount(selectedIds.size)}</strong> selected
-                  </span>
-                  <button type="button" onClick={playSelected}>
-                    <PlayIcon size={14} />
-                    <span>Play selected</span>
-                  </button>
-                  <button type="button" onClick={removeSelected}>
-                    <TrashIcon size={14} />
-                    <span>Remove from playlist</span>
-                  </button>
-                  <button type="button" className="link-button" onClick={() => setSelectedIds(new Set<number>())}>
-                    Clear
-                  </button>
-                </div>
-              ) : null}
+              {selectionBar}
 
               {tracks.length === 0 ? (
                 <div className="empty-state">

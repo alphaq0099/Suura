@@ -7,7 +7,7 @@ The full plan lives in [`ROADMAP.md`](./ROADMAP.md). This README covers what is 
 
 ---
 
-## Status: M1 complete, M3 streaming (Online view) working
+## Status: M1 complete, M3 streaming and playlist import working; M4 downloads next
 
 Working today:
 
@@ -54,6 +54,15 @@ Working today:
   queues it together with the rows below it so Next walks the list. The history survives a restart even after the audio
   cache is cleared — it is a list of links, not files. **Save to library** is shown but disabled until the download path
   lands in M4.
+- **Playlist, album and mix import**: pasting a list link (a `PL…` playlist, an `OLAK5uy…` album or an `RD…`/`start_radio=1`
+  mix) turns the button into **Import & play** and adds **Add all to queue**. The whole list is fetched in one flat
+  `--flat-playlist` call (no per-track resolves), stored as a snapshot and shown in **Playlists** under **Online**,
+  beside the **Custom** lists the user made. Importing the same list again refreshes it in place. The pane lists every
+  track individually and can play it, add it all to the queue, re-import, remove entries or delete the snapshot; a track
+  is saveable to the library individually once M4 lands. Two settings cap the fetch — *Playlist / album import limit*
+  (200) and *Mix length* (50) — because a mix never ends. Account lists (`LL…`, `WL…`, `FL…`) and channel pages are
+  refused with an explanation instead of a failed sidecar run: the app never signs in. A watch link that belongs to a
+  playlist plays the video and offers to import the list separately; a mix link imports the mix, not its seed video.
 - **Streaming playback** (M3): a resolved link plays through an internal `player-stream://` proxy that forwards `Range`
   and the signed URL's headers. The first play costs 7–10 s because the sidecar starts for each resolve; the second play
   of the same link in a session is instant, and a URL that expires is re-resolved once if the CDN answers 403. The player
@@ -63,8 +72,8 @@ Working today:
   retention settings are stored and validated, and the cache/download path they describe arrives in M4.
 - The engine layer reports whether `yt-dlp` and `ffmpeg` are present and runnable, and the resolver uses them.
 
-Not built yet (deliberately): gapless playback, SMTC / tray icon, YouTube search or catalogue browsing, caching,
-downloads (M4), packaging, YouTube playlist/album import, playlist import/export and smart playlists.
+Not built yet (deliberately): gapless playback, SMTC / tray icon, YouTube search or catalogue browsing, caching and
+downloads (M4), packaging, playlist import/export and smart playlists.
 
 ---
 
@@ -116,9 +125,9 @@ Five independent checks, from cheapest to most convincing:
 | Command | What it proves |
 |---|---|
 | `npm run typecheck` | Both TypeScript projects (`node` and `web`) compile under `strict` + `noUncheckedIndexedAccess`. |
-| `npm run smoke` | **235 checks** against the real core: builds a throwaway library with ffmpeg, indexes it, rescans it, searches it, sorts and pages it, extracts cover art from a real file, resolves a playable URL, exercises range parsing, queue rules and display formatting, deletes a file to prove pruning, and watches a real folder to prove that a file appearing or disappearing triggers an incremental scan by itself. It also validates YouTube link parsing, the JPEG thumbnail candidates and the sidecar argument policy, exercises the stream proxy against a local HTTP server (full and ranged requests, forwarded headers, a 403 retry, a second 403 and unknown tokens), proves the resolver cache answers a second play without a second sidecar, and drives the Online history repository against a real database file (dedupe, refresh, ordering by added and played activity, and the row-to-stream-track mapping). No Electron involved. |
+| `npm run smoke` | **298 checks** against the real core: builds a throwaway library with ffmpeg, indexes it, rescans it, searches it, sorts and pages it, extracts cover art from a real file, resolves a playable URL, exercises range parsing, queue rules and display formatting, deletes a file to prove pruning, and watches a real folder to prove that a file appearing or disappearing triggers an incremental scan by itself. It also validates YouTube link parsing and classification (videos, a video inside a playlist, playlists, albums, mixes, and the account/channel refusals), the flat-playlist parser and its cap, the JPEG thumbnail candidates and the sidecar argument policy, exercises the stream proxy against a local HTTP server (full and ranged requests, forwarded headers, a 403 retry, a second 403 and unknown tokens), proves the resolver cache answers a second play without a second sidecar, drives the Online history repository against a real database file (dedupe, refresh, ordering by added and played activity, and the row-to-stream-track mapping), and drives the imported-playlist repository (snapshot replacement, position renumbering, a retained cover and explicit child deletion). No Electron involved. |
 | `npm run runtime:check` | The three runtime bets still hold **inside Electron**: `node:sqlite` exists, FTS5 works, and `music-metadata` (ESM-only) loads from CommonJS. Run this after every Electron upgrade. |
-| `npm run selftest` | **139 end-to-end checks**: launches the real app against a throwaway data directory, confirms React mounted, indexes two generated audio files (one with an embedded cover) *through the IPC bridge*, then **actually decodes, plays and seeks one** through the `player-media://` protocol. It drives the real UI — a click selects, a double click plays, the queue view lists the queue, the repeat/shuffle buttons cycle, clicking the now-playing area opens the full-window player (and asserts its backdrop really is the blurred, brightened cover with no hard separator over the controls), and Escape closes it **through its exit animation**. Clicking the queue button slides the panel in, and the panel's own rows, scroll fit and gradient shadow are checked before a press on the black space or the artwork shuts it again (a press inside it does not), and Escape unwinds one layer at a time. It then changes the artwork and click-behaviour settings through the actual `<select>` elements in Settings and measures what the DOM did with them — the box takes a 3:2 cover's proportions, the size presets resize it, and a single click plays or selects depending on what the setting says. It seeks the player bar's scrubber twice in a row, paused and playing, and asserts the bar shows the position just chosen rather than the one before it. It also checks that the player bar's ambience spans the whole bar rather than the now-playing tile, and clicks the volume button to prove it mutes and restores, then rolls the wheel over the control to check that one notch moves the level five percent, that it stops at the ends of the scale, and that the scroll is swallowed rather than passed on. Then it copies a real file into the watched folder and deletes it again, asserting that the library indexed and then forgot it with no user action at all, and that switching watching off really does stop it. Then it creates a playlist through the form, adds tracks from the library's selection bar and from a row's context menu, reorders it with Alt+Down and a synthesized drag (with its drop line), removes a row, plays it, renames it, saves the queue as a playlist from the player window, and deletes it. At 1200x780 — narrow enough that the playlist's own pane has only ~670px once the sidebar and the index have taken their share — it measures the title column and every visible header label, proving that no label paints over its neighbour, that the artist is still shown and Format is gone, then drags the splitter 64px, presses ArrowLeft twice, and asserts the width that lands in `config.json` is exactly the one on screen. It also resizes the window to 1200x780 and 940x580 and asserts that **no view, including the player window, overflows sideways**, and that the playlist's row buttons stay inside its card - the only thing that catches a layout that slides out of the window. Finally it reloads the whole renderer, which throws away every queue held in memory, and asserts that the track, the queue and the position come back from disk, paused. It also drives the Online view: seeds a history, checks the rows, artist, duration and sidebar count, reads the real clipboard through the Paste button, refuses a link that is not YouTube with no request sent, opens a row's right-click menu (Play, Add to queue, Copy link, Remove, and a disabled Save to library), removes a row, clears the history through its confirmation, and asserts Copy link put the canonical `watch?v=` URL on the clipboard. Last, it registers a token in the real stream proxy against a local HTTP server and plays, seeks and pauses that URL through `player-stream://` in the production build - the check that the scheme, the proxy, the CSP and the `<audio>` element all agree. Exits non-zero on failure. |
+| `npm run selftest` | **151 end-to-end checks**: launches the real app against a throwaway data directory, confirms React mounted, indexes two generated audio files (one with an embedded cover) *through the IPC bridge*, then **actually decodes, plays and seeks one** through the `player-media://` protocol. It drives the real UI — a click selects, a double click plays, the queue view lists the queue, the repeat/shuffle buttons cycle, clicking the now-playing area opens the full-window player (and asserts its backdrop really is the blurred, brightened cover with no hard separator over the controls), and Escape closes it **through its exit animation**. Clicking the queue button slides the panel in, and the panel's own rows, scroll fit and gradient shadow are checked before a press on the black space or the artwork shuts it again (a press inside it does not), and Escape unwinds one layer at a time. It then changes the artwork and click-behaviour settings through the actual `<select>` elements in Settings and measures what the DOM did with them — the box takes a 3:2 cover's proportions, the size presets resize it, and a single click plays or selects depending on what the setting says. It seeks the player bar's scrubber twice in a row, paused and playing, and asserts the bar shows the position just chosen rather than the one before it. It also checks that the player bar's ambience spans the whole bar rather than the now-playing tile, and clicks the volume button to prove it mutes and restores, then rolls the wheel over the control to check that one notch moves the level five percent, that it stops at the ends of the scale, and that the scroll is swallowed rather than passed on. Then it copies a real file into the watched folder and deletes it again, asserting that the library indexed and then forgot it with no user action at all, and that switching watching off really does stop it. Then it creates a playlist through the form, adds tracks from the library's selection bar and from a row's context menu, reorders it with Alt+Down and a synthesized drag (with its drop line), removes a row, plays it, renames it, saves the queue as a playlist from the player window, and deletes it. At 1200x780 — narrow enough that the playlist's own pane has only ~670px once the sidebar and the index have taken their share — it measures the title column and every visible header label, proving that no label paints over its neighbour, that the artist is still shown and Format is gone, then drags the splitter 64px, presses ArrowLeft twice, and asserts the width that lands in `config.json` is exactly the one on screen. It also resizes the window to 1200x780 and 940x580 and asserts that **no view, including the player window, overflows sideways**, and that the playlist's row buttons stay inside its card - the only thing that catches a layout that slides out of the window. Finally it reloads the whole renderer, which throws away every queue held in memory, and asserts that the track, the queue and the position come back from disk, paused. It also drives the Online view: seeds a history, checks the rows, artist, duration and sidebar count, reads the real clipboard through the Paste button, refuses a link that is not YouTube and an account list with no request sent, opens a row's right-click menu (Play, Add to queue, Copy link, Remove, and a disabled Save to library), removes a row, clears the history through its confirmation, seeds an imported album and drives the grouped Playlists view — Custom and Online are separate, the album is labelled and opened, its tracks are in source order, the cap note says how many were kept, Re-import replaces Clear, removing an entry renumbers the snapshot, playing it queues its remaining tracks, and removing the snapshot needs a confirmation — and asserts Copy link put the canonical `watch?v=` URL on the clipboard. Last, it registers a token in the real stream proxy against a local HTTP server and plays, seeks and pauses that URL through `player-stream://` in the production build - the check that the scheme, the proxy, the CSP and the `<audio>` element all agree. Exits non-zero on failure. |
 
 
 The self-test is the one that matters most. A renderer that fails to mount, or a protocol handler that refuses every
@@ -194,14 +203,60 @@ canonical `watch?v=` URL and two timestamps. Identity is the video id, so pastin
 instead of adding another. Ordering is "most recent activity first", where activity is either being added or being played
 — which is why `media:resolve` touches the row, so the row a user just played rises to the top. Because the row is only a
 link, the history survives a restart (and an audio-cache wipe); nothing here is a `Track` and nothing is in the library.
+
+A track that exists only inside an imported playlist has no history row yet. Playing it creates one from the snapshot
+(`rememberPlay`), with the album the playlist gave it, and then treats it like any other row: history is what was played,
+so a 200-track import does not bury the log the moment it arrives.
 `onlineEntryToTrack` (`src/shared/online.ts`) turns a row into a session track with a *negative* id when it is played,
 keeping it out of the tracks table by construction. Saving a row into the library is the M4 download path; the row action
 is present and disabled until then.
 
 The cover is the exception to "write it all at paste time": the row is written with no artwork key, and the first time it
-is drawn — in the list or the player bar — its negative id is looked up through the Online history, which derives the
-still from the video id, downloads it, caches it and writes the key back. A paste therefore never waits on an image CDN,
-and a row added while thumbnails could not be decoded repairs itself on the next draw.
+is drawn — in the list or the player bar — the artwork service derives the still from the video id, downloads it, caches
+it and writes the key back. A paste therefore never waits on an image CDN, and a row added while thumbnails could not be
+decoded repairs itself on the next draw. The lookup takes the source identity (`sourceKind` + `sourceId`) rather than a
+row id, because an entry imported from a playlist has no history row at all.
+
+### How an imported playlist is stored
+
+A list link is a different read from a watch link: one `--flat-playlist --playlist-end <cap> -J` call returns every id,
+title, channel and duration at once, with no formats and no stream URLs. That is what makes a 12-track album import in
+about three seconds instead of twelve resolves.
+
+```
+paste ──parseYouTubeLink──▶ kind: playlist | album | mix
+      │                     (account lists / channels refuse here, before a process starts)
+      ▼
+fetchPlaylist(url, cap) ──▶ entries[] + the list's own title/owner/cover
+      │
+      ▼
+online_playlists  (one row per list id, snapshot metadata)
+online_playlist_items (position, video id, title, artist, album, duration)
+      │
+      ▼
+queue = exactly the items, resolved lazily as each one plays
+```
+
+Two tables, no foreign key cascade: the repository deletes child entries explicitly, because a snapshot is a unit and a
+half-deleted one would be a list of positions pointing at nothing. Re-importing the same list id replaces the entries in
+one transaction and keeps the row (and its place in the index); a cover that could not be fetched this time does not
+throw away the one cached last time. Positions are 0-based and renumbered when an entry is removed, since "play from
+here" is a position, not a stable key.
+
+The cap is a setting, not a constant: *Playlist / album import limit* (default 200) and *Mix length* (default 50). A mix
+never reports a total, so its length is whatever that setting says; a finite list that YouTube reports as longer than the
+snapshot shows a "first N of M" note. Importing the same playlist again is the only thing that refreshes it — this is a
+snapshot, not a subscription.
+
+`onlinePlaylistItemToTrack` (`src/shared/online.ts`) assigns those entries their own negative id space, offset a million
+below history rows, so an imported track can never collide with a local id or with a history row's `-id` even though the
+two tables both start counting at one. The id is derived from the entry id, not its position, so removing an earlier
+entry does not change the identity of what is playing.
+
+Only an album gets a list-level cover. A playlist's thumbnails are the first video's 16:9 stills — a 120×90 crop that
+looks like a mistake blown up to a cover — and a mix has none, so those kinds use per-track stills instead. An album's
+largest still is often a 404 placeholder: the importer walks the candidates and keeps the first that answers with real
+image bytes (the signed `sddefault.jpg` is a genuine sleeve).
 
 `webPreferences` sets `contextIsolation: true`, `nodeIntegration: false`, and the built HTML ships a strict CSP
 (injected at build time only, because Vite's dev server needs inline scripts). **Every custom scheme the UI loads a
@@ -226,12 +281,14 @@ The database column behind it has three states, and all three are load-bearing: 
 knows to ask), `''` (looked at, no cover — a negative cache, so an album without art is not re-parsed forever), and a
 filename (the answer). An album's cover is extracted once and reused by every track on it.
 
-A streamed link is not in the `tracks` table, so its cover cannot be derived from a file. A session track carries the
-negation of its Online history id instead, and `getArtwork` sends a negative id to the Online service, which fetches the
-still for that video id and caches it exactly like an embedded cover. It asks for **JPEG**, not the `vi_webp` still that
-`yt-dlp` reports: Electron's `nativeImage` returns an *empty* image for WebP rather than an error, which is why streamed
-rows silently had no artwork at first. The largest 16:9 still is preferred, with `mqdefault.jpg` as the fallback, and a
-missing `maxresdefault.jpg` is checked by status because YouTube answers it with a decodable 120×90 placeholder.
+A streamed link is not in the `tracks` table, so its cover cannot be derived from a file. `getArtwork` therefore takes
+either a local row id or an identity (`sourceKind` + `sourceId`): a history row can still be reached by the negation of
+its id, but an entry imported from a playlist has no history row, so it sends its video id and the Online service fetches
+and caches that still exactly like an embedded cover. It asks for **JPEG**, not the `vi_webp` still that `yt-dlp`
+reports: Electron's `nativeImage` returns an *empty* image for WebP rather than an error, which is why streamed rows
+silently had no artwork at first. The largest 16:9 still is preferred, with `mqdefault.jpg` as the fallback, and a missing
+`maxresdefault.jpg` is checked by status because YouTube answers it with a decodable 120×90 placeholder. Fetches are
+limited to four at a time, so opening a 200-entry import does not fire 200 image requests in one tick.
 
 ### Storage
 
@@ -265,7 +322,7 @@ src/
     media-keys.ts       global media-key shortcuts → playerCommand events
     selftest.ts         the end-to-end harness behind `npm run selftest`
     stream-protocol.ts  the player-stream:// handler
-    online-service.ts   the pasted-link history (resolve + remember)
+    online-service.ts   pasted-link history + imported playlist snapshots
     youtube-service.ts  resolver + stream proxy, registered with the registry
     broadcast.ts        main → renderer event fan-out
     services/container.ts   the whole dependency graph in one place
@@ -454,8 +511,10 @@ docs/adr/               architecture decision records
 ## Known gaps
 
 - No playlist import/export (M3U/JSON, M6), no smart playlists (M5), and no per-playlist retention override.
-- YouTube links live in the Online history rather than the library: a play leaves the last local queue in the resume slot
-  rather than a queue that cannot be rebuilt. YouTube playlist/album import is next, then caching and downloading (M4).
+- An imported playlist is a **snapshot, not a mirror**: it is refreshed only by Re-import, so a list edited on YouTube
+  keeps its old entries until then. Removing the snapshot never touches the library.
+- YouTube links and imported playlists live outside the library: a stream play leaves the last local queue in the resume
+  slot rather than a queue that cannot be rebuilt.
 - Stream links cannot be saved yet. The *Save to library* row action is shown disabled on purpose: it belongs with the
   downloader, and a button that quietly streamed instead would be worse than one that is honestly unavailable.
 - Resolving has no Cancel button. Dismissing the *Resolving…* row discards the result, but the sidecar finishes in the
@@ -479,11 +538,10 @@ docs/adr/               architecture decision records
 
 ## Next steps
 
-1. YouTube playlist / album import: a `--flat-playlist` fetch (one process, capped at 200 entries) shown as an inline
-   strip, with `v=…&list=…` playing the video by default. Metadata only; audio resolves lazily on play.
-2. M4 (retention: cache / keep) follows. The stream path is in place, so caching has somewhere to hook in, and *Save to
-   library* turns into a real download that tags and indexes a row into the library with its `sourceId` kept.
-3. M3's exit criteria still need a 50-link run and a latency decision: 20/20 resolved, but at a median of 8.8 s. See
+1. M4 (retention: cache / keep). The stream path and the imported snapshots are in place, so caching has somewhere to hook
+   in, and *Save to library* turns into a real download that tags and indexes a row into the library with its `sourceId`
+   kept.
+2. M3's exit criteria still need a 50-link run and a latency decision: 20/20 resolved, but at a median of 8.8 s. See
    [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-dlp-sample.md) and the first spike in
    [`docs/notes/yt-dlp-spike.md`](./docs/notes/yt-dlp-spike.md).
-4. M0 leftovers: the Downloads wireframe (it arrives with M4) and the remaining 30 links of the 50-link exit check.
+3. M0 leftovers: the Downloads wireframe (it arrives with M4) and the remaining 30 links of the 50-link exit check.

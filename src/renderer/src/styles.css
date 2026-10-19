@@ -2211,6 +2211,104 @@ input[type='radio'] {
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------- Custom / Online groups in the index ---------- */
+
+.playlist-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.playlist-group + .playlist-group {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.playlist-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 2px 6px 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.playlist-group-count {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.playlist-group-empty {
+  margin: 2px 6px 6px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-faint);
+}
+
+.playlist-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.playlist-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playlist-kind {
+  flex: none;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.playlist-kind.album {
+  color: #b9a6ff;
+  border-color: #3b3560;
+}
+
+.playlist-kind.mix {
+  color: #7fd0b0;
+  border-color: #2c4d42;
+}
+
+.playlist-note {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #171a24;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.import-offer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.import-offer > span {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
 .playlist-row .icon-button {
   padding: 5px;
 }

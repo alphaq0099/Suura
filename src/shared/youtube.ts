@@ -55,6 +55,191 @@ export function youtubeWatchUrl(videoId: string): string {
   return `https://www.youtube.com/watch?v=${videoId}`
 }
 
+export function youtubePlaylistUrl(listId: string): string {
+  return `https://www.youtube.com/playlist?list=${listId}`
+}
+
+/**
+ * The URL to hand yt-dlp for a list.
+ *
+ * A radio mix's id is `RD` + its seed video, and the shape that actually returns
+ * a queue is the watch URL with `start_radio=1` — the bare playlist URL can come
+ * back as a single video. Everything else uses the plain playlist form.
+ */
+export function youtubeListUrl(listId: string): string {
+  if (listId.startsWith('RD')) {
+    const seed = listId.slice(2)
+    if (isYouTubeVideoId(seed)) {
+      return `https://www.youtube.com/watch?v=${seed}&list=${listId}&start_radio=1`
+    }
+  }
+  return youtubePlaylistUrl(listId)
+}
+
+/** What a `list=` id is. `account` means it belongs to a signed-in account. */
+export type YouTubeListKind = 'playlist' | 'album' | 'mix'
+
+export type YouTubeRefusal = 'account-list' | 'channel' | 'not-youtube'
+
+/**
+ * What a pasted link means.
+ *
+ * Kept as a union rather than a bag of nullable fields so every caller has to
+ * decide what it does with a channel page or a Liked-videos list — there is no
+ * "videoId and maybe a list" shape to forget about.
+ */
+export type YouTubeLink =
+  | { kind: 'video'; videoId: string }
+  /** A video that happens to sit in a playlist. Playing the video still does. */
+  | { kind: 'video-in-list'; videoId: string; listId: string; listKind: 'playlist' | 'album' }
+  | { kind: 'list'; listId: string; listKind: YouTubeListKind }
+  | { kind: 'refused'; reason: YouTubeRefusal }
+
+const YOUTUBE_HOSTS = new Set(['youtube.com', 'm.youtube.com', 'music.youtube.com'])
+
+/**
+ * The prefix of a list id, when it is one this app recognises.
+ *
+ * `OLAK5uy_` is YouTube Music's auto-generated album list, `RD` is a radio/mix.
+ * `LL`/`WL`/`FL`/`UU`/`UL` are the account's liked videos, watch later,
+ * favourites and a channel's uploads — all of which need the signed-in account's
+ * cookies, which this app deliberately never reads.
+ */
+export function explicitListKind(listId: string): YouTubeListKind | 'account' | null {
+  const id = listId.startsWith('VL') ? listId.slice(2) : listId
+  if (id.length < 2) return null
+  if (id.startsWith('OLAK5uy_')) return 'album'
+  if (id.startsWith('RD')) return 'mix'
+  if (id.startsWith('PL')) return 'playlist'
+  if (/^(LL|WL|FL|UU|UL)/.test(id)) return 'account'
+  return null
+}
+
+/**
+ * What to tell someone whose link cannot be imported.
+ *
+ * The refusals are product decisions, not errors: account lists need cookies the
+ * app never reads, and picking one video out of a channel page is not an import.
+ */
+export function describeYouTubeRefusal(reason: YouTubeRefusal): string {
+  switch (reason) {
+    case 'account-list':
+      return 'Liked videos, Watch Later and channel uploads belong to a YouTube account. This app never signs in, so it cannot read them. Import a playlist, album or mix instead.'
+    case 'channel':
+      return 'That is a channel page, not a playlist. Open one of its playlists and paste that link.'
+    default:
+      return 'That does not look like a YouTube link.'
+  }
+}
+
+function videoIdFrom(url: URL): string | null {
+  const fromQuery = url.searchParams.get('v') ?? ''
+  if (VIDEO_ID.test(fromQuery)) return fromQuery
+
+  const parts = url.pathname.split('/').filter(Boolean)
+  const [first, second] = parts
+  if (first && second && ['shorts', 'embed', 'live', 'v'].includes(first) && VIDEO_ID.test(second)) {
+    return second
+  }
+  return null
+}
+
+/**
+ * Classifies a pasted link without touching the network.
+ *
+ * A mix wins over its seed video: `watch?v=…&list=RD…&start_radio=1` is a radio
+ * station whose `v=` is only the seed, so the useful action is importing the mix,
+ * not playing one track. A `PL…` list with a `v=` is the other way round — the
+ * user clicked a song, so the video plays and the import is offered separately.
+ */
+export function parseYouTubeLink(input: string): YouTubeLink {
+  const trimmed = input.trim()
+  if (trimmed.length === 0) return { kind: 'refused', reason: 'not-youtube' }
+
+  // A bare id, or a bare list id: neither has a path or a query.
+  if (!/[/?.]/.test(trimmed)) {
+    if (isYouTubeVideoId(trimmed)) return { kind: 'video', videoId: trimmed }
+    const bare = explicitListKind(trimmed)
+    if (bare && bare !== 'account' && trimmed.length > 11) {
+      return { kind: 'list', listId: trimmed, listKind: bare }
+    }
+    return { kind: 'refused', reason: 'not-youtube' }
+  }
+
+  let url: URL
+  try {
+    url = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`)
+  } catch {
+    return { kind: 'refused', reason: 'not-youtube' }
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    return { kind: 'refused', reason: 'not-youtube' }
+  }
+
+  const host = url.hostname.toLowerCase().replace(/^www\./, '')
+  if (host === 'youtu.be') {
+    const id = url.pathname.split('/').filter(Boolean)[0] ?? ''
+    if (!VIDEO_ID.test(id)) return { kind: 'refused', reason: 'not-youtube' }
+    const listId = url.searchParams.get('list') ?? ''
+    const kind = listId ? explicitListKind(listId) : null
+    if (kind === 'account') return { kind: 'refused', reason: 'account-list' }
+    if (kind === 'mix') return { kind: 'list', listId, listKind: 'mix' }
+    if (kind) return { kind: 'video-in-list', videoId: id, listId, listKind: kind }
+    return { kind: 'video', videoId: id }
+  }
+
+  if (!YOUTUBE_HOSTS.has(host)) return { kind: 'refused', reason: 'not-youtube' }
+
+  const parts = url.pathname.split('/').filter(Boolean)
+  const first = parts[0] ?? ''
+  if (first.startsWith('@') || ['channel', 'c', 'user'].includes(first)) {
+    return { kind: 'refused', reason: 'channel' }
+  }
+
+  const listId = url.searchParams.get('list') ?? ''
+  if (listId) {
+    const kind = explicitListKind(listId) ?? 'playlist'
+    if (kind === 'account') return { kind: 'refused', reason: 'account-list' }
+    if (kind === 'mix') return { kind: 'list', listId, listKind: 'mix' }
+
+    const videoId = videoIdFrom(url)
+    if (videoId) return { kind: 'video-in-list', videoId, listId, listKind: kind }
+    return { kind: 'list', listId, listKind: kind }
+  }
+
+  const videoId = videoIdFrom(url)
+  if (videoId) return { kind: 'video', videoId }
+  return { kind: 'refused', reason: 'not-youtube' }
+}
+
+/**
+ * Cleans the names YouTube gives a list.
+ *
+ * An album arrives as `"Album - head or heart"` and a mix as `"Mix - …"`; both
+ * prefix is plumbing, not a title. A hand-made playlist keeps whatever it was
+ * called, even if that happens to start with "Mix".
+ */
+export function youtubeListTitle(title: string, kind: YouTubeListKind): string {
+  const trimmed = title.trim()
+  if (kind === 'playlist') return trimmed
+  const prefix = kind === 'album' ? /^album\s*[-:]\s*/i : /^mix\s*[-:]\s*/i
+  const stripped = trimmed.replace(prefix, '').trim()
+  return stripped.length > 0 ? stripped : trimmed
+}
+
+/**
+ * Drops YouTube's auto-generated `" - Topic"` suffix.
+ *
+ * Official artist channels are named `"Christina Perri - Topic"`; the suffix is
+ * YouTube's, not the artist's, and it reads as a bug in every row it appears in.
+ */
+export function normalizeArtistName(value: string | null | undefined): string | null {
+  const trimmed = value?.trim()
+  if (!trimmed) return null
+  const stripped = trimmed.replace(/\s*-\s*topic$/i, '').trim()
+  return stripped.length > 0 ? stripped : trimmed
+}
+
 /**
  * Still-image URLs for a video, best first.
  *

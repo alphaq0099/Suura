@@ -23,6 +23,7 @@ import type {
 } from '@shared/types'
 import { normalizePath } from '@core/library/content-key'
 import { getEngineStatus } from '@engine/sidecar/engine-status'
+import { isYouTubeVideoId } from '@shared/youtube'
 import type { AppContainer } from './services/container'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -210,6 +211,12 @@ export function sanitizeSettingsPatch(input: unknown): DeepPartial<AppSettings> 
     if (typeof source.cookiesFromBrowser === 'string' || source.cookiesFromBrowser === null) {
       engine.cookiesFromBrowser = source.cookiesFromBrowser
     }
+    if (typeof source.importLimit === 'number' && Number.isFinite(source.importLimit)) {
+      engine.importLimit = Math.round(clamp(source.importLimit, 1, 1000))
+    }
+    if (typeof source.mixLimit === 'number' && Number.isFinite(source.mixLimit)) {
+      engine.mixLimit = Math.round(clamp(source.mixLimit, 1, 500))
+    }
     patch.engine = engine
   }
 
@@ -302,22 +309,31 @@ export function registerIpcHandlers(container: AppContainer): void {
     shell.showItemInFolder(track.filePath)
   })
 
-  ipcMain.handle(IPC.libraryArtwork, (_event, trackId: unknown) => {
-    // A stream row is not a `tracks` row: it carries the negation of its Online
-    // history id, so it resolves through that history — which downloads and caches
-    // the thumbnail the first time a cover is asked for.
-    if (typeof trackId === 'number' && Number.isInteger(trackId) && trackId < 0) {
-      return container.online.artworkFor(-trackId)
+  ipcMain.handle(IPC.libraryArtwork, async (_event, input: unknown) => {
+    // A stream row is not a `tracks` row. A history row carries the negation of
+    // its id; an imported playlist entry has no history row at all, so it sends
+    // the video id instead and the cover is fetched by that.
+    if (typeof input === 'number') {
+      if (Number.isInteger(input) && input < 0) return container.online.artworkFor(-input)
+      return container.artwork.resolve(toTrackId(input))
     }
-    return container.artwork.resolve(toTrackId(trackId))
+
+    if (!isPlainObject(input)) throw new Error('Malformed artwork request.')
+    if (input.sourceKind === 'youtube') {
+      const sourceId = typeof input.sourceId === 'string' ? input.sourceId : null
+      if (!sourceId || !isYouTubeVideoId(sourceId)) return null
+      return container.online.artworkForVideo(sourceId)
+    }
+    return container.artwork.resolve(toTrackId(input.id))
   })
 
   ipcMain.handle(IPC.mediaResolve, async (_event, input: unknown) => {
     const request = toResolvableTrack(input)
     if (request.sourceKind === 'youtube') {
       // Resolving is what "playing" means for a link: it is the first moment the
-      // user's intent is unambiguous, so it is when the history row is lifted.
-      if (request.sourceId) container.online.touch(request.sourceId)
+      // user's intent is unambiguous, so it is when the history row is lifted —
+      // or created, for a track that only existed inside an imported playlist.
+      if (request.sourceId) container.online.rememberPlay(request.sourceId)
       return container.resolvers.resolve(request)
     }
     const track = library.trackById(request.id)
@@ -343,6 +359,33 @@ export function registerIpcHandlers(container: AppContainer): void {
   })
 
   ipcMain.handle(IPC.onlineClear, () => container.online.clear())
+
+  // ----- imported playlists ---------------------------------------------
+  // Importing is a long request (a flat listing is several seconds). It writes a
+  // snapshot and returns it; queueing and playback are the renderer's call, so
+  // "play now" and "add all" share one import path.
+  ipcMain.handle(IPC.onlineImport, (_event, input: unknown) => {
+    if (typeof input !== 'string') throw new Error('Paste a YouTube playlist, album or mix link.')
+    const link = input.trim()
+    if (link.length === 0 || link.length > 2048) {
+      throw new Error('Paste a YouTube playlist, album or mix link.')
+    }
+    return container.online.importList(link)
+  })
+
+  ipcMain.handle(IPC.onlinePlaylists, () => container.online.playlists())
+
+  ipcMain.handle(IPC.onlinePlaylist, (_event, id: unknown) =>
+    container.online.playlist(toId(id, 'playlist'))
+  )
+
+  ipcMain.handle(IPC.onlinePlaylistDelete, (_event, id: unknown) => {
+    container.online.deletePlaylist(toId(id, 'playlist'))
+  })
+
+  ipcMain.handle(IPC.onlinePlaylistRemoveItem, (_event, id: unknown) =>
+    container.online.removePlaylistItem(toId(id, 'playlist entry'))
+  )
 
   ipcMain.handle(IPC.clipboardRead, () => clipboard.readText())
 

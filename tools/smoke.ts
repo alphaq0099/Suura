@@ -24,6 +24,7 @@ import { FolderWatcher, isLibraryEvent, type FolderWatchEvent } from '@core/libr
 import { PlaylistRepository } from '@core/library/playlist-repository'
 import { PlaylistService } from '@core/library/playlist-service'
 import { OnlineRepository } from '@core/library/online-repository'
+import { OnlinePlaylistRepository } from '@core/library/online-playlist-repository'
 import { PlayStateRepository } from '@core/library/play-state-repository'
 import { PlaybackService } from '@core/library/playback-service'
 import { isPathInside, localContentKey, normalizePath } from '@core/library/content-key'
@@ -31,13 +32,22 @@ import { artworkKeyFor, extractArtwork, extensionForMime } from '@core/library/a
 import { LocalFileResolver } from '@engine/local-file-resolver'
 import { getEngineStatus } from '@engine/sidecar/engine-status'
 import type { YtInfoProvider, YtMediaInfo } from '@engine/sidecar/yt-dlp'
-import { buildInfoArgs } from '@engine/sidecar/yt-dlp'
+import { buildInfoArgs, buildPlaylistArgs, parsePlaylist } from '@engine/sidecar/yt-dlp'
 import { RemoteStreamProxy, type UpstreamMedia } from '@engine/stream-proxy'
 import { YouTubeResolver } from '@engine/youtube-resolver'
 import { PLAYLIST_INDEX_MAX, PLAYLIST_INDEX_MIN, clampPlaylistIndexWidth } from '@shared/playlists'
 import { parseMediaUrl } from '@shared/media-url'
 import { buildStreamUrl, parseStreamUrl } from '@shared/stream-url'
-import { describeYouTubeFailure, extractYouTubeVideoId, youtubeThumbnailCandidates, youtubeWatchUrl } from '@shared/youtube'
+import {
+  describeYouTubeFailure,
+  extractYouTubeVideoId,
+  normalizeArtistName,
+  parseYouTubeLink,
+  youtubeListTitle,
+  youtubeListUrl,
+  youtubeThumbnailCandidates,
+  youtubeWatchUrl
+} from '@shared/youtube'
 import { buildArtworkUrl, parseArtworkUrl } from '@shared/artwork-url'
 import { formatAudioSummary, formatCodec } from '@shared/format'
 import { nextDecision, shuffleFrom, shuffled } from '@shared/queue'
@@ -124,7 +134,14 @@ async function main(): Promise<void> {
   console.log('Player core smoke test\n')
 
   // Exercises the sidecar locator/version probe that the engine layer will use.
-  const engine = await getEngineStatus({ binDir: null, autoUpdate: false, downloadConcurrency: 1, cookiesFromBrowser: null })
+  const engine = await getEngineStatus({
+    binDir: null,
+    autoUpdate: false,
+    downloadConcurrency: 1,
+    cookiesFromBrowser: null,
+    importLimit: 200,
+    mixLimit: 50
+  })
   check('engine probe located ffmpeg', engine.ffmpeg.found, engine.ffmpeg.error ?? 'not found')
   check('engine probe read the ffmpeg version string', Boolean(engine.ffmpeg.version))
   check('engine probe reports yt-dlp presence without crashing', typeof engine.ytDlp.found === 'boolean')
@@ -709,6 +726,18 @@ async function main(): Promise<void> {
     checkEqual('a width below the minimum is clamped', clampPlaylistIndexWidth(10), PLAYLIST_INDEX_MIN)
     checkEqual('a width above the maximum is clamped', clampPlaylistIndexWidth(9999), PLAYLIST_INDEX_MAX)
 
+    // Import limits are settings, not constants: an album may be worth 200 rows
+    // and a radio mix is a snapshot whose length the user picks.
+    checkEqual(
+      'import limits default to 200 playlists / 50 mixes',
+      `${settings.get().engine.importLimit}/${settings.get().engine.mixLimit}`,
+      '200/50'
+    )
+    settings.update({ engine: { importLimit: 250, mixLimit: 30 } })
+    const rereadLimits = new SettingsService(paths.config, silentLogger)
+    checkEqual('an import limit survives a reload', rereadLimits.get().engine.importLimit, 250)
+    checkEqual('a mix length survives a reload', rereadLimits.get().engine.mixLimit, 30)
+
     // --- persistence ------------------------------------------------------
     database.close()
     const reopened = openLibraryDatabase(paths.database, silentLogger)
@@ -746,6 +775,159 @@ async function main(): Promise<void> {
     )
     check('youtube: no WebP stills are requested', thumbs.every((url) => url.endsWith('.jpg') && !url.includes('vi_webp')))
     check('youtube: anything that is not a video id has no thumbnail', youtubeThumbnailCandidates('nope').length === 0)
+
+    // --- link classification ---------------------------------------------
+    // A mix wins over its seed video; a playlist with a video is a video first.
+    const kindOf = (input: string): string => JSON.stringify(parseYouTubeLink(input))
+    checkEqual(
+      'youtube: a watch link is a video',
+      kindOf('https://www.youtube.com/watch?v=XeUYMrGmLPw'),
+      '{"kind":"video","videoId":"XeUYMrGmLPw"}'
+    )
+    checkEqual(
+      'youtube: a youtu.be link is a video',
+      kindOf('https://youtu.be/XeUYMrGmLPw?t=30'),
+      '{"kind":"video","videoId":"XeUYMrGmLPw"}'
+    )
+    checkEqual(
+      'youtube: a radio link is a mix, not its seed video',
+      kindOf('https://www.youtube.com/watch?v=jqRjvIbJ2ZM&list=RDjqRjvIbJ2ZM&start_radio=1'),
+      '{"kind":"list","listId":"RDjqRjvIbJ2ZM","listKind":"mix"}'
+    )
+    checkEqual(
+      'youtube: a video inside a playlist stays a video with an offer',
+      kindOf('https://www.youtube.com/watch?v=qP-7GNoDJ5c&list=PLAw8F_6lIU7I'),
+      '{"kind":"video-in-list","videoId":"qP-7GNoDJ5c","listId":"PLAw8F_6lIU7I","listKind":"playlist"}'
+    )
+    checkEqual(
+      'youtube: a playlist page is a list',
+      kindOf('https://www.youtube.com/playlist?list=PLAw8F_6lIU7I'),
+      '{"kind":"list","listId":"PLAw8F_6lIU7I","listKind":"playlist"}'
+    )
+    checkEqual(
+      'youtube: a music album is an album',
+      kindOf('https://music.youtube.com/playlist?list=OLAK5uy_ndFTmevlaZfhex3Y34n96wzv6Lp8Dc50c'),
+      '{"kind":"list","listId":"OLAK5uy_ndFTmevlaZfhex3Y34n96wzv6Lp8Dc50c","listKind":"album"}'
+    )
+    checkEqual(
+      'youtube: a bare list id is a list',
+      kindOf('PLAw8F_6lIU7I'),
+      '{"kind":"list","listId":"PLAw8F_6lIU7I","listKind":"playlist"}'
+    )
+    checkEqual(
+      'youtube: a bare video id is still a video',
+      kindOf('dQw4w9WgXcQ'),
+      '{"kind":"video","videoId":"dQw4w9WgXcQ"}'
+    )
+    checkEqual(
+      'youtube: Liked videos is refused with a reason',
+      kindOf('https://www.youtube.com/playlist?list=LL'),
+      '{"kind":"refused","reason":"account-list"}'
+    )
+    checkEqual(
+      'youtube: Watch Later is refused with a reason',
+      kindOf('https://www.youtube.com/playlist?list=WL'),
+      '{"kind":"refused","reason":"account-list"}'
+    )
+    checkEqual(
+      'youtube: an @handle is a channel, not a playlist',
+      kindOf('https://www.youtube.com/@RickAstley'),
+      '{"kind":"refused","reason":"channel"}'
+    )
+    checkEqual(
+      'youtube: a /channel/ page is a channel',
+      kindOf('https://www.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw'),
+      '{"kind":"refused","reason":"channel"}'
+    )
+    checkEqual(
+      'youtube: another host is not YouTube',
+      kindOf('https://example.com/watch?v=dQw4w9WgXcQ'),
+      '{"kind":"refused","reason":"not-youtube"}'
+    )
+
+    checkEqual('youtube: an album title loses its prefix', youtubeListTitle('Album - head or heart', 'album'), 'head or heart')
+    checkEqual('youtube: a mix title loses its prefix', youtubeListTitle('Mix - Hope', 'mix'), 'Hope')
+    checkEqual(
+      'youtube: a hand-made playlist keeps its name',
+      youtubeListTitle('Mix - Hope', 'playlist'),
+      'Mix - Hope'
+    )
+    checkEqual('youtube: a Topic channel becomes the artist', normalizeArtistName('Christina Perri - Topic'), 'Christina Perri')
+    checkEqual('youtube: an ordinary artist is untouched', normalizeArtistName('The Chainsmokers'), 'The Chainsmokers')
+    checkEqual(
+      'youtube: a mix is fetched in the shape that returns a queue',
+      youtubeListUrl('RDjqRjvIbJ2ZM'),
+      'https://www.youtube.com/watch?v=jqRjvIbJ2ZM&list=RDjqRjvIbJ2ZM&start_radio=1'
+    )
+    checkEqual(
+      'youtube: any other list uses the playlist form',
+      youtubeListUrl('PLAw8F_6lIU7I'),
+      'https://www.youtube.com/playlist?list=PLAw8F_6lIU7I'
+    )
+
+    const playlistArgs = buildPlaylistArgs('https://www.youtube.com/playlist?list=PLAw8F_6lIU7I', 50)
+    check('youtube: a listing is flat', playlistArgs.includes('--flat-playlist'))
+    check('youtube: a listing is capped on YouTube side', playlistArgs.includes('--playlist-end') && playlistArgs.includes('50'))
+    check('youtube: a listing never says "no playlist"', !playlistArgs.includes('--no-playlist'))
+    checkEqual('youtube: the listing URL comes last', playlistArgs[playlistArgs.length - 1], 'https://www.youtube.com/playlist?list=PLAw8F_6lIU7I')
+
+    // --- flat playlist parsing -------------------------------------------
+    const playlistJson = JSON.stringify({
+      _type: 'playlist',
+      id: 'OLAK5uy_test',
+      title: 'Album - head or heart',
+      uploader: null,
+      channel: 'Christina Perri',
+      playlist_count: 4,
+      thumbnails: [
+        { url: 'https://i9.ytimg.com/s_p/x/maxresdefault.jpg', width: 1200 },
+        { url: 'https://i9.ytimg.com/s_p/x/sddefault.jpg', width: 640 }
+      ],
+      entries: [
+        { id: 'XeUYMrGmLPw', title: 'a thousand years', duration: 285, uploader: 'Christina Perri - Topic', availability: 'public' },
+        { id: 'IDyQO0QuvKY', title: 'Hope', duration: 180, uploader: 'The Chainsmokers', availability: 'public' },
+        { id: 'XeUYMrGmLPw', title: 'duplicate', duration: 285 },
+        { id: 'cnRB2CgUpSw', title: 'live', availability: 'public', live_status: 'is_live' },
+        { id: 'abcDEFGHIJK', title: 'private', availability: 'private' },
+        { id: 'short', title: 'not a video id' },
+        { id: 'abcDEF12345', title: 'last', duration: 201.4, uploader: 'ImagineDragons' }
+      ]
+    })
+    const parsedList = parsePlaylist(playlistJson, 10)
+    checkEqual('playlist: the id is read', parsedList.listId, 'OLAK5uy_test')
+    checkEqual('playlist: the title is read', parsedList.title, 'Album - head or heart')
+    checkEqual('playlist: the owner falls back to the channel', parsedList.owner, 'Christina Perri')
+    checkEqual('playlist: the reported total is kept', parsedList.total, 4)
+    checkEqual('playlist: unplayable, duplicate and short entries are dropped', parsedList.entries.length, 3)
+    checkEqual('playlist: the order is kept', parsedList.entries.map((entry) => entry.videoId).join(','), 'XeUYMrGmLPw,IDyQO0QuvKY,abcDEF12345')
+    checkEqual('playlist: a Topic uploader becomes the artist', parsedList.entries[0]?.artist, 'Christina Perri')
+    checkEqual('playlist: seconds become milliseconds', parsedList.entries[2]?.durationMs, 201400)
+    check(
+      'playlist: covers are tried largest first',
+      Boolean(parsedList.coverUrls[0]?.includes('maxresdefault') && parsedList.coverUrls[1]?.includes('sddefault'))
+    )
+    check('playlist: a finite list reports that it was cut', parsedList.truncated)
+
+    const capped = parsePlaylist(playlistJson, 2)
+    checkEqual('playlist: the cap is applied after the drops', capped.entries.length, 2)
+    check(
+      'playlist: a mix with no total is truncated when it hits the cap',
+      parsePlaylist(
+        JSON.stringify({ id: 'RDtest', title: 'Mix - x', entries: [{ id: 'XeUYMrGmLPw', title: 'a' }] }),
+        1
+      ).truncated
+    )
+    check(
+      'playlist: unreadable JSON is a human error',
+      (() => {
+        try {
+          parsePlaylist('{', 10)
+          return false
+        } catch (error) {
+          return error instanceof Error && error.message.toLowerCase().includes('unreadable')
+        }
+      })()
+    )
 
     const args = buildInfoArgs('dQw4w9WgXcQ', 'best')
     checkEqual('youtube: the user config is always ignored', args.slice(0, 2).join(' '), '--ignore-config --no-playlist')
@@ -1010,6 +1192,97 @@ async function main(): Promise<void> {
       checkEqual('online: removing a link forgets it', repo.count(), 1)
       checkEqual('online: clearing removes the rest', repo.clear(), 1)
       checkEqual('online: the history is empty again', repo.list().length, 0)
+    } finally {
+      handle.close()
+      await rm(root, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }
+
+  // --- imported online playlists -----------------------------------------
+  // A snapshot, not a mirror: importing the same list again replaces its
+  // entries in place, and an entry's position is what "play from here" uses.
+  {
+    const root = await mkdtemp(join(tmpdir(), 'player-online-lists-'))
+    const handle = openLibraryDatabase(join(root, 'library.db'), silentLogger)
+    try {
+      const repo = new OnlinePlaylistRepository(handle.db)
+      checkEqual('online lists: a fresh index is empty', repo.list().length, 0)
+
+      const album = repo.upsert(
+        {
+          listId: 'OLAK5uy_test',
+          kind: 'album',
+          title: 'head or heart',
+          owner: 'Christina Perri',
+          sourceUrl: 'https://www.youtube.com/playlist?list=OLAK5uy_test',
+          coverKey: `${'c'.repeat(40)}.png`,
+          totalCount: 3
+        },
+        [
+          { videoId: 'aaaaaaaaaaa', title: 'a thousand years', artist: 'Christina Perri', album: 'head or heart', durationMs: 285_000 },
+          { videoId: 'bbbbbbbbbbb', title: 'human', artist: 'Christina Perri', album: 'head or heart', durationMs: 250_000 },
+          { videoId: 'ccccccccccc', title: 'jar of hearts', artist: 'Christina Perri', album: 'head or heart', durationMs: 250_000 }
+        ],
+        1000
+      )
+      checkEqual('online lists: the album is indexed', repo.list().length, 1)
+      checkEqual('online lists: the kind is kept', album.kind, 'album')
+      checkEqual('online lists: the entry count is computed', album.trackCount, 3)
+      checkEqual('online lists: the total YouTube reported is kept', album.totalCount, 3)
+      checkEqual('online lists: entries keep the source order', repo.items(album.id).map((item) => item.videoId).join(','), 'aaaaaaaaaaa,bbbbbbbbbbb,ccccccccccc')
+      checkEqual('online lists: positions start at zero', repo.items(album.id)[0]?.position, 0)
+
+      const item = repo.findItemByVideo('bbbbbbbbbbb')
+      checkEqual('online lists: a video can be found for its first play', item?.artist, 'Christina Perri')
+      checkEqual('online lists: the found entry names its album', item?.album, 'head or heart')
+
+      const reimported = repo.upsert(
+        {
+          listId: 'OLAK5uy_test',
+          kind: 'album',
+          title: 'head or heart (deluxe)',
+          owner: 'Christina Perri',
+          sourceUrl: 'https://www.youtube.com/playlist?list=OLAK5uy_test',
+          coverKey: null,
+          totalCount: 2
+        },
+        [
+          { videoId: 'ccccccccccc', title: 'jar of hearts', artist: 'Christina Perri', album: 'head or heart (deluxe)', durationMs: 250_000 },
+          { videoId: 'ddddddddddd', title: 'distance', artist: 'Christina Perri', album: 'head or heart (deluxe)', durationMs: 240_000 }
+        ],
+        2000
+      )
+      checkEqual('online lists: a re-import replaces the snapshot', repo.list().length, 1)
+      checkEqual('online lists: the playlist keeps its row id', reimported.id, album.id)
+      checkEqual('online lists: the re-import count is the new one', reimported.trackCount, 2)
+      checkEqual('online lists: a re-import keeps a cover it could not fetch again', reimported.coverKey, `${'c'.repeat(40)}.png`)
+      checkEqual('online lists: the re-import moves the playlist to the top', repo.list()[0]?.id, album.id)
+
+      const removedPlaylistId = repo.removeItem(repo.items(album.id)[0]?.id ?? -1)
+      checkEqual('online lists: removing an entry names its playlist', removedPlaylistId, album.id)
+      checkEqual('online lists: positions close the gap', repo.items(album.id)[0]?.position, 0)
+      checkEqual('online lists: the remaining entry is the right one', repo.items(album.id)[0]?.videoId, 'ddddddddddd')
+
+      const mix = repo.upsert(
+        {
+          listId: 'RDaaaaaaaaaaa',
+          kind: 'mix',
+          title: 'Mix - a thousand years',
+          owner: null,
+          sourceUrl: 'https://www.youtube.com/watch?v=aaaaaaaaaaa&list=RDaaaaaaaaaaa&start_radio=1',
+          coverKey: null,
+          totalCount: null
+        },
+        [{ videoId: 'eeeeeeeeeee', title: 'some mix track', artist: null, album: null, durationMs: null }],
+        3000
+      )
+      checkEqual('online lists: a mix is its own playlist', mix.kind, 'mix')
+      checkEqual('online lists: the newest import is first', repo.list()[0]?.id, mix.id)
+
+      check('online lists: deleting removes the playlist', repo.delete(mix.id))
+      checkEqual('online lists: the deleted playlist is gone', repo.list().length, 1)
+      checkEqual('online lists: the deleted entries are gone too', repo.items(mix.id).length, 0)
+      check('online lists: deleting something already gone is harmless', !repo.delete(mix.id))
     } finally {
       handle.close()
       await rm(root, { recursive: true, force: true }).catch(() => undefined)

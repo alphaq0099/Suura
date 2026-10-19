@@ -242,5 +242,51 @@ export const MIGRATIONS: readonly Migration[] = [
         CREATE INDEX idx_online_tracks_played ON online_tracks(last_played_at DESC);
       `)
     }
+  },
+  {
+    version: 6,
+    name: 'online playlists',
+    up: (db) => {
+      // A playlist imported from a link is a *snapshot*, not a mirror: it is
+      // written once, re-importing the same list id replaces its items, and
+      // nothing syncs in the background. `list_id` is the identity, so importing
+      // the same URL twice refreshes one playlist instead of piling up copies.
+      //
+      // The items are deliberately not `online_tracks` rows. The history is a log
+      // of what was played and each video appears there once; a playlist entry is
+      // a position in a list, and the same video may sit in several lists. Keeping
+      // them apart also means removing a history row cannot silently empty part of
+      // an imported album.
+      db.exec(`
+        CREATE TABLE online_playlists (
+          id           INTEGER PRIMARY KEY AUTOINCREMENT,
+          list_id      TEXT    NOT NULL,
+          kind         TEXT    NOT NULL,
+          title        TEXT    NOT NULL,
+          owner        TEXT,
+          source_url   TEXT    NOT NULL,
+          cover_key    TEXT,
+          total_count  INTEGER,
+          imported_at  INTEGER NOT NULL
+        );
+
+        CREATE UNIQUE INDEX idx_online_playlists_list ON online_playlists(list_id);
+        CREATE INDEX idx_online_playlists_imported ON online_playlists(imported_at DESC);
+
+        CREATE TABLE online_playlist_items (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          playlist_id INTEGER NOT NULL,
+          position    INTEGER NOT NULL,
+          video_id    TEXT    NOT NULL,
+          title       TEXT    NOT NULL,
+          artist      TEXT,
+          album       TEXT,
+          duration_ms INTEGER
+        );
+
+        CREATE UNIQUE INDEX idx_online_items_video ON online_playlist_items(playlist_id, video_id);
+        CREATE INDEX idx_online_items_order ON online_playlist_items(playlist_id, position);
+      `)
+    }
   }
 ]

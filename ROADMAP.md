@@ -332,6 +332,8 @@ or a prefetch-based definition; see [`docs/notes/yt-dlp-sample.md`](./docs/notes
 - [ ] Cache manager: write-while-playing, LRU eviction, size/age budgets, janitor task, manual "empty cache"
 - [ ] Download manager: queue, concurrency cap, pause/resume/cancel, progress + speed + ETA, retries, `.part` handling, disk-space pre-flight check
 - [ ] **Keep** action: download → transcode per quality policy → tag → artwork → atomic move into the library → library row appears instantly
+- [ ] **Keep an imported entry**: the same path from the Online playlist pane, one entry or the whole snapshot, keeping
+      `sourceId` so the row stays linked to the video it came from
 - [ ] **Remove download**: delete file, keep the track in playlists/queue, fall back to streaming (availability model from §4)
 - [ ] **Pin in cache** (never evict) and "keep after this play" quick action
 - [ ] Downloads screen: active/completed/failed tabs, retry, reveal in Explorer, per-item retention toggle
@@ -341,12 +343,15 @@ or a prefetch-based definition; see [`docs/notes/yt-dlp-sample.md`](./docs/notes
 
 ### M5 — Discovery & YouTube Library Surface  *(~2–3 weeks)*
 - [ ] Unified search: local results **and** YouTube results in one list, clearly badged
-- [ ] Playlist import from a YouTube playlist URL (resolve all → show which ones are already local). The shape is
-      agreed: a `--flat-playlist` fetch (one process, capped at 200 entries) shown as an inline import strip rather than
-      a modal; `v=…&list=…` plays the video and offers the import; a `music.youtube.com/playlist?list=OLAK5uy…` link is
-      treated as an album (playlist title = album, uploader = album artist). Mix/radio/channel lists are refused and
-      metadata is imported only, deduped by video id, resolving audio lazily on play. Build work is next, after the
-      Online view.
+- [x] Playlist import from a YouTube playlist URL — **landed early, during M3/M4**. A `--flat-playlist` fetch (one
+      process, capped by a setting, default 200) stores a snapshot in `online_playlists` + `online_playlist_items`; a
+      `music.youtube.com/playlist?list=OLAK5uy…` link is an album (list title = album, common entry uploader = album
+      artist); `RD…`/`start_radio=1` mixes are imported too, capped by their own setting (default 50). `v=…&list=…` plays
+      the video and offers the import; account lists (`LL…`, `WL…`, `FL…`) and channel pages are refused before a sidecar
+      runs. The Playlists view separates **Custom** from **Online**, and an imported snapshot can be played, queued,
+      re-imported, trimmed or deleted entry by entry. Metadata only for now: audio resolves lazily on play, and saving an
+      entry to the library is the M4 download path.
+- [ ] Show which imported entries are already in the library (needs the M4 library rows)
 - [ ] Channel/artist pages (basic), "more from this channel"
 - [ ] Auto-attach YouTube metadata: upgrade titles from `Title (Official Video)` → canonical tags, and optionally match against MusicBrainz
 - [ ] Smart playlists / filters (recently added, most played, never played, stream-only tracks)
@@ -491,8 +496,9 @@ player/
 4. ~~**Write the two specs**~~ Done: `IMediaResolver` is `src/engine/resolver.ts`; the IPC event schema is `src/shared/ipc.ts`.
 5. ~~**Pick the retention defaults**~~ Done: stream-only default, 5 GB / 30-day cache budget, keep only on request.
 
-Where M3 stands: the sidecar spike is done (`docs/notes/yt-dlp-spike.md`), the stack and storage decisions are recorded
-(ADR 0001), and streaming now has a real surface — the **Online** view with a persistent link history. What is left in
-M3 is the exit measurement (50 links, and a decision on the `< 3 s` target). Next build work: YouTube playlist/album
-import, then M4 retention (which turns *Save to library* into a real download). The remaining M0 leftover is verifying
+Where things stand: the sidecar spike is done (`docs/notes/yt-dlp-spike.md`), the stack and storage decisions are recorded
+(ADR 0001), streaming has a real surface — the **Online** view with a persistent link history — and playlist, album and
+mix import now stores a snapshot that the Playlists view can play, queue, re-import and trim. What is left in M3 is the
+exit measurement (50 links, and a decision on the `< 3 s` target). Next build work: M4 retention, which turns *Save to
+library* into a real download and gives an imported entry somewhere to land. The remaining M0 leftover is verifying
 yt-dlp/ffmpeg discovery on a clean machine.

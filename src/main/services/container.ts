@@ -9,6 +9,7 @@ import { FolderWatcher } from '@core/library/folder-watcher'
 import { PlaylistRepository } from '@core/library/playlist-repository'
 import { PlaylistService } from '@core/library/playlist-service'
 import { OnlineRepository } from '@core/library/online-repository'
+import { OnlinePlaylistRepository } from '@core/library/online-playlist-repository'
 import { PlayStateRepository } from '@core/library/play-state-repository'
 import { PlaybackService } from '@core/library/playback-service'
 import { LocalFileResolver } from '@engine/local-file-resolver'
@@ -47,6 +48,8 @@ export interface AppContainer {
   online: OnlineService
   /** Exposed alongside `repo` so the self-test can seed history directly. */
   onlineRepo: OnlineRepository
+  /** Imported playlists, exposed so the self-test can seed one. */
+  onlinePlaylists: OnlinePlaylistRepository
   dispose(): void
 }
 
@@ -89,9 +92,13 @@ export function createContainer(): AppContainer {
   resolvers.register(youtube.resolver)
 
   const onlineRepo = new OnlineRepository(database.db)
+  const onlinePlaylists = new OnlinePlaylistRepository(database.db)
   const online = createOnlineService({
     resolver: youtube.resolver,
     repo: onlineRepo,
+    playlists: onlinePlaylists,
+    listProvider: ytDlp,
+    engine: () => settings.get().engine,
     artwork,
     log: log.child('online'),
     onChange: () => broadcast(IPC_EVENTS.onlineChanged, null)
@@ -142,6 +149,7 @@ export function createContainer(): AppContainer {
     youtube,
     online,
     onlineRepo,
+    onlinePlaylists,
     dispose: () => {
       unwatchSettings()
       watcher.stop()

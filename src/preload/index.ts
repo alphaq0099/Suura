@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import {
   EVENT_CHANNELS,
   IPC,
+  type ArtworkRequest,
   type PlayerApi,
   type PlayerEventName,
   type PlayerEvents
@@ -43,7 +44,8 @@ const api: PlayerApi = {
 
   revealTrack: (trackId: number) => ipcRenderer.invoke(IPC.libraryRevealTrack, trackId) as Promise<void>,
 
-  getArtwork: (trackId: number) => ipcRenderer.invoke(IPC.libraryArtwork, trackId) as Promise<string | null>,
+  getArtwork: (request: ArtworkRequest) =>
+    ipcRenderer.invoke(IPC.libraryArtwork, request) as Promise<string | null>,
 
   listPlaylists: () => ipcRenderer.invoke(IPC.playlistsList),
 
@@ -82,6 +84,18 @@ const api: PlayerApi = {
   removeOnline: (id: number) => ipcRenderer.invoke(IPC.onlineRemove, id) as Promise<void>,
 
   clearOnline: () => ipcRenderer.invoke(IPC.onlineClear) as Promise<number>,
+
+  importOnlineList: (url: string) => ipcRenderer.invoke(IPC.onlineImport, url),
+
+  listOnlinePlaylists: () => ipcRenderer.invoke(IPC.onlinePlaylists),
+
+  getOnlinePlaylist: (playlistId: number) => ipcRenderer.invoke(IPC.onlinePlaylist, playlistId),
+
+  deleteOnlinePlaylist: (playlistId: number) =>
+    ipcRenderer.invoke(IPC.onlinePlaylistDelete, playlistId) as Promise<void>,
+
+  removeOnlinePlaylistItem: (itemId: number) =>
+    ipcRenderer.invoke(IPC.onlinePlaylistRemoveItem, itemId) as Promise<number | null>,
 
   readClipboardText: () => ipcRenderer.invoke(IPC.clipboardRead) as Promise<string>,
 

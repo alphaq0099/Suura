@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { OnlineTrack } from '@shared/types'
+import type { OnlinePlaylistDetail, OnlineTrack } from '@shared/types'
 import { api, messageOf } from '../api'
 
 export interface UseOnlineResult {
@@ -13,6 +13,14 @@ export interface UseOnlineResult {
    * when the link is not a YouTube video or YouTube refuses it.
    */
   addLink: (url: string) => Promise<OnlineTrack>
+  /**
+   * Fetches a playlist, album or mix and stores it as an Online playlist.
+   *
+   * Rejects with a readable message when the link is a channel page, an account
+   * list, or a list YouTube will not hand over. The caller decides whether the
+   * result replaces the queue or merely joins it.
+   */
+  importList: (url: string) => Promise<OnlinePlaylistDetail>
   remove: (id: number) => Promise<void>
   clear: () => Promise<void>
 }
@@ -70,6 +78,12 @@ export function useOnline(): UseOnlineResult {
     return entry
   }, [])
 
+  const importList = useCallback(async (url: string): Promise<OnlinePlaylistDetail> => {
+    // The broadcast refreshes the history. The import itself adds no history rows:
+    // a track joins the log when it is played, not when it is imported.
+    return api.importOnlineList(url)
+  }, [])
+
   const remove = useCallback(async (id: number): Promise<void> => {
     await api.removeOnline(id)
     setEntries((current) => current.filter((entry) => entry.id !== id))
@@ -80,5 +94,5 @@ export function useOnline(): UseOnlineResult {
     setEntries([])
   }, [])
 
-  return { entries, loading, error, refresh, addLink, remove, clear }
+  return { entries, loading, error, refresh, addLink, importList, remove, clear }
 }

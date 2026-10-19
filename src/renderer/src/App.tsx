@@ -323,7 +323,7 @@ export function App() {
         view={view}
         stats={stats}
         queueLength={player.queue.length}
-        playlistCount={playlists.playlists.length}
+        playlistCount={playlists.playlists.length + playlists.onlinePlaylists.length}
         onlineCount={online.entries.length}
         onSelect={setView}
       />
@@ -371,6 +371,7 @@ export function App() {
           currentVideoId={player.current?.sourceKind === 'youtube' ? (player.current.sourceId ?? null) : null}
           isPlaying={player.isPlaying}
           onAddLink={online.addLink}
+          onImportList={online.importList}
           onRemove={online.remove}
           onClear={online.clear}
           onPlay={(queue, index) => player.playQueue(queue, index)}
@@ -381,6 +382,9 @@ export function App() {
           playlists={playlists.playlists}
           selectedId={playlists.selectedId}
           detail={playlists.detail}
+          onlinePlaylists={playlists.onlinePlaylists}
+          selectedOnlineId={playlists.selectedOnlineId}
+          onlineDetail={playlists.onlineDetail}
           loading={playlists.loading}
           error={playlists.error}
           currentTrackId={player.current?.id ?? null}
@@ -390,13 +394,18 @@ export function App() {
           indexWidth={settings.playlists.indexWidth}
           onIndexWidthChange={setPlaylistIndexWidth}
           onSelect={playlists.select}
+          onSelectOnline={playlists.selectOnline}
           onCreate={playlists.create}
           onRename={playlists.rename}
           onDelete={playlists.remove}
           onClear={playlists.clear}
           onRemoveItems={playlists.removeItems}
           onMoveItem={playlists.moveItem}
+          onReimportOnline={playlists.reimportOnline}
+          onDeleteOnline={playlists.deleteOnline}
+          onRemoveOnlineItem={playlists.removeOnlineItem}
           onPlay={(queue, index) => player.playQueue(queue, index)}
+          onQueue={player.enqueue}
           onReveal={(trackId) => void revealTrack(trackId)}
         />
       ) : view === 'queue' ? (

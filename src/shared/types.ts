@@ -194,6 +194,50 @@ export interface OnlineTrack {
   lastPlayedAt: number | null
 }
 
+/** Where an Online playlist came from: a hand-made list, an album, or a radio mix. */
+export type OnlinePlaylistKind = 'playlist' | 'album' | 'mix'
+
+/** One track inside an Online playlist, in source order. */
+export interface OnlinePlaylistItem {
+  /** The entry's own id, not a `tracks` id. */
+  id: number
+  playlistId: number
+  position: number
+  videoId: string
+  title: string
+  artist: string | null
+  album: string | null
+  durationMs: number | null
+}
+
+/**
+ * A playlist imported from a link.
+ *
+ * A snapshot, not a mirror: importing the same list URL again replaces the items
+ * in place, but nothing syncs in the background. `coverKey` is the list's own
+ * cover (an album sleeve, usually), which is also what every row in an album
+ * shows; a plain playlist leaves it null and each row uses its video's still.
+ */
+export interface OnlinePlaylist {
+  id: number
+  /** YouTube's list id (`PL…`, `OLAK5uy…`, `RD…`). Identity for re-imports. */
+  listId: string
+  kind: OnlinePlaylistKind
+  title: string
+  owner: string | null
+  sourceUrl: string
+  coverKey: string | null
+  trackCount: number
+  /** How many entries YouTube reports, or null when it reports none (a mix). */
+  totalCount: number | null
+  importedAt: number
+}
+
+export interface OnlinePlaylistDetail {
+  playlist: OnlinePlaylist
+  items: OnlinePlaylistItem[]
+}
+
 export interface ScanProgress {
   phase: 'enumerating' | 'reading' | 'done'
   /** Files discovered on disk that look like audio. */
@@ -233,6 +277,19 @@ export interface EngineSettings {
   downloadConcurrency: number
   /** e.g. "chrome", "edge", "firefox". Null disables cookie import. */
   cookiesFromBrowser: string | null
+  /**
+   * How many tracks an imported playlist or album keeps.
+   *
+   * A playlist can be thousands of entries long and every one costs a queue row,
+   * so an import is capped rather than silently materialising the whole thing.
+   * The view says "first N of M" when the cap bites.
+   */
+  importLimit: number
+  /**
+   * How many tracks a mix keeps. A mix reports no total because it never ends,
+   * so this is the whole definition of a mix import: a snapshot of N tracks.
+   */
+  mixLimit: number
 }
 
 export interface VisualSettings {

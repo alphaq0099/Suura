@@ -407,6 +407,26 @@ export function SettingsView(props: SettingsViewProps) {
                   onChange={(event) => onUpdate({ engine: { downloadConcurrency: Number(event.target.value) } })}
                 />
               </label>
+              <label className="field">
+                <span>Playlist / album import limit</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={settings.engine.importLimit}
+                  onChange={(event) => onUpdate({ engine: { importLimit: Number(event.target.value) } })}
+                />
+              </label>
+              <label className="field">
+                <span>Mix length</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={500}
+                  value={settings.engine.mixLimit}
+                  onChange={(event) => onUpdate({ engine: { mixLimit: Number(event.target.value) } })}
+                />
+              </label>
               <label className="field checkbox">
                 <input
                   type="checkbox"
@@ -416,6 +436,10 @@ export function SettingsView(props: SettingsViewProps) {
                 <span>Keep yt-dlp up to date automatically</span>
               </label>
             </div>
+            <p className="card-hint">
+              A playlist or album import keeps the first N tracks; a mix never ends, so N is its whole definition. Both
+              caps are applied while listing, so the rest of the list is never fetched or queued.
+            </p>
           </article>
 
           <article className="card">

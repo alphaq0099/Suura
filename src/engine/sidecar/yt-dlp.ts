@@ -3,11 +3,20 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Logger } from '@core/logging/logger'
 import type { EngineSettings, QualityTier } from '@shared/types'
-import { describeYouTubeFailure, youtubeFormatSelector, youtubeWatchUrl } from '@shared/youtube'
+import {
+  describeYouTubeFailure,
+  isYouTubeVideoId,
+  normalizeArtistName,
+  youtubeFormatSelector,
+  youtubeWatchUrl
+} from '@shared/youtube'
 import { locateExecutable, wellKnownDirectories } from './locate'
 
 /** Resolving is 7-10 s on a normal connection; 25 s leaves room for a slow night. */
 const DEFAULT_TIMEOUT_MS = 25_000
+
+/** A flat list of 200 entries is several requests on YouTube's side; 60 s is fair. */
+const PLAYLIST_TIMEOUT_MS = 60_000
 
 /** A single video's -J JSON is a few hundred KB. Anything past this is not a video. */
 const MAX_STDOUT_BYTES = 8 * 1024 * 1024
@@ -46,6 +55,37 @@ export interface YtInfoProvider {
   fetchInfo(videoId: string, quality: QualityTier, signal?: AbortSignal): Promise<YtMediaInfo>
 }
 
+/** One entry of a flat playlist listing. Flat means no stream URLs, no formats. */
+export interface YtPlaylistEntry {
+  videoId: string
+  title: string
+  artist: string | null
+  durationMs: number | null
+}
+
+export interface YtPlaylistInfo {
+  listId: string
+  title: string
+  owner: string | null
+  /** The count YouTube reports, or null when it reports none (a radio mix). */
+  total: number | null
+  /** True when entries were left behind: by the cap or by being unplayable. */
+  truncated: boolean
+  /** Cover candidates, largest first. The first one that decodes is used. */
+  coverUrls: string[]
+  entries: YtPlaylistEntry[]
+}
+
+/**
+ * The part of the client an import needs.
+ *
+ * Separate from `YtInfoProvider` so the Online service can be tested with a fake
+ * listing and the resolver never grows a method it does not use.
+ */
+export interface YtPlaylistProvider {
+  fetchPlaylist(url: string, limit: number, signal?: AbortSignal): Promise<YtPlaylistInfo>
+}
+
 /** An expected failure with a message that is safe to show. */
 export class YtDlpError extends Error {
   constructor(
@@ -80,6 +120,28 @@ export function buildInfoArgs(videoId: string, quality: QualityTier): string[] {
 }
 
 /**
+ * The arguments for one playlist listing.
+ *
+ * `--no-playlist` is deliberately absent: this call *is* the playlist. `--flat`
+ * keeps it to one request per page of ids instead of resolving every video, which
+ * is the difference between seconds and minutes for a 200-track album. The cap is
+ * applied on YouTube's side so a 5,000-track playlist never transfers.
+ */
+export function buildPlaylistArgs(url: string, limit: number): string[] {
+  return [
+    '--ignore-config',
+    '--no-progress',
+    '--socket-timeout',
+    '15',
+    '--flat-playlist',
+    '--playlist-end',
+    String(Math.max(1, Math.floor(limit))),
+    '-J',
+    url
+  ]
+}
+
+/**
  * Runs yt-dlp once per resolve.
  *
  * A long-lived process would save the ~1.5-2 s start-up cost, but yt-dlp is not
@@ -88,7 +150,7 @@ export function buildInfoArgs(videoId: string, quality: QualityTier): string[] {
  * cancellation, timeouts and error handling honest; the session cache in
  * `YouTubeResolver` is what keeps the *second* play fast.
  */
-export class YtDlpClient implements YtInfoProvider {
+export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider {
   private binary: string | null = null
 
   constructor(
@@ -107,6 +169,20 @@ export class YtDlpClient implements YtInfoProvider {
     } catch (error) {
       this.deps.log.warn('could not parse yt-dlp output', {
         videoId,
+        error: error instanceof Error ? error.message : String(error)
+      })
+      throw error
+    }
+  }
+
+  async fetchPlaylist(url: string, limit: number, signal?: AbortSignal): Promise<YtPlaylistInfo> {
+    const args = buildPlaylistArgs(url, limit)
+    const { stdout } = await this.run(args, signal, PLAYLIST_TIMEOUT_MS)
+    try {
+      return parsePlaylist(stdout, limit)
+    } catch (error) {
+      this.deps.log.warn('could not parse yt-dlp playlist output', {
+        url,
         error: error instanceof Error ? error.message : String(error)
       })
       throw error
@@ -140,9 +216,13 @@ export class YtDlpClient implements YtInfoProvider {
     return located.path
   }
 
-  private run(args: string[], signal?: AbortSignal): Promise<{ stdout: string; stderr: string }> {
+  private run(
+    args: string[],
+    signal?: AbortSignal,
+    timeoutOverrideMs?: number
+  ): Promise<{ stdout: string; stderr: string }> {
     const binary = this.resolveBinary()
-    const timeoutMs = this.deps.timeoutMs ?? DEFAULT_TIMEOUT_MS
+    const timeoutMs = timeoutOverrideMs ?? this.deps.timeoutMs ?? DEFAULT_TIMEOUT_MS
 
     return new Promise((resolve, reject) => {
       if (signal?.aborted) {
@@ -286,7 +366,7 @@ function parseInfo(stdout: string, requestedId: string): YtMediaInfo {
     videoId,
     webpageUrl: asString(info.webpage_url) ?? youtubeWatchUrl(videoId),
     title: asString(info.title) ?? 'Untitled',
-    artist: asString(info.artist) ?? asString(info.uploader) ?? asString(info.channel),
+    artist: normalizeArtistName(asString(info.artist) ?? asString(info.uploader) ?? asString(info.channel)),
     durationSec: duration,
     thumbnailUrl: thumbnailOf(info),
     formatId: asString(format.format_id) ?? '',
@@ -301,6 +381,114 @@ function parseInfo(stdout: string, requestedId: string): YtMediaInfo {
     expiresAt: expiryOf(streamUrl),
     mimeType: MIME_BY_EXTENSION[ext] ?? 'application/octet-stream'
   }
+}
+
+/** Entries YouTube marks as unplayable without the account that owns them. */
+const UNAVAILABLE = new Set(['private', 'premium_only', 'subscriber_only', 'needs_auth'])
+
+/**
+ * Turns one `-J --flat-playlist` document into the list an import needs.
+ *
+ * Exported for the smoke tests: this is where the rules live, and none of them
+ * need a sidecar. Flat entries carry no album or track number, so a playlist
+ * entry's album stays null; an album's name comes from the list itself.
+ */
+export function parsePlaylist(stdout: string, limit: number): YtPlaylistInfo {
+  let raw: unknown
+  try {
+    raw = JSON.parse(stdout)
+  } catch {
+    throw new YtDlpError('YouTube returned something unreadable. Try again.', 'invalid-json')
+  }
+  if (!raw || typeof raw !== 'object') {
+    throw new YtDlpError('YouTube returned something unreadable. Try again.', 'empty-json')
+  }
+
+  const info = raw as Record<string, unknown>
+  const listId = asString(info.id) ?? ''
+  if (!listId) {
+    throw new YtDlpError('YouTube did not return a playlist for this link.', 'no-playlist')
+  }
+
+  const cap = Math.max(1, Math.floor(limit))
+  const seen = new Set<string>()
+  const entries: YtPlaylistEntry[] = []
+  const rawEntries = Array.isArray(info.entries) ? info.entries : []
+
+  for (const candidate of rawEntries) {
+    if (entries.length >= cap) break
+    if (!candidate || typeof candidate !== 'object') continue
+
+    const entry = candidate as Record<string, unknown>
+    const videoId = asString(entry.id) ?? ''
+    if (!isYouTubeVideoId(videoId) || seen.has(videoId)) continue
+
+    const availability = asString(entry.availability)
+    if (availability && UNAVAILABLE.has(availability)) continue
+    const liveStatus = asString(entry.live_status)
+    if (liveStatus === 'is_live' || liveStatus === 'is_upcoming') continue
+
+    const title = asString(entry.title)
+    if (!title) continue
+
+    const duration = asNumber(entry.duration)
+    seen.add(videoId)
+    entries.push({
+      videoId,
+      title,
+      // A flat listing has no `artist`; the channel is the best available name.
+      artist: normalizeArtistName(asString(entry.artist) ?? asString(entry.uploader) ?? asString(entry.channel)),
+      durationMs: duration !== null && duration > 0 ? Math.round(duration * 1000) : null
+    })
+  }
+
+  const total = asNumber(info.playlist_count)
+  return {
+    listId,
+    title: asString(info.title) ?? listId,
+    owner: asString(info.uploader) ?? asString(info.channel),
+    total,
+    // A mix never reports a total, so reaching the cap is the only truncation
+    // signal it has. A finite list is truncated whenever entries were dropped,
+    // whether by the cap or by being private.
+    truncated: total !== null ? total > entries.length : entries.length >= cap,
+    coverUrls: coverUrlsOf(info),
+    entries
+  }
+}
+
+/**
+ * Every thumbnail URL the list offers, largest first.
+ *
+ * Returned as a list rather than one URL because YouTube's largest still is not
+ * always a real image: an album cover's `maxresdefault.jpg` can answer 404 with a
+ * decodable 120×90 placeholder, and the signed `sddefault.jpg` is the one that
+ * holds the sleeve. The caller walks the list and checks the status.
+ */
+function coverUrlsOf(info: Record<string, unknown>): string[] {
+  const ranked: Array<{ url: string; width: number }> = []
+  const thumbnails = Array.isArray(info.thumbnails) ? info.thumbnails : []
+
+  for (const candidate of thumbnails) {
+    if (!candidate || typeof candidate !== 'object') continue
+    const entry = candidate as Record<string, unknown>
+    const url = asString(entry.url)
+    if (!url) continue
+    ranked.push({ url, width: asNumber(entry.width) ?? 0 })
+  }
+
+  const direct = asString(info.thumbnail)
+  if (direct) ranked.push({ url: direct, width: 0 })
+
+  ranked.sort((left, right) => right.width - left.width)
+  const seen = new Set<string>()
+  const urls: string[] = []
+  for (const candidate of ranked) {
+    if (seen.has(candidate.url)) continue
+    seen.add(candidate.url)
+    urls.push(candidate.url)
+  }
+  return urls
 }
 
 function asString(value: unknown): string | null {

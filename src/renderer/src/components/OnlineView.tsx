@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import type { OnlineTrack, Track } from '@shared/types'
+import type { OnlinePlaylistDetail, OnlineTrack, Track } from '@shared/types'
 import { formatCount, formatDuration } from '@shared/format'
-import { onlineEntryToTrack } from '@shared/online'
-import { extractYouTubeVideoId } from '@shared/youtube'
+import { onlineEntryToTrack, onlinePlaylistItemToTrack } from '@shared/online'
+import { describeYouTubeRefusal, parseYouTubeLink, youtubeListUrl } from '@shared/youtube'
 import { api, messageOf } from '../api'
 import { ArtworkImage } from './ArtworkImage'
 import {
@@ -26,6 +26,8 @@ export interface OnlineViewProps {
   currentVideoId: string | null
   isPlaying: boolean
   onAddLink: (url: string) => Promise<OnlineTrack>
+  /** Fetches and stores a playlist, album or mix. */
+  onImportList: (url: string) => Promise<OnlinePlaylistDetail>
   onRemove: (id: number) => Promise<void>
   onClear: () => Promise<void>
   onPlay: (tracks: Track[], index: number) => void
@@ -35,7 +37,7 @@ export interface OnlineViewProps {
 /** A link that has been submitted but not resolved yet, or that failed. */
 interface Pending {
   url: string
-  videoId: string
+  kind: 'video' | 'list'
   mode: 'play' | 'queue'
   error: string | null
 }
@@ -49,6 +51,12 @@ interface MenuState {
   entry: OnlineTrack
   x: number
   y: number
+}
+
+/** A video that sits in a list: the video plays, and the list is offered separately. */
+interface ListOffer {
+  listId: string
+  kind: 'playlist' | 'album'
 }
 
 const MENU_WIDTH = 230
@@ -74,6 +82,7 @@ export function OnlineView(props: OnlineViewProps) {
     currentVideoId,
     isPlaying,
     onAddLink,
+    onImportList,
     onRemove,
     onClear,
     onPlay,
@@ -84,6 +93,7 @@ export function OnlineView(props: OnlineViewProps) {
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [pending, setPending] = useState<Pending | null>(null)
+  const [offer, setOffer] = useState<ListOffer | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const [menu, setMenu] = useState<MenuState | null>(null)
 
@@ -104,25 +114,58 @@ export function OnlineView(props: OnlineViewProps) {
   }, [])
 
   const run = useCallback(
-    async (link: string, mode: 'play' | 'queue'): Promise<void> => {
-      const videoId = extractYouTubeVideoId(link)
-      if (!videoId) {
-        setNotice({
-          kind: 'error',
-          text: 'That does not look like a YouTube video link. Paste a watch, youtu.be, shorts or music link.'
-        })
+    async (linkText: string, mode: 'play' | 'queue'): Promise<void> => {
+      const link = parseYouTubeLink(linkText)
+      if (link.kind === 'refused') {
+        setPending(null)
+        setNotice({ kind: 'error', text: describeYouTubeRefusal(link.reason) })
         return
       }
 
       const token = ++submitTokenRef.current
       setNotice(null)
       setBusy(true)
-      setPending({ url: link, videoId, mode, error: null })
+
+      // A list is imported whole. "Play now" replaces the queue with exactly its
+      // tracks, which is what "play this album" means; the rest of the history is
+      // not appended, or the album would keep going after its last track.
+      if (link.kind === 'list') {
+        setPending({ url: linkText, kind: 'list', mode, error: null })
+        try {
+          const detail = await onImportList(youtubeListUrl(link.listId))
+          if (token !== submitTokenRef.current) return
+          setPending(null)
+          setUrl('')
+          setOffer(null)
+          const tracks = detail.items.map((item) => onlinePlaylistItemToTrack(item, detail.playlist))
+          if (mode === 'play') onPlay(tracks, 0)
+          else onQueue(tracks)
+          const noun =
+            detail.playlist.kind === 'album' ? 'album' : detail.playlist.kind === 'mix' ? 'mix' : 'playlist'
+          setNotice({
+            kind: 'info',
+            text: `${detail.playlist.title} · ${formatCount(tracks.length)} tracks from that ${noun} ${
+              mode === 'play' ? 'are playing' : 'were added to the queue'
+            }.`
+          })
+        } catch (cause) {
+          if (token !== submitTokenRef.current) return
+          setPending({ url: linkText, kind: 'list', mode, error: messageOf(cause) })
+        } finally {
+          if (token === submitTokenRef.current) setBusy(false)
+        }
+        return
+      }
+
+      setPending({ url: linkText, kind: 'video', mode, error: null })
       try {
-        const entry = await onAddLink(link)
+        const entry = await onAddLink(linkText)
         if (token !== submitTokenRef.current) return
         setPending(null)
         setUrl('')
+        // Playing the video does not import the list it belongs to. The offer is
+        // how the user says yes, and it stays until they answer or paste another.
+        setOffer(link.kind === 'video-in-list' ? { listId: link.listId, kind: link.listKind } : null)
         const track = onlineEntryToTrack(entry)
         if (mode === 'play') {
           // Play the new row and the rows below it, so Next keeps walking the
@@ -135,12 +178,12 @@ export function OnlineView(props: OnlineViewProps) {
         }
       } catch (cause) {
         if (token !== submitTokenRef.current) return
-        setPending({ url: link, videoId, mode, error: messageOf(cause) })
+        setPending({ url: linkText, kind: 'video', mode, error: messageOf(cause) })
       } finally {
         if (token === submitTokenRef.current) setBusy(false)
       }
     },
-    [onAddLink, onPlay, onQueue]
+    [onAddLink, onImportList, onPlay, onQueue]
   )
 
   const submit = (event: FormEvent): void => {
@@ -159,11 +202,12 @@ export function OnlineView(props: OnlineViewProps) {
       // The first whitespace-separated token: copying from a chat or a document
       // usually brings a trailing newline or a label with the link.
       const first = text.split(/\s+/)[0] ?? ''
+      const link = parseYouTubeLink(first)
       setUrl(first)
       setNotice(
-        extractYouTubeVideoId(first)
-          ? null
-          : { kind: 'info', text: 'The clipboard text is not a YouTube link. Edit it or paste another.' }
+        link.kind === 'refused'
+          ? { kind: 'info', text: describeYouTubeRefusal(link.reason) }
+          : null
       )
       inputRef.current?.focus()
     } catch (cause) {
@@ -205,7 +249,11 @@ export function OnlineView(props: OnlineViewProps) {
   const subtitle =
     entries.length > 0
       ? `${formatCount(entries.length)} link${entries.length === 1 ? '' : 's'} · newest first · nothing is saved until you ask`
-      : 'Paste a link and it plays here; it stays in this list until you remove it'
+      : 'Paste a video, playlist, album or mix link — playlists stay in the Playlists view and stream like the rest'
+
+  const parsed = url.trim().length > 0 ? parseYouTubeLink(url.trim()) : null
+  const listInput = parsed?.kind === 'list'
+  const busyLabel = pending?.kind === 'list' ? 'Importing…' : 'Resolving…'
 
   return (
     <section className="main-view online-view">
@@ -243,7 +291,7 @@ export function OnlineView(props: OnlineViewProps) {
             inputMode="url"
             autoComplete="off"
             spellCheck={false}
-            placeholder="https://www.youtube.com/watch?v=…"
+            placeholder="https://www.youtube.com/watch?v=… or a playlist link"
             aria-label="YouTube link"
             value={url}
             onChange={(event) => {
@@ -266,14 +314,43 @@ export function OnlineView(props: OnlineViewProps) {
         <div className="online-actions-bar">
           <button type="button" onClick={() => void run(url.trim(), 'queue')} disabled={busy || url.trim().length === 0}>
             <QueueIcon size={15} />
-            <span>Add to queue</span>
+            <span>{listInput ? 'Add all to queue' : 'Add to queue'}</span>
           </button>
           <button type="submit" className="primary" disabled={busy || url.trim().length === 0}>
             {busy ? <SpinnerIcon /> : <PlayIcon size={15} />}
-            <span>{busy ? 'Resolving…' : 'Play now'}</span>
+            <span>{busy ? busyLabel : listInput ? 'Import & play' : 'Play now'}</span>
           </button>
         </div>
       </form>
+
+      {offer ? (
+        <div className="banner import-offer">
+          <span>
+            That video is part of {offer.kind === 'album' ? 'an album' : 'a playlist'}. Import all of it?
+          </span>
+          <button
+            type="button"
+            className="small primary"
+            disabled={busy}
+            onClick={() => void run(youtubeListUrl(offer.listId), 'play')}
+          >
+            <PlayIcon size={14} />
+            <span>Import & play</span>
+          </button>
+          <button
+            type="button"
+            className="small"
+            disabled={busy}
+            onClick={() => void run(youtubeListUrl(offer.listId), 'queue')}
+          >
+            <QueueIcon size={14} />
+            <span>Import to queue</span>
+          </button>
+          <button type="button" className="link-button" onClick={() => setOffer(null)}>
+            Dismiss
+          </button>
+        </div>
+      ) : null}
 
       {notice ? (
         <div className={notice.kind === 'error' ? 'banner error' : 'banner'} role={notice.kind === 'error' ? 'alert' : undefined}>
@@ -288,8 +365,9 @@ export function OnlineView(props: OnlineViewProps) {
           <LinkIcon size={32} />
           <h2>Nothing played from a link yet</h2>
           <p>
-            Paste a YouTube link above and it plays straight away. Each link is remembered here — still streamed, not
-            copied — so you can play it again later without saving anything to your library.
+            Paste a YouTube link above and it plays straight away. A playlist, album or mix is imported as a whole and
+            appears in Playlists under Online. Everything is streamed, not copied, so you can play it again later
+            without saving anything to your library.
           </p>
         </div>
       ) : (
@@ -304,7 +382,13 @@ export function OnlineView(props: OnlineViewProps) {
                 </span>
                 <span className="online-pending-text">
                   <span className="online-title">
-                    {pending.error ? 'Could not play this link' : 'Resolving link…'}
+                    {pending.error
+                      ? pending.kind === 'list'
+                        ? 'Could not import this playlist'
+                        : 'Could not play this link'
+                      : pending.kind === 'list'
+                        ? 'Importing playlist…'
+                        : 'Resolving link…'}
                   </span>
                   <span className="online-sub" title={pending.url}>
                     {pending.error ?? pending.url}

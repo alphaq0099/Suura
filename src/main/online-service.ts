@@ -1,8 +1,23 @@
 import type { Logger } from '@core/logging/logger'
+import type { OnlinePlaylistRepository } from '@core/library/online-playlist-repository'
 import type { OnlineRepository } from '@core/library/online-repository'
+import type { YtPlaylistProvider } from '@engine/sidecar/yt-dlp'
 import type { YouTubeResolver } from '@engine/youtube-resolver'
-import type { OnlineTrack } from '@shared/types'
-import { youtubeThumbnailCandidates, youtubeWatchUrl } from '@shared/youtube'
+import type {
+  EngineSettings,
+  OnlinePlaylist,
+  OnlinePlaylistDetail,
+  OnlineTrack
+} from '@shared/types'
+import {
+  describeYouTubeRefusal,
+  normalizeArtistName,
+  parseYouTubeLink,
+  youtubeListTitle,
+  youtubeListUrl,
+  youtubeThumbnailCandidates,
+  youtubeWatchUrl
+} from '@shared/youtube'
 import type { ArtworkService } from './artwork-service'
 
 export interface OnlineService {
@@ -18,6 +33,16 @@ export interface OnlineService {
   addLink(input: string): Promise<OnlineTrack>
   /** Records that a link has just been played. */
   touch(videoId: string): void
+  /**
+   * Records a play, creating the history row when it does not exist.
+   *
+   * Imported tracks deliberately do not fill the history at import time: history
+   * is what was played, and a 200-track import would bury everything else. The
+   * first play is what puts the track in the log, with the album the playlist
+   * gave it. A video with neither a history row nor a playlist entry is left
+   * alone — there is nothing truthful to write.
+   */
+  rememberPlay(videoId: string): void
   remove(id: number): void
   /** Forgets every link. Returns how many were removed. */
   clear(): number
@@ -31,6 +56,28 @@ export interface OnlineService {
    * WebP thumbnails could not be decoded.
    */
   artworkFor(id: number): Promise<string | null>
+  /**
+   * The cached still for a video, whether or not it has a history row.
+   *
+   * A track imported from a playlist has no history row until it is played, so
+   * `-id` cannot identify its artwork. This is the lookup for those rows: it
+   * fetches by video id and also heals the history row if one exists.
+   */
+  artworkForVideo(videoId: string): Promise<string | null>
+  /** Every imported playlist, most recently imported first. */
+  playlists(): OnlinePlaylist[]
+  /** One imported playlist with its entries, or null when it was deleted. */
+  playlist(id: number): OnlinePlaylistDetail | null
+  /**
+   * Imports a playlist, album or mix and returns the stored snapshot.
+   *
+   * Importing the same list again replaces that playlist's entries in place. The
+   * caller is responsible for queueing the returned items: an import never starts
+   * playback by itself, so "add all to queue" and "play now" share one path.
+   */
+  importList(input: string): Promise<OnlinePlaylistDetail>
+  deletePlaylist(id: number): void
+  removePlaylistItem(itemId: number): number | null
 }
 
 /** A thumbnail is decoration: cap each attempt so a hung CDN cannot stall a cover indefinitely. */
@@ -38,8 +85,16 @@ const THUMBNAIL_TIMEOUT_MS = 2_500
 const MAX_THUMBNAIL_BYTES = 4 * 1024 * 1024
 
 /**
- * The Online history: links the user pasted, and the one place that turns a link
- * into a remembered row.
+ * How many thumbnails are fetched at once.
+ *
+ * An imported album draws dozens of rows as soon as it opens; without a cap the
+ * renderer would fire every artwork IPC in one tick and YouTube's CDN would see a
+ * burst. Four at a time keeps the list filling in without looking like a scraper.
+ */
+const MAX_ARTWORK_DOWNLOADS = 4
+
+/**
+ * The Online history and the playlists imported from links.
  *
  * Playback is not this service's job — it only warms the resolver cache on the
  * way through, so pressing play on the row right after pasting is instant. Saving
@@ -48,6 +103,13 @@ const MAX_THUMBNAIL_BYTES = 4 * 1024 * 1024
 export function createOnlineService(deps: {
   resolver: YouTubeResolver
   repo: OnlineRepository
+  playlists: OnlinePlaylistRepository
+  /**
+   * The flat listing provider. Repeated here rather than reached through the
+   * resolver because importing is a different read: no formats, no stream URLs.
+   */
+  listProvider: YtPlaylistProvider
+  engine: () => EngineSettings
   artwork: ArtworkService
   log: Logger
   /** Called after any change, so the main process can push a refresh. */
@@ -59,6 +121,11 @@ export function createOnlineService(deps: {
     return deps.artwork.pathFor(entry.artworkKey) ? entry : { ...entry, artworkKey: null }
   }
 
+  const withCover = (playlist: OnlinePlaylist): OnlinePlaylist => {
+    if (!playlist.coverKey) return playlist
+    return deps.artwork.pathFor(playlist.coverKey) ? playlist : { ...playlist, coverKey: null }
+  }
+
   /**
    * Thumbnail downloads in flight, keyed by video.
    *
@@ -68,12 +135,48 @@ export function createOnlineService(deps: {
    */
   const pendingArtwork = new Map<string, Promise<string | null>>()
 
+  /**
+   * Keys fetched during this session for tracks that may have no history row.
+   *
+   * Only successes are remembered: a failed fetch is usually the network, and a
+   * session-long "no picture" verdict would be wrong the moment it recovers.
+   */
+  const videoArtwork = new Map<string, string>()
+
+  let activeDownloads = 0
+  const waitingDownloads: Array<() => void> = []
+
+  const withDownloadSlot = async <T>(work: () => Promise<T>): Promise<T> => {
+    if (activeDownloads >= MAX_ARTWORK_DOWNLOADS) {
+      // The slot is handed over by the finishing download rather than released and
+      // re-taken, so two waiters cannot both wake up for one freed slot.
+      await new Promise<void>((resolve) => waitingDownloads.push(resolve))
+    } else {
+      activeDownloads += 1
+    }
+    try {
+      return await work()
+    } finally {
+      const next = waitingDownloads.shift()
+      if (next) next()
+      else activeDownloads -= 1
+    }
+  }
+
   const downloadArtwork = (videoId: string): Promise<string | null> => {
     const existing = pendingArtwork.get(videoId)
     if (existing) return existing
-    const work = cacheThumbnail(videoId, deps.artwork, deps.log).finally(() => pendingArtwork.delete(videoId))
+    const work = withDownloadSlot(() => cacheThumbnail(videoId, deps.artwork, deps.log)).finally(() =>
+      pendingArtwork.delete(videoId)
+    )
     pendingArtwork.set(videoId, work)
     return work
+  }
+
+  const detailOf = (id: number): OnlinePlaylistDetail | null => {
+    const playlist = deps.playlists.get(id)
+    if (!playlist) return null
+    return { playlist: withCover(playlist), items: deps.playlists.items(id) }
   }
 
   return {
@@ -115,7 +218,30 @@ export function createOnlineService(deps: {
 
       const key = await downloadArtwork(entry.videoId)
       if (key) {
+        videoArtwork.set(entry.videoId, key)
         deps.repo.setArtworkKey(entry.videoId, key)
+        deps.onChange?.()
+      }
+      return key
+    },
+
+    async artworkForVideo(videoId) {
+      const known = videoArtwork.get(videoId)
+      if (known && deps.artwork.pathFor(known)) return known
+
+      // A played track has a history row, and its cached key is the cheapest hit.
+      const entry = deps.repo.getByVideoId(videoId)
+      if (entry?.artworkKey && deps.artwork.pathFor(entry.artworkKey)) {
+        videoArtwork.set(videoId, entry.artworkKey)
+        return entry.artworkKey
+      }
+
+      const key = await downloadArtwork(videoId)
+      if (!key) return null
+
+      videoArtwork.set(videoId, key)
+      if (entry) {
+        deps.repo.setArtworkKey(videoId, key)
         deps.onChange?.()
       }
       return key
@@ -123,6 +249,30 @@ export function createOnlineService(deps: {
 
     touch(videoId) {
       deps.repo.touch(videoId, deps.now?.() ?? Date.now())
+      deps.onChange?.()
+    },
+
+    rememberPlay(videoId) {
+      const now = deps.now?.() ?? Date.now()
+      if (!deps.repo.getByVideoId(videoId)) {
+        // The fields come from our own copy of the imported playlist, never from
+        // the renderer: the resolve request only names a video id.
+        const item = deps.playlists.findItemByVideo(videoId)
+        if (!item) return
+        deps.repo.upsert(
+          {
+            videoId,
+            title: item.title,
+            artist: item.artist,
+            album: item.album,
+            durationMs: item.durationMs,
+            sourceUrl: youtubeWatchUrl(videoId),
+            artworkKey: videoArtwork.get(videoId) ?? null
+          },
+          now
+        )
+      }
+      deps.repo.touch(videoId, now)
       deps.onChange?.()
     },
 
@@ -135,8 +285,113 @@ export function createOnlineService(deps: {
       const removed = deps.repo.clear()
       if (removed > 0) deps.onChange?.()
       return removed
+    },
+
+    playlists() {
+      return deps.playlists.list().map(withCover)
+    },
+
+    playlist(id) {
+      return detailOf(id)
+    },
+
+    async importList(input) {
+      const link = parseYouTubeLink(input)
+      if (link.kind === 'refused') throw new Error(describeYouTubeRefusal(link.reason))
+      if (link.kind === 'video') {
+        throw new Error('That is a single video. Paste a playlist, album or mix link to import all of it.')
+      }
+
+      const kind = link.listKind
+      const engine = deps.engine()
+      // The cap is a setting, not a constant: a mix is endless and a playlist can
+      // be 5,000 entries, and the right number depends on how the user listens.
+      const limit = Math.max(1, kind === 'mix' ? engine.mixLimit : engine.importLimit)
+      const sourceUrl = youtubeListUrl(link.listId)
+      const info = await deps.listProvider.fetchPlaylist(sourceUrl, limit)
+
+      const title = youtubeListTitle(info.title, kind) || link.listId
+      // Albums often name no uploader on the list itself; the tracks all carry the
+      // album artist, so the most common one is the honest fallback.
+      const owner = info.owner ?? commonArtist(info.entries)
+      // Only an album has a real sleeve at its list id. A playlist's thumbnails are
+      // the first video's stills — a 120x90 crop that looks like a mistake blown up
+      // to a cover — and a mix has none. Those two use per-track stills instead.
+      const coverKey = kind === 'album' ? await cacheCover(info.coverUrls, deps.artwork, deps.log) : null
+
+      if (info.entries.length === 0) {
+        throw new Error('This list is empty, or every track in it is unavailable.')
+      }
+
+      const stored = deps.playlists.upsert(
+        {
+          listId: link.listId,
+          kind,
+          title,
+          owner,
+          sourceUrl,
+          coverKey,
+          totalCount: info.total
+        },
+        info.entries.map((entry) => ({
+          videoId: entry.videoId,
+          title: entry.title,
+          // In an album every row is by the album artist and belongs to the album;
+          // in a playlist the uploader is the best artist we have and it has none.
+          artist: normalizeArtistName(entry.artist) ?? (kind === 'album' ? owner : null),
+          album: kind === 'album' ? title : null,
+          durationMs: entry.durationMs
+        })),
+        deps.now?.() ?? Date.now()
+      )
+
+      deps.onChange?.()
+      return { playlist: withCover(stored), items: deps.playlists.items(stored.id) }
+    },
+
+    deletePlaylist(id) {
+      if (deps.playlists.delete(id)) deps.onChange?.()
+    },
+
+    removePlaylistItem(itemId) {
+      const playlistId = deps.playlists.removeItem(itemId)
+      if (playlistId !== null) deps.onChange?.()
+      return playlistId
     }
   }
+}
+
+/** The artist most entries share, used when a list names no uploader. */
+function commonArtist(entries: ReadonlyArray<{ artist: string | null }>): string | null {
+  const counts = new Map<string, number>()
+  for (const entry of entries) {
+    if (!entry.artist) continue
+    counts.set(entry.artist, (counts.get(entry.artist) ?? 0) + 1)
+  }
+  let best: string | null = null
+  let bestCount = 0
+  for (const [artist, count] of counts) {
+    if (count > bestCount) {
+      best = artist
+      bestCount = count
+    }
+  }
+  return best
+}
+
+/**
+ * Downloads an album's sleeve into the artwork cache.
+ *
+ * The largest still is frequently a 404 placeholder, so the candidates are walked
+ * in order and the first that answers with real image bytes wins. Callers only ask
+ * for albums: a playlist's "cover" is one video's 16:9 still, not a sleeve.
+ */
+async function cacheCover(urls: readonly string[], artwork: ArtworkService, log: Logger): Promise<string | null> {
+  for (const url of urls) {
+    const key = await fetchImage(url, artwork, log)
+    if (key) return key
+  }
+  return null
 }
 
 /**

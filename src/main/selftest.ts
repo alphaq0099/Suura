@@ -6,9 +6,11 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { app, BrowserWindow, clipboard, net } from 'electron'
 import { probeExecutable } from '@engine/sidecar/locate'
+import { IPC_EVENTS } from '@shared/ipc'
 import { buildMediaUrl } from '@shared/media-url'
 import { buildStreamUrl } from '@shared/stream-url'
 import { youtubeWatchUrl } from '@shared/youtube'
+import { broadcast } from './broadcast'
 import type { AppContainer } from './services/container'
 
 const execFileAsync = promisify(execFile)
@@ -695,8 +697,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     // given an id that is not a video id on purpose, so asking for its cover
     // resolves to nothing instead of reaching out to YouTube's image CDN.
     const onlineSeed = Date.now()
+    const seededArtwork = await container.artwork.cacheRemote(await readFile(coverPath), 'image/png')
     if (container.onlineRepo.count() === 0) {
-      const seededArtwork = await container.artwork.cacheRemote(await readFile(coverPath), 'image/png')
       container.onlineRepo.upsert(
         {
           videoId: 'selftestaa1',
@@ -740,7 +742,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       container.onlineRepo.count()
     )
 
-    // ---- 10. layout: no view may overflow sideways ---------------------    // The window resizes down to 940x580, and both views have to fit at any size
+    // ---- 10. layout: no view may overflow sideways ---------------------
+    // The window resizes down to 940x580, and both views have to fit at any size
     // in between without a horizontal scrollbar. Nothing else catches this class
     // of bug: the app looks fine until a user drags the window edge, and then the
     // cards slide out of view. Measuring the DOM is the only honest check.
@@ -1794,6 +1797,47 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     )
     record(lists.deleted && lists.emptyAfterDelete, 'deleting a playlist needs a confirmation and removes it')
 
+    // An imported playlist is seeded here rather than before the layout sweep:
+    // section 14a starts from a genuinely empty app, and the sweep does not visit
+    // Playlists. `totalCount` is larger than the snapshot on purpose, so the
+    // "first N of M" note has something to say.
+    container.onlinePlaylists.upsert(
+      {
+        listId: 'OLAK5uy_selftest',
+        kind: 'album',
+        title: 'Selftest Album',
+        owner: 'Selftest Streamer',
+        sourceUrl: 'https://www.youtube.com/playlist?list=OLAK5uy_selftest',
+        coverKey: seededArtwork,
+        totalCount: 3
+      },
+      [
+        {
+          videoId: 'selftestaa1',
+          title: 'Online Tone One',
+          artist: 'Selftest Streamer',
+          album: 'Selftest Album',
+          durationMs: 210_000
+        },
+        {
+          videoId: 'selftestbb2',
+          title: 'Online Tone Two',
+          artist: 'Selftest Streamer',
+          album: 'Selftest Album',
+          durationMs: 90_000
+        }
+      ],
+      onlineSeed
+    )
+    // A real import broadcasts; the test announces the seeded one the same way
+    // instead of faking a UI state.
+    broadcast(IPC_EVENTS.onlineChanged, null)
+    record(
+      container.onlinePlaylists.count() === 1,
+      'online lists: an imported album is seeded as an Online playlist',
+      container.onlinePlaylists.count()
+    )
+
     // ---- 14b. the Online view --------------------------------------------
     // Only the paths that need no network are driven: pasting, inline
     // validation and the history actions. Resolving a real link costs a 7-10 s
@@ -1815,6 +1859,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       pasteFilled: string
       playDisabled: boolean
       invalidError: string
+      refusedError: string
+      refusedPending: number
       pendingRows: number
       menuItems: string
       saveDisabled: boolean
@@ -1824,7 +1870,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     }>(
       window,
       `(async () => {
-         const out = { rows: 0, firstTitle: '', firstArtist: '', firstDuration: '', sidebarCount: '', rowCovers: 0, rowCoverLoaded: false, rowPlaceholders: 0, pasteFilled: '', playDisabled: false, invalidError: '', pendingRows: 0, menuItems: '', saveDisabled: false, removedRows: -1, clearedRows: -1, emptyAfterClear: false }
+         const out = { rows: 0, firstTitle: '', firstArtist: '', firstDuration: '', sidebarCount: '', rowCovers: 0, rowCoverLoaded: false, rowPlaceholders: 0, pasteFilled: '', playDisabled: false, invalidError: '', refusedError: '', refusedPending: 0, pendingRows: 0, menuItems: '', saveDisabled: false, removedRows: -1, clearedRows: -1, emptyAfterClear: false }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (s) => document.querySelector(s)
          const pickAll = (s) => [...document.querySelectorAll(s)]
@@ -1882,6 +1928,15 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.invalidError = text(pick('.banner')).trim()
          out.pendingRows = pickAll('.online-item.pending').length
 
+         // An account list is refused before any request: the app has no cookies
+         // and saying so is better than a yt-dlp failure 10 seconds later.
+         setInput(pick('.online-input input'), 'https://www.youtube.com/playlist?list=WL')
+         await sleep(200)
+         press(play)
+         await sleep(500)
+         out.refusedError = text(pick('.banner')).trim()
+         out.refusedPending = pickAll('.online-item.pending').length
+
          // Right-click a row: Copy and the (disabled) Save live in the menu.
          const jump = pick('.online-jump')
          if (jump) jump.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 260, clientY: 260 }))
@@ -1933,6 +1988,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       onlineView.invalidError || 'no error text'
     )
     record(
+      onlineView.refusedError.toLowerCase().includes('account') && onlineView.refusedPending === 0,
+      'an account list is refused inline, before any request',
+      onlineView.refusedError || 'no error text'
+    )
+    record(
       onlineView.menuItems.indexOf('Play') === 0 &&
         onlineView.menuItems.includes('Add to queue') &&
         onlineView.menuItems.includes('Copy link') &&
@@ -1946,6 +2006,116 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       onlineView.clearedRows === 0 && onlineView.emptyAfterClear,
       'clearing the history needs a confirmation and empties it',
       onlineView.clearedRows
+    )
+
+    // ---- 14c. imported playlists in the Playlists view -------------------
+    // The album was seeded before the sweep. Here the two groups are read, the
+    // album is opened, an entry is removed and the result is played. No network:
+    // the snapshot and its cover are already in the database.
+    const onlineLists = await evaluate<{
+      groupTitles: string
+      onlineRows: number
+      kind: string
+      paneTitle: string
+      titles: string
+      note: string
+      hasReimport: boolean
+      hasClear: boolean
+      indexCount: string
+      rowsAfterRemove: number
+      playedTitle: string
+      groupEmpty: boolean
+      emptyAfterDelete: boolean
+    }>(
+      window,
+      `(async () => {
+         const out = { groupTitles: '', onlineRows: -1, kind: '', paneTitle: '', titles: '', note: '', hasReimport: false, hasClear: false, indexCount: '', rowsAfterRemove: -1, playedTitle: '', groupEmpty: false, emptyAfterDelete: false }
+         const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+         const pick = (s) => document.querySelector(s)
+         const pickAll = (s) => [...document.querySelectorAll(s)]
+         const press = (el) => { if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
+         const text = (el) => ((el || {}).textContent || '')
+         const nav = (label) => {
+           const b = pickAll('.nav-item').find((el) => (el.textContent || '').trim().startsWith(label))
+           if (b) b.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+           return Boolean(b)
+         }
+         const onlineGroup = () => pickAll('.playlist-group').find((el) => el.getAttribute('aria-label') === 'Online playlists')
+
+         nav('Playlists')
+         await sleep(700)
+
+         out.groupTitles = pickAll('.playlist-group-title').map((el) => text(el).trim().split(/\\s+/)[0]).join(' | ')
+         const group = onlineGroup()
+         out.onlineRows = group ? group.querySelectorAll('.playlist-row').length : -1
+         const row = group ? group.querySelector('.playlist-row') : null
+         press(row ? row.querySelector('.playlist-open') : null)
+         await sleep(600)
+
+         out.kind = text(pick('.playlist-row.active .playlist-kind')).trim()
+         out.paneTitle = text(pick('.playlist-pane-head h2')).trim()
+         out.titles = pickAll('.track-row .row-title-text').map((el) => text(el)).join(' | ')
+         out.note = text(pick('.playlist-note')).trim()
+         const buttons = pickAll('.playlist-pane-head button')
+         out.hasReimport = buttons.some((el) => text(el).trim().indexOf('Re-import') === 0)
+         out.hasClear = buttons.some((el) => text(el).trim().indexOf('Clear') === 0)
+
+         press(pick('.track-row button[title="Remove from this playlist"]'))
+         await sleep(700)
+         out.rowsAfterRemove = pickAll('.track-row').length
+         const groupAfter = onlineGroup()
+         out.indexCount = text(groupAfter ? groupAfter.querySelector('.playlist-count') : null).trim()
+
+         press(pickAll('.playlist-pane-head button').find((el) => text(el).trim().indexOf('Play') === 0))
+         await sleep(900)
+         out.playedTitle = text(pick('.player-title'))
+
+         const arm = pickAll('.playlist-pane-head .link-button').find((el) => text(el).trim().indexOf('Remove') === 0)
+         press(arm)
+         await sleep(250)
+         const confirm = pickAll('.playlist-pane-head .link-button').find((el) => text(el).trim().indexOf('Remove') === 0)
+         press(confirm)
+         await sleep(800)
+         const groupGone = onlineGroup()
+         out.groupEmpty = Boolean(groupGone) && groupGone.querySelectorAll('.playlist-row').length === 0
+         out.emptyAfterDelete = text(pick('.empty-state h2')).trim() === 'No playlists yet'
+         return out
+       })()`
+    )
+
+    record(onlineLists.groupTitles === 'Custom | Online', 'the Playlists index separates Custom from Online', onlineLists.groupTitles)
+    record(onlineLists.onlineRows === 1, 'the imported album appears in the Online group', onlineLists.onlineRows)
+    record(onlineLists.kind === 'Album', 'an imported album is labelled as one', onlineLists.kind)
+    record(onlineLists.paneTitle === 'Selftest Album', 'opening the imported album shows its snapshot', onlineLists.paneTitle)
+    record(
+      onlineLists.titles === 'Online Tone One | Online Tone Two',
+      'the imported album lists its tracks in source order',
+      onlineLists.titles
+    )
+    record(
+      onlineLists.note.indexOf('first 2') >= 0,
+      'an import that hit the cap says how much of the list it kept',
+      onlineLists.note
+    )
+    record(
+      onlineLists.hasReimport && !onlineLists.hasClear,
+      'an imported album offers Re-import rather than Clear',
+      `re-import ${onlineLists.hasReimport}, clear ${onlineLists.hasClear}`
+    )
+    record(
+      onlineLists.rowsAfterRemove === 1 && onlineLists.indexCount === '1',
+      'removing an imported entry updates the snapshot and the index count',
+      `${onlineLists.rowsAfterRemove} rows, index ${onlineLists.indexCount}`
+    )
+    record(
+      onlineLists.playedTitle === 'Online Tone Two',
+      'playing an imported album queues its remaining tracks, not the history',
+      onlineLists.playedTitle
+    )
+    record(
+      onlineLists.groupEmpty && onlineLists.emptyAfterDelete,
+      'removing the imported album needs a confirmation and leaves an empty index',
+      `group empty ${onlineLists.groupEmpty}, empty state ${onlineLists.emptyAfterDelete}`
     )
     const copiedLink = await clipboard.readText()
     record(

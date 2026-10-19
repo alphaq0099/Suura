@@ -1,4 +1,4 @@
-import type { OnlineTrack, Track } from './types'
+import type { OnlinePlaylist, OnlinePlaylistItem, OnlineTrack, Track } from './types'
 
 /**
  * Turns a history entry into a queue row.
@@ -33,5 +33,45 @@ export function onlineEntryToTrack(entry: OnlineTrack): Track {
     addedAt: entry.addedAt,
     playCount: 0,
     lastPlayedAt: entry.lastPlayedAt
+  }
+}
+
+/**
+ * Imported entries live in their own negative id space, far below history rows.
+ *
+ * A playlist entry is not a `tracks` row either, and its entry id is stable while
+ * it stays in the list — unlike its position, which shifts when an earlier entry
+ * is removed. The offset keeps the two kinds of stream track apart even though
+ * they come from different tables that both start counting at one.
+ */
+const PLAYLIST_TRACK_ID_OFFSET = 1_000_000
+
+export function onlinePlaylistItemToTrack(item: OnlinePlaylistItem, playlist: OnlinePlaylist): Track {
+  const album = playlist.kind === 'album'
+  return {
+    id: -(PLAYLIST_TRACK_ID_OFFSET + item.id),
+    sourceKind: 'youtube',
+    sourceId: item.videoId,
+    title: item.title,
+    artist: item.artist,
+    albumArtist: album ? (playlist.owner ?? item.artist) : item.artist,
+    album: item.album,
+    trackNo: null,
+    discNo: null,
+    year: null,
+    genre: null,
+    durationMs: item.durationMs,
+    codec: null,
+    bitrateKbps: null,
+    sampleRate: null,
+    channels: null,
+    fileSize: null,
+    filePath: null,
+    // An album's rows all show the sleeve. A plain playlist's cover is one video's
+    // still blown up, so each row keeps its own and asks for it lazily instead.
+    artworkKey: album ? playlist.coverKey : null,
+    addedAt: playlist.importedAt,
+    playCount: 0,
+    lastPlayedAt: null
   }
 }

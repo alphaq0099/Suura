@@ -52,7 +52,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
     binDir: null,
     autoUpdate: true,
     downloadConcurrency: 2,
-    cookiesFromBrowser: null
+    cookiesFromBrowser: null,
+    // Big enough for a double album, small enough that a queue stays a queue.
+    importLimit: 200,
+    // A mix never ends, so its "length" is whatever this says.
+    mixLimit: 50
   }
 }
 

@@ -12,6 +12,8 @@ import type {
   EngineStatus,
   LibraryStats,
   ListTracksQuery,
+  OnlinePlaylist,
+  OnlinePlaylistDetail,
   OnlineTrack,
   PlaybackSnapshot,
   Playlist,
@@ -20,8 +22,18 @@ import type {
   ResolvableTrack,
   SavedPlayback,
   ScanProgress,
+  Track,
   TrackPage
 } from './types'
+
+/**
+ * What the artwork lookup needs to know.
+ *
+ * A local track is identified by its row id. A stream is not a row, so it sends
+ * its source identity too: an imported playlist entry has no history row at all
+ * and its `-id` means nothing on its own.
+ */
+export type ArtworkRequest = number | Pick<Track, 'id' | 'sourceKind' | 'sourceId'>
 
 /** Request/response channels, all backed by `ipcMain.handle`. */
 export const IPC = {
@@ -54,6 +66,11 @@ export const IPC = {
   onlineAddLink: 'online:add-link',
   onlineRemove: 'online:remove',
   onlineClear: 'online:clear',
+  onlineImport: 'online:import',
+  onlinePlaylists: 'online:playlists',
+  onlinePlaylist: 'online:playlist',
+  onlinePlaylistDelete: 'online:playlist-delete',
+  onlinePlaylistRemoveItem: 'online:playlist-remove-item',
   clipboardRead: 'clipboard:read-text',
   clipboardWrite: 'clipboard:write-text',
   mediaReportPlay: 'media:report-play',
@@ -126,8 +143,10 @@ export interface PlayerApi {
    *
    * Resolves on first call and is remembered on both sides afterwards, so the
    * renderer can call it for every row it renders without hammering the disk.
+   * A stream track sends its source identity, because an imported playlist entry
+   * has no history row for `-id` to point at.
    */
-  getArtwork(trackId: number): Promise<string | null>
+  getArtwork(request: ArtworkRequest): Promise<string | null>
   /** Playlists in sidebar order, each with its entry count. */
   listPlaylists(): Promise<Playlist[]>
   createPlaylist(name: string): Promise<Playlist>
@@ -164,6 +183,19 @@ export interface PlayerApi {
   removeOnline(id: number): Promise<void>
   /** Forgets every remembered link. Resolves to how many were removed. */
   clearOnline(): Promise<number>
+  /**
+   * Imports a playlist, album or mix and remembers it as an Online playlist.
+   *
+   * Does not touch the queue: the caller decides whether that import plays now
+   * or is only added. Importing the same list again replaces its entries.
+   */
+  importOnlineList(url: string): Promise<OnlinePlaylistDetail>
+  /** Every imported playlist, most recently imported first. */
+  listOnlinePlaylists(): Promise<OnlinePlaylist[]>
+  getOnlinePlaylist(playlistId: number): Promise<OnlinePlaylistDetail | null>
+  deleteOnlinePlaylist(playlistId: number): Promise<void>
+  /** Removes one entry. Resolves to the playlist that changed, or null. */
+  removeOnlinePlaylistItem(itemId: number): Promise<number | null>
   /** The system clipboard text, so the paste button needs no select-all. */
   readClipboardText(): Promise<string>
   writeClipboardText(text: string): Promise<void>
