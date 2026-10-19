@@ -330,14 +330,19 @@ or a prefetch-based definition; see [`docs/notes/yt-dlp-sample.md`](./docs/notes
 ### M4 — Retention: Cache & Download  *(~3 weeks)*
 **Goal:** the "keep it or not" requirement, fully realised.
 - [ ] Cache manager: write-while-playing, LRU eviction, size/age budgets, janitor task, manual "empty cache"
-- [ ] Download manager: queue, concurrency cap, pause/resume/cancel, progress + speed + ETA, retries, `.part` handling, disk-space pre-flight check
-- [ ] **Keep** action: download → transcode per quality policy → tag → artwork → atomic move into the library → library row appears instantly
-- [ ] **Keep an imported entry**: the same path from the Online playlist pane, one entry or the whole snapshot, keeping
-      `sourceId` so the row stays linked to the video it came from
+- [~] Download manager: a per-track queue with a concurrency cap, progress parsed from yt-dlp, a temporary working
+      folder that is always cleaned up, and `.part`-safe final moves. Still to come: pause/resume/cancel, speed + ETA,
+      retries and a disk-space pre-flight check.
+- [x] **Keep** action: download → tag → embed cover → move into the library → scanned row appears (default Opus, or
+      MP3/M4A; folder and format are settings). Verified live: 12 s for a 4.9 MB Opus, tags and JPEG cover intact.
+- [x] **Keep an imported entry**: the same path from the Online playlist pane — a per-entry *Save to library* button and
+      a *Save all* that queues every entry not already in the library. The library row keeps the video id in
+      `origin_kind`/`origin_id`, so *sourceId* is preserved without pretending the file is a stream.
 - [ ] **Remove download**: delete file, keep the track in playlists/queue, fall back to streaming (availability model from §4)
 - [ ] **Pin in cache** (never evict) and "keep after this play" quick action
 - [ ] Downloads screen: active/completed/failed tabs, retry, reveal in Explorer, per-item retention toggle
-- [ ] Settings: default retention mode, cache budget, download folder, naming template, quality tier, concurrency
+- [~] Settings: download folder, quality tier, concurrency and saved format (Opus/MP3/M4A) are in place; default
+      retention mode and a naming template are still to come.
 - [ ] Offline detection: when offline, stream-only tracks show as unavailable; cached/downloaded ones still play
 **Exit:** disk usage never exceeds budget; killing the app mid-download leaves no corruption; "keep" → "remove" round-trips cleanly.
 
@@ -349,9 +354,10 @@ or a prefetch-based definition; see [`docs/notes/yt-dlp-sample.md`](./docs/notes
       artist); `RD…`/`start_radio=1` mixes are imported too, capped by their own setting (default 50). `v=…&list=…` plays
       the video and offers the import; account lists (`LL…`, `WL…`, `FL…`) and channel pages are refused before a sidecar
       runs. The Playlists view separates **Custom** from **Online**, and an imported snapshot can be played, queued,
-      re-imported, trimmed or deleted entry by entry. Metadata only for now: audio resolves lazily on play, and saving an
-      entry to the library is the M4 download path.
-- [ ] Show which imported entries are already in the library (needs the M4 library rows)
+      re-imported, trimmed or deleted entry by entry. Metadata only for now: audio resolves lazily on play, and each
+      entry (or the whole snapshot) can now be saved to the library through the M4 download path.
+- [x] Show which imported entries are already in the library — a `savedOrigins` query per page turns the save button
+      into a tick, and the same information prevents a second download of the same video.
 - [ ] Channel/artist pages (basic), "more from this channel"
 - [ ] Auto-attach YouTube metadata: upgrade titles from `Title (Official Video)` → canonical tags, and optionally match against MusicBrainz
 - [ ] Smart playlists / filters (recently added, most played, never played, stream-only tracks)
@@ -497,8 +503,9 @@ player/
 5. ~~**Pick the retention defaults**~~ Done: stream-only default, 5 GB / 30-day cache budget, keep only on request.
 
 Where things stand: the sidecar spike is done (`docs/notes/yt-dlp-spike.md`), the stack and storage decisions are recorded
-(ADR 0001), streaming has a real surface — the **Online** view with a persistent link history — and playlist, album and
-mix import now stores a snapshot that the Playlists view can play, queue, re-import and trim. What is left in M3 is the
-exit measurement (50 links, and a decision on the `< 3 s` target). Next build work: M4 retention, which turns *Save to
-library* into a real download and gives an imported entry somewhere to land. The remaining M0 leftover is verifying
-yt-dlp/ffmpeg discovery on a clean machine.
+(ADR 0001), streaming has a real surface — the **Online** view with a persistent link history — playlist, album and mix
+import stores a snapshot that the Playlists view can play, queue, re-import and trim, and **saving to the library works**:
+a history row or an imported entry downloads once, is tagged with embedded artwork, moves into the music folder and is
+indexed as an ordinary local track that remembers its video id. What is left in M3 is the exit measurement (50 links, and
+a decision on the `< 3 s` target); what is left in M4 is the streaming cache, the Downloads screen and cancel/retry. The
+remaining M0 leftover is verifying yt-dlp/ffmpeg discovery on a clean machine.

@@ -20,6 +20,7 @@ import { IPC_EVENTS } from '@shared/ipc'
 import type { AppPaths, AppSettings } from '@shared/types'
 import { createArtworkService, type ArtworkService } from '../artwork-service'
 import { broadcast } from '../broadcast'
+import { DownloadService } from '../download-service'
 import { createOnlineService, type OnlineService } from '../online-service'
 import { createYoutubeService, type YoutubeService } from '../youtube-service'
 
@@ -37,6 +38,8 @@ export interface AppContainer {
   repo: TrackRepository
   library: LibraryService
   watcher: FolderWatcher
+  /** Downloads a stream into the library (keep). */
+  downloads: DownloadService
   playlists: PlaylistService
   /** The last session's queue, saved as it plays and read once at start-up. */
   playback: PlaybackService
@@ -109,6 +112,17 @@ export function createContainer(): AppContainer {
     onLibraryChanged: () => broadcast(IPC_EVENTS.libraryChanged, null)
   })
 
+  const downloads = new DownloadService({
+    settings,
+    paths,
+    repo,
+    library,
+    ytDlp,
+    musicDir: app.getPath('music'),
+    log: log.child('downloads'),
+    onChange: (progress) => broadcast(IPC_EVENTS.downloadChanged, progress)
+  })
+
   // Playlists read tracks, so they take the same repository the library writes
   // through: pruning a track drops its playlist entries by foreign key, and the
   // two can never disagree about what a track id means.
@@ -142,6 +156,7 @@ export function createContainer(): AppContainer {
     repo,
     library,
     watcher,
+    downloads,
     playlists,
     playback,
     resolvers,
@@ -152,6 +167,7 @@ export function createContainer(): AppContainer {
     onlinePlaylists,
     dispose: () => {
       unwatchSettings()
+      downloads.dispose()
       watcher.stop()
       database.close()
       log.info('shutdown complete')

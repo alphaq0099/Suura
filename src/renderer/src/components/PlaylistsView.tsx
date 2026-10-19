@@ -17,8 +17,9 @@ import {
   clampPlaylistIndexWidth
 } from '@shared/playlists'
 import { messageOf } from '../api'
+import type { UseDownloadsResult } from '../hooks/useDownloads'
 import { TrackList, describeClickAction } from './TrackList'
-import { PlayIcon, PlaylistIcon, PlusIcon, PencilIcon, QueueIcon, RefreshIcon, SpinnerIcon, TrashIcon } from './Icons'
+import { PlayIcon, PlaylistIcon, PlusIcon, PencilIcon, QueueIcon, RefreshIcon, SpinnerIcon, TrashIcon, DownloadIcon } from './Icons'
 
 export interface PlaylistsViewProps {
   playlists: Playlist[]
@@ -55,6 +56,8 @@ export interface PlaylistsViewProps {
   /** Appends these tracks to the queue without replacing it. */
   onQueue: (tracks: Track[]) => void
   onReveal: (trackId: number) => void
+  /** Saving imported entries into the library, shared with the Online view. */
+  downloads: UseDownloadsResult
 }
 
 function totalDuration(tracks: Track[]): string {
@@ -109,7 +112,8 @@ export function PlaylistsView(props: PlaylistsViewProps) {
     onRemoveOnlineItem,
     onPlay,
     onQueue,
-    onReveal
+    onReveal,
+    downloads
   } = props
 
   const [creating, setCreating] = useState(false)
@@ -219,6 +223,42 @@ export function PlaylistsView(props: PlaylistsViewProps) {
     }
     return detail?.items.map((item) => item.track) ?? []
   }, [detail, onlineDetail, showingOnline])
+
+  const { saved, states, save: saveToLibrary, saveMany: saveManyToLibrary, refreshSaved } = downloads
+
+  /** The ids whose "in your library" badge has to be answered for this pane. */
+  const onlineVideoIds = useMemo(
+    () => (showingOnline && onlineDetail ? onlineDetail.items.map((item) => item.videoId) : []),
+    [showingOnline, onlineDetail]
+  )
+
+  useEffect(() => {
+    void refreshSaved(onlineVideoIds)
+  }, [onlineVideoIds, refreshSaved])
+
+  /** Entries that do not have a library row yet, in source order. */
+  const unsavedOnline = useMemo(
+    () =>
+      showingOnline && onlineDetail
+        ? onlineDetail.items.filter((item) => !saved.has(item.videoId))
+        : [],
+    [showingOnline, onlineDetail, saved]
+  )
+
+  const saveOnlineTrack = useCallback(
+    (track: Track): void => {
+      if (track.sourceKind !== 'youtube' || !track.sourceId) return
+      // The row reports its own progress and error; the pane has no banner for a
+      // single failed file, and a failed save must not look like a successful one.
+      void saveToLibrary({
+        videoId: track.sourceId,
+        title: track.title,
+        artist: track.artist,
+        album: track.album
+      }).catch(() => undefined)
+    },
+    [saveToLibrary]
+  )
 
   const entryIdFor = useCallback(
     (trackId: number): number | null => detail?.items.find((item) => item.track.id === trackId)?.id ?? null,
@@ -420,89 +460,89 @@ export function PlaylistsView(props: PlaylistsViewProps) {
               Custom <span className="playlist-group-count">{formatCount(playlists.length)}</span>
             </h2>
             {playlists.length === 0 ? (
-              <p className="playlist-group-empty">Nothing here yet. Create one below the search box.</p>
+              <p className="playlist-group-empty">Nothing here yet. Use “New playlist” to make one.</p>
             ) : null}
 
             {playlists.map((playlist) => (
-            <div
-              key={playlist.id}
-              className={playlist.id === selectedId ? 'playlist-row active' : 'playlist-row'}
-            >
-              {renamingId === playlist.id ? (
-                <form
-                  className="playlist-rename"
-                  onSubmit={(event) => {
-                    event.preventDefault()
-                    void submitRename(playlist.id)
-                  }}
-                >
-                  <input
-                    className="playlist-input"
-                    value={renameValue}
-                    autoFocus
-                    maxLength={120}
-                    aria-label={`Rename ${playlist.name}`}
-                    onChange={(event) => setRenameValue(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key !== 'Escape') return
-                      event.stopPropagation()
-                      setRenamingId(null)
-                    }}
-                  />
-                  <button type="submit" className="small primary">
-                    Save
-                  </button>
-                </form>
-              ) : (
-                <>
-                  <button type="button" className="playlist-open" onClick={() => onSelect(playlist.id)}>
-                    <span className="playlist-name" title={playlist.name}>
-                      <span className="playlist-title">{playlist.name}</span>
-                    </span>
-                    <span className="playlist-count">{formatCount(playlist.trackCount)}</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-button subtle"
-                    title="Rename playlist"
-                    aria-label={`Rename ${playlist.name}`}
-                    onClick={() => {
-                      setRenamingId(playlist.id)
-                      setRenameValue(playlist.name)
-                      setConfirmDelete(null)
+              <div
+                key={playlist.id}
+                className={playlist.id === selectedId ? 'playlist-row active' : 'playlist-row'}
+              >
+                {renamingId === playlist.id ? (
+                  <form
+                    className="playlist-rename"
+                    onSubmit={(event) => {
+                      event.preventDefault()
+                      void submitRename(playlist.id)
                     }}
                   >
-                    <PencilIcon />
-                  </button>
-                  {confirmDelete === playlist.id ? (
-                    <button
-                      type="button"
-                      className="icon-button subtle danger"
-                      title="Delete this playlist"
-                      aria-label={`Confirm deleting ${playlist.name}`}
-                      onClick={() => void onDelete(playlist.id)}
-                    >
-                      <TrashIcon />
+                    <input
+                      className="playlist-input"
+                      value={renameValue}
+                      autoFocus
+                      maxLength={120}
+                      aria-label={`Rename ${playlist.name}`}
+                      onChange={(event) => setRenameValue(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Escape') return
+                        event.stopPropagation()
+                        setRenamingId(null)
+                      }}
+                    />
+                    <button type="submit" className="small primary">
+                      Save
                     </button>
-                  ) : (
+                  </form>
+                ) : (
+                  <>
+                    <button type="button" className="playlist-open" onClick={() => onSelect(playlist.id)}>
+                      <span className="playlist-name" title={playlist.name}>
+                        <span className="playlist-title">{playlist.name}</span>
+                      </span>
+                      <span className="playlist-count">{formatCount(playlist.trackCount)}</span>
+                    </button>
                     <button
                       type="button"
                       className="icon-button subtle"
-                      title="Delete playlist"
-                      aria-label={`Delete ${playlist.name}`}
-                      onClick={() => setConfirmDelete(playlist.id)}
+                      title="Rename playlist"
+                      aria-label={`Rename ${playlist.name}`}
+                      onClick={() => {
+                        setRenamingId(playlist.id)
+                        setRenameValue(playlist.name)
+                        setConfirmDelete(null)
+                      }}
                     >
-                      <TrashIcon />
+                      <PencilIcon />
                     </button>
-                  )}
-                </>
-              )}
-            </div>
-          ))}
+                    {confirmDelete === playlist.id ? (
+                      <button
+                        type="button"
+                        className="icon-button subtle danger"
+                        title="Delete this playlist"
+                        aria-label={`Confirm deleting ${playlist.name}`}
+                        onClick={() => void onDelete(playlist.id)}
+                      >
+                        <TrashIcon />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="icon-button subtle"
+                        title="Delete playlist"
+                        aria-label={`Delete ${playlist.name}`}
+                        onClick={() => setConfirmDelete(playlist.id)}
+                      >
+                        <TrashIcon />
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            ))}
 
-          {confirmDelete !== null ? (
-            <p className="playlist-hint">Click the bin again to delete the playlist. Tracks stay in your library.</p>
-          ) : null}
+            {confirmDelete !== null ? (
+              <p className="playlist-hint">Click the bin again to delete the playlist. Tracks stay in your library.</p>
+            ) : null}
           </div>
 
           <div className="playlist-group" role="group" aria-label="Online playlists">
@@ -558,8 +598,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
 
             {confirmDeleteOnline !== null ? (
               <p className="playlist-hint">
-                Click the bin again to remove the imported playlist. Nothing is downloaded, so your library does not
-                change.
+                Click the bin again to remove the imported playlist. Saved files stay in your library.
               </p>
             ) : null}
           </div>
@@ -609,6 +648,24 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                   <button type="button" onClick={() => onQueue(tracks)} disabled={tracks.length === 0}>
                     <QueueIcon size={14} />
                     <span>Add all</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      saveManyToLibrary(
+                        unsavedOnline.map((item) => ({
+                          videoId: item.videoId,
+                          title: item.title,
+                          artist: item.artist,
+                          album: item.album
+                        }))
+                      )
+                    }
+                    disabled={unsavedOnline.length === 0}
+                    title="Download each track that is not in your library yet"
+                  >
+                    <DownloadIcon />
+                    <span>Save all</span>
                   </button>
                   <button type="button" onClick={() => void reimport()} disabled={reimporting}>
                     {reimporting ? <SpinnerIcon /> : <RefreshIcon />}
@@ -682,14 +739,17 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                   }}
                   removeLabel="Remove from this playlist"
                   showFormat={false}
+                  onSave={saveOnlineTrack}
+                  isSaved={(track) => (track.sourceId ? saved.has(track.sourceId) : false)}
+                  saveState={(track) => (track.sourceId ? states[track.sourceId] : undefined)}
                 />
               )}
 
               {tracks.length > 0 ? (
                 <p className="table-footnote">
                   Imported playlists keep their source order, so drag-to-reorder is off. Click:{' '}
-                  {describeClickAction(singleClick)}, double-click: {describeClickAction(doubleClick)}. Nothing here is
-                  downloaded until you save it to the library (M4).
+                  {describeClickAction(singleClick)}, double-click: {describeClickAction(doubleClick)}. Saving
+                  downloads a copy into your music folder; until then every track is streamed.
                 </p>
               ) : null}
             </>

@@ -5,6 +5,7 @@ import type {
   ArtworkShape,
   ArtworkSize,
   DeepPartial,
+  DownloadFormat,
   EngineStatus,
   ExecutableStatus,
   LibraryClickAction,
@@ -52,6 +53,12 @@ const QUALITY_CHOICES: Array<{ value: QualityTier; label: string }> = [
   { value: 'high', label: 'High (~256 kbps)' },
   { value: 'balanced', label: 'Balanced (~128 kbps)' },
   { value: 'data-saver', label: 'Data saver (~64 kbps)' }
+]
+
+const FORMAT_CHOICES: Array<{ value: DownloadFormat; label: string }> = [
+  { value: 'opus', label: 'Opus (no re-encode)' },
+  { value: 'mp3', label: 'MP3 320 (compatibility)' },
+  { value: 'm4a', label: 'M4A / AAC (Apple devices)' }
 ]
 
 const SHAPE_CHOICES: Array<{ value: ArtworkShape; label: string }> = [
@@ -274,11 +281,12 @@ export function SettingsView(props: SettingsViewProps) {
           <article className="card">
             <header className="card-header">
               <h2>
-                Retention <span className="badge">applies in M4</span>
+                Retention <span className="badge">saving now · cache next</span>
               </h2>
             </header>
             <p className="card-hint">
-              Decides what happens to a remote track after you have listened to it. Nothing here affects local files.
+              Saving to the library always writes a file to the download folder. The modes below decide whether streams
+              are also cached while you listen.
             </p>
             <div className="choice-list">
               {RETENTION_CHOICES.map((choice) => (
@@ -333,10 +341,25 @@ export function SettingsView(props: SettingsViewProps) {
                   ))}
                 </select>
               </label>
+              <label className="field">
+                <span>Saved file format</span>
+                <select
+                  value={settings.retention.downloadFormat}
+                  onChange={(event) =>
+                    onUpdate({ retention: { downloadFormat: event.target.value as DownloadFormat } })
+                  }
+                >
+                  {FORMAT_CHOICES.map((choice) => (
+                    <option key={choice.value} value={choice.value}>
+                      {choice.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label className="field wide">
                 <span>Download folder</span>
                 <div className="field-row">
-                  <input type="text" readOnly value={settings.retention.downloadFolder ?? '(default music folder)'} />
+                  <input type="text" readOnly value={settings.retention.downloadFolder ?? '(default: Music\\Player)'} />
                   <button type="button" onClick={onPickDownloadFolder}>
                     Change
                   </button>
@@ -363,8 +386,8 @@ export function SettingsView(props: SettingsViewProps) {
               </button>
             </header>
             <p className="card-hint">
-              The app shells out to yt-dlp for YouTube audio and ffmpeg for transcoding and tagging. Playback today comes
-              from local files only; this reports whether the engine would be ready.
+              The app shells out to yt-dlp for YouTube audio and ffmpeg for transcoding, tagging and covers. Streaming,
+              importing lists and saving tracks all need these two binaries; this reports whether they are ready.
             </p>
 
             {engineStatus ? (

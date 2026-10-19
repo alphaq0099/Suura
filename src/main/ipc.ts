@@ -7,6 +7,7 @@ import type {
   ArtworkShape,
   ArtworkSize,
   DeepPartial,
+  DownloadFormat,
   EngineSettings,
   InteractionSettings,
   LibraryClickAction,
@@ -17,6 +18,7 @@ import type {
   ResolvableTrack,
   RetentionMode,
   RetentionSettings,
+  SaveToLibraryRequest,
   ThemeMode,
   TrackSortField,
   VisualSettings
@@ -72,6 +74,31 @@ function toIdList(value: unknown, what: string): number[] {
 }
 
 /**
+ * A save request, narrowed to what the downloader actually uses.
+ *
+ * The title becomes a folder name and a file name, so it is length-capped here
+ * and sanitised again by `savePathParts`; the video id is the part that must be
+ * real, because it is the identity used to avoid a second download.
+ */
+function toSaveRequest(value: unknown): SaveToLibraryRequest {
+  if (!isPlainObject(value)) throw new Error('Malformed save request.')
+  const videoId = typeof value.videoId === 'string' ? value.videoId.trim() : ''
+  if (!isYouTubeVideoId(videoId)) throw new Error('That link has no usable video id.')
+  const title = typeof value.title === 'string' ? value.title.trim() : ''
+  if (title.length === 0 || title.length > 500) throw new Error('That track has no title to save it under.')
+  const artist = typeof value.artist === 'string' ? value.artist.trim().slice(0, 500) : ''
+  const album = typeof value.album === 'string' ? value.album.trim().slice(0, 500) : ''
+  return { videoId, title, artist: artist || null, album: album || null }
+}
+
+/** Video ids from the renderer, capped so a bad call cannot become a big query. */
+function toVideoIdList(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length > 1000) throw new Error('Expected a list of video ids.')
+  const ids = value.filter((entry): entry is string => typeof entry === 'string' && isYouTubeVideoId(entry))
+  return [...new Set(ids)]
+}
+
+/**
  * A play-state save, or null when the message cannot be trusted.
  *
  * This runs on a one-way channel, so there is no caller to throw at: a message
@@ -101,6 +128,7 @@ function sanitizeSnapshot(value: unknown): PlaybackSnapshot | null {
 
 const RETENTION_MODES: RetentionMode[] = ['stream', 'cache', 'keep']
 const QUALITY_TIERS: QualityTier[] = ['best', 'high', 'balanced', 'data-saver']
+const DOWNLOAD_FORMATS: DownloadFormat[] = ['opus', 'mp3', 'm4a']
 const REPEAT_MODES: RepeatMode[] = ['off', 'all', 'one']
 const THEMES: ThemeMode[] = ['system', 'light', 'dark']
 const ARTWORK_SHAPES: ArtworkShape[] = ['square', 'circle']
@@ -194,6 +222,9 @@ export function sanitizeSettingsPatch(input: unknown): DeepPartial<AppSettings> 
     }
     if (typeof source.qualityTier === 'string' && QUALITY_TIERS.includes(source.qualityTier as QualityTier)) {
       retention.qualityTier = source.qualityTier as QualityTier
+    }
+    if (typeof source.downloadFormat === 'string' && DOWNLOAD_FORMATS.includes(source.downloadFormat as DownloadFormat)) {
+      retention.downloadFormat = source.downloadFormat as DownloadFormat
     }
     patch.retention = retention
   }
@@ -385,6 +416,17 @@ export function registerIpcHandlers(container: AppContainer): void {
 
   ipcMain.handle(IPC.onlinePlaylistRemoveItem, (_event, id: unknown) =>
     container.online.removePlaylistItem(toId(id, 'playlist entry'))
+  )
+
+  // ----- saving to the library ------------------------------------------
+  // The promise resolves when the file is on disk *and* indexed: the Online
+  // views can then play the local copy. Progress is pushed on downloadChanged.
+  ipcMain.handle(IPC.downloadSave, (_event, input: unknown) =>
+    container.downloads.save(toSaveRequest(input))
+  )
+
+  ipcMain.handle(IPC.downloadSavedIds, (_event, input: unknown) =>
+    [...container.repo.savedOrigins('youtube', toVideoIdList(input))]
   )
 
   ipcMain.handle(IPC.clipboardRead, () => clipboard.readText())

@@ -46,6 +46,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     cacheBudgetMb: 5120,
     cacheMaxAgeDays: 30,
     downloadFolder: null,
+    // Opus is what YouTube delivers, so saving it is a remux instead of a
+    // re-encode. MP3 and M4A are a setting away for players that need them.
+    downloadFormat: 'opus',
     qualityTier: 'high'
   },
   engine: {

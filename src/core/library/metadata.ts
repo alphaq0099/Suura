@@ -35,7 +35,14 @@ export interface ExtractedMetadata {
   bitrateKbps: number | null
   sampleRate: number | null
   channels: number | null
+  /** A YouTube video this file was saved from, when its tags say so. */
+  originKind: 'youtube' | null
+  originId: string | null
 }
+
+/** A comment that is exactly a YouTube watch URL, as yt-dlp writes it. */
+const YOUTUBE_WATCH_URL =
+  /^https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})(?:[&?#].*)?$/
 
 function clean(value: string | undefined | null): string | null {
   if (typeof value !== 'string') return null
@@ -60,6 +67,10 @@ export async function extractMetadata(filePath: string): Promise<ExtractedMetada
 
   const artist = clean(common.artist) ?? clean(common.artists?.join(', '))
   const genre = common.genre?.map((entry) => entry.trim()).filter(Boolean).join(', ')
+  // MP3 writers (ffmpeg included) put a comment in `TXXX:comment`, which
+  // music-metadata does not surface as `common.comment`. Checking the native
+  // frames too is what keeps a saved MP3 linked to its video across a rescan.
+  const originId = youtubeOriginOf(common.comment) ?? youtubeOriginOfNative(parsed.native)
 
   return {
     title: clean(common.title) ?? titleFromFilename(filePath),
@@ -76,6 +87,49 @@ export async function extractMetadata(filePath: string): Promise<ExtractedMetada
     codec: clean(format.codec),
     bitrateKbps: typeof format.bitrate === 'number' ? Math.round(format.bitrate / 1000) : null,
     sampleRate: format.sampleRate ?? null,
-    channels: format.numberOfChannels ?? null
+    channels: format.numberOfChannels ?? null,
+    originKind: originId ? 'youtube' : null,
+    originId
   }
+}
+
+/**
+ * The video a saved file came from, if a tag records one.
+ *
+ * yt-dlp writes the canonical watch URL as a comment. Only a comment that is
+ * *only* that URL counts: a normal file whose copyright note happens to link to
+ * YouTube should not be claimed as a saved stream, because "already in your
+ * library" would then be wrong and a re-download would silently do nothing.
+ */
+// Exported for the smoke tests: this is a rule, not I/O.
+export function youtubeOriginOf(comments: ReadonlyArray<{ text?: string }> | undefined): string | null {
+  for (const comment of comments ?? []) {
+    const text = comment.text?.trim()
+    if (!text) continue
+    const match = YOUTUBE_WATCH_URL.exec(text)
+    if (match?.[1]) return match[1]
+  }
+  return null
+}
+
+/**
+ * The same rule applied to raw tag frames.
+ *
+ * `music-metadata` maps most tags onto `common`, but an ID3 `TXXX:comment` (the
+ * frame ffmpeg and yt-dlp write for MP3) stays native. The URL still has to be
+ * the whole value, for the same reason as above.
+ */
+export function youtubeOriginOfNative(native: unknown): string | null {
+  if (!native || typeof native !== 'object') return null
+  for (const frames of Object.values(native as Record<string, unknown>)) {
+    if (!Array.isArray(frames)) continue
+    for (const frame of frames) {
+      if (!frame || typeof frame !== 'object') continue
+      const value = (frame as { value?: unknown }).value
+      if (typeof value !== 'string') continue
+      const match = YOUTUBE_WATCH_URL.exec(value.trim())
+      if (match?.[1]) return match[1]
+    }
+  }
+  return null
 }

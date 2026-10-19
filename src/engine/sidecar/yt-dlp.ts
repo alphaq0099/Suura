@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import type { Logger } from '@core/logging/logger'
 import type { EngineSettings, QualityTier } from '@shared/types'
 import {
@@ -20,6 +20,12 @@ const PLAYLIST_TIMEOUT_MS = 60_000
 
 /** A single video's -J JSON is a few hundred KB. Anything past this is not a video. */
 const MAX_STDOUT_BYTES = 8 * 1024 * 1024
+
+/** A saved file is minutes of transfer, not seconds of metadata. */
+const DOWNLOAD_TIMEOUT_MS = 15 * 60_000
+
+/** Progress is for a row's spinner, not for a graph; 4 Hz is plenty. */
+const PROGRESS_INTERVAL_MS = 250
 
 /** Enough to identify the failure without holding a whole yt-dlp transcript. */
 const MAX_STDERR_BYTES = 64 * 1024
@@ -141,6 +147,84 @@ export function buildPlaylistArgs(url: string, limit: number): string[] {
   ]
 }
 
+export interface YtDownloadOptions {
+  quality: QualityTier
+  /** `opus`, `mp3` or `m4a`: the ext yt-dlp extracts to. */
+  format: string
+  /** Must contain `%(ext)s`; the downloader replaces it with the real extension. */
+  outputTemplate: string
+  onProgress?: (percent: number) => void
+  signal?: AbortSignal
+  timeoutMs?: number
+}
+
+/**
+ * Finds what yt-dlp actually wrote.
+ *
+ * The expected name is `<videoId>.<format>`, but the extractor decides the
+ * extension in the last step and a thumbnail may sit beside it. Looking for the
+ * id rather than trusting the template is what makes an unusual container (or a
+ * future default) a working download instead of a "no file" error.
+ */
+function findDownloadedFile(outputTemplate: string, videoId: string, format: string): string | null {
+  const directory = dirname(outputTemplate)
+  const expected = join(directory, `${videoId}.${format}`)
+  if (existsSync(expected)) return expected
+
+  const candidates = [format, 'opus', 'ogg', 'mp3', 'm4a', 'webm', 'flac']
+  for (const extension of candidates) {
+    const candidate = join(directory, `${videoId}.${extension}`)
+    if (existsSync(candidate)) return candidate
+  }
+
+  try {
+    const prefix = `${videoId}.`
+    const match = readdirSync(directory).find(
+      (name) => name.startsWith(prefix) && !/\.(part|jpg|jpeg|png|webp|ytdl)$/i.test(name)
+    )
+    return match ? join(directory, match) : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The arguments for one saved (kept) track.
+ *
+ * `-x` extracts the audio, `--embed-metadata` writes the tags the library will
+ * read back, and `--embed-thumbnail` attaches the cover. The output template is
+ * the downloader's temporary path; the service renames the file once its tags
+ * say what the track is called.
+ */
+export function buildDownloadArgs(
+  videoId: string,
+  quality: QualityTier,
+  format: string,
+  outputTemplate: string
+): string[] {
+  return [
+    '--ignore-config',
+    '--no-playlist',
+    '--socket-timeout',
+    '15',
+    '--newline',
+    '-f',
+    youtubeFormatSelector(quality),
+    '-x',
+    '--audio-format',
+    format,
+    '--audio-quality',
+    '0',
+    '--embed-metadata',
+    '--embed-thumbnail',
+    '--convert-thumbnails',
+    'jpg',
+    '-o',
+    outputTemplate,
+    youtubeWatchUrl(videoId)
+  ]
+}
+
 /**
  * Runs yt-dlp once per resolve.
  *
@@ -187,6 +271,113 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider {
       })
       throw error
     }
+  }
+
+  /**
+   * Downloads one track to `outputTemplate`'s folder and returns the file.
+   *
+   * Unlike a resolve, this is expected to take minutes and to print progress, so
+   * it gets its own runner instead of the buffered `run`: the row showing the
+   * download needs a percentage, and buffering stdout would withhold it until the
+   * process exited. The output template must contain `%(ext)s`.
+   */
+  download(videoId: string, options: YtDownloadOptions): Promise<string> {
+    const args = buildDownloadArgs(videoId, options.quality, options.format, options.outputTemplate)
+    const binary = this.resolveBinary()
+    const timeoutMs = options.timeoutMs ?? DOWNLOAD_TIMEOUT_MS
+
+    return new Promise((resolve, reject) => {
+      const signal = options.signal
+      if (signal?.aborted) {
+        reject(new Error('Saving the track was cancelled.'))
+        return
+      }
+
+      let child: ChildProcess
+      try {
+        child = spawn(binary, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+      } catch (error) {
+        reject(new YtDlpError('Could not start yt-dlp.', error instanceof Error ? error.message : String(error)))
+        return
+      }
+
+      let stderr = ''
+      let settled = false
+      let lastEmit = 0
+
+      const cleanup = (): void => {
+        clearTimeout(timer)
+        signal?.removeEventListener('abort', onAbort)
+      }
+
+      const stop = (error: Error): void => {
+        if (settled) return
+        settled = true
+        cleanup()
+        killTree(child)
+        reject(error)
+      }
+
+      const timer = setTimeout(() => {
+        stop(new YtDlpError('The download took too long. Try again.', 'download-timeout'))
+      }, timeoutMs)
+
+      const onAbort = (): void => stop(new Error('Saving the track was cancelled.'))
+      signal?.addEventListener('abort', onAbort, { once: true })
+
+      // Progress arrives on stdout as `[download]  42.3% of 4.10MiB at ...`.
+      // Both streams are watched because yt-dlp has moved it between them.
+      const watch = (chunk: Buffer): void => {
+        if (settled) return
+        const text = chunk.toString('utf8')
+        if (options.onProgress) {
+          const matches = [...text.matchAll(/\[download\]\s+(\d+(?:\.\d+)?)%/g)]
+          const last = matches[matches.length - 1]
+          if (last?.[1]) {
+            const percent = Math.max(0, Math.min(100, Number(last[1])))
+            const now = Date.now()
+            if (percent >= 100 || now - lastEmit >= PROGRESS_INTERVAL_MS) {
+              lastEmit = now
+              options.onProgress(percent)
+            }
+          }
+        }
+      }
+
+      child.stdout?.on('data', watch)
+      child.stderr?.on('data', (chunk: Buffer) => {
+        watch(chunk)
+        if (settled) return
+        stderr = (stderr + chunk.toString('utf8')).slice(-MAX_STDERR_BYTES)
+      })
+
+      child.on('error', (error) => {
+        stop(new YtDlpError('Could not start yt-dlp.', error.message))
+      })
+
+      child.on('close', (code) => {
+        if (settled) return
+        settled = true
+        cleanup()
+
+        if (code !== 0) {
+          this.deps.log.warn('yt-dlp download failed', {
+            videoId,
+            code,
+            stderr: stderr.slice(-2000)
+          })
+          reject(new YtDlpError(describeYouTubeFailure(stderr), stderr.slice(-4000)))
+          return
+        }
+
+        const filePath = findDownloadedFile(options.outputTemplate, videoId, options.format)
+        if (!filePath) {
+          reject(new YtDlpError('The download finished but no file was found.', 'download-missing-file'))
+          return
+        }
+        resolve(filePath)
+      })
+    })
   }
 
   /** The binary, or a message that says how to fix it. Located per call: settings can change. */

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { LibraryClickAction, SortDirection, Track, TrackSortField } from '@shared/types'
+import type { DownloadStatus, LibraryClickAction, SortDirection, Track, TrackSortField } from '@shared/types'
 import { formatAudioSummary, formatDuration } from '@shared/format'
 import { useRowReorder } from '../hooks/useRowReorder'
 import { ArtworkImage } from './ArtworkImage'
-import { PlayIcon, RevealIcon, SortIcon, SpinnerIcon, TrashIcon } from './Icons'
+import { CheckIcon, DownloadIcon, PlayIcon, RevealIcon, SortIcon, SpinnerIcon, TrashIcon } from './Icons'
 
 /** How a configured click action reads in a tooltip or a footnote. */
 export function describeClickAction(action: LibraryClickAction): string {
@@ -78,6 +78,15 @@ export interface TrackListProps {
    * the title and the artist.
    */
   showFormat?: boolean
+  /**
+   * Adds a "Save to library" action to stream rows. Local rows never get one:
+   * they are already a file, which is what saving produces.
+   */
+  onSave?: (track: Track) => void
+  /** Whether a row already has a library copy, so the action becomes a tick. */
+  isSaved?: (track: Track) => boolean
+  /** Progress for a row that is saving, so the button becomes a spinner. */
+  saveState?: (track: Track) => { status: DownloadStatus; percent: number | null; error: string | null } | undefined
 }
 
 interface Column {
@@ -129,7 +138,10 @@ export function TrackList(props: TrackListProps) {
     onRemove,
     removeLabel = 'Remove from this list',
     onRowContextMenu,
-    showFormat = true
+    showFormat = true,
+    onSave,
+    isSaved,
+    saveState
   } = props
 
   const scrollerRef = useRef<HTMLDivElement | null>(null)
@@ -336,7 +348,16 @@ export function TrackList(props: TrackListProps) {
   const columns = showFormat ? COLUMNS : COLUMNS.filter((column) => column.className !== 'col-format')
 
   return (
-    <div className={['track-list', onRemove ? 'has-remove' : '', showFormat ? '' : 'no-format'].filter(Boolean).join(' ')}>
+    <div
+      className={[
+        'track-list',
+        onRemove ? 'has-remove' : '',
+        onSave ? 'has-save' : '',
+        showFormat ? '' : 'no-format'
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
       <div className="track-head" role="row">
         {columns.map((column) => (
           <div
@@ -385,6 +406,11 @@ export function TrackList(props: TrackListProps) {
               const isActive = index === activeIndex
               const isDragging = drag.draggingIndex === index
               const dropEdge = drag.dropAt && drag.dropAt.index === index ? drag.dropAt.edge : null
+              const isStream = track.sourceKind === 'youtube' && track.sourceId !== null
+              const rowSaved = isStream && (isSaved?.(track) ?? false)
+              const saving = isStream ? saveState?.(track) : undefined
+              const savingActive =
+                saving !== undefined && saving.status !== 'saved' && saving.status !== 'failed'
               const rowClass = [
                 'track-row',
                 isCurrent ? 'current' : '',
@@ -474,6 +500,33 @@ export function TrackList(props: TrackListProps) {
                     {formatDuration(track.durationMs)}
                   </div>
                   <div role="gridcell" className="cell col-actions">
+                    {onSave && isStream ? (
+                      <button
+                        type="button"
+                        className={rowSaved ? 'icon-button subtle saved' : 'icon-button subtle'}
+                        title={
+                          rowSaved
+                            ? 'Already in your library'
+                            : savingActive
+                              ? `Saving… ${Math.round(saving?.percent ?? 0)}%`
+                              : saving?.status === 'failed'
+                                ? (saving.error ?? 'Could not save this track. Try again.')
+                                : 'Save to your library'
+                        }
+                        aria-label={
+                          rowSaved
+                            ? `${track.title} is in your library`
+                            : `Save ${track.title} to your library`
+                        }
+                        disabled={rowSaved || savingActive}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onSave(track)
+                        }}
+                      >
+                        {rowSaved ? <CheckIcon /> : savingActive ? <SpinnerIcon /> : <DownloadIcon />}
+                      </button>
+                    ) : null}
                     {onRemove ? (
                       <button
                         type="button"
@@ -488,18 +541,20 @@ export function TrackList(props: TrackListProps) {
                         <TrashIcon />
                       </button>
                     ) : null}
-                    <button
-                      type="button"
-                      className="icon-button subtle"
-                      title="Show in folder"
-                      aria-label={`Show ${track.title} in folder`}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        onReveal(track.id)
-                      }}
-                    >
-                      <RevealIcon />
-                    </button>
+                    {track.filePath ? (
+                      <button
+                        type="button"
+                        className="icon-button subtle"
+                        title="Show in folder"
+                        aria-label={`Show ${track.title} in folder`}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onReveal(track.id)
+                        }}
+                      >
+                        <RevealIcon />
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               )

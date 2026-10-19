@@ -97,6 +97,11 @@ const api: PlayerApi = {
   removeOnlinePlaylistItem: (itemId: number) =>
     ipcRenderer.invoke(IPC.onlinePlaylistRemoveItem, itemId) as Promise<number | null>,
 
+  saveToLibrary: (request) => ipcRenderer.invoke(IPC.downloadSave, request) as Promise<number>,
+
+  savedVideoIds: (videoIds: string[]) =>
+    ipcRenderer.invoke(IPC.downloadSavedIds, videoIds) as Promise<string[]>,
+
   readClipboardText: () => ipcRenderer.invoke(IPC.clipboardRead) as Promise<string>,
 
   writeClipboardText: (text: string) => ipcRenderer.invoke(IPC.clipboardWrite, text) as Promise<void>,

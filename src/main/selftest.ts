@@ -1863,14 +1863,15 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       refusedPending: number
       pendingRows: number
       menuItems: string
-      saveDisabled: boolean
+      saveEnabled: boolean
+      rowSaveButtons: number
       removedRows: number
       clearedRows: number
       emptyAfterClear: boolean
     }>(
       window,
       `(async () => {
-         const out = { rows: 0, firstTitle: '', firstArtist: '', firstDuration: '', sidebarCount: '', rowCovers: 0, rowCoverLoaded: false, rowPlaceholders: 0, pasteFilled: '', playDisabled: false, invalidError: '', refusedError: '', refusedPending: 0, pendingRows: 0, menuItems: '', saveDisabled: false, removedRows: -1, clearedRows: -1, emptyAfterClear: false }
+         const out = { rows: 0, firstTitle: '', firstArtist: '', firstDuration: '', sidebarCount: '', rowCovers: 0, rowCoverLoaded: false, rowPlaceholders: 0, pasteFilled: '', playDisabled: false, invalidError: '', refusedError: '', refusedPending: 0, pendingRows: 0, menuItems: '', saveEnabled: false, rowSaveButtons: 0, removedRows: -1, clearedRows: -1, emptyAfterClear: false }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (s) => document.querySelector(s)
          const pickAll = (s) => [...document.querySelectorAll(s)]
@@ -1937,14 +1938,16 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.refusedError = text(pick('.banner')).trim()
          out.refusedPending = pickAll('.online-item.pending').length
 
-         // Right-click a row: Copy and the (disabled) Save live in the menu.
+         // Right-click a row: Copy and Save live in the menu. Every row also
+         // carries its own save button, so a row can be kept without a menu.
+         out.rowSaveButtons = pickAll('.online-actions button[aria-label^="Save"]').length
          const jump = pick('.online-jump')
          if (jump) jump.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 260, clientY: 260 }))
          await sleep(250)
          const items = pickAll('.context-menu .context-item')
          out.menuItems = items.map((el) => text(el).trim()).join(' | ')
          const save = items.find((el) => text(el).indexOf('Save to library') === 0)
-         out.saveDisabled = Boolean(save && save.disabled)
+         out.saveEnabled = Boolean(save && !save.disabled)
          press(items.find((el) => text(el).trim() === 'Copy link'))
          await sleep(300)
 
@@ -1995,12 +1998,17 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     record(
       onlineView.menuItems.indexOf('Play') === 0 &&
         onlineView.menuItems.includes('Add to queue') &&
+        onlineView.menuItems.includes('Save to library') &&
         onlineView.menuItems.includes('Copy link') &&
         onlineView.menuItems.includes('Remove from history'),
       'a right-click menu offers the row actions',
       onlineView.menuItems
     )
-    record(onlineView.saveDisabled, 'Save to library is present but disabled until M4')
+    record(
+      onlineView.saveEnabled && onlineView.rowSaveButtons === 3,
+      'every history row offers a working save action',
+      `menu enabled ${onlineView.saveEnabled}, ${onlineView.rowSaveButtons} row buttons`
+    )
     record(onlineView.removedRows === 2, 'a row can be removed from the history', onlineView.removedRows)
     record(
       onlineView.clearedRows === 0 && onlineView.emptyAfterClear,
@@ -2021,6 +2029,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       note: string
       hasReimport: boolean
       hasClear: boolean
+      hasSaveAll: boolean
+      rowSaveButtons: number
+      rowRevealButtons: number
       indexCount: string
       rowsAfterRemove: number
       playedTitle: string
@@ -2029,7 +2040,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     }>(
       window,
       `(async () => {
-         const out = { groupTitles: '', onlineRows: -1, kind: '', paneTitle: '', titles: '', note: '', hasReimport: false, hasClear: false, indexCount: '', rowsAfterRemove: -1, playedTitle: '', groupEmpty: false, emptyAfterDelete: false }
+         const out = { groupTitles: '', onlineRows: -1, kind: '', paneTitle: '', titles: '', note: '', hasReimport: false, hasClear: false, hasSaveAll: false, rowSaveButtons: 0, rowRevealButtons: 0, indexCount: '', rowsAfterRemove: -1, playedTitle: '', groupEmpty: false, emptyAfterDelete: false }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (s) => document.querySelector(s)
          const pickAll = (s) => [...document.querySelectorAll(s)]
@@ -2059,6 +2070,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          const buttons = pickAll('.playlist-pane-head button')
          out.hasReimport = buttons.some((el) => text(el).trim().indexOf('Re-import') === 0)
          out.hasClear = buttons.some((el) => text(el).trim().indexOf('Clear') === 0)
+         out.hasSaveAll = buttons.some((el) => text(el).trim().indexOf('Save all') === 0)
+         out.rowSaveButtons = pickAll('.track-row button[aria-label^="Save"]').length
+         out.rowRevealButtons = pickAll('.track-row button[title="Show in folder"]').length
 
          press(pick('.track-row button[title="Remove from this playlist"]'))
          await sleep(700)
@@ -2101,6 +2115,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       onlineLists.hasReimport && !onlineLists.hasClear,
       'an imported album offers Re-import rather than Clear',
       `re-import ${onlineLists.hasReimport}, clear ${onlineLists.hasClear}`
+    )
+    record(
+      onlineLists.hasSaveAll && onlineLists.rowSaveButtons === 2 && onlineLists.rowRevealButtons === 0,
+      'imported entries can be saved one by one or all at once',
+      `save all ${onlineLists.hasSaveAll}, ${onlineLists.rowSaveButtons} row buttons, ${onlineLists.rowRevealButtons} reveal buttons`
     )
     record(
       onlineLists.rowsAfterRemove === 1 && onlineLists.indexCount === '1',

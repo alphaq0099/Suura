@@ -6,6 +6,8 @@ export interface TrackRow {
   id: number
   source_kind: string
   source_id: string | null
+  origin_kind: string | null
+  origin_id: string | null
   content_key: string
   title: string
   artist: string | null
@@ -34,6 +36,9 @@ export interface TrackWriteInput {
   contentKey: string
   sourceKind: SourceKind
   sourceId: string | null
+  /** Where the file came from; null for an ordinary local file. */
+  originKind: SourceKind | null
+  originId: string | null
   title: string
   artist: string | null
   albumArtist: string | null
@@ -89,6 +94,8 @@ const TRACK_COLUMN_NAMES = [
   'id',
   'source_kind',
   'source_id',
+  'origin_kind',
+  'origin_id',
   'content_key',
   'title',
   'artist',
@@ -185,6 +192,8 @@ export function mapTrackRow(row: TrackRow): Track {
     id: row.id,
     sourceKind: row.source_kind === 'youtube' ? 'youtube' : 'local',
     sourceId: row.source_id,
+    originKind: row.origin_kind === 'youtube' ? 'youtube' : null,
+    originId: row.origin_id,
     title: row.title,
     artist: row.artist,
     albumArtist: row.album_artist,
@@ -215,6 +224,51 @@ export class TrackRepository {
   getById(id: number): Track | null {
     const row = this.db.prepare(`SELECT ${TRACK_COLUMNS} FROM tracks WHERE id = ?`).get<TrackRow>(id)
     return row ? mapTrackRow(row) : null
+  }
+
+  /** The library row for a video, if that video has already been saved. */
+  findByOrigin(originKind: SourceKind, originId: string): Track | null {
+    const row = this.db
+      .prepare(
+        `SELECT ${TRACK_COLUMNS} FROM tracks
+         WHERE origin_kind = ? AND origin_id = ?
+         ORDER BY id ASC LIMIT 1`
+      )
+      .get<TrackRow>(originKind, originId)
+    return row ? mapTrackRow(row) : null
+  }
+
+  /**
+   * Which of these origin ids already have a row.
+   *
+   * The Online views ask this for a whole page at once so a list of 200 tracks
+   * costs one query rather than 200. The caller only needs the ids, not the rows.
+   */
+  savedOrigins(originKind: SourceKind, originIds: string[]): Set<string> {
+    const found = new Set<string>()
+    const unique = [...new Set(originIds)].filter((id) => id.length > 0)
+    for (let at = 0; at < unique.length; at += 400) {
+      const batch = unique.slice(at, at + 400)
+      const placeholders = batch.map(() => '?').join(', ')
+      const rows = this.db
+        .prepare(
+          `SELECT DISTINCT origin_id FROM tracks
+           WHERE origin_kind = ? AND origin_id IN (${placeholders})`
+        )
+        .all<{ origin_id: string | null }>(originKind, ...batch)
+      for (const row of rows) if (row.origin_id) found.add(row.origin_id)
+    }
+    return found
+  }
+
+  /**
+   * Records where a file came from without touching anything a tag owns.
+   *
+   * The scanner normally learns the origin from the file's own comment, but the
+   * downloader knows it first-hand and must not depend on a tag being present.
+   */
+  setOrigin(id: number, originKind: SourceKind | null, originId: string | null): void {
+    this.db.prepare('UPDATE tracks SET origin_kind = ?, origin_id = ? WHERE id = ?').run(originKind, originId, id)
   }
 
   /**
@@ -319,14 +373,16 @@ export class TrackRepository {
     const result = this.db
       .prepare(
         `INSERT INTO tracks (
-           source_kind, source_id, content_key, title, artist, album_artist, album,
+           source_kind, source_id, origin_kind, origin_id, content_key, title, artist, album_artist, album,
            track_no, disc_no, year, genre, duration_ms, codec, bitrate_kbps,
            sample_rate, channels, file_size, file_mtime_ms, file_path, added_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         input.sourceKind,
         input.sourceId,
+        input.originKind,
+        input.originId,
         input.contentKey,
         input.title,
         input.artist,
@@ -354,12 +410,15 @@ export class TrackRepository {
     this.db
       .prepare(
         `UPDATE tracks SET
+           origin_kind = ?, origin_id = ?,
            title = ?, artist = ?, album_artist = ?, album = ?, track_no = ?, disc_no = ?,
            year = ?, genre = ?, duration_ms = ?, codec = ?, bitrate_kbps = ?, sample_rate = ?,
            channels = ?, file_size = ?, file_mtime_ms = ?, file_path = ?, updated_at = ?
          WHERE id = ?`
       )
       .run(
+        input.originKind,
+        input.originId,
         input.title,
         input.artist,
         input.albumArtist,

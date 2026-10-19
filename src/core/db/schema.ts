@@ -288,5 +288,22 @@ export const MIGRATIONS: readonly Migration[] = [
         CREATE INDEX idx_online_items_order ON online_playlist_items(playlist_id, position);
       `)
     }
+  },
+  {
+    version: 7,
+    name: 'track origin',
+    up: (db) => {
+      // A saved YouTube track is a normal local file: it plays from disk, works
+      // offline, and is scanned like anything else. But the Online views need to
+      // know which video it came from, both to say "already in your library" and
+      // to avoid downloading it twice. `source_kind`/`source_id` answer "how do I
+      // play this"; these columns answer "where did it come from".
+      db.exec(`
+        ALTER TABLE tracks ADD COLUMN origin_kind TEXT;
+        ALTER TABLE tracks ADD COLUMN origin_id TEXT;
+
+        CREATE INDEX idx_tracks_origin ON tracks(origin_kind, origin_id);
+      `)
+    }
   }
 ]

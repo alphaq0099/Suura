@@ -9,6 +9,7 @@ import type {
   AppPaths,
   AppSettings,
   DeepPartial,
+  DownloadProgress,
   EngineStatus,
   LibraryStats,
   ListTracksQuery,
@@ -21,6 +22,7 @@ import type {
   ResolvedSource,
   ResolvableTrack,
   SavedPlayback,
+  SaveToLibraryRequest,
   ScanProgress,
   Track,
   TrackPage
@@ -71,6 +73,8 @@ export const IPC = {
   onlinePlaylist: 'online:playlist',
   onlinePlaylistDelete: 'online:playlist-delete',
   onlinePlaylistRemoveItem: 'online:playlist-remove-item',
+  downloadSave: 'download:save',
+  downloadSavedIds: 'download:saved-ids',
   clipboardRead: 'clipboard:read-text',
   clipboardWrite: 'clipboard:write-text',
   mediaReportPlay: 'media:report-play',
@@ -82,6 +86,7 @@ export const IPC_EVENTS = {
   scanProgress: 'event:scan-progress',
   libraryChanged: 'event:library-changed',
   onlineChanged: 'event:online-changed',
+  downloadChanged: 'event:download-changed',
   playerCommand: 'event:player-command'
 } as const
 
@@ -104,6 +109,8 @@ export interface PlayerEvents {
   libraryChanged: null
   /** A link was remembered, removed or played, so the Online history moved. */
   onlineChanged: null
+  /** A save started, advanced, finished or failed. */
+  downloadChanged: DownloadProgress
   playerCommand: PlayerCommand
 }
 
@@ -114,6 +121,7 @@ export const EVENT_CHANNELS: Record<PlayerEventName, IpcEventChannel> = {
   scanProgress: IPC_EVENTS.scanProgress,
   libraryChanged: IPC_EVENTS.libraryChanged,
   onlineChanged: IPC_EVENTS.onlineChanged,
+  downloadChanged: IPC_EVENTS.downloadChanged,
   playerCommand: IPC_EVENTS.playerCommand
 }
 
@@ -196,6 +204,16 @@ export interface PlayerApi {
   deleteOnlinePlaylist(playlistId: number): Promise<void>
   /** Removes one entry. Resolves to the playlist that changed, or null. */
   removeOnlinePlaylistItem(itemId: number): Promise<number | null>
+  /**
+   * Downloads a stream and indexes it into the library.
+   *
+   * Resolves with the library row id once the file is on disk and scanned. If
+   * the video is already saved, resolves with that row without downloading.
+   * Progress is pushed on `downloadChanged` while it works.
+   */
+  saveToLibrary(request: SaveToLibraryRequest): Promise<number>
+  /** Which video ids already have a library row, for "already saved" badges. */
+  savedVideoIds(videoIds: string[]): Promise<string[]>
   /** The system clipboard text, so the paste button needs no select-all. */
   readClipboardText(): Promise<string>
   writeClipboardText(text: string): Promise<void>

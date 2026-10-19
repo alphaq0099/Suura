@@ -12,6 +12,7 @@ import { Sidebar, type ViewName } from './components/Sidebar'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useLibrary } from './hooks/useLibrary'
 import { useOnline } from './hooks/useOnline'
+import { useDownloads } from './hooks/useDownloads'
 import { usePlaybackPersistence } from './hooks/usePlaybackPersistence'
 import { usePlayer } from './hooks/usePlayer'
 import { usePlaylists } from './hooks/usePlaylists'
@@ -38,6 +39,7 @@ export function App() {
   const library = useLibrary()
   const playlists = usePlaylists()
   const online = useOnline()
+  const downloads = useDownloads()
   const {
     tracks,
     total,
@@ -376,6 +378,7 @@ export function App() {
           onClear={online.clear}
           onPlay={(queue, index) => player.playQueue(queue, index)}
           onQueue={player.enqueue}
+          downloads={downloads}
         />
       ) : view === 'playlists' ? (
         <PlaylistsView
@@ -407,6 +410,7 @@ export function App() {
           onPlay={(queue, index) => player.playQueue(queue, index)}
           onQueue={player.enqueue}
           onReveal={(trackId) => void revealTrack(trackId)}
+          downloads={downloads}
         />
       ) : view === 'queue' ? (
         <QueueView

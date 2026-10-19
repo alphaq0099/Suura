@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import type { OnlinePlaylistDetail, OnlineTrack, Track } from '@shared/types'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import type { DownloadProgress, OnlinePlaylistDetail, OnlineTrack, Track } from '@shared/types'
 import { formatCount, formatDuration } from '@shared/format'
 import { onlineEntryToTrack, onlinePlaylistItemToTrack } from '@shared/online'
 import { describeYouTubeRefusal, parseYouTubeLink, youtubeListUrl } from '@shared/youtube'
 import { api, messageOf } from '../api'
+import type { UseDownloadsResult } from '../hooks/useDownloads'
 import { ArtworkImage } from './ArtworkImage'
 import {
+  CheckIcon,
   ClipboardIcon,
   CloseIcon,
   CopyIcon,
@@ -32,6 +34,8 @@ export interface OnlineViewProps {
   onClear: () => Promise<void>
   onPlay: (tracks: Track[], index: number) => void
   onQueue: (tracks: Track[]) => void
+  /** Saving streams into the library, shared with the Playlists view. */
+  downloads: UseDownloadsResult
 }
 
 /** A link that has been submitted but not resolved yet, or that failed. */
@@ -71,8 +75,8 @@ const MENU_HEIGHT = 230
  * added to the list immediately so a 7-10 s sidecar run is never a frozen
  * button: the row says "Resolving…", then fills in, then plays.
  *
- * The library is untouched. Saving a row is M4's download path and is shown
- * disabled rather than faked.
+ * The library is untouched until a row is saved: saving downloads the file,
+ * tags it and indexes it as a normal local track.
  */
 export function OnlineView(props: OnlineViewProps) {
   const {
@@ -86,7 +90,8 @@ export function OnlineView(props: OnlineViewProps) {
     onRemove,
     onClear,
     onPlay,
-    onQueue
+    onQueue,
+    downloads
   } = props
 
   const [url, setUrl] = useState('')
@@ -108,6 +113,14 @@ export function OnlineView(props: OnlineViewProps) {
   useEffect(() => {
     entriesRef.current = entries
   }, [entries])
+
+  // Which rows are already in the library. One query per history page rather
+  // than one per row; a saved row's button becomes a check instead of a download.
+  const { saved, states, save: saveToLibrary, refreshSaved } = downloads
+  const historyVideoIds = useMemo(() => entries.map((entry) => entry.videoId), [entries])
+  useEffect(() => {
+    void refreshSaved(historyVideoIds)
+  }, [historyVideoIds, refreshSaved])
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -233,6 +246,23 @@ export function OnlineView(props: OnlineViewProps) {
       setNotice({ kind: 'error', text: messageOf(cause) })
     }
   }, [])
+
+  const saveEntry = useCallback(
+    async (entry: OnlineTrack): Promise<void> => {
+      try {
+        await saveToLibrary({
+          videoId: entry.videoId,
+          title: entry.title,
+          artist: entry.artist,
+          album: entry.album
+        })
+        setNotice({ kind: 'info', text: `Saved “${entry.title}” to your library.` })
+      } catch (cause) {
+        setNotice({ kind: 'error', text: messageOf(cause) })
+      }
+    },
+    [saveToLibrary]
+  )
 
   const openMenu = (entry: OnlineTrack, event: ReactMouseEvent): void => {
     event.preventDefault()
@@ -366,8 +396,7 @@ export function OnlineView(props: OnlineViewProps) {
           <h2>Nothing played from a link yet</h2>
           <p>
             Paste a YouTube link above and it plays straight away. A playlist, album or mix is imported as a whole and
-            appears in Playlists under Online. Everything is streamed, not copied, so you can play it again later
-            without saving anything to your library.
+            appears in Playlists under Online. Streams stay here as links; save one to keep a copy in your library.
           </p>
         </div>
       ) : (
@@ -412,8 +441,23 @@ export function OnlineView(props: OnlineViewProps) {
 
           {entries.map((entry, index) => {
             const current = currentVideoId !== null && entry.videoId === currentVideoId
+            const saving = states[entry.videoId]
+            const isSaved = saved.has(entry.videoId)
+            const savingActive =
+              saving !== undefined && saving.status !== 'saved' && saving.status !== 'failed'
+            const savingLabel =
+              saving?.status === 'queued'
+                ? 'Queued'
+                : saving?.status === 'indexing'
+                  ? 'Indexing'
+                  : saving?.status === 'finishing'
+                    ? 'Finishing'
+                    : `${Math.round(saving?.percent ?? 0)}%`
             return (
-              <li key={entry.id} className={current ? 'online-item current' : 'online-item'}>
+              <li
+                key={entry.id}
+                className={['online-item', current ? 'current' : '', isSaved ? 'saved' : ''].filter(Boolean).join(' ')}
+              >
                 <button
                   type="button"
                   className="online-jump"
@@ -433,9 +477,39 @@ export function OnlineView(props: OnlineViewProps) {
                   <span className="online-album" title={entry.album ?? undefined}>
                     {entry.album ?? '—'}
                   </span>
-                  <span className="online-time">{formatDuration(entry.durationMs)}</span>
+                  {savingActive ? (
+                    <span className="online-time saving-time" title="Saving to your library">
+                      {savingLabel}
+                    </span>
+                  ) : (
+                    <span className="online-time">{formatDuration(entry.durationMs)}</span>
+                  )}
                 </button>
                 <div className="online-actions">
+                  <button
+                    type="button"
+                    className={isSaved ? 'icon-button subtle saved' : 'icon-button subtle'}
+                    title={
+                      isSaved
+                        ? 'Already in your library'
+                        : savingActive
+                          ? 'Saving to your library…'
+                          : saving?.status === 'failed'
+                            ? (saving.error ?? 'Could not save this track. Try again.')
+                            : 'Save to your library'
+                    }
+                    aria-label={isSaved ? `${entry.title} is in your library` : `Save ${entry.title} to your library`}
+                    disabled={isSaved || savingActive}
+                    onClick={() => void saveEntry(entry)}
+                  >
+                    {isSaved ? (
+                      <CheckIcon />
+                    ) : savingActive ? (
+                      <SpinnerIcon />
+                    ) : (
+                      <DownloadIcon />
+                    )}
+                  </button>
                   <button
                     type="button"
                     className="icon-button subtle"
@@ -472,16 +546,19 @@ export function OnlineView(props: OnlineViewProps) {
 
       <p className="table-footnote">
         {isPlaying && currentVideoId ? 'Streaming now. ' : ''}
-        Saving a link to your library arrives with downloads (M4); until then every row here is streamed, and removing
-        one only forgets it.
+        Saving downloads one file into your music folder, tags it with its cover and adds it to the library; the row
+        then shows a tick. Nothing is cached while you stream.
       </p>
 
       {menu ? (
         <OnlineContextMenu
           state={menu}
           style={menuStyle}
+          saved={saved.has(menu.entry.videoId)}
+          saving={states[menu.entry.videoId]?.status}
           onPlay={() => playAt(entries.findIndex((entry) => entry.id === menu.entry.id))}
           onQueue={() => queueOne(menu.entry)}
+          onSave={() => void saveEntry(menu.entry)}
           onCopy={() => void copyLink(menu.entry)}
           onRemove={() => void onRemove(menu.entry.id)}
           onClose={() => setMenu(null)}
@@ -497,14 +574,18 @@ export function OnlineView(props: OnlineViewProps) {
 function OnlineContextMenu(props: {
   state: MenuState
   style: { left: number; top: number } | undefined
+  saved: boolean
+  saving: DownloadProgress['status'] | undefined
   onPlay: () => void
   onQueue: () => void
+  onSave: () => void
   onCopy: () => void
   onRemove: () => void
   onClose: () => void
 }) {
-  const { state, style, onPlay, onQueue, onCopy, onRemove, onClose } = props
+  const { state, style, saved, saving, onPlay, onQueue, onSave, onCopy, onRemove, onClose } = props
   const containerRef = useRef<HTMLDivElement | null>(null)
+  const savingActive = saving !== undefined && saving !== 'saved' && saving !== 'failed'
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent): void => {
@@ -571,11 +652,15 @@ function OnlineContextMenu(props: {
         type="button"
         role="menuitem"
         className="context-item"
-        disabled
-        title="Saving a link to your library arrives with downloads (M4)"
+        disabled={saved || savingActive}
+        title={saved ? 'Already in your library' : 'Download it, tag it and add it to the library'}
+        onClick={() => {
+          onSave()
+          onClose()
+        }}
       >
-        <DownloadIcon size={14} />
-        <span>Save to library (M4)</span>
+        {saved ? <CheckIcon /> : savingActive ? <SpinnerIcon /> : <DownloadIcon />}
+        <span>{saved ? 'In your library' : savingActive ? 'Saving…' : 'Save to library'}</span>
       </button>
       <button
         type="button"

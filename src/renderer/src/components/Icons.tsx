@@ -312,13 +312,22 @@ export function CopyIcon({ size = 14 }: IconProps) {
   )
 }
 
-/** A down arrow into a tray: keeping a link in the local library (M4). */
+/** A down arrow into a tray: keeping a link in the local library. */
 export function DownloadIcon({ size = 14 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
       <path d="M12 4v10" />
       <path d="m8 10.5 4 4 4-4" />
       <path d="M5 18.5h14" />
+    </svg>
+  )
+}
+
+/** The same tray with a tick: this link is already in the library. */
+export function CheckIcon({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <path d="m5 12.5 4.5 4.5L19 7.5" />
     </svg>
   )
 }

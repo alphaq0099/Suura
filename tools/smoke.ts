@@ -28,11 +28,13 @@ import { OnlinePlaylistRepository } from '@core/library/online-playlist-reposito
 import { PlayStateRepository } from '@core/library/play-state-repository'
 import { PlaybackService } from '@core/library/playback-service'
 import { isPathInside, localContentKey, normalizePath } from '@core/library/content-key'
+import { scanLibraryFolders } from '@core/library/scanner'
+import { youtubeOriginOf, youtubeOriginOfNative } from '@core/library/metadata'
 import { artworkKeyFor, extractArtwork, extensionForMime } from '@core/library/artwork'
 import { LocalFileResolver } from '@engine/local-file-resolver'
 import { getEngineStatus } from '@engine/sidecar/engine-status'
 import type { YtInfoProvider, YtMediaInfo } from '@engine/sidecar/yt-dlp'
-import { buildInfoArgs, buildPlaylistArgs, parsePlaylist } from '@engine/sidecar/yt-dlp'
+import { buildInfoArgs, buildPlaylistArgs, buildDownloadArgs, parsePlaylist } from '@engine/sidecar/yt-dlp'
 import { RemoteStreamProxy, type UpstreamMedia } from '@engine/stream-proxy'
 import { YouTubeResolver } from '@engine/youtube-resolver'
 import { PLAYLIST_INDEX_MAX, PLAYLIST_INDEX_MIN, clampPlaylistIndexWidth } from '@shared/playlists'
@@ -53,6 +55,7 @@ import { formatAudioSummary, formatCodec } from '@shared/format'
 import { nextDecision, shuffleFrom, shuffled } from '@shared/queue'
 import { parseRangeHeader } from '@shared/range'
 import { onlineEntryToTrack } from '@shared/online'
+import { sanitizeFilePart, savePathParts } from '@shared/files'
 
 const execFileAsync = promisify(execFile)
 
@@ -96,10 +99,21 @@ async function generateFlac(
   ffmpeg: string,
   dir: string,
   fileName: string,
-  tags: { title: string; artist: string; album: string; track: number; year: number },
+  tags: { title: string; artist: string; album: string; track: number; year: number; comment?: string },
   frequency: number
 ): Promise<string> {
   const target = join(dir, fileName)
+  const metadata: string[] = []
+  for (const [key, value] of [
+    ['title', tags.title],
+    ['artist', tags.artist],
+    ['album', tags.album],
+    ['track', String(tags.track)],
+    ['date', String(tags.year)],
+    ...(tags.comment ? [['comment', tags.comment] as [string, string]] : [])
+  ] as Array<[string, string]>) {
+    metadata.push('-metadata', `${key}=${value}`)
+  }
   await execFileAsync(
     ffmpeg,
     [
@@ -113,16 +127,7 @@ async function generateFlac(
       `sine=frequency=${frequency}:duration=1.2`,
       '-c:a',
       'flac',
-      '-metadata',
-      `title=${tags.title}`,
-      '-metadata',
-      `artist=${tags.artist}`,
-      '-metadata',
-      `album=${tags.album}`,
-      '-metadata',
-      `track=${tags.track}`,
-      '-metadata',
-      `date=${tags.year}`,
+      ...metadata,
       target
     ],
     { timeout: 60_000 }
@@ -738,6 +743,61 @@ async function main(): Promise<void> {
     checkEqual('an import limit survives a reload', rereadLimits.get().engine.importLimit, 250)
     checkEqual('a mix length survives a reload', rereadLimits.get().engine.mixLimit, 30)
 
+    // A saved file is an ordinary local track that happens to remember where it
+    // came from. The video id is read back from a tag, not kept in a parallel
+    // table, so a rescan or a moved file cannot lose it.
+    checkEqual('saved files default to Opus (no re-encode)', settings.get().retention.downloadFormat, 'opus')
+    settings.update({ retention: { downloadFormat: 'mp3' } })
+    const rereadFormat = new SettingsService(paths.config, silentLogger)
+    checkEqual('a saved format survives a reload', rereadFormat.get().retention.downloadFormat, 'mp3')
+    checkEqual(
+      'the download folder defaults to the music folder',
+      rereadFormat.get().retention.downloadFolder,
+      null
+    )
+
+    const originDir = join(root, 'saved')
+    await mkdir(originDir, { recursive: true })
+    await generateFlac(
+      ffmpegPath,
+      originDir,
+      'saved-from-youtube.flac',
+      {
+        title: 'a thousand years',
+        artist: 'Christina Perri',
+        album: 'head or heart',
+        track: 1,
+        year: 2011,
+        comment: 'https://www.youtube.com/watch?v=XeUYMrGmLPw'
+      },
+      330
+    )
+    const originRepo = new TrackRepository(database.db)
+    await scanLibraryFolders({ folders: [originDir], repo: originRepo, log: silentLogger })
+    const savedTrack = originRepo.findByOrigin('youtube', 'XeUYMrGmLPw')
+    checkEqual('a saved file is an ordinary local track', savedTrack?.sourceKind, 'local')
+    checkEqual('a saved file remembers its video id', savedTrack?.originId, 'XeUYMrGmLPw')
+    check('a saved file keeps its path', typeof savedTrack?.filePath === 'string')
+    check(
+      'the "already saved" lookup finds it',
+      originRepo.savedOrigins('youtube', ['XeUYMrGmLPw', 'IDyQO0QuvKY']).has('XeUYMrGmLPw')
+    )
+    checkEqual(
+      'a video that is not saved is not reported',
+      originRepo.savedOrigins('youtube', ['IDyQO0QuvKY']).size,
+      0
+    )
+    if (savedTrack) {
+      originRepo.setOrigin(savedTrack.id, null, null)
+      checkEqual('an origin can be cleared', originRepo.findByOrigin('youtube', 'XeUYMrGmLPw'), null)
+      originRepo.setOrigin(savedTrack.id, 'youtube', 'XeUYMrGmLPw')
+      checkEqual(
+        'the downloader can set an origin without a tag',
+        originRepo.findByOrigin('youtube', 'XeUYMrGmLPw')?.id,
+        savedTrack.id
+      )
+    }
+
     // --- persistence ------------------------------------------------------
     database.close()
     const reopened = openLibraryDatabase(paths.database, silentLogger)
@@ -870,6 +930,85 @@ async function main(): Promise<void> {
     check('youtube: a listing is capped on YouTube side', playlistArgs.includes('--playlist-end') && playlistArgs.includes('50'))
     check('youtube: a listing never says "no playlist"', !playlistArgs.includes('--no-playlist'))
     checkEqual('youtube: the listing URL comes last', playlistArgs[playlistArgs.length - 1], 'https://www.youtube.com/playlist?list=PLAw8F_6lIU7I')
+
+    // --- saving a stream ---------------------------------------------------
+    const template = join(tmpdir(), 'save', 'XeUYMrGmLPw.%(ext)s')
+    const downloadArgs = buildDownloadArgs('XeUYMrGmLPw', 'high', 'opus', template)
+    check('download: the user config is ignored', downloadArgs.includes('--ignore-config'))
+    check('download: one video, not a list', downloadArgs.includes('--no-playlist'))
+    check('download: audio is extracted', downloadArgs.includes('-x') && downloadArgs.includes('--audio-format'))
+    checkEqual('download: the chosen format reaches yt-dlp', downloadArgs[downloadArgs.indexOf('--audio-format') + 1], 'opus')
+    check(
+      'download: tags and the cover are embedded',
+      downloadArgs.includes('--embed-metadata') && downloadArgs.includes('--embed-thumbnail')
+    )
+    check('download: the output template is kept', downloadArgs.includes(template))
+    checkEqual(
+      'download: the watch URL comes last',
+      downloadArgs[downloadArgs.length - 1],
+      'https://www.youtube.com/watch?v=XeUYMrGmLPw'
+    )
+    const mp3Args = buildDownloadArgs('XeUYMrGmLPw', 'balanced', 'mp3', template)
+    checkEqual('download: a compatibility format is honoured', mp3Args[mp3Args.indexOf('--audio-format') + 1], 'mp3')
+    check(
+      'download: progress is not suppressed',
+      !downloadArgs.includes('--no-progress') && !downloadArgs.includes('--quiet')
+    )
+
+    // --- file names for saved tracks --------------------------------------
+    checkEqual('files: slashes cannot create folders', sanitizeFilePart('AC/DC: Live?', 'x'), 'AC DC Live')
+    checkEqual('files: trailing dots and spaces are dropped', sanitizeFilePart('Song. . ', 'x'), 'Song')
+    checkEqual('files: a reserved device name is escaped', sanitizeFilePart('CON', 'x'), '_CON')
+    checkEqual('files: a reserved name with an extension is escaped', sanitizeFilePart('con.txt', 'x'), '_con.txt')
+    checkEqual('files: an empty name falls back', sanitizeFilePart('   ', 'Untitled'), 'Untitled')
+    checkEqual(
+      'files: an album becomes a folder',
+      savePathParts({ title: 'a thousand years', artist: 'Christina Perri', album: 'head or heart' }).join('/'),
+      'Christina Perri/head or heart/a thousand years'
+    )
+    checkEqual(
+      'files: a single goes straight under the artist',
+      savePathParts({ title: 'Hope', artist: 'The Chainsmokers', album: null }).join('/'),
+      'The Chainsmokers/Hope'
+    )
+    checkEqual(
+      'files: a missing artist still has a folder',
+      savePathParts({ title: 'Untitled', artist: null, album: null }).join('/'),
+      'Unknown artist/Untitled'
+    )
+
+    // --- the origin a saved file carries ----------------------------------
+    checkEqual(
+      'origin: a canonical watch URL comment is recognised',
+      youtubeOriginOf([{ text: 'Provided to YouTube by …' }, { text: 'https://www.youtube.com/watch?v=XeUYMrGmLPw' }]),
+      'XeUYMrGmLPw'
+    )
+    checkEqual(
+      'origin: a short link is recognised',
+      youtubeOriginOf([{ text: 'https://youtu.be/IDyQO0QuvKY' }]),
+      'IDyQO0QuvKY'
+    )
+    checkEqual(
+      'origin: a URL inside prose is not an origin',
+      youtubeOriginOf([{ text: 'Listen at https://www.youtube.com/watch?v=XeUYMrGmLPw' }]),
+      null
+    )
+    checkEqual('origin: no comment means a normal local file', youtubeOriginOf(undefined), null)
+    checkEqual(
+      'origin: an MP3 TXXX comment is recognised too',
+      youtubeOriginOfNative({
+        'ID3v2.4': [
+          { id: 'TIT2', value: 'Hope' },
+          { id: 'TXXX:comment', value: 'https://www.youtube.com/watch?v=IDyQO0QuvKY' }
+        ]
+      }),
+      'IDyQO0QuvKY'
+    )
+    checkEqual(
+      'origin: native prose is not an origin',
+      youtubeOriginOfNative({ vorbis: [{ id: 'comment', value: 'from https://youtu.be/IDyQO0QuvKY and more' }] }),
+      null
+    )
 
     // --- flat playlist parsing -------------------------------------------
     const playlistJson = JSON.stringify({

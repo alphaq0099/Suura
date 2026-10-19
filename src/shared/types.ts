@@ -14,6 +14,16 @@ export type SourceKind = 'local' | 'youtube'
  */
 export type RetentionMode = 'stream' | 'cache' | 'keep'
 
+/**
+ * The container a saved file is written in.
+ *
+ * Opus is the source format for almost every YouTube track, so saving it costs a
+ * remux rather than a re-encode. MP3 and M4A are there for players and phones that
+ * will not take Opus (and both re-encode, which never adds quality — the Settings
+ * text says so).
+ */
+export type DownloadFormat = 'opus' | 'mp3' | 'm4a'
+
 export type ThemeMode = 'system' | 'light' | 'dark'
 
 export type RepeatMode = 'off' | 'all' | 'one'
@@ -59,6 +69,15 @@ export interface Track {
   sourceKind: SourceKind
   /** YouTube video id, or null for local files. */
   sourceId: string | null
+  /**
+   * Where the file came from, when that is not the folder it sits in.
+   *
+   * A downloaded YouTube track is `local`: it plays from disk and survives being
+   * offline. The video id lives here instead of in `sourceId`, so "already saved"
+   * is a fact about the file rather than a second kind of playback.
+   */
+  originKind: SourceKind | null
+  originId: string | null
   title: string
   artist: string | null
   albumArtist: string | null
@@ -238,6 +257,35 @@ export interface OnlinePlaylistDetail {
   items: OnlinePlaylistItem[]
 }
 
+/** Where a saved track is in its journey from YouTube to the library. */
+export type DownloadStatus = 'queued' | 'downloading' | 'finishing' | 'indexing' | 'saved' | 'failed'
+
+/**
+ * One track's download, as the main process reports it.
+ *
+ * Keyed by video id rather than by row id because a track can be saved from the
+ * Online history (which has a history id), from an imported playlist (which has
+ * an entry id) or from the player bar, and all three mean the same video.
+ */
+export interface DownloadProgress {
+  videoId: string
+  status: DownloadStatus
+  /** 0-100 while downloading, null when there is no meaningful fraction. */
+  percent: number | null
+  error: string | null
+  /** The library row, once it exists. */
+  trackId: number | null
+}
+
+/** What the renderer knows about a stream it wants to keep. */
+export interface SaveToLibraryRequest {
+  videoId: string
+  /** The snapshot's title/artist/album, used for the folder and file name. */
+  title: string
+  artist: string | null
+  album: string | null
+}
+
 export interface ScanProgress {
   phase: 'enumerating' | 'reading' | 'done'
   /** Files discovered on disk that look like audio. */
@@ -266,6 +314,8 @@ export interface RetentionSettings {
   cacheMaxAgeDays: number
   /** Where `keep` mode writes files. Null means the default music folder. */
   downloadFolder: string | null
+  /** Container for saved files. Opus avoids a re-encode; the others are compatibility. */
+  downloadFormat: DownloadFormat
   qualityTier: QualityTier
 }
 
