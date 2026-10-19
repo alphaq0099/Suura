@@ -2419,3 +2419,69 @@ input[type='radio'] {
   border-color: transparent;
   color: var(--text);
 }
+
+/* ---------- play-a-link dialog ---------- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(6 7 12 / 70%);
+}
+
+.play-link-dialog {
+  width: min(440px, 100%);
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 24px 64px rgb(0 0 0 / 60%);
+}
+
+.play-link-dialog h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.play-link-dialog p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.play-link-dialog input[type='text'] {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 11px;
+  font: inherit;
+  color: var(--text);
+  background: #10121b;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.play-link-dialog input[type='text']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.play-link-dialog input[type='text']:disabled {
+  opacity: 0.6;
+}
+
+.play-link-dialog .form-error {
+  color: #ffbcc0;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}

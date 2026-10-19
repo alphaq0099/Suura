@@ -86,6 +86,16 @@ export interface Track {
   lastPlayedAt: number | null
 }
 
+/**
+ * The minimum a resolver needs to know about a track.
+ *
+ * Local tracks are resolved from their database row, so the renderer never gets
+ * to name a path. A stream track has no row yet, so the id and source id travel
+ * from the renderer instead. Keeping the seam this narrow means a resolver
+ * cannot accidentally start trusting renderer-supplied metadata.
+ */
+export type ResolvableTrack = Pick<Track, 'id' | 'sourceKind' | 'sourceId' | 'filePath'>
+
 export interface LibraryStats {
   tracks: number
   artists: number

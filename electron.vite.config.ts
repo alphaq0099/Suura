@@ -23,7 +23,7 @@ const CSP = [
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: player-art:",
-  "media-src 'self' player-media: blob:",
+  "media-src 'self' player-media: player-stream: blob:",
   "font-src 'self'",
   "connect-src 'self'",
   "base-uri 'none'",

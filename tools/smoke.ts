@@ -9,6 +9,7 @@
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { copyFile, mkdir, mkdtemp, rm, unlink, utimes, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -28,8 +29,14 @@ import { isPathInside, localContentKey, normalizePath } from '@core/library/cont
 import { artworkKeyFor, extractArtwork, extensionForMime } from '@core/library/artwork'
 import { LocalFileResolver } from '@engine/local-file-resolver'
 import { getEngineStatus } from '@engine/sidecar/engine-status'
+import type { YtInfoProvider, YtMediaInfo } from '@engine/sidecar/yt-dlp'
+import { buildInfoArgs } from '@engine/sidecar/yt-dlp'
+import { RemoteStreamProxy, type UpstreamMedia } from '@engine/stream-proxy'
+import { YouTubeResolver } from '@engine/youtube-resolver'
 import { PLAYLIST_INDEX_MAX, PLAYLIST_INDEX_MIN, clampPlaylistIndexWidth } from '@shared/playlists'
 import { parseMediaUrl } from '@shared/media-url'
+import { buildStreamUrl, parseStreamUrl } from '@shared/stream-url'
+import { describeYouTubeFailure, extractYouTubeVideoId } from '@shared/youtube'
 import { buildArtworkUrl, parseArtworkUrl } from '@shared/artwork-url'
 import { formatAudioSummary, formatCodec } from '@shared/format'
 import { nextDecision, shuffleFrom, shuffled } from '@shared/queue'
@@ -708,6 +715,198 @@ async function main(): Promise<void> {
     check('the database file exists on disk', existsSync(paths.database))
   } finally {
     await rm(root, { recursive: true, force: true }).catch(() => undefined)
+  }
+
+  // --- M3: links, the stream proxy and the resolver cache -----------------
+  {
+    checkEqual(
+      'youtube: a watch link with a playlist keeps the video',
+      extractYouTubeVideoId('https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=RDdQw4w9WgXcQ'),
+      'dQw4w9WgXcQ'
+    )
+    checkEqual('youtube: youtu.be links work', extractYouTubeVideoId('https://youtu.be/dQw4w9WgXcQ?t=30'), 'dQw4w9WgXcQ')
+    checkEqual('youtube: shorts links work', extractYouTubeVideoId('https://www.youtube.com/shorts/dQw4w9WgXcQ'), 'dQw4w9WgXcQ')
+    checkEqual('youtube: music.youtube.com works', extractYouTubeVideoId('https://music.youtube.com/watch?v=dQw4w9WgXcQ'), 'dQw4w9WgXcQ')
+    checkEqual('youtube: a bare id works', extractYouTubeVideoId('dQw4w9WgXcQ'), 'dQw4w9WgXcQ')
+    check('youtube: a playlist without a video is rejected', extractYouTubeVideoId('https://www.youtube.com/playlist?list=PL123') === null)
+    check('youtube: another host is rejected', extractYouTubeVideoId('https://example.com/watch?v=dQw4w9WgXcQ') === null)
+    check('youtube: a short id is rejected', extractYouTubeVideoId('https://youtu.be/short') === null)
+
+    const args = buildInfoArgs('dQw4w9WgXcQ', 'best')
+    checkEqual('youtube: the user config is always ignored', args.slice(0, 2).join(' '), '--ignore-config --no-playlist')
+    check('youtube: the format is audio-only with a muxed fallback', args.includes('bestaudio/best'))
+    check(
+      'youtube: a bot check becomes a human message',
+      describeYouTubeFailure('ERROR: Sign in to confirm you are not a bot').toLowerCase().includes('sign-in check')
+    )
+    check(
+      'youtube: an unavailable video becomes a human message',
+      describeYouTubeFailure('ERROR: Video unavailable').toLowerCase().includes('unavailable')
+    )
+
+    const tokenId = '00000000-0000-4000-8000-000000000000'
+    checkEqual('stream: the URL round-trips', parseStreamUrl(buildStreamUrl(tokenId))?.token, tokenId)
+    check('stream: a foreign scheme is rejected', parseStreamUrl(`player-media://stream/${tokenId}`) === null)
+
+    const payload = Buffer.alloc(4096)
+    for (let index = 0; index < payload.length; index += 1) payload[index] = index % 251
+
+    let lastUserAgent = ''
+    let lastUpstreamHeader = ''
+    const server = createServer((request, response) => {
+      if (request.url === '/expired' || request.url === '/forbidden') {
+        response.writeHead(403, { 'content-type': 'text/plain' })
+        response.end('expired')
+        return
+      }
+
+      lastUserAgent = String(request.headers['user-agent'] ?? '')
+      lastUpstreamHeader = String(request.headers['x-upstream'] ?? '')
+
+      const range = request.headers.range
+      const match = typeof range === 'string' ? /^bytes=(\d+)-(\d*)$/.exec(range) : null
+      if (match) {
+        const start = Number(match[1])
+        const end = match[2] ? Math.min(Number(match[2]), payload.length - 1) : payload.length - 1
+        response.writeHead(206, {
+          'content-type': 'audio/webm',
+          'accept-ranges': 'bytes',
+          'content-range': `bytes ${start}-${end}/${payload.length}`,
+          'content-length': end - start + 1
+        })
+        response.end(payload.subarray(start, end + 1))
+        return
+      }
+
+      response.writeHead(200, {
+        'content-type': 'audio/webm',
+        'accept-ranges': 'bytes',
+        'content-length': payload.length
+      })
+      response.end(payload)
+    })
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    const port = address && typeof address === 'object' ? address.port : 0
+    const origin = `http://127.0.0.1:${port}`
+
+    try {
+      const upstream = (path: string): UpstreamMedia => ({
+        url: `${origin}${path}`,
+        headers: { 'User-Agent': 'PlayerSmoke/1.0', 'X-Upstream': 'yes' },
+        mimeType: 'audio/webm',
+        expiresAt: Date.now() + 60_000
+      })
+
+      const proxy = new RemoteStreamProxy(async () => upstream('/fresh'), silentLogger)
+      const token = proxy.register('video-a', upstream('/audio'))
+
+      const full = await proxy.handle(token, { range: null, method: 'GET' })
+      const fullBody = Buffer.from(await full.arrayBuffer())
+      checkEqual('stream: a full request is forwarded', full.status, 200)
+      check('stream: the body arrives intact', fullBody.length === payload.length && fullBody[1234] === payload[1234])
+      checkEqual('stream: the upstream User-Agent reaches the CDN', lastUserAgent, 'PlayerSmoke/1.0')
+      checkEqual('stream: other upstream headers are forwarded too', lastUpstreamHeader, 'yes')
+
+      const partial = await proxy.handle(token, { range: 'bytes=100-199', method: 'GET' })
+      const partialBody = Buffer.from(await partial.arrayBuffer())
+      checkEqual('stream: a range request comes back as 206', partial.status, 206)
+      checkEqual('stream: the range is forwarded', partial.headers.get('content-range'), `bytes 100-199/${payload.length}`)
+      check('stream: the range body is the requested bytes', partialBody.length === 100 && partialBody[0] === payload[100])
+
+      const expiredToken = proxy.register('video-b', upstream('/expired'))
+      const retried = await proxy.handle(expiredToken, { range: null, method: 'GET' })
+      checkEqual('stream: a 403 is retried after a re-resolve', retried.status, 200)
+      checkEqual('stream: the retry uses the fresh URL', retried.headers.get('content-length'), String(payload.length))
+      check('stream: the same token keeps working', (await proxy.handle(expiredToken, { range: null, method: 'GET' })).status === 200)
+
+      const failing = new RemoteStreamProxy(async () => upstream('/forbidden'), silentLogger)
+      const forbiddenToken = failing.register('video-c', upstream('/forbidden'))
+      checkEqual(
+        'stream: a second 403 becomes a 502',
+        (await failing.handle(forbiddenToken, { range: null, method: 'GET' })).status,
+        502
+      )
+      checkEqual(
+        'stream: an unknown token is a 404',
+        (await failing.handle('11111111-1111-4111-8111-111111111111', { range: null, method: 'GET' })).status,
+        404
+      )
+
+      const media: YtMediaInfo = {
+        videoId: 'dQw4w9WgXcQ',
+        webpageUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        title: 'Smoke Test Video',
+        artist: 'Smoke Tester',
+        durationSec: 200,
+        thumbnailUrl: null,
+        formatId: '251',
+        ext: 'webm',
+        codec: 'Opus',
+        bitrateKbps: 130,
+        sampleRateHz: 48000,
+        channels: 2,
+        fileSize: 4096,
+        streamUrl: `${origin}/audio`,
+        headers: { 'User-Agent': 'PlayerSmoke/1.0' },
+        expiresAt: Date.now() + 3_600_000,
+        mimeType: 'audio/webm'
+      }
+      let infoCalls = 0
+      let clock = Date.now()
+      const infoProvider: YtInfoProvider = {
+        async fetchInfo() {
+          infoCalls += 1
+          return media
+        }
+      }
+      const resolver = new YouTubeResolver({
+        info: infoProvider,
+        log: silentLogger,
+        quality: () => 'best',
+        now: () => clock
+      })
+
+      const link = await resolver.resolveLink('https://youtu.be/dQw4w9WgXcQ')
+      checkEqual('youtube: a pasted link becomes a track draft', link.track.title, 'Smoke Test Video')
+      checkEqual('youtube: the draft keeps the video id', link.track.sourceId, 'dQw4w9WgXcQ')
+      check('youtube: the renderer gets a token, not a CDN URL', link.source.url.startsWith('player-stream://'))
+      checkEqual('youtube: the source names its resolver', link.source.resolverId, 'yt-dlp')
+      checkEqual('youtube: a paste resolves once', infoCalls, 1)
+
+      const played = await resolver.resolve({
+        id: -1,
+        sourceKind: 'youtube',
+        sourceId: 'dQw4w9WgXcQ',
+        filePath: null
+      })
+      checkEqual('youtube: playback reuses the paste', infoCalls, 1)
+      checkEqual('youtube: the token is stable across resolves', played.url, link.source.url)
+
+      const parsedToken = parseStreamUrl(played.url)?.token
+      const throughToken = parsedToken
+        ? await resolver.proxy.handle(parsedToken, { range: 'bytes=0-9', method: 'GET' })
+        : null
+      check(
+        'youtube: the token resolves to real bytes',
+        throughToken?.status === 206 && (await throughToken.arrayBuffer()).byteLength === 10
+      )
+
+      clock = media.expiresAt + 1000
+      await resolver.resolve({ id: -1, sourceKind: 'youtube', sourceId: 'dQw4w9WgXcQ', filePath: null })
+      checkEqual('youtube: an expired URL is resolved again', infoCalls, 2)
+
+      let rejected = false
+      try {
+        await resolver.resolveLink('https://example.com/watch?v=dQw4w9WgXcQ')
+      } catch {
+        rejected = true
+      }
+      check('youtube: a non-YouTube link is rejected', rejected)
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
   }
 
   const passed = results.length - failed

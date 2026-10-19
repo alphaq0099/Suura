@@ -1,6 +1,7 @@
 import { protocol } from 'electron'
 import { ARTWORK_SCHEME } from '@shared/artwork-url'
 import { MEDIA_SCHEME } from '@shared/media-url'
+import { STREAM_SCHEME } from '@shared/stream-url'
 
 /**
  * Declares the custom schemes as privileged. Must run before the app is ready.
@@ -29,6 +30,17 @@ export function registerPrivilegedSchemes(): void {
         standard: true,
         secure: true,
         supportFetchAPI: true
+      }
+    },
+    {
+      // The remote stream proxy. `stream` is what lets the audio element issue
+      // range requests into the CDN instead of waiting for a whole file.
+      scheme: STREAM_SCHEME,
+      privileges: {
+        standard: true,
+        secure: true,
+        supportFetchAPI: true,
+        stream: true
       }
     }
   ])

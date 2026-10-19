@@ -172,6 +172,9 @@ export function NowPlayingView(props: NowPlayingViewProps) {
 
   const hasQueue = queue.length > 0 && queueIndex >= 0
   const queueTotalMs = queue.reduce((sum, track) => sum + (track.durationMs ?? 0), 0)
+  // A playlist is a set of library rows. Stream links are session-only, so saving
+  // one would silently produce an empty playlist; say so instead.
+  const queueHasStream = queue.some((track) => track.sourceKind !== 'local')
   const backdrop = artworkKey ? { backgroundImage: `url("${buildArtworkUrl(artworkKey)}")` } : undefined
 
   return (
@@ -243,7 +246,8 @@ export function NowPlayingView(props: NowPlayingViewProps) {
             <button
               type="button"
               className="link-button np-queue-save"
-              disabled={queue.length === 0}
+              disabled={queue.length === 0 || queueHasStream}
+              title={queueHasStream ? 'Stream links cannot be saved to a playlist yet' : undefined}
               onClick={(event) => {
                 event.stopPropagation()
                 setSaveMenuOpen(true)

@@ -35,6 +35,12 @@ export function usePlaybackPersistence(player: UsePlayerResult): void {
 
   const { queue, index, positionMs, isPlaying } = player
 
+  // Stream tracks live only in this session: they have no database row, and the
+  // signed CDN URL behind them is gone by the next start. Writing their queue
+  // would overwrite a resumable local queue with ids that `load` must drop.
+  // Until remote tracks get real rows (M5), the last local queue is kept.
+  const hasStreamTrack = queue.some((track) => track.sourceKind !== 'local')
+
   // Identity is everything except the position: joining a large queue is not
   // something to do on every timeupdate.
   const identity = useMemo(
@@ -44,6 +50,7 @@ export function usePlaybackPersistence(player: UsePlayerResult): void {
 
   const write = useCallback((force: boolean): void => {
     if (!armedRef.current) return
+    if (hasStreamTrack) return
     const snapshot = snapshotRef.current
     const changed = lastIdentityRef.current !== identity || lastIdentityRef.current === ''
     const now = Date.now()
@@ -53,7 +60,7 @@ export function usePlaybackPersistence(player: UsePlayerResult): void {
     lastIdentityRef.current = identity
     if (snapshot.trackIds.length === 0) api.clearPlayback()
     else api.savePlayback(snapshot)
-  }, [identity])
+  }, [identity, hasStreamTrack])
 
   // Read the saved queue once, after the first render. Settings arrive over IPC
   // as well, and restoring before the player exists would lose the queue to a

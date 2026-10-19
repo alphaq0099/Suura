@@ -12,10 +12,13 @@ import { PlayStateRepository } from '@core/library/play-state-repository'
 import { PlaybackService } from '@core/library/playback-service'
 import { LocalFileResolver } from '@engine/local-file-resolver'
 import { ResolverRegistry } from '@engine/resolver'
+import { YtDlpClient } from '@engine/sidecar/yt-dlp'
+import { YouTubeResolver } from '@engine/youtube-resolver'
 import { IPC_EVENTS } from '@shared/ipc'
 import type { AppPaths, AppSettings } from '@shared/types'
 import { createArtworkService, type ArtworkService } from '../artwork-service'
 import { broadcast } from '../broadcast'
+import { createYoutubeService, type YoutubeService } from '../youtube-service'
 
 /**
  * Owns every long-lived service and their wiring.
@@ -36,6 +39,8 @@ export interface AppContainer {
   playback: PlaybackService
   resolvers: ResolverRegistry
   artwork: ArtworkService
+  /** Paste-a-link streaming. Downloads (M4) will grow next to it. */
+  youtube: YoutubeService
   dispose(): void
 }
 
@@ -63,6 +68,21 @@ export function createContainer(): AppContainer {
   resolvers.register(new LocalFileResolver())
 
   const artwork = createArtworkService({ repo, paths, log: log.child('artwork') })
+
+  const ytDlp = new YtDlpClient({
+    engine: () => settings.get().engine,
+    log: log.child('yt-dlp')
+  })
+  const youtube = createYoutubeService({
+    resolver: new YouTubeResolver({
+      info: ytDlp,
+      log: log.child('youtube'),
+      quality: () => settings.get().retention.qualityTier
+    }),
+    artwork,
+    log: log.child('youtube')
+  })
+  resolvers.register(youtube.resolver)
 
   const library = new LibraryService(repo, settings, log.child('library'), {
     onScanProgress: (progress) => broadcast(IPC_EVENTS.scanProgress, progress),
@@ -106,6 +126,7 @@ export function createContainer(): AppContainer {
     playback,
     resolvers,
     artwork,
+    youtube,
     dispose: () => {
       unwatchSettings()
       watcher.stop()

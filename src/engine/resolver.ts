@@ -1,4 +1,4 @@
-import type { ResolvedSource, Track } from '@shared/types'
+import type { ResolvableTrack, ResolvedSource } from '@shared/types'
 
 /**
  * What a resolver can actually do.
@@ -26,8 +26,8 @@ export interface ResolverCapabilities {
 export interface MediaResolver {
   readonly id: string
   readonly capabilities: ResolverCapabilities
-  canResolve(track: Track): boolean
-  resolve(track: Track): Promise<ResolvedSource>
+  canResolve(track: ResolvableTrack): boolean
+  resolve(track: ResolvableTrack): Promise<ResolvedSource>
 }
 
 export class ResolverRegistry {
@@ -44,11 +44,11 @@ export class ResolverRegistry {
   }
 
   /** First registered resolver that claims the track wins. Order is priority. */
-  forTrack(track: Track): MediaResolver | null {
+  forTrack(track: ResolvableTrack): MediaResolver | null {
     return this.resolvers.find((resolver) => resolver.canResolve(track)) ?? null
   }
 
-  async resolve(track: Track): Promise<ResolvedSource> {
+  async resolve(track: ResolvableTrack): Promise<ResolvedSource> {
     const resolver = this.forTrack(track)
     if (!resolver) {
       throw new Error(`No resolver can play this track (source: ${track.sourceKind}).`)

@@ -52,8 +52,10 @@ directly — the proxy already planned for M3 is required rather than convenient
 5. **Forward all of `http_headers`**, not just the User-Agent: the response includes `Accept`, `Accept-Language` and
    `Sec-Fetch-Mode` and googlevideo is entitled to check them.
 
-## Not done
+## What was left for M3
 
 The roadmap box asks for a success rate over 20 representative videos. This spike used one, plus client variants, which
-is enough to price the architecture but not enough to quote a success rate. That sample belongs to M3, where failures
-can be recorded from the app itself.
+was enough to price the architecture but not enough to quote a success rate.
+
+That sample has since been run: [`yt-dlp-sample.md`](./yt-dlp-sample.md) records 20/20 resolves (median 8.8 s) and the
+format, header and range evidence behind the resolver. The 50-link M3 exit check is still open.

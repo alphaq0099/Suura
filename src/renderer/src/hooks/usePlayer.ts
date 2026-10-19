@@ -193,7 +193,12 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
 
     void (async () => {
       try {
-        const source = await api.resolveSource(current.id)
+        const source = await api.resolveSource({
+          id: current.id,
+          sourceKind: current.sourceKind,
+          sourceId: current.sourceId,
+          filePath: current.filePath
+        })
         if (token !== loadTokenRef.current) return
         element.src = source.url
         element.load()

@@ -14,7 +14,7 @@ import { formatBytes, formatCount, formatTimestamp } from '@shared/format'
 import { AddToPlaylistMenu } from './AddToPlaylistMenu'
 import { TrackContextMenu } from './TrackContextMenu'
 import { TrackList, describeClickAction } from './TrackList'
-import { CloseIcon, FolderIcon, PlayIcon, PlaylistIcon, RefreshIcon, SearchIcon, SpinnerIcon } from './Icons'
+import { CloseIcon, FolderIcon, LinkIcon, PlayIcon, PlaylistIcon, RefreshIcon, SearchIcon, SpinnerIcon } from './Icons'
 
 export interface LibraryViewProps {
   tracks: Track[]
@@ -38,6 +38,8 @@ export interface LibraryViewProps {
   onAddFolder: () => void
   onScan: () => void
   onCancelScan: () => void
+  /** Opens the paste-a-link dialog for a stream-only YouTube track. */
+  onPlayLink: () => void
   onPlay: (index: number) => void
   onPlaySelected: () => void
   onReveal: (trackId: number) => void
@@ -83,6 +85,7 @@ export function LibraryView(props: LibraryViewProps) {
     onAddFolder,
     onScan,
     onCancelScan,
+    onPlayLink,
     onPlay,
     onPlaySelected,
     onReveal,
@@ -137,6 +140,10 @@ export function LibraryView(props: LibraryViewProps) {
               </button>
             ) : null}
           </div>
+          <button type="button" onClick={onPlayLink} title="Play a YouTube link">
+            <LinkIcon />
+            <span>Play link</span>
+          </button>
           <button type="button" onClick={onScan} disabled={scanning || !hasFolders} title="Rescan library folders">
             {scanning ? <SpinnerIcon /> : <RefreshIcon />}
             <span>{scanning ? 'Scanning' : 'Rescan'}</span>

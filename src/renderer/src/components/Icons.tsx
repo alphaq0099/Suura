@@ -106,6 +106,15 @@ export function MusicIcon({ size = 16 }: IconProps) {
   )
 }
 
+export function LinkIcon({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <path d="M10.2 13.8a4 4 0 0 0 5.6 0l2.6-2.6a4 4 0 0 0-5.6-5.6l-1.2 1.2" />
+      <path d="M13.8 10.2a4 4 0 0 0-5.6 0l-2.6 2.6a4 4 0 0 0 5.6 5.6l1.2-1.2" />
+    </svg>
+  )
+}
+
 /**
  * Speaker outline plus stroked waves.
  *

@@ -7,6 +7,7 @@ import { installArtworkProtocolHandler } from './artwork-protocol'
 import { registerMediaKeys } from './media-keys'
 import { installMediaProtocolHandler } from './media-protocol'
 import { registerPrivilegedSchemes } from './schemes'
+import { installStreamProtocolHandler } from './stream-protocol'
 import { runScaleCheck, seedScaleLibrary } from './scale-check'
 import { runSelfTest } from './selftest'
 import { createContainer, type AppContainer } from './services/container'
@@ -56,6 +57,11 @@ function start(): void {
       installArtworkProtocolHandler({
         artwork: appContainer.artwork,
         log: appContainer.log.child('artwork')
+      })
+
+      installStreamProtocolHandler({
+        proxy: appContainer.youtube.proxy,
+        log: appContainer.log.child('stream')
       })
 
       registerIpcHandlers(appContainer)

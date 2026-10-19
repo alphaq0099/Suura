@@ -2,7 +2,7 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { nativeImage, type NativeImage } from 'electron'
-import { artworkKeyFor, extractArtwork, extensionForMime } from '@core/library/artwork'
+import { artworkKeyFor, extractArtwork } from '@core/library/artwork'
 import type { TrackRepository } from '@core/library/track-repository'
 import type { Logger } from '@core/logging/logger'
 import type { AppPaths } from '@shared/types'
@@ -16,6 +16,8 @@ const ARTWORK_FILE = /^[0-9a-f]{40}\.(jpg|png|webp|gif|bmp)$/
 export interface ArtworkService {
   /** Cache key for a track, or null when it has no embedded artwork. */
   resolve(trackId: number): Promise<string | null>
+  /** Caches an image that did not come from a file (a remote thumbnail). */
+  cacheRemote(data: Buffer, mime: string): Promise<string | null>
   /** Absolute path for a key, or null if it is not one of ours or has gone. */
   pathFor(key: string): string | null
   /** Where resized covers are written. Surfaced in Settings for debugging. */
@@ -56,21 +58,23 @@ export function createArtworkService(deps: {
     const artwork = await extractArtwork(filePath)
     if (!artwork) return null
 
-    const extension = extensionForMime(artwork.mime)
-    if (!extension) return null
-
     const image = nativeImage.createFromBuffer(Buffer.from(artwork.data))
     if (image.isEmpty()) {
       deps.log.debug('artwork could not be decoded', { filePath, mime: artwork.mime })
       return null
     }
 
-    const encoded = encodeArtwork(image, artwork.mime)
+    return storeImage(image, artwork.mime, filePath)
+  }
+
+  /** Shared by embedded art and remote thumbnails: both end up a cached JPEG/PNG. */
+  const storeImage = async (image: NativeImage, mime: string, source: string): Promise<string | null> => {
+    const encoded = encodeArtwork(image, mime)
     const key = artworkKeyFor(encoded.data, encoded.extension)
     const target = join(cacheDir, key)
     if (!existsSync(target)) {
       await writeFile(target, encoded.data)
-      deps.log.debug('cached artwork', { key, bytes: encoded.data.length, source: filePath })
+      deps.log.debug('cached artwork', { key, bytes: encoded.data.length, source })
     }
     return key
   }
@@ -81,6 +85,16 @@ export function createArtworkService(deps: {
     pathFor(key) {
       const absolute = absoluteFor(key)
       return absolute && existsSync(absolute) ? absolute : null
+    },
+
+    async cacheRemote(data, mime) {
+      if (data.length === 0) return null
+      const image = nativeImage.createFromBuffer(data)
+      if (image.isEmpty()) {
+        deps.log.debug('remote artwork could not be decoded', { mime, bytes: data.length })
+        return null
+      }
+      return storeImage(image, mime, 'remote')
     },
 
     async resolve(trackId) {

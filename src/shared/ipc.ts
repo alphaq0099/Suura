@@ -16,8 +16,10 @@ import type {
   Playlist,
   PlaylistDetail,
   ResolvedSource,
+  ResolvableTrack,
   SavedPlayback,
   ScanProgress,
+  Track,
   TrackPage
 } from './types'
 
@@ -48,6 +50,7 @@ export const IPC = {
   playbackSave: 'playback:save',
   playbackClear: 'playback:clear',
   mediaResolve: 'media:resolve',
+  youtubeAddLink: 'youtube:add-link',
   mediaReportPlay: 'media:report-play',
   engineStatus: 'engine:status'
 } as const
@@ -138,7 +141,9 @@ export interface PlayerApi {
   savePlayback(snapshot: PlaybackSnapshot): void
   /** Forgets the saved queue, so the next start is empty. */
   clearPlayback(): void
-  resolveSource(trackId: number): Promise<ResolvedSource>
+  resolveSource(track: ResolvableTrack): Promise<ResolvedSource>
+  /** Resolves a pasted YouTube link into a session-only track. */
+  addYoutubeLink(url: string): Promise<Track>
   reportPlayback(trackId: number, playedMs: number, completed: boolean): Promise<void>
   getEngineStatus(): Promise<EngineStatus>
   on<E extends PlayerEventName>(event: E, callback: (payload: PlayerEvents[E]) => void): number

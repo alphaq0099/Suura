@@ -1,5 +1,5 @@
 import { stat } from 'node:fs/promises'
-import type { ResolvedSource, Track } from '@shared/types'
+import type { ResolvableTrack, ResolvedSource } from '@shared/types'
 import { buildMediaUrl } from '@shared/media-url'
 import { mimeForExtension } from '@shared/mime'
 import type { MediaResolver, ResolverCapabilities } from './resolver'
@@ -20,11 +20,11 @@ export class LocalFileResolver implements MediaResolver {
     download: false
   }
 
-  canResolve(track: Track): boolean {
+  canResolve(track: ResolvableTrack): boolean {
     return track.sourceKind === 'local' && typeof track.filePath === 'string' && track.filePath.length > 0
   }
 
-  async resolve(track: Track): Promise<ResolvedSource> {
+  async resolve(track: ResolvableTrack): Promise<ResolvedSource> {
     const filePath = track.filePath
     if (!filePath) {
       throw new Error('This track has no file path.')

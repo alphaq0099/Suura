@@ -1,13 +1,13 @@
 # Player
 
-A desktop music player for Windows. It plays from your **local library** today; streaming and optional downloading from
-YouTube via a yt-dlp sidecar is the next phase.
+A desktop music player for Windows. It plays from your **local library**, and the first slice of M3 can stream a YouTube
+link you paste in through a yt-dlp sidecar. Caching and optional downloads come next.
 
 The full plan lives in [`ROADMAP.md`](./ROADMAP.md). This README covers what is **actually built right now**.
 
 ---
 
-## Status: M1 complete — a usable local music player
+## Status: M1 complete, M3 streaming in progress
 
 Working today:
 
@@ -46,11 +46,18 @@ Working today:
   no format column — and drops the album or the artist as its pane gets narrower rather than squeezing the title.
 - **It picks up where it left off**: the queue, the track and the position are written down as they play and put back
   on the next start — paused, at the same spot, with tracks that have since been deleted left out.
-- Settings persist to `config.json`; retention and engine settings are stored and validated but not yet acted on.
-- The engine layer reports whether `yt-dlp` and `ffmpeg` are present and runnable (used from M3).
+- **Play a YouTube link** (first M3 slice): *Play link* in the library header opens a small dialog. A pasted
+  `youtube.com` / `youtu.be` link is resolved by the `yt-dlp` sidecar, and playback goes through an internal
+  `player-stream://` proxy that forwards `Range` and the signed URL's headers. The first play costs 7–10 s because the
+  sidecar starts for each resolve; the second play of the same link in a session is instant, and a URL that expires is
+  re-resolved once if the CDN answers 403. Stream links are session-only — nothing is added to the library — and their
+  queue is not restored after a restart yet.
+- Settings persist to `config.json`. The engine settings now drive the resolver (binary folder, quality tier); the
+  retention settings are stored and validated, and the cache/download path they describe arrives in M4.
+- The engine layer reports whether `yt-dlp` and `ffmpeg` are present and runnable, and the resolver uses them.
 
-Not built yet (deliberately): gapless playback, SMTC / tray icon, the yt-dlp resolver, caching, downloads, packaging,
-playlist import/export and smart playlists.
+Not built yet (deliberately): gapless playback, SMTC / tray icon, YouTube search or catalogue browsing, caching,
+downloads (M4), packaging, playlist import/export and smart playlists.
 
 ---
 
@@ -58,10 +65,11 @@ playlist import/export and smart playlists.
 
 This is a music player, not a media downloader. The streaming phase is shaped to keep that true:
 
-- **Streaming is the default; downloading is opt-in.** The retention setting defaults to stream-only, and nothing is
-  kept on disk unless the user chooses it. (The setting is stored today; the download path itself arrives in M4.)
+- **Streaming is the default; downloading is opt-in.** The retention setting defaults to stream-only, and no audio is
+  kept on disk unless the user chooses it. (A stream's thumbnail is cached as artwork, like any cover.) Today a link can
+  only be streamed; the download path arrives in M4.
 - **There is no catalogue browser**, and no search against YouTube. A track is something the user brings: a local file,
-  and later a link of their own.
+  or a link they paste.
 - **`yt-dlp` is a sidecar, not the product.** It is named where it is configured, keeps its own licence and version, and
   the app does not bundle or fetch anything that circumvents DRM or paywalls.
 - **The user carries the responsibility.** Downloading with `yt-dlp` can violate YouTube's Terms of Service and
@@ -76,7 +84,7 @@ Playing local files the user already owns is unaffected by any of this.
 - **Node.js 22.12+** (Node 24 recommended) — the app uses `node:sqlite` and `require(esm)`.
 - **No native build tools needed.** There are zero native npm dependencies, by design (see
   [`docs/adr/0001-stack-and-storage.md`](./docs/adr/0001-stack-and-storage.md)).
-- Optional, only needed for the tests and for M3+: **ffmpeg** and **yt-dlp**.
+- Optional, needed for streaming and the tests: **ffmpeg** and **yt-dlp**.
 
 ## Quick start
 
@@ -101,9 +109,9 @@ Five independent checks, from cheapest to most convincing:
 | Command | What it proves |
 |---|---|
 | `npm run typecheck` | Both TypeScript projects (`node` and `web`) compile under `strict` + `noUncheckedIndexedAccess`. |
-| `npm run smoke` | **173 checks** against the real core: builds a throwaway library with ffmpeg, indexes it, rescans it, searches it, sorts and pages it, extracts cover art from a real file, resolves a playable URL, exercises range parsing, queue rules and display formatting, deletes a file to prove pruning, and watches a real folder to prove that a file appearing or disappearing triggers an incremental scan by itself. No Electron involved. |
+| `npm run smoke` | **209 checks** against the real core: builds a throwaway library with ffmpeg, indexes it, rescans it, searches it, sorts and pages it, extracts cover art from a real file, resolves a playable URL, exercises range parsing, queue rules and display formatting, deletes a file to prove pruning, and watches a real folder to prove that a file appearing or disappearing triggers an incremental scan by itself. It also validates YouTube link parsing and the sidecar argument policy, exercises the stream proxy against a local HTTP server (full and ranged requests, forwarded headers, a 403 retry, a second 403 and unknown tokens), and proves the resolver cache answers a second play without a second sidecar. No Electron involved. |
 | `npm run runtime:check` | The three runtime bets still hold **inside Electron**: `node:sqlite` exists, FTS5 works, and `music-metadata` (ESM-only) loads from CommonJS. Run this after every Electron upgrade. |
-| `npm run selftest` | **119 end-to-end checks**: launches the real app against a throwaway data directory, confirms React mounted, indexes two generated audio files (one with an embedded cover) *through the IPC bridge*, then **actually decodes, plays and seeks one** through the `player-media://` protocol. It drives the real UI — a click selects, a double click plays, the queue view lists the queue, the repeat/shuffle buttons cycle, clicking the now-playing area opens the full-window player (and asserts its backdrop really is the blurred, brightened cover with no hard separator over the controls), and Escape closes it **through its exit animation**. Clicking the queue button slides the panel in, and the panel's own rows, scroll fit and gradient shadow are checked before a press on the black space or the artwork shuts it again (a press inside it does not), and Escape unwinds one layer at a time. It then changes the artwork and click-behaviour settings through the actual `<select>` elements in Settings and measures what the DOM did with them — the box takes a 3:2 cover's proportions, the size presets resize it, and a single click plays or selects depending on what the setting says. It seeks the player bar's scrubber twice in a row, paused and playing, and asserts the bar shows the position just chosen rather than the one before it. It also checks that the player bar's ambience spans the whole bar rather than the now-playing tile, and clicks the volume button to prove it mutes and restores, then rolls the wheel over the control to check that one notch moves the level five percent, that it stops at the ends of the scale, and that the scroll is swallowed rather than passed on. Then it copies a real file into the watched folder and deletes it again, asserting that the library indexed and then forgot it with no user action at all, and that switching watching off really does stop it. Then it creates a playlist through the form, adds tracks from the library's selection bar and from a row's context menu, reorders it with Alt+Down and a synthesized drag (with its drop line), removes a row, plays it, renames it, saves the queue as a playlist from the player window, and deletes it. At 1200x780 — narrow enough that the playlist's own pane has only ~670px once the sidebar and the index have taken their share — it measures the title column and every visible header label, proving that no label paints over its neighbour, that the artist is still shown and Format is gone, then drags the splitter 64px, presses ArrowLeft twice, and asserts the width that lands in `config.json` is exactly the one on screen. It also resizes the window to 1200x780 and 940x580 and asserts that **no view, including the player window, overflows sideways**, and that the playlist's row buttons stay inside its card - the only thing that catches a layout that slides out of the window. Finally it reloads the whole renderer, which throws away every queue held in memory, and asserts that the track, the queue and the position come back from disk, paused. Exits non-zero on failure. |
+| `npm run selftest` | **127 end-to-end checks**: launches the real app against a throwaway data directory, confirms React mounted, indexes two generated audio files (one with an embedded cover) *through the IPC bridge*, then **actually decodes, plays and seeks one** through the `player-media://` protocol. It drives the real UI — a click selects, a double click plays, the queue view lists the queue, the repeat/shuffle buttons cycle, clicking the now-playing area opens the full-window player (and asserts its backdrop really is the blurred, brightened cover with no hard separator over the controls), and Escape closes it **through its exit animation**. Clicking the queue button slides the panel in, and the panel's own rows, scroll fit and gradient shadow are checked before a press on the black space or the artwork shuts it again (a press inside it does not), and Escape unwinds one layer at a time. It then changes the artwork and click-behaviour settings through the actual `<select>` elements in Settings and measures what the DOM did with them — the box takes a 3:2 cover's proportions, the size presets resize it, and a single click plays or selects depending on what the setting says. It seeks the player bar's scrubber twice in a row, paused and playing, and asserts the bar shows the position just chosen rather than the one before it. It also checks that the player bar's ambience spans the whole bar rather than the now-playing tile, and clicks the volume button to prove it mutes and restores, then rolls the wheel over the control to check that one notch moves the level five percent, that it stops at the ends of the scale, and that the scroll is swallowed rather than passed on. Then it copies a real file into the watched folder and deletes it again, asserting that the library indexed and then forgot it with no user action at all, and that switching watching off really does stop it. Then it creates a playlist through the form, adds tracks from the library's selection bar and from a row's context menu, reorders it with Alt+Down and a synthesized drag (with its drop line), removes a row, plays it, renames it, saves the queue as a playlist from the player window, and deletes it. At 1200x780 — narrow enough that the playlist's own pane has only ~670px once the sidebar and the index have taken their share — it measures the title column and every visible header label, proving that no label paints over its neighbour, that the artist is still shown and Format is gone, then drags the splitter 64px, presses ArrowLeft twice, and asserts the width that lands in `config.json` is exactly the one on screen. It also resizes the window to 1200x780 and 940x580 and asserts that **no view, including the player window, overflows sideways**, and that the playlist's row buttons stay inside its card - the only thing that catches a layout that slides out of the window. Finally it reloads the whole renderer, which throws away every queue held in memory, and asserts that the track, the queue and the position come back from disk, paused. It also opens the play-a-link dialog, proves the Play button stays disabled until something is typed, submits an invalid link and asserts the inline error keeps the dialog open, then closes it with Escape. Last, it registers a token in the real stream proxy against a local HTTP server and plays, seeks and pauses that URL through `player-stream://` in the production build — the check that the scheme, the proxy, the CSP and the `<audio>` element all agree. Exits non-zero on failure. |
 
 
 The self-test is the one that matters most. A renderer that fails to mount, or a protocol handler that refuses every
@@ -115,6 +123,12 @@ because it only stats files), the first page of 400 loads in about 12 ms, a sear
 runs). The fixtures are 5 KB WAVs, so the scan number is a floor rather than a promise for real albums: tag parsing, not
 SQLite, is what grows with real files.
 
+Streaming was measured separately: a 20-link sample resolved **20/20** through yt-dlp with a median of **8.8 s** and a
+maximum of 10.2 s; every one was a 108–143 kbps webm/opus stream, and all 20 answered a byte-range request with `206`.
+A cached resolve inside the app takes about **1 ms**, which is why the design warms the cache when the link is pasted.
+The table and the reasons the M3 exit target of “< 3 s to first audio” needs a resident sidecar are in
+[`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-dlp-sample.md).
+
 ---
 
 ## Architecture
@@ -122,7 +136,7 @@ SQLite, is what grows with real files.
 Four layers, with one rule that keeps the code honest:
 
 ```
-src/main/      Electron: window, IPC, the player-media protocol, service wiring
+src/main/      Electron: window, IPC, the player-media/player-stream protocols, service wiring
 src/preload/   the only bridge; exposes window.player via contextBridge
 src/renderer/  React UI (never touches the filesystem)
 src/core/      library, database, settings, logging   ─┐ neither of these may
@@ -139,7 +153,7 @@ The renderer never sees a file path. It asks the main process to resolve a track
 `player-media://` scheme:
 
 ```
-renderer  ──resolveSource(trackId)──▶  main
+renderer  ──resolveSource(track)──▶  main
           ◀── player-media://media/?path=…  ── LocalFileResolver
 <audio src="player-media://…">  ──▶  protocol.handle → 200 / 206 with byte ranges
 ```
@@ -150,8 +164,20 @@ Three reasons this indirection exists rather than using `file://`:
    `file://` URL from the renderer would make every file on disk readable.
 2. **Seeking needs byte ranges.** The handler implements `Range` requests itself (see `src/shared/range.ts`), which is
    what makes the seek bar work on a large FLAC.
-3. **It is the seam for streaming.** In M3 the local branch is joined by a branch that proxies a yt-dlp stream, and the
-   renderer keeps handing the same kind of URL to the same `<audio>` element.
+3. **It was the template for streaming.** `player-stream://` repeats the pattern for remote audio: the renderer holds
+   only an opaque token, while the main process forwards ranges and headers to the signed CDN URL.
+
+### How a YouTube link reaches the speaker
+
+A pasted link goes to `YouTubeResolver` (`src/engine/youtube-resolver.ts`), which runs
+`yt-dlp --ignore-config --no-playlist -f "bestaudio[abr>=128]/bestaudio/best" -J` (the default *high* tier) and caches
+the answer for the session. The signed CDN URL and
+the headers it needs never cross the bridge: `RemoteStreamProxy` keeps them, registers the video under a `randomUUID`
+token, and returns `player-stream://stream/<token>`. The proxy forwards `Range` and the headers yt-dlp reported, and on a
+401/403/410 it re-resolves the video once and retries the same request, so a URL expiring mid-album does not stop
+playback; the token stays the same, which is what makes that retry invisible to the `<audio>` element. A 25 s timeout and
+`taskkill /T` stop a hung sidecar. `--ignore-config` is not optional: a user's `~/.yt-dlp.conf` can add cookies, archive
+files and output templates, any of which changes what the app does.
 
 `webPreferences` sets `contextIsolation: true`, `nodeIntegration: false`, and the built HTML ships a strict CSP
 (injected at build time only, because Vite's dev server needs inline scripts). **Every custom scheme the UI loads a
@@ -392,6 +418,13 @@ docs/adr/               architecture decision records
 ## Known gaps
 
 - No playlist import/export (M3U/JSON, M6), no smart playlists (M5), and no per-playlist retention override.
+- Stream links are session-only: playing one leaves the last local queue in the resume slot rather than a queue that
+  cannot be rebuilt. YouTube tracks join the library in M5; caching and downloading are M4.
+- Resolving has no Cancel button. Closing the dialog discards the result, but the sidecar finishes in the background and
+  warms the cache, so retrying the same link is instant.
+- The first play of a link takes 7–10 s because yt-dlp is started per resolve. A resident sidecar (or resolving on
+  selection) is the next step if that is too slow; the numbers are in the sample note.
+- No YouTube search or catalogue browsing, by design (M5 is a link/playlist import, not a browser).
 - No "select all N matching" (selection covers the loaded rows).
 - A restored queue remembers what was playing, not where it came from: if shuffle was on, the saved order is the
   shuffled one, so turning shuffle off after a restart cannot bring back the pre-shuffle order for that session.
@@ -408,8 +441,8 @@ docs/adr/               architecture decision records
 
 ## Next steps
 
-1. The yt-dlp engine spike from ROADMAP.md §13: [`docs/notes/yt-dlp-spike.md`](./docs/notes/yt-dlp-spike.md) has the
-   first measurements (startup ~2 s, audio-only resolve 7–11 s, stream URL works with ranges), and the reasons the 3 s
-   target needs either a prefetch or a revised number.
-2. Then M3 (streaming resolver), M4 (retention: cache / keep).
-3. M0 leftovers: the Downloads wireframe (it arrives with M4) and the 20-video success-rate sample.
+1. M4 (retention: cache / keep) is the next milestone. The stream path is in place, so caching has somewhere to hook in.
+2. M3's exit criteria still need a 50-link run and a latency decision: 20/20 resolved, but at a median of 8.8 s. See
+   [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-dlp-sample.md) and the first spike in
+   [`docs/notes/yt-dlp-spike.md`](./docs/notes/yt-dlp-spike.md).
+3. M0 leftovers: the Downloads wireframe (it arrives with M4) and the remaining 30 links of the 50-link exit check.

@@ -14,6 +14,7 @@ import type {
   PlaybackSnapshot,
   QualityTier,
   RepeatMode,
+  ResolvableTrack,
   RetentionMode,
   RetentionSettings,
   ThemeMode,
@@ -41,6 +42,23 @@ function toId(value: unknown, what: string): number {
 
 function toTrackId(value: unknown): number {
   return toId(value, 'track')
+}
+
+/**
+ * A resolve request comes from the renderer, so it names an id and a source
+ * claim — never a file path. Local requests are looked up in the database by the
+ * caller; YouTube requests carry the video id the resolver actually needs.
+ * Negative ids are valid here because stream tracks are session-only.
+ */
+function toResolvableTrack(value: unknown): ResolvableTrack {
+  if (!isPlainObject(value)) throw new Error('Malformed resolve request.')
+  const id = value.id
+  if (typeof id !== 'number' || !Number.isInteger(id)) throw new Error('Malformed resolve request.')
+  if (value.sourceKind !== 'local' && value.sourceKind !== 'youtube') {
+    throw new Error('Malformed resolve request.')
+  }
+  const sourceId = typeof value.sourceId === 'string' && value.sourceId.length <= 64 ? value.sourceId : null
+  return { id, sourceKind: value.sourceKind, sourceId, filePath: null }
 }
 
 /** A list of ids from the renderer, or the request is refused outright. */
@@ -286,13 +304,27 @@ export function registerIpcHandlers(container: AppContainer): void {
 
   ipcMain.handle(IPC.libraryArtwork, (_event, trackId: unknown) => container.artwork.resolve(toTrackId(trackId)))
 
-  ipcMain.handle(IPC.mediaResolve, async (_event, trackId: unknown) => {
-    const track = library.trackById(toTrackId(trackId))
+  ipcMain.handle(IPC.mediaResolve, async (_event, input: unknown) => {
+    const request = toResolvableTrack(input)
+    if (request.sourceKind === 'youtube') {
+      return container.resolvers.resolve(request)
+    }
+    const track = library.trackById(request.id)
     if (!track) throw new Error('Unknown track.')
     return container.resolvers.resolve(track)
   })
 
+  ipcMain.handle(IPC.youtubeAddLink, async (_event, input: unknown) => {
+    if (typeof input !== 'string') throw new Error('Paste a YouTube video link.')
+    const link = input.trim()
+    if (link.length === 0 || link.length > 2048) throw new Error('Paste a YouTube video link.')
+    return container.youtube.addLink(link)
+  })
+
   ipcMain.handle(IPC.mediaReportPlay, (_event, trackId: unknown, playedMs: unknown, completed: unknown) => {
+    // A stream track is session-only and carries a negative id: there is no row
+    // to count a play against until remote tracks are stored in M5.
+    if (typeof trackId === 'number' && Number.isInteger(trackId) && trackId < 0) return
     library.reportPlayback(
       toTrackId(trackId),
       typeof playedMs === 'number' && Number.isFinite(playedMs) ? playedMs : 0,

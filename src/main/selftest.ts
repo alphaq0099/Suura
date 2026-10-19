@@ -1,11 +1,13 @@
 import { execFile } from 'node:child_process'
-import { copyFile, mkdir, rm, stat } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rm, stat } from 'node:fs/promises'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { app, BrowserWindow, net } from 'electron'
 import { probeExecutable } from '@engine/sidecar/locate'
 import { buildMediaUrl } from '@shared/media-url'
+import { buildStreamUrl } from '@shared/stream-url'
 import type { AppContainer } from './services/container'
 
 const execFileAsync = promisify(execFile)
@@ -228,7 +230,13 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          try {
            const tracks = await window.player.listTracks({ limit: 5 })
            if (!tracks.tracks.length) { out.error = 'no tracks in the library'; return out }
-           const source = await window.player.resolveSource(tracks.tracks[0].id)
+           const track = tracks.tracks[0]
+           const source = await window.player.resolveSource({
+             id: track.id,
+             sourceKind: track.sourceKind,
+             sourceId: track.sourceId,
+             filePath: track.filePath
+           })
            out.mimeType = source.mimeType
            out.resolverId = source.resolverId
 
@@ -302,6 +310,98 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
 
     const malformed = await net.fetch(buildMediaUrl(''))
     record(malformed.status >= 400, 'an empty path is rejected', malformed.status)
+
+    // ---- 6b. the remote stream scheme ----------------------------------
+    // yt-dlp needs a network and 7-10 s, so the sidecar is not part of a 90 s
+    // UI test. What *is* part of it: a token registered in the proxy must play
+    // through player-stream:// inside the real renderer, with the production
+    // CSP and the custom protocol privileges in force. A local HTTP server
+    // stands in for the CDN.
+    const streamBytes = await readFile(fixturePath)
+    const streamServer = createServer((request, response) => {
+      const range = request.headers.range
+      const match = typeof range === 'string' ? /^bytes=(\d+)-(\d*)$/.exec(range) : null
+      if (match) {
+        const start = Number(match[1])
+        const end = match[2] ? Math.min(Number(match[2]), streamBytes.length - 1) : streamBytes.length - 1
+        response.writeHead(206, {
+          'content-type': 'audio/flac',
+          'accept-ranges': 'bytes',
+          'content-range': `bytes ${start}-${end}/${streamBytes.length}`,
+          'content-length': end - start + 1
+        })
+        response.end(streamBytes.subarray(start, end + 1))
+        return
+      }
+      response.writeHead(200, {
+        'content-type': 'audio/flac',
+        'accept-ranges': 'bytes',
+        'content-length': streamBytes.length
+      })
+      response.end(streamBytes)
+    })
+    await new Promise<void>((resolve) => streamServer.listen(0, '127.0.0.1', resolve))
+
+    try {
+      const streamAddress = streamServer.address()
+      const streamPort = streamAddress && typeof streamAddress === 'object' ? streamAddress.port : 0
+      const streamToken = container.youtube.proxy.register('selftest-stream', {
+        url: `http://127.0.0.1:${streamPort}/audio.flac`,
+        headers: { 'User-Agent': 'PlayerSelftest/1.0' },
+        mimeType: 'audio/flac',
+        expiresAt: Date.now() + 60_000
+      })
+      const streamUrl = buildStreamUrl(streamToken)
+
+      const streamed = await evaluate<{
+        metadata: boolean
+        duration: number
+        playing: boolean
+        seeked: boolean
+        error: string | null
+      }>(
+        window,
+        `(async () => {
+           const out = { metadata: false, duration: 0, playing: false, seeked: false, error: null }
+           try {
+             const audio = new Audio(${JSON.stringify(streamUrl)})
+             audio.preload = 'auto'
+             await new Promise((resolve, reject) => {
+               const timer = setTimeout(() => reject(new Error('metadata timeout')), 6000)
+               audio.addEventListener('loadedmetadata', () => { clearTimeout(timer); resolve() }, { once: true })
+               audio.addEventListener('error', () => {
+                 clearTimeout(timer)
+                 reject(new Error('media error ' + (audio.error ? audio.error.code : '?')))
+               }, { once: true })
+             })
+             out.metadata = true
+             out.duration = audio.duration
+             await audio.play()
+             out.playing = !audio.paused
+             audio.currentTime = 1.4
+             await new Promise((resolve, reject) => {
+               const timer = setTimeout(() => reject(new Error('seek timeout')), 6000)
+               audio.addEventListener('seeked', () => { clearTimeout(timer); resolve() }, { once: true })
+             })
+             out.seeked = Math.abs(audio.currentTime - 1.4) < 0.5
+             audio.pause()
+           } catch (cause) {
+             out.error = cause && cause.message ? cause.message : String(cause)
+           }
+           return out
+         })()`
+      )
+
+      record(
+        streamed.metadata && Math.abs(streamed.duration - 3) < 0.5,
+        'player-stream:// delivers metadata and the right duration',
+        streamed.error ?? streamed.duration
+      )
+      record(streamed.playing, 'a proxied URL plays through the stream scheme', streamed.error)
+      record(streamed.seeked, 'seeking a proxied stream lands where asked', streamed.error)
+    } finally {
+      await new Promise<void>((resolve) => streamServer.close(() => resolve()))
+    }
 
     // ---- 7. queue and transport ----------------------------------------
     // Repeat and shuffle are settings that the player reads; this proves the
@@ -1632,6 +1732,75 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       `${lists.queueStatus || 'no status'} · count ${lists.countAfterQueueSave}`
     )
     record(lists.deleted && lists.emptyAfterDelete, 'deleting a playlist needs a confirmation and removes it')
+
+    // ---- 14b. the play-a-link dialog -------------------------------------
+    // Only the validation path is checked. Resolving a real link would need the
+    // network and a 7-10 s sidecar run, which belongs in the M3 probe, not in a
+    // 90 s UI test.
+    const linkDialog = await evaluate<{
+      opened: boolean
+      focused: boolean
+      submitDisabled: boolean
+      stillOpen: boolean
+      errorText: string
+      closedOnEscape: boolean
+    }>(
+      window,
+      `(async () => {
+         const out = { opened: false, focused: false, submitDisabled: false, stillOpen: false, errorText: '', closedOnEscape: false }
+         const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+         const pick = (s) => document.querySelector(s)
+         const pickAll = (s) => [...document.querySelectorAll(s)]
+         const press = (el) => { if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
+         const text = (el) => ((el || {}).textContent || '')
+         const nav = (label) => {
+           const b = pickAll('.nav-item').find((el) => (el.textContent || '').trim().startsWith(label))
+           if (b) b.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+           return Boolean(b)
+         }
+         const setInput = (el, value) => {
+           if (!el) return false
+           const desc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')
+           desc.set.call(el, value)
+           el.dispatchEvent(new Event('input', { bubbles: true }))
+           return true
+         }
+         const buttonWith = (scope, label) => pickAll(scope + ' button').find((el) => text(el).trim().indexOf(label) === 0)
+
+         nav('Library')
+         await sleep(450)
+         const opener = buttonWith('.view-header', 'Play link')
+         out.opened = Boolean(opener)
+         press(opener)
+         await sleep(350)
+
+         const input = pick('.play-link-dialog input')
+         const submit = pick('.play-link-dialog button[type="submit"]')
+         out.focused = document.activeElement === input
+         out.submitDisabled = Boolean(submit && submit.disabled)
+
+         setInput(input, 'not a youtube link')
+         await sleep(250)
+         press(submit)
+         await sleep(900)
+         out.stillOpen = Boolean(pick('.play-link-dialog'))
+         out.errorText = text(pick('.play-link-dialog .form-error')).trim()
+
+         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+         await sleep(300)
+         out.closedOnEscape = !pick('.play-link-dialog')
+         return out
+       })()`
+    )
+    record(linkDialog.opened, 'the library offers a play-a-link entry point')
+    record(linkDialog.focused, 'the link dialog focuses its input')
+    record(linkDialog.submitDisabled, 'the Play button is disabled before a link is typed')
+    record(
+      linkDialog.stillOpen && linkDialog.errorText.toLowerCase().includes('youtube'),
+      'an invalid link shows an inline error instead of closing',
+      linkDialog.errorText || 'no error text'
+    )
+    record(linkDialog.closedOnEscape, 'Escape closes the link dialog')
 
     // ---- 15. resuming ----------------------------------------------------
     // A restart cannot be faked from inside the page: the queue lives in a hook,

@@ -262,8 +262,8 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
 - [x] Write the `IMediaResolver` interface and the IPC event schema (as a spec, not code) — built, not just specified:
       `src/engine/resolver.ts` and `src/shared/ipc.ts`
 - [ ] Verify yt-dlp + ffmpeg work as sidecars on a clean Windows machine; measure resolve latency and success rate on 20
-      representative videos — presence is checked by `npm run smoke`, and the first timings are in
-      [`docs/notes/yt-dlp-spike.md`](./docs/notes/yt-dlp-spike.md); the 20-video sample is still open
+      representative videos — presence is checked by `npm run smoke`; the 20-video sample is done (**20/20**, median
+      8.8 s) in [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-dlp-sample.md); the clean-machine pass is still open
 - [x] Legal/ToS note drafted (§10) — in the README under **Scope and legal**
 **Exit:** a one-page architecture doc + stack ADR + working sidecar smoke test.
 
@@ -303,15 +303,23 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
 
 ### M3 — Engine Skeleton (resolve + stream, no downloads)  *(~2–3 weeks)*
 **Goal:** **the core differentiator.** Paste a YouTube link, hear audio in seconds, nothing kept.
-- [ ] Sidecar manager: locate/verify/launch/kill yt-dlp & ffmpeg, capture stderr into logs
-- [ ] Resolver: URL → metadata + playable source; search-by-text if the backend allows
-- [ ] Local HTTP stream proxy with range-request support and a stable per-track URL
-- [ ] Player integration: **Stream only** mode works end-to-end
-- [ ] Playback state machine for stream sources (loading → buffering → playing → failed)
-- [ ] Error taxonomy & user-facing messages (expired URL, bot check, geo-block, unavailable, network)
-- [ ] Re-resolve on failure/expiry, transparent to the player
-- [ ] Resolve-result metadata cache (avoid re-resolving the same video within a session)
+- [x] Sidecar manager: locate/verify/launch/kill yt-dlp & ffmpeg, capture stderr into logs
+- [x] Resolver: URL → metadata + playable source
+- [ ] Search-by-text (only if the backend allows it) — deferred to M5; the app is deliberately paste-only, with no
+      catalogue browser
+- [x] Local HTTP stream proxy with range-request support and a stable per-track URL — implemented as the
+      `player-stream://` custom protocol instead of a localhost server, with header replay, stable tokens and range
+      forwarding
+- [x] Player integration: **Stream only** mode works end-to-end
+- [ ] Playback state machine for stream sources (loading → buffering → playing → failed) — loading and failed are
+      carried by the existing player state; a distinct *buffering* state is still open
+- [x] Error taxonomy & user-facing messages (expired URL, bot check, geo-block, unavailable, network)
+- [x] Re-resolve on failure/expiry, transparent to the player
+- [x] Resolve-result metadata cache (avoid re-resolving the same video within a session)
 **Exit:** 50 hand-picked YouTube links play directly, ≥ 90% on first attempt, < 3 s to first audio, and seeking works.
+*Status: the 20-link sample resolves 20/20, and playback with seeking works end-to-end in the app. The median resolve is
+8.8 s and only 20 of the 50 links have been run. The `< 3 s` number needs a resident sidecar or a prefetch-based
+definition; see [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-dlp-sample.md).*
 
 ### M4 — Retention: Cache & Download  *(~3 weeks)*
 **Goal:** the "keep it or not" requirement, fully realised.

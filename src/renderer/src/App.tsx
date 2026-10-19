@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AppPaths, AppSettings, DeepPartial, EngineStatus } from '@shared/types'
+import type { AppPaths, AppSettings, DeepPartial, EngineStatus, Track } from '@shared/types'
 import { api, messageOf } from './api'
 import { LibraryView } from './components/LibraryView'
 import { NowPlayingView } from './components/NowPlayingView'
+import { PlayLinkDialog } from './components/PlayLinkDialog'
 import { PlayerBar } from './components/PlayerBar'
 import { PlaylistsView } from './components/PlaylistsView'
 import { QueueView } from './components/QueueView'
@@ -27,6 +28,7 @@ export function App() {
   const [nowPlaying, setNowPlaying] = useState(false)
   /** Set while the player window's exit animation plays, before it unmounts. */
   const [nowPlayingClosing, setNowPlayingClosing] = useState(false)
+  const [playLinkOpen, setPlayLinkOpen] = useState(false)
   const [paths, setPaths] = useState<AppPaths | null>(null)
   const [engineStatus, setEngineStatus] = useState<EngineStatus | null>(null)
   const [engineLoading, setEngineLoading] = useState(false)
@@ -249,6 +251,13 @@ export function App() {
     player.playQueue(selected, 0)
   }, [player, tracks, selectedIds])
 
+  const playLink = useCallback(
+    (track: Track): void => {
+      player.playQueue([track], 0)
+    },
+    [player]
+  )
+
   // Repeat cycles off -> all -> one -> off, the order every player uses.
   const cycleRepeat = useCallback((): void => {
     const current = settings?.repeat ?? 'off'
@@ -338,6 +347,7 @@ export function App() {
           onAddFolder={() => void addFolder()}
           onScan={() => void scan()}
           onCancelScan={() => void api.cancelScan()}
+          onPlayLink={() => setPlayLinkOpen(true)}
           onPlay={playTrack}
           onPlaySelected={playSelected}
           onReveal={(trackId) => void revealTrack(trackId)}
@@ -423,6 +433,14 @@ export function App() {
         onToggleShuffle={toggleShuffle}
         onOpenQueue={() => setView('queue')}
         onOpenNowPlaying={openNowPlaying}
+      />
+
+      {/* Stream links are a session-only queue entry; the dialog overlays the
+          library rather than being a view of its own. */}
+      <PlayLinkDialog
+        open={playLinkOpen}
+        onClose={() => setPlayLinkOpen(false)}
+        onPlay={playLink}
       />
 
       {/* Rendered last so it stacks over the bar it was opened from. The views
