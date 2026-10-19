@@ -1,6 +1,7 @@
 import type { RepeatMode, Track } from '@shared/types'
 import { buildArtworkUrl } from '@shared/artwork-url'
 import { useArtwork } from '../hooks/useArtwork'
+import { useWheelVolume } from '../hooks/useWheelVolume'
 import { ArtworkImage } from './ArtworkImage'
 import { SeekBar } from './SeekBar'
 import {
@@ -65,6 +66,8 @@ export function PlayerBar(props: PlayerBarProps) {
 
   const hasQueue = queueLength > 0 && queueIndex >= 0
   const artworkKey = useArtwork(current)
+  // The volume cluster answers the wheel as well as the slider's own drag.
+  const volumeBoxRef = useWheelVolume(volume, onVolume)
 
   return (
     <footer className="player-bar">
@@ -156,7 +159,7 @@ export function PlayerBar(props: PlayerBarProps) {
         />
       </div>
 
-      <div className="player-volume">
+      <div className="player-volume" ref={volumeBoxRef}>
         <button
           type="button"
           className={queueLength > 0 ? 'icon-button queue-button' : 'icon-button queue-button muted'}

@@ -152,12 +152,25 @@ export interface InteractionSettings {
   libraryDoubleClick: LibraryClickAction
 }
 
+/**
+ * How much the library is trusted to keep itself up to date.
+ */
+export interface LibrarySettings {
+  /**
+   * Watch the folders and re-scan when files appear, change or disappear. Worth
+   * turning off for a library on a slow or networked drive, where watching costs
+   * more than the occasional manual scan.
+   */
+  watchForChanges: boolean
+}
+
 export interface AppSettings {
   libraryFolders: string[]
   volume: number
   repeat: RepeatMode
   shuffle: boolean
   theme: ThemeMode
+  library: LibrarySettings
   visuals: VisualSettings
   interaction: InteractionSettings
   retention: RetentionSettings

@@ -14,6 +14,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   repeat: 'off',
   shuffle: false,
   theme: 'system',
+  // Watching is on by default: a library that quietly misses the album you just
+  // copied in is the thing people notice, and the scan it triggers is cheap
+  // because unchanged files are never opened.
+  library: {
+    watchForChanges: true
+  },
   // Square + cropped is the default because it is what the library rows and the
   // bar have always looked like; `contain` is there for anyone who would rather
   // never see a cover cut off, and it is a setting rather than a constant for

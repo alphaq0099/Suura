@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdir, stat } from 'node:fs/promises'
+import { copyFile, mkdir, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -686,6 +686,13 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       volumeMuted: number
       mutePressed: string
       volumeRestored: number
+      volumeBeforeWheel: number
+      volumeAfterWheel: number
+      volumeWheelTop: number
+      volumeWheelBottom: number
+      wheelCancelled: boolean
+      panelClosedByOutsidePress: boolean
+      panelStayedOpenOnInsidePress: boolean
       popoverHidden: boolean
       panelAtRest: boolean
       queueRows: number
@@ -704,7 +711,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     }>(
       window,
       `(async () => {
-         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false }
+         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, volumeBeforeWheel: -1, volumeAfterWheel: -1, volumeWheelTop: -1, volumeWheelBottom: -1, wheelCancelled: false, panelClosedByOutsidePress: false, panelStayedOpenOnInsidePress: false, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (selector) => document.querySelector(selector)
          const press = (element) => { if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
@@ -854,6 +861,48 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          await sleep(300)
          out.volumeRestored = slider() ? Number(slider().value) : -1
 
+         // ---- volume by wheel -----------------------------------------------
+         // Hovering the control and scrolling is the gesture people reach for, so
+         // it is driven where the pointer would be: on the box that holds both the
+         // button and the folded-away slider.
+         const volumeBox = pick('.np-volume')
+         const setLevel = async (value) => {
+           const element = slider()
+           if (!element) return
+           // The slider carries a React value prop, so writing .value directly would
+           // be seen by React's value tracker as "no change" and no event would reach
+           // the handler. Going through the prototype setter updates the DOM value
+           // without telling the tracker, so the input event below counts as a real
+           // edit — the same trick a testing library uses.
+           const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), 'value')
+           if (descriptor && descriptor.set) descriptor.set.call(element, String(value))
+           element.dispatchEvent(new Event('input', { bubbles: true }))
+           await sleep(150)
+         }
+         const roll = async (deltaY, times) => {
+           for (let i = 0; i < times; i += 1) {
+             if (volumeBox) volumeBox.dispatchEvent(new WheelEvent('wheel', { deltaY: deltaY, bubbles: true, cancelable: true }))
+             await sleep(40)
+           }
+         }
+         await setLevel(0.5)
+         out.volumeBeforeWheel = slider() ? Number(slider().value) : -1
+         let oneWheel = null
+         if (volumeBox) {
+           oneWheel = new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true })
+           volumeBox.dispatchEvent(oneWheel)
+         }
+         await sleep(200)
+         out.volumeAfterWheel = slider() ? Number(slider().value) : -1
+         // Cancelling the wheel is the reason the listener is native rather than
+         // React's: a passive one would let whatever is underneath scroll as well.
+         out.wheelCancelled = Boolean(oneWheel) && oneWheel.defaultPrevented
+         await roll(-100, 14)
+         out.volumeWheelTop = slider() ? Number(slider().value) : -1
+         await roll(100, 26)
+         out.volumeWheelBottom = slider() ? Number(slider().value) : -1
+         await setLevel(out.volumeBeforeWheel)
+
          // ---- the queue panel ----------------------------------------------
          // It has to be in the DOM to animate, and out of the way when closed, so
          // "hidden" is the check rather than "absent".
@@ -902,6 +951,23 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.jumped = rows().findIndex((row) => row.classList.contains('current')) === other
          out.panelStayedOpen = panel() ? getComputedStyle(panel()).visibility === 'visible' : false
 
+         // ---- pressing outside the panel -------------------------------------
+         // The rest of the window is a press target too: the black space beside the
+         // artwork, the artwork itself and the transport row all behave like the
+         // queue button. A press inside the panel is left alone, because a row is
+         // how a track is picked and that already leaves the panel open.
+         const pressAt = (element) => {
+           if (element) element.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }))
+         }
+         pressAt(pick('.np-stage'))
+         await sleep(400)
+         out.panelClosedByOutsidePress = panel() ? getComputedStyle(panel()).visibility === 'hidden' : false
+         press(pick('.np-queue'))
+         await sleep(400)
+         pressAt(rows().length ? rows()[0] : null)
+         await sleep(400)
+         out.panelStayedOpenOnInsidePress = panel() ? getComputedStyle(panel()).visibility === 'visible' : false
+
          // Escape unwinds one layer at a time, and both layers are checked: the
          // panel first, then the window.
          pressEscape()
@@ -941,6 +1007,17 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       `${visuals.volumeRestored} vs ${visuals.volumeBefore}`
     )
     record(visuals.popoverHidden, 'the volume slider stays folded away until it is asked for')
+    record(
+      visuals.volumeBeforeWheel === 0.5 && Math.abs(visuals.volumeAfterWheel - 0.55) < 0.001,
+      'one wheel notch over the volume control moves the level by five percent',
+      `${visuals.volumeBeforeWheel} -> ${visuals.volumeAfterWheel}`
+    )
+    record(
+      visuals.volumeWheelTop === 1 && visuals.volumeWheelBottom === 0,
+      'the volume wheel stops at the ends of the scale',
+      `top ${visuals.volumeWheelTop} / bottom ${visuals.volumeWheelBottom}`
+    )
+    record(visuals.wheelCancelled, 'the volume wheel swallows the scroll instead of passing it on')
     record(visuals.panelAtRest, 'the queue panel is hidden until it is asked for')
     record(
       visuals.queueRows >= 2 && visuals.queueCurrent === 1,
@@ -964,6 +1041,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       visuals.jumped && visuals.panelStayedOpen,
       'picking a track from the panel jumps to it and leaves the panel open'
     )
+    record(
+      visuals.panelClosedByOutsidePress,
+      'pressing the black space or the artwork shuts the queue panel'
+    )
+    record(visuals.panelStayedOpenOnInsidePress, 'pressing inside the queue panel leaves it open')
     record(
       visuals.escapeHidPanel && visuals.escapeKeptWindow,
       'Escape shuts the panel without shutting the player window'
@@ -1167,6 +1249,35 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       'the scrubber still follows a seek while the track is playing',
       prefs.seekBarPlayingDetail
     )
+
+    // ---- 13. the library keeps up with the disk by itself ----------------
+    // File watching is the difference between "the album I just copied in is
+    // missing" and it appearing on its own. The fixture folder is already being
+    // watched (adding it was what step 3 scanned), so a real file arriving and
+    // leaving exercises the whole feature: fs event -> debounce -> scan -> UI.
+    const arrivalPath = join(fixtureDir, 'Selftest Arrival.flac')
+    await copyFile(fixturePath, arrivalPath)
+    const arrived = await waitUntil(() => container.repo.stats().tracks === 3, 15_000)
+    record(arrived, 'a file copied into a watched folder is indexed with no user action', container.repo.stats().tracks)
+
+    await rm(arrivalPath, { force: true })
+    const departed = await waitUntil(() => container.repo.stats().tracks === 2, 15_000)
+    record(departed, 'a deleted file is forgotten with no user action', container.repo.stats().tracks)
+
+    // The switch has to reach the watcher, not just the config file: with watching
+    // off, a change on disk must not touch the library at all.
+    container.settings.update({ library: { watchForChanges: false } })
+    await delay(150)
+    const ignoredPath = join(fixtureDir, 'Selftest Ignored.flac')
+    await copyFile(fixturePath, ignoredPath)
+    await delay(2500)
+    record(
+      container.repo.stats().tracks === 2,
+      'with watching switched off a change on disk is ignored',
+      container.repo.stats().tracks
+    )
+    await rm(ignoredPath, { force: true })
+    container.settings.update({ library: { watchForChanges: true } })
   } catch (error) {
     failures += 1
     console.log(`SELFTEST FAIL  harness threw: ${describe(error)}`)
@@ -1187,6 +1298,19 @@ function finish(failures: number, note?: string): number {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Polls a condition that something *outside* this process is responsible for —
+ * a file system watcher, or a scan it started. There is no promise to await.
+ */
+async function waitUntil(condition: () => boolean, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (condition()) return true
+    await delay(100)
+  }
+  return condition()
 }
 
 interface LayoutProbe {

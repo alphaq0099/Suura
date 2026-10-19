@@ -5,10 +5,11 @@ import { SettingsService } from '@core/settings/settings-service'
 import { openLibraryDatabase, type DatabaseHandle } from '@core/db/database'
 import { TrackRepository } from '@core/library/track-repository'
 import { LibraryService } from '@core/library/library-service'
+import { FolderWatcher } from '@core/library/folder-watcher'
 import { LocalFileResolver } from '@engine/local-file-resolver'
 import { ResolverRegistry } from '@engine/resolver'
 import { IPC_EVENTS } from '@shared/ipc'
-import type { AppPaths } from '@shared/types'
+import type { AppPaths, AppSettings } from '@shared/types'
 import { createArtworkService, type ArtworkService } from '../artwork-service'
 import { broadcast } from '../broadcast'
 
@@ -25,6 +26,7 @@ export interface AppContainer {
   database: DatabaseHandle
   repo: TrackRepository
   library: LibraryService
+  watcher: FolderWatcher
   resolvers: ResolverRegistry
   artwork: ArtworkService
   dispose(): void
@@ -60,6 +62,24 @@ export function createContainer(): AppContainer {
     onLibraryChanged: () => broadcast(IPC_EVENTS.libraryChanged, null)
   })
 
+  // Both the folder list and the switch live in settings, so one listener keeps
+  // the watchers in step with them — including the case where a folder is added
+  // or removed while the app is running.
+  const watcher = new FolderWatcher({
+    log: log.child('watch'),
+    onChange: (event) => {
+      log.debug('folder change detected', event)
+      void library.scanWhenIdle().catch((error) => {
+        log.warn('could not scan after a folder change', error)
+      })
+    }
+  })
+  const applyWatchSettings = (next: AppSettings): void => {
+    watcher.setFolders(next.library.watchForChanges ? next.libraryFolders : [])
+  }
+  applyWatchSettings(settings.get())
+  const unwatchSettings = settings.onChange(applyWatchSettings)
+
   return {
     paths,
     log,
@@ -67,9 +87,12 @@ export function createContainer(): AppContainer {
     database,
     repo,
     library,
+    watcher,
     resolvers,
     artwork,
     dispose: () => {
+      unwatchSettings()
+      watcher.stop()
       database.close()
       log.info('shutdown complete')
     }

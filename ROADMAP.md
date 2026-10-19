@@ -270,14 +270,15 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
 - [x] Library UI: virtualized list, sort by title/artist/album/duration/year/added/played, search via FTS5
 - [x] Artwork: embedded covers extracted lazily, resized, cached content-addressed, served over `player-art://`
 - [x] Now Playing: full-window player with a blurred art backdrop, transport, volume, queue and a scrubber; the queue
-      as a panel inside the window, slid in by the button that opened it
+      as a panel inside the window, slid in by the button that opened it and dismissed by a press anywhere outside it
 - [x] Visuals settings: artwork square or circular, cropped to a square or given the cover's own shape, and sized from
-      small to extra large; ambient player-bar background masked to no hard edge; volume as mute-on-click with the slider
-      revealed on hover
+      small to extra large; ambient player-bar background masked to no hard edge; volume as mute-on-click with the
+      slider revealed on hover, and a wheel over the control nudging it by five percent
 - [x] Click behaviour setting: single click and double click each choose select / play / select-and-play / nothing
 - [x] Playback: play/pause/next/prev/seek, volume, shuffle, repeat (off/all/one)
 - [x] Queue management (add to queue, jump, remove, clear)
-- [ ] File watching for changes (a scan is currently manual or on demand)
+- [x] File watching for changes: an OS watcher per folder, debounced, turning any change into an incremental scan that
+      prunes what disappeared; a setting to turn it off for slow or network drives
 - [ ] Basic playlists (create, rename, add/remove, reorder)
 - [ ] Persist play state; resume last session on start
 **Exit:** 10,000-track library is fast, searchable and pleasant; audio starts in < 300 ms.

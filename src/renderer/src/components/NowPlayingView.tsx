@@ -1,8 +1,16 @@
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent
+} from 'react'
 import type { ArtworkFit, RepeatMode, Track } from '@shared/types'
 import { buildArtworkUrl } from '@shared/artwork-url'
 import { formatCount, formatDuration } from '@shared/format'
 import { useArtwork } from '../hooks/useArtwork'
+import { useWheelVolume } from '../hooks/useWheelVolume'
 import { ArtworkImage } from './ArtworkImage'
 import { SeekBar } from './SeekBar'
 import {
@@ -110,6 +118,11 @@ export function NowPlayingView(props: NowPlayingViewProps) {
   const muted = volume === 0
   const toggleMute = (): void => onVolume(muted ? lastAudibleRef.current : 0)
 
+  // The wheel works anywhere on the volume control, not only over the button:
+  // the fold-out slider lives inside the same box, so the whole control answers
+  // to it.
+  const volumeBoxRef = useWheelVolume(volume, onVolume)
+
   // Focus moves into the dialog so the window it covers cannot be activated by
   // a stray Space, and so Escape has somewhere to land.
   useEffect(() => {
@@ -137,6 +150,18 @@ export function NowPlayingView(props: NowPlayingViewProps) {
     onClose()
   }
 
+  // A press anywhere outside the panel closes it, so the black space and the
+  // album art behave like the queue button and Escape. Presses inside the panel
+  // are left alone: a row is how a track is picked, and that should not also
+  // shut the panel. The queue button is excluded because its own handler
+  // toggles the panel, and both firing would only close it twice.
+  const onPointerDown = (event: PointerEvent<HTMLDivElement>): void => {
+    if (!queueOpen) return
+    const target = event.target as HTMLElement | null
+    if (target?.closest('.np-queue-panel, .np-queue')) return
+    setQueueOpen(false)
+  }
+
   const hasQueue = queue.length > 0 && queueIndex >= 0
   const queueTotalMs = queue.reduce((sum, track) => sum + (track.durationMs ?? 0), 0)
   const backdrop = artworkKey ? { backgroundImage: `url("${buildArtworkUrl(artworkKey)}")` } : undefined
@@ -150,6 +175,7 @@ export function NowPlayingView(props: NowPlayingViewProps) {
       ref={containerRef}
       tabIndex={-1}
       onKeyDown={onKeyDown}
+      onPointerDown={onPointerDown}
     >
       {/* The background lives in its own clipping layer. The backdrop is wider
           than the window by design (a blurred image samples transparent pixels
@@ -309,7 +335,7 @@ export function NowPlayingView(props: NowPlayingViewProps) {
             </button>
             {/* Click mutes; the slider is folded away until the pointer or the
                 keyboard is on this control. */}
-            <div className="np-volume">
+            <div className="np-volume" ref={volumeBoxRef}>
               <button
                 type="button"
                 className="icon-button"

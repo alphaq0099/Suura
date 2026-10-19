@@ -8,7 +8,7 @@
  */
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, rm, unlink, utimes, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, rm, unlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -19,6 +19,7 @@ import { SettingsService } from '@core/settings/settings-service'
 import { latestVersion, openLibraryDatabase } from '@core/db/database'
 import { TrackRepository, buildFtsQuery, type ScanRunSummary } from '@core/library/track-repository'
 import { LibraryService } from '@core/library/library-service'
+import { FolderWatcher, isLibraryEvent, type FolderWatchEvent } from '@core/library/folder-watcher'
 import { isPathInside, localContentKey, normalizePath } from '@core/library/content-key'
 import { artworkKeyFor, extractArtwork, extensionForMime } from '@core/library/artwork'
 import { LocalFileResolver } from '@engine/local-file-resolver'
@@ -43,6 +44,23 @@ function check(name: string, ok: boolean, detail?: string): void {
 
 function checkEqual<T>(name: string, actual: T, expected: T): void {
   check(name, actual === expected, `expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`)
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Polls a predicate. Used where the answer arrives from the file system rather
+ * than from a promise we can await: a watcher has to be given a moment to notice.
+ */
+async function waitFor(predicate: () => boolean, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (predicate()) return true
+    await delay(50)
+  }
+  return predicate()
 }
 
 interface Fixture {
@@ -422,6 +440,63 @@ async function main(): Promise<void> {
       checkEqual('"no artwork" is hidden from the UI', repo.getById(toneA.id)?.artworkKey, null)
       checkEqual('an album with no cached key reports none', repo.artworkKeyForAlbum('Fixtures Vol 1', 'Smoke Artist'), null)
     }
+
+    // --- folder watching ---------------------------------------------------
+    // Watching is what lets the library keep up with the disk on its own, and it
+    // does that by turning any change into a whole-library scan: the scan skips
+    // every file whose size and mtime are unchanged, so there is no need to work
+    // out *which* file changed. These checks use a real temp folder and real file
+    // system events, so the debounce and the OS watcher are covered too.
+    checkEqual('a written audio file is worth reacting to', isLibraryEvent('change', 'song.flac'), true)
+    checkEqual('a written cover image is not', isLibraryEvent('change', 'cover.jpg'), false)
+    checkEqual('a download part-file is not', isLibraryEvent('change', 'song.flac.part'), false)
+    checkEqual('a created file counts whatever it is called', isLibraryEvent('rename', 'cover.jpg'), true)
+    checkEqual('a folder leaving counts, even with a dot in its name', isLibraryEvent('rename', 'Album.2024'), true)
+    checkEqual('an unnamed change counts', isLibraryEvent('change', null), true)
+
+    const changes: FolderWatchEvent[] = []
+    const watcher = new FolderWatcher({
+      log: silentLogger,
+      quietMs: 40,
+      maxDelayMs: 1500,
+      onChange: (event) => {
+        changes.push(event)
+        // The container wires exactly this pair together: a change asks the
+        // library for a scan, and the scan's own result is what the UI sees.
+        void library.scanWhenIdle().catch(() => undefined)
+      }
+    })
+    const watched = normalizePath(musicDir)
+    watcher.setFolders([watched])
+    checkEqual('the watcher watches the folder it was given', watcher.folders().join('|'), watched)
+    check('the watcher reports that it is watching', watcher.isWatching())
+
+    // A file arriving is the case a user actually notices: an album is copied in
+    // and it should appear without pressing anything.
+    const arrived = join(musicDir, 'Watched Arrival.flac')
+    await copyFile(fixtures[1]?.path ?? '', arrived)
+    const arrivedIndexed = await waitFor(() => repo.stats().tracks === 5, 8000)
+    check('a file copied in while running is indexed without being asked', arrivedIndexed, `tracks = ${repo.stats().tracks}`)
+    check('the watcher reported the change', changes.length >= 1, `got ${changes.length} reports`)
+    checkEqual('the report names the folder that changed', changes[0]?.folders[0] ?? null, watched)
+    checkEqual('the report counts the events it coalesced', (changes[0]?.events ?? 0) > 0, true)
+    check(
+      'the new file is in the library',
+      library.list().tracks.some((track) => track.filePath && normalizePath(track.filePath) === normalizePath(arrived))
+    )
+
+    // ...and a file leaving is the case that would otherwise leave a broken row
+    // behind, because a watcher-triggered scan is a full scan and prunes.
+    await unlink(arrived)
+    const arrivalPruned = await waitFor(() => repo.stats().tracks === 4, 8000)
+    check('a deleted file is forgotten without being asked', arrivalPruned, `tracks = ${repo.stats().tracks}`)
+
+    watcher.stop()
+    checkEqual('stopping the watcher closes every handle', watcher.isWatching(), false)
+    const reportsBeforeStop = changes.length
+    await writeFile(join(musicDir, 'After Stop.txt'), 'written after the watcher was stopped\n', 'utf8')
+    await delay(500)
+    checkEqual('nothing is reported after stopping', changes.length, reportsBeforeStop)
 
     // --- prune ------------------------------------------------------------
     // Pruning is deliberately limited to full library scans, so a scan of one

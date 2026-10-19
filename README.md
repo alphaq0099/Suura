@@ -37,11 +37,13 @@ Working today:
 - **Keyboard shortcuts** (space, arrows, N/P, M, Ctrl+F, Escape) and the Windows **media keys**.
 - Rescans are incremental: a file whose size and mtime are unchanged is never opened again.
 - Deleting or moving files is reflected on the next full scan.
+- **The folders are watched**: an album copied in appears by itself, and a file that disappears is forgotten, without
+  pressing Rescan. Watching can be switched off in Settings for a library on a slow or network drive.
 - Settings persist to `config.json`; retention and engine settings are stored and validated but not yet acted on.
 - The engine layer reports whether `yt-dlp` and `ffmpeg` are present and runnable (used from M3).
 
-Not built yet (deliberately): playlists, file watching, gapless playback, SMTC / tray icon, the yt-dlp resolver,
-caching, downloads, packaging.
+Not built yet (deliberately): playlists, resuming the last session, gapless playback, SMTC / tray icon, the yt-dlp
+resolver, caching, downloads, packaging.
 
 ---
 
@@ -75,9 +77,9 @@ Four independent checks, from cheapest to most convincing:
 | Command | What it proves |
 |---|---|
 | `npm run typecheck` | Both TypeScript projects (`node` and `web`) compile under `strict` + `noUncheckedIndexedAccess`. |
-| `npm run smoke` | **111 checks** against the real core: builds a throwaway library with ffmpeg, indexes it, rescans it, searches it, sorts and pages it, extracts cover art from a real file, resolves a playable URL, exercises range parsing, queue rules and display formatting, and deletes a file to prove pruning. No Electron involved. |
+| `npm run smoke` | **127 checks** against the real core: builds a throwaway library with ffmpeg, indexes it, rescans it, searches it, sorts and pages it, extracts cover art from a real file, resolves a playable URL, exercises range parsing, queue rules and display formatting, deletes a file to prove pruning, and watches a real folder to prove that a file appearing or disappearing triggers an incremental scan by itself. No Electron involved. |
 | `npm run runtime:check` | The three runtime bets still hold **inside Electron**: `node:sqlite` exists, FTS5 works, and `music-metadata` (ESM-only) loads from CommonJS. Run this after every Electron upgrade. |
-| `npm run selftest` | **88 end-to-end checks**: launches the real app against a throwaway data directory, confirms React mounted, indexes two generated audio files (one with an embedded cover) *through the IPC bridge*, then **actually decodes, plays and seeks one** through the `player-media://` protocol. It drives the real UI — a click selects, a double click plays, the queue view lists the queue, the repeat/shuffle buttons cycle, clicking the now-playing area opens the full-window player (and asserts its backdrop really is the blurred, brightened cover with no hard separator over the controls), and Escape closes it **through its exit animation**. Clicking the queue button slides the panel in, and the panel's own rows, scroll fit and gradient shadow are checked before Escape unwinds one layer at a time. It then changes the artwork and click-behaviour settings through the actual `<select>` elements in Settings and measures what the DOM did with them — the box takes a 3:2 cover's proportions, the size presets resize it, and a single click plays or selects depending on what the setting says. It seeks the player bar's scrubber twice in a row, paused and playing, and asserts the bar shows the position just chosen rather than the one before it. It also checks that the player bar's ambience spans the whole bar rather than the now-playing tile, and clicks the volume button to prove it mutes and restores. Finally it resizes the window to 1200x780 and 940x580 and asserts that **no view, including the player window, overflows sideways** — the only thing that catches a layout that slides out of the window. Exits non-zero on failure. |
+| `npm run selftest` | **96 end-to-end checks**: launches the real app against a throwaway data directory, confirms React mounted, indexes two generated audio files (one with an embedded cover) *through the IPC bridge*, then **actually decodes, plays and seeks one** through the `player-media://` protocol. It drives the real UI — a click selects, a double click plays, the queue view lists the queue, the repeat/shuffle buttons cycle, clicking the now-playing area opens the full-window player (and asserts its backdrop really is the blurred, brightened cover with no hard separator over the controls), and Escape closes it **through its exit animation**. Clicking the queue button slides the panel in, and the panel's own rows, scroll fit and gradient shadow are checked before a press on the black space or the artwork shuts it again (a press inside it does not), and Escape unwinds one layer at a time. It then changes the artwork and click-behaviour settings through the actual `<select>` elements in Settings and measures what the DOM did with them — the box takes a 3:2 cover's proportions, the size presets resize it, and a single click plays or selects depending on what the setting says. It seeks the player bar's scrubber twice in a row, paused and playing, and asserts the bar shows the position just chosen rather than the one before it. It also checks that the player bar's ambience spans the whole bar rather than the now-playing tile, and clicks the volume button to prove it mutes and restores, then rolls the wheel over the control to check that one notch moves the level five percent, that it stops at the ends of the scale, and that the scroll is swallowed rather than passed on. Then it copies a real file into the watched folder and deletes it again, asserting that the library indexed and then forgot it with no user action at all, and that switching watching off really does stop it. Finally it resizes the window to 1200x780 and 940x580 and asserts that **no view, including the player window, overflows sideways** — the only thing that catches a layout that slides out of the window. Exits non-zero on failure. |
 
 
 The self-test is the one that matters most. A renderer that fails to mount, or a protocol handler that refuses every
@@ -306,13 +308,39 @@ docs/adr/               architecture decision records
   horizontal gradient, masked away at both ends, fades in and out instead; dropping it to zero at the top is safe because
   the panel's own background and left border are what define the edge. The self-test asserts the mask is transparent at
   both ends, because this is exactly the sort of thing that quietly reverts.
+- **A press outside the panel closes it.** The black space beside the artwork, the artwork itself, the transport row and
+  the scrubber all count as outside, so the panel behaves the way it looks: an overlay you can dismiss by clicking away
+  from it. It listens for `pointerdown` rather than `click`, so the panel is gone the moment the press lands rather than
+  after the target has handled it, and it ignores presses inside the panel — a row is how a track is picked, and that
+  already leaves the panel open. The queue button is excluded because its own handler toggles the panel; letting both
+  fire would open and close it in one press.
+- **The wheel over the volume control is a native listener.** React's `onWheel` is registered as passive, so it is not
+  allowed to cancel the scroll it rode in on; the hook attaches a `{ passive: false }` listener instead and calls
+  `preventDefault`. Level and setter go through refs so the listener is attached once and still sees the current volume —
+  a listener closed over the value from its first render would only ever move the level one notch and then stop. One
+  notch is five percent, Shift makes it one, and the value is rounded to the slider's own step so repeated notches cannot
+  drift. The self-test checks the step, both ends of the scale and that the event really is cancelled.
+- **Watching reacts to a change by scanning, rather than tracking files.** The OS watcher only says "something under this
+  folder moved"; the scan then decides what it means, because it already skips every file whose size and mtime are
+  unchanged and can therefore be run for free. Keeping a map of files in the watcher instead would mean duplicating the
+  scanner's rules — the hidden-directory and extension filters, the tag reader's idea of what a track is — and the two
+  would drift. It is also why a deleted folder or a moved file needs no special case: the scan prunes what is gone. The
+  quiet period is 800 ms, so a copy or a tag editor's burst of writes lands as one scan, with a five-second ceiling so a
+  long copy still gets picked up while it is running. A change that arrives mid-scan is queued rather than dropped, and
+  the queue is drained by whichever scan finishes last — including a manual one — so nothing is missed; cancelling a scan
+  clears it, because otherwise the scan the user just stopped would start again. `fs.watch` has no name for a folder that
+  has been deleted, so the filter only applies to a file being *written*: a rename is always interesting, since a folder
+  called `Album.2024` reads as a file.
 
 ---
 
 ## Known gaps
 
-- No file watching: the library changes only when a scan runs.
 - No playlists yet, and no "select all N matching" (selection covers the loaded rows).
+- No resume: the queue and the playing track are not remembered across a restart.
+- Watching only covers the session it runs in: files added or removed while the app was closed are picked up by the next
+  scan (adding a folder, or Rescan). A folder that is missing when watching starts — an unmounted drive — is watched only
+  after the folder list changes or the app is restarted; `fs.watch` needs the directory to exist.
 - Search is prefix-AND only; no fuzzy matching or field-scoped queries.
 - `sandbox: false` on the renderer, because the preload bundle is CommonJS. Hardening item for M7.
 - No packaging/installer yet (electron-builder arrives in M7).

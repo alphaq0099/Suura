@@ -22,6 +22,8 @@ const PLAY_THRESHOLD_MS = 30_000
  */
 export class LibraryService {
   private activeScan: AbortController | null = null
+  /** Set when a change arrives mid-scan, so the scan is repeated once it ends. */
+  private rescanQueued = false
 
   constructor(
     private readonly repo: TrackRepository,
@@ -133,13 +135,49 @@ export class LibraryService {
     } finally {
       this.activeScan = null
       this.emitChanged()
+      this.drainQueuedRescan()
     }
   }
 
   cancelScan(): void {
     if (!this.activeScan) return
     this.log.info('scan cancelled by user')
+    // A queued repeat is what the *watcher* asked for, not the user, so cancelling
+    // has to drop it too: otherwise the scan the user just stopped starts again.
+    this.rescanQueued = false
     this.activeScan.abort()
+  }
+
+  /**
+   * Scans, unless one is already running — in which case the scan is queued and
+   * runs when the one in flight finishes, so files that changed while it was
+   * working are not missed.
+   *
+   * This is the entry point for automatic scans. A manual scan should call
+   * `scan()` and hear about the clash, because a click that silently does nothing
+   * is worse than an error; a folder watcher has nobody to tell.
+   */
+  async scanWhenIdle(): Promise<LibraryStats | null> {
+    if (this.activeScan) {
+      this.rescanQueued = true
+      this.log.debug('a scan is already running; queued one more')
+      return null
+    }
+    return await this.scan()
+  }
+
+  /**
+   * Runs the queued scan, if any. Called as every scan ends rather than only from
+   * `scanWhenIdle`, so a change that lands during a *manual* scan is still picked
+   * up — the queue is drained by whichever scan finished last.
+   */
+  private drainQueuedRescan(): void {
+    if (!this.rescanQueued) return
+    this.rescanQueued = false
+    this.log.debug('rescanning for changes that arrived mid-scan')
+    void this.scanWhenIdle().catch((error: unknown) => {
+      this.log.warn('queued rescan failed', error)
+    })
   }
 
   /** Called by the player when a track has been played enough to count. */

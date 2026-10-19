@@ -151,6 +151,21 @@ export function SettingsView(props: SettingsViewProps) {
                 ))}
               </ul>
             )}
+            <div className="field-grid">
+              <label className="field checkbox">
+                <input
+                  type="checkbox"
+                  checked={settings.library.watchForChanges}
+                  onChange={(event) => onUpdate({ library: { watchForChanges: event.target.checked } })}
+                />
+                <span>Watch the folders and rescan when files change</span>
+              </label>
+            </div>
+            <p className="card-hint">
+              Watching is what makes an album you copy in show up without pressing Rescan: a change starts a scan, and a
+              scan only opens files whose size or timestamp moved, so it stays cheap in a large library. Turn it off for a
+              library on a network or removable drive, where watching can cost more than the occasional manual scan.
+            </p>
           </article>
 
           <article className="card">
@@ -445,8 +460,8 @@ export function SettingsView(props: SettingsViewProps) {
           </header>
           <p className="card-hint">
             Local library playback is the working slice. Scanning, tag reading, artwork, the queue, repeat and shuffle,
-            the keyboard shortcuts and the media keys are in. File watching, playlists, gapless playback, the yt-dlp
-            resolver and packaging are still ahead — see ROADMAP.md for the sequence.
+            folder watching, the keyboard shortcuts and the media keys are in. Playlists, resuming the last session,
+            gapless playback, the yt-dlp resolver and packaging are still ahead — see ROADMAP.md for the sequence.
           </p>
         </article>
       </div>
