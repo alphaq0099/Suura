@@ -208,5 +208,39 @@ export const MIGRATIONS: readonly Migration[] = [
         );
       `)
     }
+  },
+  {
+    version: 5,
+    name: 'online history',
+    up: (db) => {
+      // The links the user has pasted, remembered so the Online view is a
+      // collection rather than a scratch pad. A row is metadata only: there is no
+      // `tracks` row and no file until the user asks to save one (M4), so this
+      // table deliberately has no foreign key into the library.
+      //
+      // `video_id` is the identity: pasting the same link twice refreshes one
+      // row instead of adding another. Ordering is "most recent activity first",
+      // where activity is either being added or being played, so the finished
+      // sort is `MAX(COALESCE(last_played_at, 0), added_at)` in the repository —
+      // an expression an index cannot serve well, which is why only the played
+      // column is indexed and the list is capped on read.
+      db.exec(`
+        CREATE TABLE online_tracks (
+          id             INTEGER PRIMARY KEY AUTOINCREMENT,
+          video_id       TEXT    NOT NULL,
+          title          TEXT    NOT NULL,
+          artist         TEXT,
+          album          TEXT,
+          duration_ms    INTEGER,
+          source_url     TEXT    NOT NULL,
+          artwork_key    TEXT,
+          added_at       INTEGER NOT NULL,
+          last_played_at INTEGER
+        );
+
+        CREATE UNIQUE INDEX idx_online_tracks_video ON online_tracks(video_id);
+        CREATE INDEX idx_online_tracks_played ON online_tracks(last_played_at DESC);
+      `)
+    }
   }
 ]

@@ -8,6 +8,7 @@ import { LibraryService } from '@core/library/library-service'
 import { FolderWatcher } from '@core/library/folder-watcher'
 import { PlaylistRepository } from '@core/library/playlist-repository'
 import { PlaylistService } from '@core/library/playlist-service'
+import { OnlineRepository } from '@core/library/online-repository'
 import { PlayStateRepository } from '@core/library/play-state-repository'
 import { PlaybackService } from '@core/library/playback-service'
 import { LocalFileResolver } from '@engine/local-file-resolver'
@@ -18,6 +19,7 @@ import { IPC_EVENTS } from '@shared/ipc'
 import type { AppPaths, AppSettings } from '@shared/types'
 import { createArtworkService, type ArtworkService } from '../artwork-service'
 import { broadcast } from '../broadcast'
+import { createOnlineService, type OnlineService } from '../online-service'
 import { createYoutubeService, type YoutubeService } from '../youtube-service'
 
 /**
@@ -41,6 +43,10 @@ export interface AppContainer {
   artwork: ArtworkService
   /** Paste-a-link streaming. Downloads (M4) will grow next to it. */
   youtube: YoutubeService
+  /** The links the user has pasted, remembered between runs. */
+  online: OnlineService
+  /** Exposed alongside `repo` so the self-test can seed history directly. */
+  onlineRepo: OnlineRepository
   dispose(): void
 }
 
@@ -73,16 +79,23 @@ export function createContainer(): AppContainer {
     engine: () => settings.get().engine,
     log: log.child('yt-dlp')
   })
-  const youtube = createYoutubeService({
-    resolver: new YouTubeResolver({
+  const youtube = createYoutubeService(
+    new YouTubeResolver({
       info: ytDlp,
       log: log.child('youtube'),
       quality: () => settings.get().retention.qualityTier
-    }),
-    artwork,
-    log: log.child('youtube')
-  })
+    })
+  )
   resolvers.register(youtube.resolver)
+
+  const onlineRepo = new OnlineRepository(database.db)
+  const online = createOnlineService({
+    resolver: youtube.resolver,
+    repo: onlineRepo,
+    artwork,
+    log: log.child('online'),
+    onChange: () => broadcast(IPC_EVENTS.onlineChanged, null)
+  })
 
   const library = new LibraryService(repo, settings, log.child('library'), {
     onScanProgress: (progress) => broadcast(IPC_EVENTS.scanProgress, progress),
@@ -127,6 +140,8 @@ export function createContainer(): AppContainer {
     resolvers,
     artwork,
     youtube,
+    online,
+    onlineRepo,
     dispose: () => {
       unwatchSettings()
       watcher.stop()

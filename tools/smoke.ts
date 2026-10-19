@@ -23,6 +23,7 @@ import { LibraryService } from '@core/library/library-service'
 import { FolderWatcher, isLibraryEvent, type FolderWatchEvent } from '@core/library/folder-watcher'
 import { PlaylistRepository } from '@core/library/playlist-repository'
 import { PlaylistService } from '@core/library/playlist-service'
+import { OnlineRepository } from '@core/library/online-repository'
 import { PlayStateRepository } from '@core/library/play-state-repository'
 import { PlaybackService } from '@core/library/playback-service'
 import { isPathInside, localContentKey, normalizePath } from '@core/library/content-key'
@@ -36,11 +37,12 @@ import { YouTubeResolver } from '@engine/youtube-resolver'
 import { PLAYLIST_INDEX_MAX, PLAYLIST_INDEX_MIN, clampPlaylistIndexWidth } from '@shared/playlists'
 import { parseMediaUrl } from '@shared/media-url'
 import { buildStreamUrl, parseStreamUrl } from '@shared/stream-url'
-import { describeYouTubeFailure, extractYouTubeVideoId } from '@shared/youtube'
+import { describeYouTubeFailure, extractYouTubeVideoId, youtubeThumbnailCandidates, youtubeWatchUrl } from '@shared/youtube'
 import { buildArtworkUrl, parseArtworkUrl } from '@shared/artwork-url'
 import { formatAudioSummary, formatCodec } from '@shared/format'
 import { nextDecision, shuffleFrom, shuffled } from '@shared/queue'
 import { parseRangeHeader } from '@shared/range'
+import { onlineEntryToTrack } from '@shared/online'
 
 const execFileAsync = promisify(execFile)
 
@@ -732,6 +734,19 @@ async function main(): Promise<void> {
     check('youtube: another host is rejected', extractYouTubeVideoId('https://example.com/watch?v=dQw4w9WgXcQ') === null)
     check('youtube: a short id is rejected', extractYouTubeVideoId('https://youtu.be/short') === null)
 
+    // The stills have to be JPEG: `nativeImage` returns an empty image for the
+    // WebP that `yt-dlp` reports, which is why covers went missing. Both entries
+    // are 16:9, because the app crops covers to a square and YouTube's 4:3 stills
+    // would bake their letterbox bars into it.
+    const thumbs = youtubeThumbnailCandidates('dQw4w9WgXcQ')
+    checkEqual(
+      'youtube: the thumbnail is asked for as JPEG, largest first',
+      thumbs.join(' '),
+      'https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg'
+    )
+    check('youtube: no WebP stills are requested', thumbs.every((url) => url.endsWith('.jpg') && !url.includes('vi_webp')))
+    check('youtube: anything that is not a video id has no thumbnail', youtubeThumbnailCandidates('nope').length === 0)
+
     const args = buildInfoArgs('dQw4w9WgXcQ', 'best')
     checkEqual('youtube: the user config is always ignored', args.slice(0, 2).join(' '), '--ignore-config --no-playlist')
     check('youtube: the format is audio-only with a muxed fallback', args.includes('bestaudio/best'))
@@ -906,6 +921,98 @@ async function main(): Promise<void> {
       check('youtube: a non-YouTube link is rejected', rejected)
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  }
+
+  // --- the online history -------------------------------------------------
+  // A link is remembered when it is pasted and ordered by its most recent
+  // activity, added or played. That ordering is the repository's job, so it is
+  // tested against a real database file rather than a stub.
+  {
+    const root = await mkdtemp(join(tmpdir(), 'player-online-'))
+    const handle = openLibraryDatabase(join(root, 'library.db'), silentLogger)
+    try {
+      const repo = new OnlineRepository(handle.db)
+      checkEqual('online: a fresh history is empty', repo.list().length, 0)
+
+      const first = repo.upsert(
+        {
+          videoId: 'aaaaaaaaaaa',
+          title: 'First Song',
+          artist: 'First Artist',
+          album: null,
+          durationMs: 210_000,
+          sourceUrl: youtubeWatchUrl('aaaaaaaaaaa'),
+          artworkKey: `${'a'.repeat(40)}.jpg`
+        },
+        1000
+      )
+      checkEqual('online: a pasted link becomes a row', repo.list().length, 1)
+      checkEqual('online: the row keeps the video id', first.videoId, 'aaaaaaaaaaa')
+      checkEqual(
+        'online: the canonical watch URL is stored',
+        first.sourceUrl,
+        'https://www.youtube.com/watch?v=aaaaaaaaaaa'
+      )
+      checkEqual('online: the add time is recorded', first.addedAt, 1000)
+      check('online: a fresh row has not been played', first.lastPlayedAt === null)
+
+      repo.upsert(
+        {
+          videoId: 'bbbbbbbbbbb',
+          title: 'Second Song',
+          artist: null,
+          album: null,
+          durationMs: null,
+          sourceUrl: youtubeWatchUrl('bbbbbbbbbbb'),
+          artworkKey: null
+        },
+        2000
+      )
+      checkEqual('online: the newest paste is first', repo.list()[0]?.videoId, 'bbbbbbbbbbb')
+
+      const again = repo.upsert(
+        {
+          videoId: 'aaaaaaaaaaa',
+          title: 'First Song (Remastered)',
+          artist: 'First Artist',
+          album: null,
+          durationMs: 215_000,
+          sourceUrl: youtubeWatchUrl('aaaaaaaaaaa'),
+          artworkKey: null
+        },
+        3000
+      )
+      checkEqual('online: pasting the same link does not duplicate it', repo.list().length, 2)
+      checkEqual('online: the existing row is refreshed', again.title, 'First Song (Remastered)')
+      checkEqual('online: a re-paste moves the row to the top', repo.list()[0]?.videoId, 'aaaaaaaaaaa')
+      checkEqual('online: a re-paste keeps the cached artwork', repo.list()[0]?.artworkKey, `${'a'.repeat(40)}.jpg`)
+      checkEqual('online: a re-paste never invents a play', repo.list()[0]?.lastPlayedAt, null)
+
+      repo.touch('bbbbbbbbbbb', 4000)
+      checkEqual('online: playing a link lifts it above a newer paste', repo.list()[0]?.videoId, 'bbbbbbbbbbb')
+
+      const top = repo.list()[0]
+      const mapped = top ? onlineEntryToTrack(top) : null
+      check('online: a row becomes a stream track', Boolean(mapped) && mapped?.sourceKind === 'youtube')
+      checkEqual('online: the stream track names the video', mapped?.sourceId, 'bbbbbbbbbbb')
+      checkEqual('online: the stream track id is negative and derived from the row', mapped?.id, top ? -top.id : null)
+      check('online: the stream track has no file', mapped?.filePath === null)
+
+      // A cover is downloaded after the row exists, so the key is written on a
+      // later pass. That is also what repairs rows added before thumbnails decoded.
+      repo.setArtworkKey('bbbbbbbbbbb', `${'b'.repeat(40)}.png`)
+      checkEqual('online: a thumbnail fetched later is stored', repo.getByVideoId('bbbbbbbbbbb')?.artworkKey, `${'b'.repeat(40)}.png`)
+      checkEqual('online: storing a thumbnail leaves the order alone', repo.list()[0]?.videoId, 'bbbbbbbbbbb')
+
+      checkEqual('online: count agrees with the list', repo.count(), 2)
+      repo.remove(first.id)
+      checkEqual('online: removing a link forgets it', repo.count(), 1)
+      checkEqual('online: clearing removes the rest', repo.clear(), 1)
+      checkEqual('online: the history is empty again', repo.list().length, 0)
+    } finally {
+      handle.close()
+      await rm(root, { recursive: true, force: true }).catch(() => undefined)
     }
   }
 

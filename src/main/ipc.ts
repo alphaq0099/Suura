@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import { IPC } from '@shared/ipc'
 import { clampPlaylistIndexWidth } from '@shared/playlists'
 import type {
@@ -302,11 +302,22 @@ export function registerIpcHandlers(container: AppContainer): void {
     shell.showItemInFolder(track.filePath)
   })
 
-  ipcMain.handle(IPC.libraryArtwork, (_event, trackId: unknown) => container.artwork.resolve(toTrackId(trackId)))
+  ipcMain.handle(IPC.libraryArtwork, (_event, trackId: unknown) => {
+    // A stream row is not a `tracks` row: it carries the negation of its Online
+    // history id, so it resolves through that history — which downloads and caches
+    // the thumbnail the first time a cover is asked for.
+    if (typeof trackId === 'number' && Number.isInteger(trackId) && trackId < 0) {
+      return container.online.artworkFor(-trackId)
+    }
+    return container.artwork.resolve(toTrackId(trackId))
+  })
 
   ipcMain.handle(IPC.mediaResolve, async (_event, input: unknown) => {
     const request = toResolvableTrack(input)
     if (request.sourceKind === 'youtube') {
+      // Resolving is what "playing" means for a link: it is the first moment the
+      // user's intent is unambiguous, so it is when the history row is lifted.
+      if (request.sourceId) container.online.touch(request.sourceId)
       return container.resolvers.resolve(request)
     }
     const track = library.trackById(request.id)
@@ -314,11 +325,33 @@ export function registerIpcHandlers(container: AppContainer): void {
     return container.resolvers.resolve(track)
   })
 
-  ipcMain.handle(IPC.youtubeAddLink, async (_event, input: unknown) => {
+  // ---- online history --------------------------------------------------
+  // A pasted link becomes a row before it is ever played or saved. Resolving it
+  // here is deliberate: the answer warms the cache playback will read, so the
+  // play button right after a paste is instant.
+  ipcMain.handle(IPC.onlineList, () => container.online.list())
+
+  ipcMain.handle(IPC.onlineAddLink, async (_event, input: unknown) => {
     if (typeof input !== 'string') throw new Error('Paste a YouTube video link.')
     const link = input.trim()
     if (link.length === 0 || link.length > 2048) throw new Error('Paste a YouTube video link.')
-    return container.youtube.addLink(link)
+    return container.online.addLink(link)
+  })
+
+  ipcMain.handle(IPC.onlineRemove, (_event, id: unknown) => {
+    container.online.remove(toId(id, 'history'))
+  })
+
+  ipcMain.handle(IPC.onlineClear, () => container.online.clear())
+
+  ipcMain.handle(IPC.clipboardRead, () => clipboard.readText())
+
+  ipcMain.handle(IPC.clipboardWrite, (_event, text: unknown) => {
+    // Through the main process rather than `navigator.clipboard`: the renderer's
+    // async clipboard API needs a permission the app does not ask for, and the
+    // Paste and Copy buttons are the whole point of not doing select-all.
+    if (typeof text !== 'string' || text.length > 4096) return
+    clipboard.writeText(text)
   })
 
   ipcMain.handle(IPC.mediaReportPlay, (_event, trackId: unknown, playedMs: unknown, completed: unknown) => {

@@ -12,6 +12,7 @@ import type {
   EngineStatus,
   LibraryStats,
   ListTracksQuery,
+  OnlineTrack,
   PlaybackSnapshot,
   Playlist,
   PlaylistDetail,
@@ -19,7 +20,6 @@ import type {
   ResolvableTrack,
   SavedPlayback,
   ScanProgress,
-  Track,
   TrackPage
 } from './types'
 
@@ -50,7 +50,12 @@ export const IPC = {
   playbackSave: 'playback:save',
   playbackClear: 'playback:clear',
   mediaResolve: 'media:resolve',
-  youtubeAddLink: 'youtube:add-link',
+  onlineList: 'online:list',
+  onlineAddLink: 'online:add-link',
+  onlineRemove: 'online:remove',
+  onlineClear: 'online:clear',
+  clipboardRead: 'clipboard:read-text',
+  clipboardWrite: 'clipboard:write-text',
   mediaReportPlay: 'media:report-play',
   engineStatus: 'engine:status'
 } as const
@@ -59,6 +64,7 @@ export const IPC = {
 export const IPC_EVENTS = {
   scanProgress: 'event:scan-progress',
   libraryChanged: 'event:library-changed',
+  onlineChanged: 'event:online-changed',
   playerCommand: 'event:player-command'
 } as const
 
@@ -79,6 +85,8 @@ export type PlayerCommand =
 export interface PlayerEvents {
   scanProgress: ScanProgress
   libraryChanged: null
+  /** A link was remembered, removed or played, so the Online history moved. */
+  onlineChanged: null
   playerCommand: PlayerCommand
 }
 
@@ -88,6 +96,7 @@ export type PlayerEventName = keyof PlayerEvents
 export const EVENT_CHANNELS: Record<PlayerEventName, IpcEventChannel> = {
   scanProgress: IPC_EVENTS.scanProgress,
   libraryChanged: IPC_EVENTS.libraryChanged,
+  onlineChanged: IPC_EVENTS.onlineChanged,
   playerCommand: IPC_EVENTS.playerCommand
 }
 
@@ -142,8 +151,22 @@ export interface PlayerApi {
   /** Forgets the saved queue, so the next start is empty. */
   clearPlayback(): void
   resolveSource(track: ResolvableTrack): Promise<ResolvedSource>
-  /** Resolves a pasted YouTube link into a session-only track. */
-  addYoutubeLink(url: string): Promise<Track>
+  /** Every remembered link, newest activity first. */
+  listOnline(): Promise<OnlineTrack[]>
+  /**
+   * Resolves a pasted link, remembers it and returns the history row.
+   *
+   * Resolving takes several seconds, which is why the Online view adds a
+   * placeholder row first and fills it in when this answers.
+   */
+  addOnlineLink(url: string): Promise<OnlineTrack>
+  /** Forgets one remembered link. Nothing on disk is touched. */
+  removeOnline(id: number): Promise<void>
+  /** Forgets every remembered link. Resolves to how many were removed. */
+  clearOnline(): Promise<number>
+  /** The system clipboard text, so the paste button needs no select-all. */
+  readClipboardText(): Promise<string>
+  writeClipboardText(text: string): Promise<void>
   reportPlayback(trackId: number, playedMs: number, completed: boolean): Promise<void>
   getEngineStatus(): Promise<EngineStatus>
   on<E extends PlayerEventName>(event: E, callback: (payload: PlayerEvents[E]) => void): number

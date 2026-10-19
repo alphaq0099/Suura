@@ -1,8 +1,8 @@
 import type { LibraryStats } from '@shared/types'
 import { formatCount } from '@shared/format'
-import { CogIcon, MusicIcon, PlaylistIcon, QueueIcon } from './Icons'
+import { CogIcon, LinkIcon, MusicIcon, PlaylistIcon, QueueIcon } from './Icons'
 
-export type ViewName = 'library' | 'playlists' | 'queue' | 'settings'
+export type ViewName = 'library' | 'online' | 'playlists' | 'queue' | 'settings'
 
 export interface SidebarProps {
   view: ViewName
@@ -10,10 +10,12 @@ export interface SidebarProps {
   queueLength: number
   /** How many playlists exist, or 0 when they have not loaded yet. */
   playlistCount: number
+  /** How many links the Online history remembers. */
+  onlineCount: number
   onSelect: (view: ViewName) => void
 }
 
-export function Sidebar({ view, stats, queueLength, playlistCount, onSelect }: SidebarProps) {
+export function Sidebar({ view, stats, queueLength, playlistCount, onlineCount, onSelect }: SidebarProps) {
   return (
     <nav className="sidebar">
       <div className="brand">
@@ -29,6 +31,17 @@ export function Sidebar({ view, stats, queueLength, playlistCount, onSelect }: S
         <MusicIcon />
         <span>Library</span>
         {stats ? <span className="nav-count">{formatCount(stats.tracks)}</span> : null}
+      </button>
+
+      <button
+        type="button"
+        className={view === 'online' ? 'nav-item active' : 'nav-item'}
+        onClick={() => onSelect('online')}
+        title="Links you have pasted, streamed from YouTube"
+      >
+        <LinkIcon />
+        <span>Online</span>
+        {onlineCount > 0 ? <span className="nav-count">{formatCount(onlineCount)}</span> : null}
       </button>
 
       <button
@@ -69,7 +82,7 @@ export function Sidebar({ view, stats, queueLength, playlistCount, onSelect }: S
           <span>Albums</span>
           <strong>{stats ? formatCount(stats.albums) : '--'}</strong>
         </div>
-        <p className="sidebar-note">Local library · streaming engine lands in M3</p>
+        <p className="sidebar-note">Local library · pasted links stream through yt-dlp</p>
       </div>
     </nav>
   )

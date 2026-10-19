@@ -4,10 +4,11 @@ import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { app, BrowserWindow, net } from 'electron'
+import { app, BrowserWindow, clipboard, net } from 'electron'
 import { probeExecutable } from '@engine/sidecar/locate'
 import { buildMediaUrl } from '@shared/media-url'
 import { buildStreamUrl } from '@shared/stream-url'
+import { youtubeWatchUrl } from '@shared/youtube'
 import type { AppContainer } from './services/container'
 
 const execFileAsync = promisify(execFile)
@@ -686,8 +687,60 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     record(fullPlayer.closingAnimated, 'closing the player window plays an exit animation')
     record(fullPlayer.closedByEscape, 'Escape closes the player window')
 
-    // ---- 10. layout: no view may overflow sideways ---------------------
-    // The window resizes down to 940x580, and both views have to fit at any size
+    // The Online view is a layout too, so its history is seeded before the size
+    // sweep: an empty state fits any window and would prove nothing.
+    //
+    // Two rows are given a real cached cover — the fixture drawn above — so the
+    // row artwork path is exercised with no network. The third has none, and is
+    // given an id that is not a video id on purpose, so asking for its cover
+    // resolves to nothing instead of reaching out to YouTube's image CDN.
+    const onlineSeed = Date.now()
+    if (container.onlineRepo.count() === 0) {
+      const seededArtwork = await container.artwork.cacheRemote(await readFile(coverPath), 'image/png')
+      container.onlineRepo.upsert(
+        {
+          videoId: 'selftestaa1',
+          title: 'Online Tone One',
+          artist: 'Selftest Streamer',
+          album: null,
+          durationMs: 210_000,
+          sourceUrl: youtubeWatchUrl('selftestaa1'),
+          artworkKey: seededArtwork
+        },
+        onlineSeed
+      )
+      container.onlineRepo.upsert(
+        {
+          videoId: 'selftestbb2',
+          title: 'Online Tone Two with a deliberately long name that has to truncate instead of widening its row',
+          artist: 'Selftest Streamer',
+          album: null,
+          durationMs: 90_000,
+          sourceUrl: youtubeWatchUrl('selftestbb2'),
+          artworkKey: seededArtwork
+        },
+        onlineSeed + 1000
+      )
+      container.onlineRepo.upsert(
+        {
+          videoId: 'not-a-video-id',
+          title: 'Online Tone Three',
+          artist: null,
+          album: null,
+          durationMs: null,
+          sourceUrl: youtubeWatchUrl('not-a-video-id'),
+          artworkKey: null
+        },
+        onlineSeed - 1000
+      )
+    }
+    record(
+      container.onlineRepo.count() === 3,
+      'online: the history is seeded before the layout sweep',
+      container.onlineRepo.count()
+    )
+
+    // ---- 10. layout: no view may overflow sideways ---------------------    // The window resizes down to 940x580, and both views have to fit at any size
     // in between without a horizontal scrollbar. Nothing else catches this class
     // of bug: the app looks fine until a user drags the window edge, and then the
     // cards slide out of view. Measuring the DOM is the only honest check.
@@ -698,7 +751,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       window.setSize(width, height)
       await delay(250)
 
-      const showView = async (label: 'Library' | 'Settings' | 'Queue'): Promise<void> => {
+      const showView = async (label: 'Library' | 'Online' | 'Settings' | 'Queue'): Promise<void> => {
         await evaluate(
           window,
           `(async () => {
@@ -732,6 +785,14 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         queue.hasQueue && queue.main === 0 && queue.bar === 0 && queue.page === 0,
         `queue view fits with no horizontal overflow at ${width}x${height}`,
         queue
+      )
+
+      await showView('Online')
+      const onlineLayout = await evaluate<LayoutProbe>(window, LAYOUT_PROBE)
+      record(
+        onlineLayout.hasOnline && onlineLayout.main === 0 && onlineLayout.online === 0 && onlineLayout.bar === 0 && onlineLayout.page === 0,
+        `online view fits with no horizontal overflow at ${width}x${height}`,
+        onlineLayout
       )
 
       // The full-window player has to fit as well. It is the only view with a
@@ -1733,21 +1794,37 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     )
     record(lists.deleted && lists.emptyAfterDelete, 'deleting a playlist needs a confirmation and removes it')
 
-    // ---- 14b. the play-a-link dialog -------------------------------------
-    // Only the validation path is checked. Resolving a real link would need the
-    // network and a 7-10 s sidecar run, which belongs in the M3 probe, not in a
-    // 90 s UI test.
-    const linkDialog = await evaluate<{
-      opened: boolean
-      focused: boolean
-      submitDisabled: boolean
-      stillOpen: boolean
-      errorText: string
-      closedOnEscape: boolean
+    // ---- 14b. the Online view --------------------------------------------
+    // Only the paths that need no network are driven: pasting, inline
+    // validation and the history actions. Resolving a real link costs a 7-10 s
+    // sidecar run, which belongs in the M3 probe, not in a 90 s UI test.
+    //
+    // The rows were seeded before section 10 so the layout sweep could measure a
+    // populated list; here they are read, acted on and finally cleared, which is
+    // also where the empty state is checked.
+    clipboard.writeText('https://www.youtube.com/watch?v=selftestaa1')
+    const onlineView = await evaluate<{
+      rows: number
+      firstTitle: string
+      firstArtist: string
+      firstDuration: string
+      sidebarCount: string
+      rowCovers: number
+      rowCoverLoaded: boolean
+      rowPlaceholders: number
+      pasteFilled: string
+      playDisabled: boolean
+      invalidError: string
+      pendingRows: number
+      menuItems: string
+      saveDisabled: boolean
+      removedRows: number
+      clearedRows: number
+      emptyAfterClear: boolean
     }>(
       window,
       `(async () => {
-         const out = { opened: false, focused: false, submitDisabled: false, stillOpen: false, errorText: '', closedOnEscape: false }
+         const out = { rows: 0, firstTitle: '', firstArtist: '', firstDuration: '', sidebarCount: '', rowCovers: 0, rowCoverLoaded: false, rowPlaceholders: 0, pasteFilled: '', playDisabled: false, invalidError: '', pendingRows: 0, menuItems: '', saveDisabled: false, removedRows: -1, clearedRows: -1, emptyAfterClear: false }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (s) => document.querySelector(s)
          const pickAll = (s) => [...document.querySelectorAll(s)]
@@ -1765,42 +1842,117 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            el.dispatchEvent(new Event('input', { bubbles: true }))
            return true
          }
-         const buttonWith = (scope, label) => pickAll(scope + ' button').find((el) => text(el).trim().indexOf(label) === 0)
+         const buttonWith = (label) => pickAll('.online-bar button').find((el) => text(el).trim().indexOf(label) === 0)
 
+         // Leave and come back so the view mounts fresh and reads the seeded list.
          nav('Library')
-         await sleep(450)
-         const opener = buttonWith('.view-header', 'Play link')
-         out.opened = Boolean(opener)
-         press(opener)
-         await sleep(350)
+         await sleep(400)
+         nav('Online')
+         await sleep(600)
 
-         const input = pick('.play-link-dialog input')
-         const submit = pick('.play-link-dialog button[type="submit"]')
-         out.focused = document.activeElement === input
-         out.submitDisabled = Boolean(submit && submit.disabled)
+         out.rows = pickAll('.online-item').length
+         out.firstTitle = text(pick('.online-title')).trim()
+         out.firstArtist = text(pick('.online-artist')).trim()
+         out.firstDuration = text(pick('.online-time')).trim()
+         const onlineNav = pickAll('.nav-item').find((el) => (el.textContent || '').trim().startsWith('Online'))
+         out.sidebarCount = text(onlineNav ? onlineNav.querySelector('.nav-count') : null).trim()
 
-         setInput(input, 'not a youtube link')
+         // A row draws the cover already on its entry; one with no cover resolves
+         // it through the negative-id artwork lookup. The image only counts once
+         // the browser has actually decoded it.
+         const covers = () => pickAll('.online-art[data-artwork="ready"]')
+         for (let i = 0; i < 20 && covers().length === 0; i += 1) await sleep(150)
+         out.rowCovers = covers().length
+         out.rowCoverLoaded = covers().length > 0 && covers()[0].naturalWidth > 0
+         out.rowPlaceholders = pickAll('.online-art[data-artwork="none"]').length
+
+         const play = buttonWith('Play now')
+         out.playDisabled = Boolean(play && play.disabled)
+
+         // The Paste button reads the real system clipboard through the bridge.
+         press(pick('.online-paste'))
+         await sleep(500)
+         out.pasteFilled = (pick('.online-input input') || {}).value || ''
+
+         // A link that is not YouTube is refused inline, before any request.
+         setInput(pick('.online-input input'), 'not a youtube link')
+         await sleep(200)
+         press(play)
+         await sleep(700)
+         out.invalidError = text(pick('.banner')).trim()
+         out.pendingRows = pickAll('.online-item.pending').length
+
+         // Right-click a row: Copy and the (disabled) Save live in the menu.
+         const jump = pick('.online-jump')
+         if (jump) jump.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 260, clientY: 260 }))
          await sleep(250)
-         press(submit)
-         await sleep(900)
-         out.stillOpen = Boolean(pick('.play-link-dialog'))
-         out.errorText = text(pick('.play-link-dialog .form-error')).trim()
-
-         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+         const items = pickAll('.context-menu .context-item')
+         out.menuItems = items.map((el) => text(el).trim()).join(' | ')
+         const save = items.find((el) => text(el).indexOf('Save to library') === 0)
+         out.saveDisabled = Boolean(save && save.disabled)
+         press(items.find((el) => text(el).trim() === 'Copy link'))
          await sleep(300)
-         out.closedOnEscape = !pick('.play-link-dialog')
+
+         // Remove one row with its own button, then clear the rest.
+         press(pickAll('.online-item button[aria-label^="Remove"]')[0])
+         await sleep(600)
+         out.removedRows = pickAll('.online-item').length
+
+         press(pick('.view-header .link-button'))
+         await sleep(250)
+         press(pick('.view-header .link-button'))
+         await sleep(700)
+         out.clearedRows = pickAll('.online-item').length
+         out.emptyAfterClear = Boolean(pick('.empty-state'))
          return out
        })()`
     )
-    record(linkDialog.opened, 'the library offers a play-a-link entry point')
-    record(linkDialog.focused, 'the link dialog focuses its input')
-    record(linkDialog.submitDisabled, 'the Play button is disabled before a link is typed')
+    record(onlineView.rows === 3, 'the Online view lists the remembered links', onlineView.rows)
+    record(onlineView.firstTitle.indexOf('Online Tone Two') === 0, 'the newest link is listed first', onlineView.firstTitle)
     record(
-      linkDialog.stillOpen && linkDialog.errorText.toLowerCase().includes('youtube'),
-      'an invalid link shows an inline error instead of closing',
-      linkDialog.errorText || 'no error text'
+      onlineView.firstArtist === 'Selftest Streamer',
+      'the Online view shows the streaming artist',
+      onlineView.firstArtist
     )
-    record(linkDialog.closedOnEscape, 'Escape closes the link dialog')
+    record(onlineView.firstDuration === '1:30', 'the Online view shows the duration', onlineView.firstDuration)
+    record(onlineView.sidebarCount === '3', 'the sidebar counts the remembered links', onlineView.sidebarCount)
+    record(
+      onlineView.rowCovers === 2 && onlineView.rowCoverLoaded && onlineView.rowPlaceholders === 1,
+      "a remembered link shows its cover, and one with none shows the placeholder",
+      `${onlineView.rowCovers} decoded covers, ${onlineView.rowPlaceholders} placeholders`
+    )
+    record(onlineView.playDisabled, 'Play now is disabled until a link is typed')
+    record(
+      onlineView.pasteFilled === 'https://www.youtube.com/watch?v=selftestaa1',
+      'the Paste button fills the field from the system clipboard',
+      onlineView.pasteFilled
+    )
+    record(
+      onlineView.invalidError.toLowerCase().includes('youtube') && onlineView.pendingRows === 0,
+      'a link that is not YouTube shows an inline error and adds no row',
+      onlineView.invalidError || 'no error text'
+    )
+    record(
+      onlineView.menuItems.indexOf('Play') === 0 &&
+        onlineView.menuItems.includes('Add to queue') &&
+        onlineView.menuItems.includes('Copy link') &&
+        onlineView.menuItems.includes('Remove from history'),
+      'a right-click menu offers the row actions',
+      onlineView.menuItems
+    )
+    record(onlineView.saveDisabled, 'Save to library is present but disabled until M4')
+    record(onlineView.removedRows === 2, 'a row can be removed from the history', onlineView.removedRows)
+    record(
+      onlineView.clearedRows === 0 && onlineView.emptyAfterClear,
+      'clearing the history needs a confirmation and empties it',
+      onlineView.clearedRows
+    )
+    const copiedLink = await clipboard.readText()
+    record(
+      copiedLink === 'https://www.youtube.com/watch?v=selftestbb2',
+      'Copy link puts the canonical URL on the clipboard',
+      copiedLink
+    )
 
     // ---- 15. resuming ----------------------------------------------------
     // A restart cannot be faked from inside the page: the queue lives in a hook,
@@ -1949,6 +2101,8 @@ interface LayoutProbe {
   hasCards: boolean
   hasTable: boolean
   hasQueue: boolean
+  online: number
+  hasOnline: boolean
   hasNowPlaying: boolean
 }
 
@@ -1972,6 +2126,8 @@ const LAYOUT_PROBE = `(() => {
     hasCards: Boolean(document.querySelector('.cards')),
     hasTable: Boolean(document.querySelector('.list-scroll') && document.querySelector('.track-head')),
     hasQueue: Boolean(document.querySelector('.queue-list')),
+    online: overflow('.online-list'),
+    hasOnline: Boolean(document.querySelector('.online-list')),
     hasNowPlaying: Boolean(document.querySelector('.now-playing')),
     offenders: (() => {
       // Elements whose right edge sits past the view's content box. This is what

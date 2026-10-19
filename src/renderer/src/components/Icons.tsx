@@ -291,3 +291,45 @@ export function ChevronDownIcon({ size = 18 }: IconProps) {
     </svg>
   )
 }
+
+/** The paste button: a clipboard, so it reads as "take what is copied". */
+export function ClipboardIcon({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <path d="M9 4.5H7.5A1.5 1.5 0 0 0 6 6v13a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 18 19V6a1.5 1.5 0 0 0-1.5-1.5H15" />
+      <rect x="9" y="2.8" width="6" height="3.4" rx="1.2" />
+    </svg>
+  )
+}
+
+/** Copying a link back out of the history. */
+export function CopyIcon({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M15 6.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h.5" />
+    </svg>
+  )
+}
+
+/** A down arrow into a tray: keeping a link in the local library (M4). */
+export function DownloadIcon({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <path d="M12 4v10" />
+      <path d="m8 10.5 4 4 4-4" />
+      <path d="M5 18.5h14" />
+    </svg>
+  )
+}
+
+/** The overflow menu on a row. */
+export function MoreIcon({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <circle cx="5.5" cy="12" r="1.6" />
+      <circle cx="12" cy="12" r="1.6" />
+      <circle cx="18.5" cy="12" r="1.6" />
+    </svg>
+  )
+}

@@ -1,13 +1,13 @@
 # Player
 
-A desktop music player for Windows. It plays from your **local library**, and the first slice of M3 can stream a YouTube
-link you paste in through a yt-dlp sidecar. Caching and optional downloads come next.
+A desktop music player for Windows. It plays from your **local library**, and streams YouTube links you paste in through
+a yt-dlp sidecar. Caching and optional downloads come next.
 
 The full plan lives in [`ROADMAP.md`](./ROADMAP.md). This README covers what is **actually built right now**.
 
 ---
 
-## Status: M1 complete, M3 streaming in progress
+## Status: M1 complete, M3 streaming (Online view) working
 
 Working today:
 
@@ -46,18 +46,25 @@ Working today:
   no format column — and drops the album or the artist as its pane gets narrower rather than squeezing the title.
 - **It picks up where it left off**: the queue, the track and the position are written down as they play and put back
   on the next start — paused, at the same spot, with tracks that have since been deleted left out.
-- **Play a YouTube link** (first M3 slice): *Play link* in the library header opens a small dialog. A pasted
-  `youtube.com` / `youtu.be` link is resolved by the `yt-dlp` sidecar, and playback goes through an internal
-  `player-stream://` proxy that forwards `Range` and the signed URL's headers. The first play costs 7–10 s because the
-  sidecar starts for each resolve; the second play of the same link in a session is instant, and a URL that expires is
-  re-resolved once if the CDN answers 403. Stream links are session-only — nothing is added to the library — and their
-  queue is not restored after a restart yet.
+- **The Online view** (M3): a sidebar entry under Library where a pasted YouTube link becomes a row that stays. Paste
+  from the clipboard with the button in the field, then **Add to queue** or **Play now**. Resolving takes 7–10 s, so a
+  submitted link appears as a *Resolving…* row at once and fills in — or reports *Could not play this link* with Retry —
+  instead of blocking on a dialog. Rows are newest-activity first, and playing one lifts it; each row has artwork, title,
+  artist, album and duration, a right-click (or ⋯) menu with Play, Add to queue, Copy link and Remove, and playing a row
+  queues it together with the rows below it so Next walks the list. The history survives a restart even after the audio
+  cache is cleared — it is a list of links, not files. **Save to library** is shown but disabled until the download path
+  lands in M4.
+- **Streaming playback** (M3): a resolved link plays through an internal `player-stream://` proxy that forwards `Range`
+  and the signed URL's headers. The first play costs 7–10 s because the sidecar starts for each resolve; the second play
+  of the same link in a session is instant, and a URL that expires is re-resolved once if the CDN answers 403. The player
+  bar marks a stream with a **Streaming** badge. Nothing is added to the library, and a stream queue is not restored
+  after a restart.
 - Settings persist to `config.json`. The engine settings now drive the resolver (binary folder, quality tier); the
   retention settings are stored and validated, and the cache/download path they describe arrives in M4.
 - The engine layer reports whether `yt-dlp` and `ffmpeg` are present and runnable, and the resolver uses them.
 
 Not built yet (deliberately): gapless playback, SMTC / tray icon, YouTube search or catalogue browsing, caching,
-downloads (M4), packaging, playlist import/export and smart playlists.
+downloads (M4), packaging, YouTube playlist/album import, playlist import/export and smart playlists.
 
 ---
 
@@ -109,9 +116,9 @@ Five independent checks, from cheapest to most convincing:
 | Command | What it proves |
 |---|---|
 | `npm run typecheck` | Both TypeScript projects (`node` and `web`) compile under `strict` + `noUncheckedIndexedAccess`. |
-| `npm run smoke` | **209 checks** against the real core: builds a throwaway library with ffmpeg, indexes it, rescans it, searches it, sorts and pages it, extracts cover art from a real file, resolves a playable URL, exercises range parsing, queue rules and display formatting, deletes a file to prove pruning, and watches a real folder to prove that a file appearing or disappearing triggers an incremental scan by itself. It also validates YouTube link parsing and the sidecar argument policy, exercises the stream proxy against a local HTTP server (full and ranged requests, forwarded headers, a 403 retry, a second 403 and unknown tokens), and proves the resolver cache answers a second play without a second sidecar. No Electron involved. |
+| `npm run smoke` | **235 checks** against the real core: builds a throwaway library with ffmpeg, indexes it, rescans it, searches it, sorts and pages it, extracts cover art from a real file, resolves a playable URL, exercises range parsing, queue rules and display formatting, deletes a file to prove pruning, and watches a real folder to prove that a file appearing or disappearing triggers an incremental scan by itself. It also validates YouTube link parsing, the JPEG thumbnail candidates and the sidecar argument policy, exercises the stream proxy against a local HTTP server (full and ranged requests, forwarded headers, a 403 retry, a second 403 and unknown tokens), proves the resolver cache answers a second play without a second sidecar, and drives the Online history repository against a real database file (dedupe, refresh, ordering by added and played activity, and the row-to-stream-track mapping). No Electron involved. |
 | `npm run runtime:check` | The three runtime bets still hold **inside Electron**: `node:sqlite` exists, FTS5 works, and `music-metadata` (ESM-only) loads from CommonJS. Run this after every Electron upgrade. |
-| `npm run selftest` | **127 end-to-end checks**: launches the real app against a throwaway data directory, confirms React mounted, indexes two generated audio files (one with an embedded cover) *through the IPC bridge*, then **actually decodes, plays and seeks one** through the `player-media://` protocol. It drives the real UI — a click selects, a double click plays, the queue view lists the queue, the repeat/shuffle buttons cycle, clicking the now-playing area opens the full-window player (and asserts its backdrop really is the blurred, brightened cover with no hard separator over the controls), and Escape closes it **through its exit animation**. Clicking the queue button slides the panel in, and the panel's own rows, scroll fit and gradient shadow are checked before a press on the black space or the artwork shuts it again (a press inside it does not), and Escape unwinds one layer at a time. It then changes the artwork and click-behaviour settings through the actual `<select>` elements in Settings and measures what the DOM did with them — the box takes a 3:2 cover's proportions, the size presets resize it, and a single click plays or selects depending on what the setting says. It seeks the player bar's scrubber twice in a row, paused and playing, and asserts the bar shows the position just chosen rather than the one before it. It also checks that the player bar's ambience spans the whole bar rather than the now-playing tile, and clicks the volume button to prove it mutes and restores, then rolls the wheel over the control to check that one notch moves the level five percent, that it stops at the ends of the scale, and that the scroll is swallowed rather than passed on. Then it copies a real file into the watched folder and deletes it again, asserting that the library indexed and then forgot it with no user action at all, and that switching watching off really does stop it. Then it creates a playlist through the form, adds tracks from the library's selection bar and from a row's context menu, reorders it with Alt+Down and a synthesized drag (with its drop line), removes a row, plays it, renames it, saves the queue as a playlist from the player window, and deletes it. At 1200x780 — narrow enough that the playlist's own pane has only ~670px once the sidebar and the index have taken their share — it measures the title column and every visible header label, proving that no label paints over its neighbour, that the artist is still shown and Format is gone, then drags the splitter 64px, presses ArrowLeft twice, and asserts the width that lands in `config.json` is exactly the one on screen. It also resizes the window to 1200x780 and 940x580 and asserts that **no view, including the player window, overflows sideways**, and that the playlist's row buttons stay inside its card - the only thing that catches a layout that slides out of the window. Finally it reloads the whole renderer, which throws away every queue held in memory, and asserts that the track, the queue and the position come back from disk, paused. It also opens the play-a-link dialog, proves the Play button stays disabled until something is typed, submits an invalid link and asserts the inline error keeps the dialog open, then closes it with Escape. Last, it registers a token in the real stream proxy against a local HTTP server and plays, seeks and pauses that URL through `player-stream://` in the production build — the check that the scheme, the proxy, the CSP and the `<audio>` element all agree. Exits non-zero on failure. |
+| `npm run selftest` | **139 end-to-end checks**: launches the real app against a throwaway data directory, confirms React mounted, indexes two generated audio files (one with an embedded cover) *through the IPC bridge*, then **actually decodes, plays and seeks one** through the `player-media://` protocol. It drives the real UI — a click selects, a double click plays, the queue view lists the queue, the repeat/shuffle buttons cycle, clicking the now-playing area opens the full-window player (and asserts its backdrop really is the blurred, brightened cover with no hard separator over the controls), and Escape closes it **through its exit animation**. Clicking the queue button slides the panel in, and the panel's own rows, scroll fit and gradient shadow are checked before a press on the black space or the artwork shuts it again (a press inside it does not), and Escape unwinds one layer at a time. It then changes the artwork and click-behaviour settings through the actual `<select>` elements in Settings and measures what the DOM did with them — the box takes a 3:2 cover's proportions, the size presets resize it, and a single click plays or selects depending on what the setting says. It seeks the player bar's scrubber twice in a row, paused and playing, and asserts the bar shows the position just chosen rather than the one before it. It also checks that the player bar's ambience spans the whole bar rather than the now-playing tile, and clicks the volume button to prove it mutes and restores, then rolls the wheel over the control to check that one notch moves the level five percent, that it stops at the ends of the scale, and that the scroll is swallowed rather than passed on. Then it copies a real file into the watched folder and deletes it again, asserting that the library indexed and then forgot it with no user action at all, and that switching watching off really does stop it. Then it creates a playlist through the form, adds tracks from the library's selection bar and from a row's context menu, reorders it with Alt+Down and a synthesized drag (with its drop line), removes a row, plays it, renames it, saves the queue as a playlist from the player window, and deletes it. At 1200x780 — narrow enough that the playlist's own pane has only ~670px once the sidebar and the index have taken their share — it measures the title column and every visible header label, proving that no label paints over its neighbour, that the artist is still shown and Format is gone, then drags the splitter 64px, presses ArrowLeft twice, and asserts the width that lands in `config.json` is exactly the one on screen. It also resizes the window to 1200x780 and 940x580 and asserts that **no view, including the player window, overflows sideways**, and that the playlist's row buttons stay inside its card - the only thing that catches a layout that slides out of the window. Finally it reloads the whole renderer, which throws away every queue held in memory, and asserts that the track, the queue and the position come back from disk, paused. It also drives the Online view: seeds a history, checks the rows, artist, duration and sidebar count, reads the real clipboard through the Paste button, refuses a link that is not YouTube with no request sent, opens a row's right-click menu (Play, Add to queue, Copy link, Remove, and a disabled Save to library), removes a row, clears the history through its confirmation, and asserts Copy link put the canonical `watch?v=` URL on the clipboard. Last, it registers a token in the real stream proxy against a local HTTP server and plays, seeks and pauses that URL through `player-stream://` in the production build - the check that the scheme, the proxy, the CSP and the `<audio>` element all agree. Exits non-zero on failure. |
 
 
 The self-test is the one that matters most. A renderer that fails to mount, or a protocol handler that refuses every
@@ -179,6 +186,23 @@ playback; the token stays the same, which is what makes that retry invisible to 
 `taskkill /T` stop a hung sidecar. `--ignore-config` is not optional: a user's `~/.yt-dlp.conf` can add cookies, archive
 files and output templates, any of which changes what the app does.
 
+### How a pasted link becomes history
+
+The Online view is a list of *links*, not of files. Pasting one calls `online:add-link`, which resolves it (warming the
+cache playback will read) and writes a row to the `online_tracks` table: the video id, the metadata yt-dlp reported, the
+canonical `watch?v=` URL and two timestamps. Identity is the video id, so pasting the same link again refreshes one row
+instead of adding another. Ordering is "most recent activity first", where activity is either being added or being played
+— which is why `media:resolve` touches the row, so the row a user just played rises to the top. Because the row is only a
+link, the history survives a restart (and an audio-cache wipe); nothing here is a `Track` and nothing is in the library.
+`onlineEntryToTrack` (`src/shared/online.ts`) turns a row into a session track with a *negative* id when it is played,
+keeping it out of the tracks table by construction. Saving a row into the library is the M4 download path; the row action
+is present and disabled until then.
+
+The cover is the exception to "write it all at paste time": the row is written with no artwork key, and the first time it
+is drawn — in the list or the player bar — its negative id is looked up through the Online history, which derives the
+still from the video id, downloads it, caches it and writes the key back. A paste therefore never waits on an image CDN,
+and a row added while thumbnails could not be decoded repairs itself on the next draw.
+
 `webPreferences` sets `contextIsolation: true`, `nodeIntegration: false`, and the built HTML ships a strict CSP
 (injected at build time only, because Vite's dev server needs inline scripts). **Every custom scheme the UI loads a
 resource from must be listed in that CSP** — a missing entry blocks the request before it ever reaches the protocol
@@ -201,6 +225,13 @@ renderer  ◀── player-art://art/<key>  ──▶ protocol.handle → the by
 The database column behind it has three states, and all three are load-bearing: `NULL` (never looked at, so the renderer
 knows to ask), `''` (looked at, no cover — a negative cache, so an album without art is not re-parsed forever), and a
 filename (the answer). An album's cover is extracted once and reused by every track on it.
+
+A streamed link is not in the `tracks` table, so its cover cannot be derived from a file. A session track carries the
+negation of its Online history id instead, and `getArtwork` sends a negative id to the Online service, which fetches the
+still for that video id and caches it exactly like an embedded cover. It asks for **JPEG**, not the `vi_webp` still that
+`yt-dlp` reports: Electron's `nativeImage` returns an *empty* image for WebP rather than an error, which is why streamed
+rows silently had no artwork at first. The largest 16:9 still is preferred, with `mqdefault.jpg` as the fallback, and a
+missing `maxresdefault.jpg` is checked by status because YouTube answers it with a decodable 120×90 placeholder.
 
 ### Storage
 
@@ -233,6 +264,9 @@ src/
     artwork-service.ts  extract → resize → cache covers, deduped per album
     media-keys.ts       global media-key shortcuts → playerCommand events
     selftest.ts         the end-to-end harness behind `npm run selftest`
+    stream-protocol.ts  the player-stream:// handler
+    online-service.ts   the pasted-link history (resolve + remember)
+    youtube-service.ts  resolver + stream proxy, registered with the registry
     broadcast.ts        main → renderer event fan-out
     services/container.ts   the whole dependency graph in one place
   preload/index.ts      contextBridge surface (the only way to reach main)
@@ -245,11 +279,13 @@ src/
   engine/
     resolver.ts         MediaResolver interface + registry
     local-file-resolver.ts
-    sidecar/            locating and version-probing yt-dlp / ffmpeg
+    youtube-resolver.ts link validation, resolve + session cache
+    stream-proxy.ts     token registry, range/header forwarding, one-shot re-resolve
+    sidecar/            locating and version-probing yt-dlp / ffmpeg; the yt-dlp client
   renderer/src/
     App.tsx             composition root
-    components/         Sidebar, LibraryView, TrackList, QueueView, SettingsView, PlayerBar, NowPlayingView, SeekBar, ArtworkImage, Icons
-    hooks/              useSettings, useLibrary, usePlayer, useArtwork, useKeyboardShortcuts
+    components/         Sidebar, LibraryView, TrackList, OnlineView, QueueView, SettingsView, PlayerBar, NowPlayingView, SeekBar, ArtworkImage, Icons
+    hooks/              useSettings, useLibrary, useOnline, usePlayer, useArtwork, useKeyboardShortcuts
   shared/               types, the IPC contract and pure helpers (queue rules, URLs, ranges, formatting)
 tools/
   smoke.ts              core smoke test (real files, no Electron)
@@ -418,10 +454,12 @@ docs/adr/               architecture decision records
 ## Known gaps
 
 - No playlist import/export (M3U/JSON, M6), no smart playlists (M5), and no per-playlist retention override.
-- Stream links are session-only: playing one leaves the last local queue in the resume slot rather than a queue that
-  cannot be rebuilt. YouTube tracks join the library in M5; caching and downloading are M4.
-- Resolving has no Cancel button. Closing the dialog discards the result, but the sidecar finishes in the background and
-  warms the cache, so retrying the same link is instant.
+- YouTube links live in the Online history rather than the library: a play leaves the last local queue in the resume slot
+  rather than a queue that cannot be rebuilt. YouTube playlist/album import is next, then caching and downloading (M4).
+- Stream links cannot be saved yet. The *Save to library* row action is shown disabled on purpose: it belongs with the
+  downloader, and a button that quietly streamed instead would be worse than one that is honestly unavailable.
+- Resolving has no Cancel button. Dismissing the *Resolving…* row discards the result, but the sidecar finishes in the
+  background and warms the cache, so retrying the same link is instant.
 - The first play of a link takes 7–10 s because yt-dlp is started per resolve. A resident sidecar (or resolving on
   selection) is the next step if that is too slow; the numbers are in the sample note.
 - No YouTube search or catalogue browsing, by design (M5 is a link/playlist import, not a browser).
@@ -441,8 +479,11 @@ docs/adr/               architecture decision records
 
 ## Next steps
 
-1. M4 (retention: cache / keep) is the next milestone. The stream path is in place, so caching has somewhere to hook in.
-2. M3's exit criteria still need a 50-link run and a latency decision: 20/20 resolved, but at a median of 8.8 s. See
+1. YouTube playlist / album import: a `--flat-playlist` fetch (one process, capped at 200 entries) shown as an inline
+   strip, with `v=…&list=…` playing the video by default. Metadata only; audio resolves lazily on play.
+2. M4 (retention: cache / keep) follows. The stream path is in place, so caching has somewhere to hook in, and *Save to
+   library* turns into a real download that tags and indexes a row into the library with its `sourceId` kept.
+3. M3's exit criteria still need a 50-link run and a latency decision: 20/20 resolved, but at a median of 8.8 s. See
    [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-dlp-sample.md) and the first spike in
    [`docs/notes/yt-dlp-spike.md`](./docs/notes/yt-dlp-spike.md).
-3. M0 leftovers: the Downloads wireframe (it arrives with M4) and the remaining 30 links of the 50-link exit check.
+4. M0 leftovers: the Downloads wireframe (it arrives with M4) and the remaining 30 links of the 50-link exit check.

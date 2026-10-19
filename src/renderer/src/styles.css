@@ -1267,12 +1267,57 @@ input[type='radio'] {
   border-radius: 5px;
 }
 
+.player-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .player-title {
   font-size: 13.5px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+}
+
+/* The one badge in the bar: a link is playing from a remote CDN, and unlike a
+   local file it is not on this machine. */
+.stream-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 7px 1px 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--accent-strong);
+  background: rgb(108 140 255 / 14%);
+  border: 1px solid rgb(108 140 255 / 30%);
+  border-radius: 999px;
+}
+
+.stream-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-strong);
+  animation: stream-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes stream-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.78);
+  }
 }
 
 .player-subtitle {
@@ -2420,68 +2465,207 @@ input[type='radio'] {
   color: var(--text);
 }
 
-/* ---------- play-a-link dialog ---------- */
+/* ---------- online ---------- */
 
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgb(6 7 12 / 70%);
+.online-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
 }
 
-.play-link-dialog {
-  width: min(440px, 100%);
-  display: grid;
-  gap: 12px;
-  padding: 20px;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: 0 24px 64px rgb(0 0 0 / 60%);
-}
-
-.play-link-dialog h2 {
-  margin: 0;
-  font-size: 16px;
-}
-
-.play-link-dialog p {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--text-dim);
-}
-
-.play-link-dialog input[type='text'] {
-  width: 100%;
+/* The link field. The Paste button sits inside the box, at the right corner, so
+   "paste" reads as part of typing the link rather than a second action. */
+.online-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 320px;
   min-width: 0;
-  padding: 9px 11px;
-  font: inherit;
-  color: var(--text);
+  padding: 0 6px 0 11px;
+  height: 38px;
   background: #10121b;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  color: var(--text-faint);
 }
 
-.play-link-dialog input[type='text']:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+.online-input:focus-within {
+  border-color: var(--accent);
 }
 
-.play-link-dialog input[type='text']:disabled {
+.online-input input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: none;
+}
+
+.online-input input:focus-visible {
+  outline: none;
+}
+
+.online-input input:disabled {
   opacity: 0.6;
 }
 
-.play-link-dialog .form-error {
-  color: #ffbcc0;
+.online-actions-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.dialog-actions {
+.online-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  /* Without this the grid stretches the rows to fill the view. */
+  align-content: start;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #12141d;
+  overflow: hidden;
+}
+
+.online-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-bottom: 1px solid #1b1e2b;
+}
+
+.online-item:last-child {
+  border-bottom: none;
+}
+
+.online-item.current {
+  background: rgb(108 140 255 / 12%);
+}
+
+.online-jump {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 0.7fr) 52px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+button.online-jump:hover {
+  background: var(--bg-hover);
+}
+
+.online-art-cell {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 2px;
+  align-items: center;
+  justify-content: center;
+}
+
+.online-art {
+  flex: none;
+  border-radius: 5px;
+}
+
+.online-title,
+.online-artist,
+.online-album,
+.online-time {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.online-title {
+  font-size: 13px;
+}
+
+.online-artist,
+.online-album {
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+.online-time {
+  font-size: 12px;
+  color: var(--text-faint);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.online-item.current .online-title {
+  color: var(--accent-strong);
+}
+
+.online-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 8px;
+}
+
+.online-actions button {
+  flex: none;
+}
+
+/* The row that exists before its link has been resolved. It is a placeholder,
+   not a control, so it has no hover and is not a button. */
+.online-pending-body {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 8px;
+}
+
+.online-pending-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.online-sub {
+  font-size: 12px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.online-item.pending {
+  background: rgb(108 140 255 / 6%);
+}
+
+.online-item.pending.failed {
+  background: rgb(255 107 114 / 8%);
+}
+
+.online-item.pending.failed .online-sub {
+  color: var(--danger);
+}
+
+/* Below this width the artist and album columns are the first to go: the title
+   and the actions are what the row is for. */
+@media (max-width: 900px) {
+  .online-jump {
+    grid-template-columns: 30px minmax(0, 1fr) 52px;
+  }
+
+  .online-artist,
+  .online-album {
+    display: none;
+  }
 }

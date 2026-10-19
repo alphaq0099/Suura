@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AppPaths, AppSettings, DeepPartial, EngineStatus, Track } from '@shared/types'
+import type { AppPaths, AppSettings, DeepPartial, EngineStatus } from '@shared/types'
 import { api, messageOf } from './api'
 import { LibraryView } from './components/LibraryView'
 import { NowPlayingView } from './components/NowPlayingView'
-import { PlayLinkDialog } from './components/PlayLinkDialog'
+import { OnlineView } from './components/OnlineView'
 import { PlayerBar } from './components/PlayerBar'
 import { PlaylistsView } from './components/PlaylistsView'
 import { QueueView } from './components/QueueView'
@@ -11,6 +11,7 @@ import { SettingsView } from './components/SettingsView'
 import { Sidebar, type ViewName } from './components/Sidebar'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useLibrary } from './hooks/useLibrary'
+import { useOnline } from './hooks/useOnline'
 import { usePlaybackPersistence } from './hooks/usePlaybackPersistence'
 import { usePlayer } from './hooks/usePlayer'
 import { usePlaylists } from './hooks/usePlaylists'
@@ -28,7 +29,6 @@ export function App() {
   const [nowPlaying, setNowPlaying] = useState(false)
   /** Set while the player window's exit animation plays, before it unmounts. */
   const [nowPlayingClosing, setNowPlayingClosing] = useState(false)
-  const [playLinkOpen, setPlayLinkOpen] = useState(false)
   const [paths, setPaths] = useState<AppPaths | null>(null)
   const [engineStatus, setEngineStatus] = useState<EngineStatus | null>(null)
   const [engineLoading, setEngineLoading] = useState(false)
@@ -37,6 +37,7 @@ export function App() {
   const { settings, error: settingsError, update, reload } = useSettings()
   const library = useLibrary()
   const playlists = usePlaylists()
+  const online = useOnline()
   const {
     tracks,
     total,
@@ -60,6 +61,14 @@ export function App() {
   } = library
 
   const searchInputRef = useRef<HTMLInputElement | null>(null)
+
+  // The Online history is the one list that can move without this window doing
+  // anything: playing a row resolves in the main process, which lifts it. So it
+  // is re-read on entry as well as on the change event, otherwise the order the
+  // user left behind could still be on screen when they come back.
+  useEffect(() => {
+    if (view === 'online') void online.refresh()
+  }, [view, online.refresh])
 
   // Closing is a two-step state rather than a plain toggle: the element has to
   // stay mounted for the length of the exit animation or it simply vanishes.
@@ -251,13 +260,6 @@ export function App() {
     player.playQueue(selected, 0)
   }, [player, tracks, selectedIds])
 
-  const playLink = useCallback(
-    (track: Track): void => {
-      player.playQueue([track], 0)
-    },
-    [player]
-  )
-
   // Repeat cycles off -> all -> one -> off, the order every player uses.
   const cycleRepeat = useCallback((): void => {
     const current = settings?.repeat ?? 'off'
@@ -322,6 +324,7 @@ export function App() {
         stats={stats}
         queueLength={player.queue.length}
         playlistCount={playlists.playlists.length}
+        onlineCount={online.entries.length}
         onSelect={setView}
       />
 
@@ -347,7 +350,6 @@ export function App() {
           onAddFolder={() => void addFolder()}
           onScan={() => void scan()}
           onCancelScan={() => void api.cancelScan()}
-          onPlayLink={() => setPlayLinkOpen(true)}
           onPlay={playTrack}
           onPlaySelected={playSelected}
           onReveal={(trackId) => void revealTrack(trackId)}
@@ -360,6 +362,19 @@ export function App() {
           playlists={playlists.playlists}
           onAddTracksToPlaylist={playlists.addTracks}
           onCreatePlaylist={playlists.create}
+        />
+      ) : view === 'online' ? (
+        <OnlineView
+          entries={online.entries}
+          loading={online.loading}
+          historyError={online.error}
+          currentVideoId={player.current?.sourceKind === 'youtube' ? (player.current.sourceId ?? null) : null}
+          isPlaying={player.isPlaying}
+          onAddLink={online.addLink}
+          onRemove={online.remove}
+          onClear={online.clear}
+          onPlay={(queue, index) => player.playQueue(queue, index)}
+          onQueue={player.enqueue}
         />
       ) : view === 'playlists' ? (
         <PlaylistsView
@@ -435,13 +450,8 @@ export function App() {
         onOpenNowPlaying={openNowPlaying}
       />
 
-      {/* Stream links are a session-only queue entry; the dialog overlays the
-          library rather than being a view of its own. */}
-      <PlayLinkDialog
-        open={playLinkOpen}
-        onClose={() => setPlayLinkOpen(false)}
-        onPlay={playLink}
-      />
+      {/* Streamed links live in the Online view now, not in a dialog: a resolve
+          takes seconds, and a modal is the wrong place to put a collection. */}
 
       {/* Rendered last so it stacks over the bar it was opened from. The views
           behind it stay mounted, which is what keeps the list scroll position

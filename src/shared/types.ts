@@ -168,6 +168,32 @@ export interface SavedPlayback {
   positionMs: number
 }
 
+/**
+ * One link remembered in the Online history.
+ *
+ * A link becomes a row the moment it is pasted, before anything is resolved for
+ * playback and long before it could be downloaded. It is deliberately *not* a
+ * `Track`: it owns no file, no resolver session and no row in `tracks`.
+ * `onlineEntryToTrack` turns it into a session track when it is played.
+ */
+export interface OnlineTrack {
+  id: number
+  videoId: string
+  title: string
+  artist: string | null
+  album: string | null
+  durationMs: number | null
+  /**
+   * Canonical watch URL. Kept on the row so it can be replayed from a cold
+   * start, even after the audio cache has been cleared.
+   */
+  sourceUrl: string
+  /** Cached thumbnail key, or null when the thumbnail could not be fetched. */
+  artworkKey: string | null
+  addedAt: number
+  lastPlayedAt: number | null
+}
+
 export interface ScanProgress {
   phase: 'enumerating' | 'reading' | 'done'
   /** Files discovered on disk that look like audio. */

@@ -56,6 +56,33 @@ export function youtubeWatchUrl(videoId: string): string {
 }
 
 /**
+ * Still-image URLs for a video, best first.
+ *
+ * `yt-dlp -J` reports the thumbnail as `i.ytimg.com/vi_webp/…/maxresdefault.webp`,
+ * and Electron's `nativeImage` cannot decode WebP — it returns an *empty* image
+ * rather than an error, so the cover silently went missing. YouTube publishes the
+ * same stills as JPEG under `vi/`, so those are what this app asks for.
+ *
+ * Both entries are true 16:9 stills. `hqdefault` and `sddefault` are deliberately
+ * left out even though they are bigger than `mqdefault`: YouTube renders them 4:3
+ * with black bars above and below a widescreen frame, and the app crops covers to
+ * a square, which would bake those bars into the artwork.
+ *
+ * `maxresdefault` only exists for uploads that were at least 720p, and a missing
+ * one answers **404 with a decodable 120x90 placeholder body** rather than
+ * nothing, so the caller has to check the status as well as the decode. Deriving
+ * the URLs from the video id rather than from the resolved link also means a row
+ * can be given its cover later without resolving the video again.
+ */
+export function youtubeThumbnailCandidates(videoId: string): string[] {
+  if (!isYouTubeVideoId(videoId)) return []
+  return [
+    `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
+    `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`
+  ]
+}
+
+/**
  * The format string for a quality tier.
  *
  * `bestaudio` is audio-only, which is what this app plays; the `/best` fallback

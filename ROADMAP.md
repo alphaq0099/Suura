@@ -316,10 +316,16 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
 - [x] Error taxonomy & user-facing messages (expired URL, bot check, geo-block, unavailable, network)
 - [x] Re-resolve on failure/expiry, transparent to the player
 - [x] Resolve-result metadata cache (avoid re-resolving the same video within a session)
+- [x] Paste surface: a dedicated **Online** view (sidebar, under Library) with a persistent link history — a pasted link
+      becomes a row at once (*Resolving…*), then fills in; **Add to queue** / **Play now**, per-row album/artist/duration,
+      a right-click menu (Play, Add to queue, Copy link, Remove) and a **Streaming** badge in the player bar. Rows show a
+      cached thumbnail, fetched from the video id the first time the row is drawn (and repaired if an earlier pass failed).
+      Saving a row into the library is deferred to M4. The history is links, not files, so it survives a restart and a
+      cache wipe.
 **Exit:** 50 hand-picked YouTube links play directly, ≥ 90% on first attempt, < 3 s to first audio, and seeking works.
-*Status: the 20-link sample resolves 20/20, and playback with seeking works end-to-end in the app. The median resolve is
-8.8 s and only 20 of the 50 links have been run. The `< 3 s` number needs a resident sidecar or a prefetch-based
-definition; see [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-dlp-sample.md).*
+*Status: the 20-link sample resolves 20/20, and playback with seeking works end-to-end in the app through the Online
+view. The median resolve is 8.8 s and only 20 of the 50 links have been run. The `< 3 s` number needs a resident sidecar
+or a prefetch-based definition; see [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-dlp-sample.md).*
 
 ### M4 — Retention: Cache & Download  *(~3 weeks)*
 **Goal:** the "keep it or not" requirement, fully realised.
@@ -335,7 +341,12 @@ definition; see [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-dlp-sample.md).*
 
 ### M5 — Discovery & YouTube Library Surface  *(~2–3 weeks)*
 - [ ] Unified search: local results **and** YouTube results in one list, clearly badged
-- [ ] Playlist import from a YouTube playlist URL (resolve all → show which ones are already local)
+- [ ] Playlist import from a YouTube playlist URL (resolve all → show which ones are already local). The shape is
+      agreed: a `--flat-playlist` fetch (one process, capped at 200 entries) shown as an inline import strip rather than
+      a modal; `v=…&list=…` plays the video and offers the import; a `music.youtube.com/playlist?list=OLAK5uy…` link is
+      treated as an album (playlist title = album, uploader = album artist). Mix/radio/channel lists are refused and
+      metadata is imported only, deduped by video id, resolving audio lazily on play. Build work is next, after the
+      Online view.
 - [ ] Channel/artist pages (basic), "more from this channel"
 - [ ] Auto-attach YouTube metadata: upgrade titles from `Title (Official Video)` → canonical tags, and optionally match against MusicBrainz
 - [ ] Smart playlists / filters (recently added, most played, never played, stream-only tracks)
@@ -479,3 +490,9 @@ player/
 3. ~~**Wireframe the 6 core screens**~~ Done, and built: Library, Queue, Settings and Now Playing all exist; Search is the library search field; Downloads arrives with M4.
 4. ~~**Write the two specs**~~ Done: `IMediaResolver` is `src/engine/resolver.ts`; the IPC event schema is `src/shared/ipc.ts`.
 5. ~~**Pick the retention defaults**~~ Done: stream-only default, 5 GB / 30-day cache budget, keep only on request.
+
+Where M3 stands: the sidecar spike is done (`docs/notes/yt-dlp-spike.md`), the stack and storage decisions are recorded
+(ADR 0001), and streaming now has a real surface — the **Online** view with a persistent link history. What is left in
+M3 is the exit measurement (50 links, and a decision on the `< 3 s` target). Next build work: YouTube playlist/album
+import, then M4 retention (which turns *Save to library* into a real download). The remaining M0 leftover is verifying
+yt-dlp/ffmpeg discovery on a clean machine.

@@ -6,7 +6,7 @@ import {
   type PlayerEventName,
   type PlayerEvents
 } from '@shared/ipc'
-import type { AppSettings, DeepPartial, ListTracksQuery, PlaybackSnapshot, Track } from '@shared/types'
+import type { AppSettings, DeepPartial, ListTracksQuery, PlaybackSnapshot } from '@shared/types'
 
 /**
  * The only bridge between the renderer and the main process.
@@ -75,7 +75,17 @@ const api: PlayerApi = {
 
   resolveSource: (track) => ipcRenderer.invoke(IPC.mediaResolve, track),
 
-  addYoutubeLink: (url: string) => ipcRenderer.invoke(IPC.youtubeAddLink, url) as Promise<Track>,
+  listOnline: () => ipcRenderer.invoke(IPC.onlineList),
+
+  addOnlineLink: (url: string) => ipcRenderer.invoke(IPC.onlineAddLink, url),
+
+  removeOnline: (id: number) => ipcRenderer.invoke(IPC.onlineRemove, id) as Promise<void>,
+
+  clearOnline: () => ipcRenderer.invoke(IPC.onlineClear) as Promise<number>,
+
+  readClipboardText: () => ipcRenderer.invoke(IPC.clipboardRead) as Promise<string>,
+
+  writeClipboardText: (text: string) => ipcRenderer.invoke(IPC.clipboardWrite, text) as Promise<void>,
 
   reportPlayback: (trackId: number, playedMs: number, completed: boolean) =>
     ipcRenderer.invoke(IPC.mediaReportPlay, trackId, playedMs, completed) as Promise<void>,

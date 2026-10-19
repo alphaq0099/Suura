@@ -95,8 +95,16 @@ export function PlayerBar(props: PlayerBarProps) {
       >
         <ArtworkImage track={current} size={42} artworkKey={artworkKey} className="player-art" />
         <div className="player-track-text">
-          <div className="player-title" title={current?.title ?? undefined}>
-            {current ? current.title : 'Nothing playing'}
+          <div className="player-title-row">
+            <div className="player-title" title={current?.title ?? undefined}>
+              {current ? current.title : 'Nothing playing'}
+            </div>
+            {current?.sourceKind === 'youtube' ? (
+              <span className="stream-badge" title="Streaming from YouTube — nothing is saved">
+                <span className="stream-dot" aria-hidden="true" />
+                Streaming
+              </span>
+            ) : null}
           </div>
           <div className="player-subtitle">
             {current ? [current.artist ?? 'Unknown artist', current.album].filter(Boolean).join(' · ') : 'Pick a track from your library'}
