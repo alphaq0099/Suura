@@ -8,6 +8,8 @@ import { LibraryService } from '@core/library/library-service'
 import { FolderWatcher } from '@core/library/folder-watcher'
 import { PlaylistRepository } from '@core/library/playlist-repository'
 import { PlaylistService } from '@core/library/playlist-service'
+import { PlayStateRepository } from '@core/library/play-state-repository'
+import { PlaybackService } from '@core/library/playback-service'
 import { LocalFileResolver } from '@engine/local-file-resolver'
 import { ResolverRegistry } from '@engine/resolver'
 import { IPC_EVENTS } from '@shared/ipc'
@@ -30,6 +32,8 @@ export interface AppContainer {
   library: LibraryService
   watcher: FolderWatcher
   playlists: PlaylistService
+  /** The last session's queue, saved as it plays and read once at start-up. */
+  playback: PlaybackService
   resolvers: ResolverRegistry
   artwork: ArtworkService
   dispose(): void
@@ -70,6 +74,8 @@ export function createContainer(): AppContainer {
   // two can never disagree about what a track id means.
   const playlists = new PlaylistService(new PlaylistRepository(database.db), repo, log.child('playlists'))
 
+  const playback = new PlaybackService(new PlayStateRepository(database.db), repo)
+
   // Both the folder list and the switch live in settings, so one listener keeps
   // the watchers in step with them — including the case where a folder is added
   // or removed while the app is running.
@@ -97,6 +103,7 @@ export function createContainer(): AppContainer {
     library,
     watcher,
     playlists,
+    playback,
     resolvers,
     artwork,
     dispose: () => {

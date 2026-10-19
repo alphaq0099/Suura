@@ -10,6 +10,7 @@ import { SettingsView } from './components/SettingsView'
 import { Sidebar, type ViewName } from './components/Sidebar'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useLibrary } from './hooks/useLibrary'
+import { usePlaybackPersistence } from './hooks/usePlaybackPersistence'
 import { usePlayer } from './hooks/usePlayer'
 import { usePlaylists } from './hooks/usePlaylists'
 import { useSettings } from './hooks/useSettings'
@@ -107,6 +108,10 @@ export function App() {
     onReport: handleReport
   })
   const { toggle, next, previous, stop } = player
+
+  // Carries the queue across restarts. Bound to the player rather than to the
+  // view, so it keeps working from any screen.
+  usePlaybackPersistence(player)
 
   useEffect(() => {
     void api

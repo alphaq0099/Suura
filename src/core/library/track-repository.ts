@@ -217,6 +217,35 @@ export class TrackRepository {
     return row ? mapTrackRow(row) : null
   }
 
+  /**
+   * The tracks for a list of ids, in the order the ids were given.
+   *
+   * `IN` returns rows in whatever order SQLite likes, so the caller's order is
+   * restored here. Ids that no longer exist are dropped rather than returned as
+   * holes: every caller is reconstructing a queue or a playlist, and a hole is
+   * not something either can hold. Batched because a queue can be long enough
+   * to exceed SQLite's bound-parameter limit.
+   */
+  byIds(ids: number[]): Track[] {
+    if (ids.length === 0) return []
+    const found = new Map<number, Track>()
+    const unique = [...new Set(ids)]
+
+    for (let at = 0; at < unique.length; at += 500) {
+      const batch = unique.slice(at, at + 500)
+      const placeholders = batch.map(() => '?').join(', ')
+      const rows = this.db
+        .prepare(`SELECT ${TRACK_COLUMNS} FROM tracks WHERE id IN (${placeholders})`)
+        .all<TrackRow>(...batch)
+      for (const row of rows) found.set(row.id, mapTrackRow(row))
+    }
+
+    return ids.flatMap((id) => {
+      const track = found.get(id)
+      return track ? [track] : []
+    })
+  }
+
   list(query: ListTracksQuery = {}): TrackPage {
     const limit = Math.min(Math.max(query.limit ?? 5000, 1), 50000)
     const offset = Math.max(query.offset ?? 0, 0)

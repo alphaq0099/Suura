@@ -129,6 +129,35 @@ export interface AddTracksOutcome {
   skipped: number
 }
 
+/**
+ * What the renderer writes down about playback, and all it writes down.
+ *
+ * Only ids, so a queue survives a rescan that rewrites rows (a moved file keeps
+ * its row and its id). Repeat and shuffle are not here: they are settings, which
+ * are already persisted, and two sources of truth for one switch is how they end
+ * up disagreeing.
+ */
+export interface PlaybackSnapshot {
+  /** Track ids in queue order. */
+  trackIds: number[]
+  /** Position of the current track in `trackIds`, or -1 when nothing is current. */
+  index: number
+  positionMs: number
+}
+
+/**
+ * A snapshot with its rows read back, ready to be put in the queue.
+ *
+ * Tracks that are no longer in the library are already gone, and `index` has
+ * been moved to a track that still exists, so the renderer needs no rule of its
+ * own about holes.
+ */
+export interface SavedPlayback {
+  tracks: Track[]
+  index: number
+  positionMs: number
+}
+
 export interface ScanProgress {
   phase: 'enumerating' | 'reading' | 'done'
   /** Files discovered on disk that look like audio. */

@@ -30,6 +30,13 @@ export interface UsePlayerResult {
   error: string | null
   /** Replace the queue and start at `startIndex`. */
   playQueue: (tracks: Track[], startIndex: number) => void
+  /**
+   * Put a saved queue back without starting it.
+   *
+   * The track loads and seeks to `positionMs`, then stays paused: resuming means
+   * "carry on from where I was", not "make noise the moment the window opens".
+   */
+  restore: (tracks: Track[], startIndex: number, positionMs: number) => void
   /** Append to the queue without disturbing playback. */
   enqueue: (tracks: Track[]) => void
   removeAt: (position: number) => void
@@ -41,6 +48,18 @@ export interface UsePlayerResult {
   stop: () => void
   seek: (positionMs: number) => void
   setVolume: (volume: number) => void
+}
+
+/** Resolves when the element knows its duration (immediately if it already does). */
+function onceLoadedMetadata(element: HTMLAudioElement): Promise<void> {
+  if (element.readyState >= HTMLMediaElement.HAVE_METADATA) return Promise.resolve()
+  return new Promise((resolve) => {
+    const done = (): void => {
+      element.removeEventListener('loadedmetadata', done)
+      resolve()
+    }
+    element.addEventListener('loadedmetadata', done)
+  })
 }
 
 function describeMediaError(error: MediaError | null): string {
@@ -103,6 +122,14 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
   const shuffleRef = useRef(shuffle)
   /** The un-shuffled queue, so toggling shuffle off restores the real order. */
   const originRef = useRef<Track[] | null>(null)
+  /**
+   * Where a restored track should start, consumed once by the load effect.
+   *
+   * It is a ref rather than state because it belongs to the *load*, not to the
+   * render: the effect that sets the source reads it and clears it, and no
+   * render in between needs to see it.
+   */
+  const resumeRef = useRef<number | null>(null)
 
   useEffect(() => {
     onReportRef.current = onReport
@@ -159,7 +186,9 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
 
     setError(null)
     setIsLoading(true)
-    setPositionMs(0)
+    const resumeAt = resumeRef.current
+    resumeRef.current = null
+    setPositionMs(resumeAt ?? 0)
     setDurationMs(current.durationMs ?? 0)
 
     void (async () => {
@@ -168,6 +197,19 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
         if (token !== loadTokenRef.current) return
         element.src = source.url
         element.load()
+        if (resumeAt !== null) {
+          // A position cannot be set before there is a duration to measure it
+          // against, so the seek waits for metadata. `load()` was just called,
+          // which makes that event certain to arrive.
+          await onceLoadedMetadata(element)
+          if (token !== loadTokenRef.current) return
+          const end = Number.isFinite(element.duration) ? element.duration * 1000 : null
+          const target = end === null ? resumeAt : Math.min(resumeAt, Math.max(end - 250, 0))
+          element.currentTime = target / 1000
+          setPositionMs(target)
+          setDurationMs(end ?? current.durationMs ?? 0)
+          return
+        }
         await element.play()
       } catch (cause) {
         if (token !== loadTokenRef.current) return
@@ -309,6 +351,18 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     setPlayRequestId((value) => value + 1)
   }, [])
 
+  const restore = useCallback((tracks: Track[], startIndex: number, positionMs: number): void => {
+    if (tracks.length === 0) return
+    const safeIndex = startIndex >= 0 && startIndex < tracks.length ? startIndex : 0
+    originRef.current = null
+    resumeRef.current = positionMs > 0 ? Math.round(positionMs) : null
+    setEntries(tracks)
+    setIndex(safeIndex)
+    // The load effect keys off `current`, so an unchanged index would not reload;
+    // the request id makes "restore over the same track" work too.
+    setPlayRequestId((value) => value + 1)
+  }, [])
+
   const enqueue = useCallback((tracks: Track[]): void => {
     if (tracks.length === 0) return
     const queue = entriesRef.current
@@ -443,6 +497,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     volume,
     error,
     playQueue,
+    restore,
     enqueue,
     removeAt,
     clearQueue,

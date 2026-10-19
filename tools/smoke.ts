@@ -22,6 +22,8 @@ import { LibraryService } from '@core/library/library-service'
 import { FolderWatcher, isLibraryEvent, type FolderWatchEvent } from '@core/library/folder-watcher'
 import { PlaylistRepository } from '@core/library/playlist-repository'
 import { PlaylistService } from '@core/library/playlist-service'
+import { PlayStateRepository } from '@core/library/play-state-repository'
+import { PlaybackService } from '@core/library/playback-service'
 import { isPathInside, localContentKey, normalizePath } from '@core/library/content-key'
 import { artworkKeyFor, extractArtwork, extensionForMime } from '@core/library/artwork'
 import { LocalFileResolver } from '@engine/local-file-resolver'
@@ -634,6 +636,53 @@ async function main(): Promise<void> {
     checkEqual('clearing removes every entry', cleared, beforeClear)
     checkEqual('a cleared playlist is empty', playlists.detail(road.id)?.items.length, 0)
     checkEqual('clearing keeps the playlist itself', playlists.list().length, 1)
+
+    // --- play state --------------------------------------------------------
+    // Resuming is a promise about the *next* start, so it is tested the way it
+    // is used: write a snapshot and read it back through the service. The
+    // interesting cases are the ones where the library moved between the two:
+    // a queue names tracks by id, and ids can stop existing.
+    const playback = new PlaybackService(new PlayStateRepository(database.db), repo)
+    const first = library.list({ limit: 1 }).tracks[0]
+    const second = library.list({ limit: 2 }).tracks[1]
+    if (first && second) {
+      playback.save({ trackIds: [first.id, second.id], index: 1, positionMs: 1234 }, Date.now())
+      const restored = playback.load()
+      checkEqual(
+        'a saved queue comes back in its own order',
+        restored?.tracks.map((track) => track.id).join(','),
+        `${first.id},${second.id}`
+      )
+      checkEqual('the current track is remembered', restored?.index, 1)
+      checkEqual('the position is remembered', restored?.positionMs, 1234)
+
+      playback.save({ trackIds: [999_999, second.id], index: 1, positionMs: 5000 }, Date.now())
+      const withHole = playback.load()
+      checkEqual(
+        'a track that is gone is dropped from the queue',
+        withHole?.tracks.map((track) => track.id).join(','),
+        String(second.id)
+      )
+      checkEqual('and the cursor follows the track that survived', withHole?.index, 0)
+      checkEqual('the saved position survives the shift', withHole?.positionMs, 5000)
+
+      playback.save({ trackIds: [999_999, second.id], index: 0, positionMs: 3000 }, Date.now())
+      const lostCurrent = playback.load()
+      checkEqual('a lost current track falls back to the first row', lostCurrent?.index, 0)
+      checkEqual('and starts that row from the beginning', lostCurrent?.positionMs, 0)
+
+      playback.save({ trackIds: [], index: -1, positionMs: 0 }, Date.now())
+      checkEqual('an empty queue clears the save', playback.load(), null)
+
+      database.db
+        .prepare(
+          `INSERT INTO play_state (id, queue, cursor, position_ms, updated_at)
+           VALUES (1, ?, 0, 0, 0)
+           ON CONFLICT(id) DO UPDATE SET queue = excluded.queue`
+        )
+        .run('not json')
+      checkEqual('a corrupted save is ignored rather than thrown', playback.load(), null)
+    }
 
     // --- removal of a whole folder ---------------------------------------
     library.removeFolder(musicDir)

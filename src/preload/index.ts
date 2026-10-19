@@ -6,7 +6,7 @@ import {
   type PlayerEventName,
   type PlayerEvents
 } from '@shared/ipc'
-import type { AppSettings, DeepPartial, ListTracksQuery } from '@shared/types'
+import type { AppSettings, DeepPartial, ListTracksQuery, PlaybackSnapshot } from '@shared/types'
 
 /**
  * The only bridge between the renderer and the main process.
@@ -66,6 +66,12 @@ const api: PlayerApi = {
     ipcRenderer.invoke(IPC.playlistsMoveItem, playlistId, itemId, toIndex),
 
   clearPlaylist: (playlistId: number) => ipcRenderer.invoke(IPC.playlistsClear, playlistId),
+
+  loadPlayback: () => ipcRenderer.invoke(IPC.playbackLoad),
+
+  savePlayback: (snapshot: PlaybackSnapshot) => ipcRenderer.send(IPC.playbackSave, snapshot),
+
+  clearPlayback: () => ipcRenderer.send(IPC.playbackClear),
 
   resolveSource: (trackId: number) => ipcRenderer.invoke(IPC.mediaResolve, trackId),
 

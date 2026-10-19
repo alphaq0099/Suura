@@ -183,5 +183,30 @@ export const MIGRATIONS: readonly Migration[] = [
         CREATE INDEX idx_playlist_items_track_id ON playlist_items(track_id);
       `)
     }
+  },
+  {
+    version: 4,
+    name: 'play state',
+    up: (db) => {
+      // One row, rewritten in place: this is a snapshot of the last session, not
+      // a history. The queue is stored as a JSON array of ids rather than as a
+      // table of positions, because nothing ever queries *into* it — it is read
+      // once at start-up and written as a whole. Positions are renumbered from
+      // the array on read, which keeps a deleted track from leaving a hole in
+      // the order.
+      //
+      // No foreign key on the ids: a track that has been pruned is dropped when
+      // the state is loaded, and a queue entry is not something the database
+      // should refuse to write because a file went away mid-session.
+      db.exec(`
+        CREATE TABLE play_state (
+          id           INTEGER PRIMARY KEY CHECK (id = 1),
+          queue        TEXT    NOT NULL,
+          cursor       INTEGER NOT NULL,
+          position_ms  INTEGER NOT NULL,
+          updated_at   INTEGER NOT NULL
+        );
+      `)
+    }
   }
 ]

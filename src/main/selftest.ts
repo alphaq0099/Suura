@@ -33,9 +33,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
   }
 
   const watchdog = setTimeout(() => {
-    console.log('SELFTEST FAIL  test harness timed out after 60s')
+    console.log('SELFTEST FAIL  test harness timed out after 90s')
     app.exit(1)
-  }, 60_000)
+  }, 90_000)
 
   try {
     // Let the first render and the initial IPC round-trips settle.
@@ -1552,6 +1552,108 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       `${lists.queueStatus || 'no status'} · count ${lists.countAfterQueueSave}`
     )
     record(lists.deleted && lists.emptyAfterDelete, 'deleting a playlist needs a confirmation and removes it')
+
+    // ---- 15. resuming ----------------------------------------------------
+    // A restart cannot be faked from inside the page: the queue lives in a hook,
+    // so the only way to know it survives is to throw the page away and let it
+    // build itself again. What comes back is only what was written down.
+    //
+    // The track is left paused before the reload, which is also the awkward case
+    // — a pause is an event in the middle of a track, not a track change, so it
+    // is the moment a position is most likely to go unsaved.
+    const beforeReload = await evaluate<{ title: string; progress: number; paused: boolean }>(
+      window,
+      `(async () => {
+         const out = { title: '', progress: -1, paused: false }
+         const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+         const pick = (s) => document.querySelector(s)
+         const text = (el) => ((el || {}).textContent || '')
+         const press = (el) => { if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
+
+         const navTo = [...document.querySelectorAll('.nav-item')].find(
+           (el) => text(el).trim().indexOf('Library') === 0
+         )
+         if (navTo) press(navTo)
+         await sleep(500)
+         const row = [...document.querySelectorAll('.track-row')].find(
+           (el) => text(el.querySelector('.row-title-text')) === 'Selftest Tone'
+         )
+         if (row) row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+         await sleep(1000)
+
+         // Seek first, then pause: the pause is what pushes the snapshot out
+         // immediately, so the position it carries has to be the new one.
+         const input = pick('.player-seek input[type="range"]')
+         if (input) {
+           input.value = String(Math.round(Number(input.max) * 0.2))
+           input.dispatchEvent(new Event('input', { bubbles: true }))
+           await sleep(80)
+           input.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
+         }
+         await sleep(150)
+         const play = pick('.player-bar .icon-button.primary')
+         if (play && play.getAttribute('title') === 'Pause') press(play)
+         await sleep(400)
+
+         out.title = text(pick('.player-title')).trim()
+         const bar = pick('.player-seek')
+         out.progress = bar ? parseFloat(getComputedStyle(bar).getPropertyValue('--seek-progress')) : -1
+         out.paused = (pick('.player-bar .icon-button.primary') || {}).getAttribute('title') === 'Play'
+         return out
+       })()`
+    )
+
+    window.webContents.reload()
+
+    let afterReload: { title: string; progress: number; paused: boolean; queue: number } | null = null
+    const restoreDeadline = Date.now() + 15_000
+    while (Date.now() < restoreDeadline) {
+      try {
+        afterReload = await evaluate<{ title: string; progress: number; paused: boolean; queue: number }>(
+          window,
+          `(() => {
+             const pick = (s) => document.querySelector(s)
+             const text = (el) => ((el || {}).textContent || '')
+             const bar = pick('.player-seek')
+             const raw = bar ? getComputedStyle(bar).getPropertyValue('--seek-progress') : ''
+             const play = pick('.player-bar .icon-button.primary')
+             const queue = pick('.queue-button')
+             const digits = String(queue ? queue.getAttribute('title') : '').replace(/[^0-9]/g, '')
+             return {
+               title: text(pick('.player-title')).trim(),
+               progress: raw ? parseFloat(raw) : -1,
+               paused: (play ? play.getAttribute('title') : '') === 'Play',
+               queue: digits.length > 0 ? Number(digits) : 0
+             }
+           })()`
+        )
+      } catch {
+        afterReload = null
+      }
+      if (afterReload && afterReload.title.length > 0 && afterReload.progress > 0) break
+      await delay(250)
+    }
+
+    record(
+      beforeReload.title.length > 0 && afterReload?.title === beforeReload.title,
+      'a restart brings back the track that was playing',
+      `${beforeReload.title || 'nothing'} -> ${afterReload?.title || 'nothing'}`
+    )
+    record(
+      afterReload !== null && Math.abs(afterReload.progress - beforeReload.progress) < 8,
+      'and the position it was at',
+      `${beforeReload.progress}% -> ${afterReload?.progress ?? -1}%`
+    )
+    record(
+      afterReload?.paused === true,
+      'restoring leaves it paused instead of making noise on its own',
+      beforeReload.paused ? 'was already paused' : 'was playing'
+    )
+    record(
+      afterReload?.queue === 2,
+      'and the whole queue is back, not just the track',
+      `${afterReload?.queue ?? -1} tracks in the queue`
+    )
   } catch (error) {
     failures += 1
     console.log(`SELFTEST FAIL  harness threw: ${describe(error)}`)

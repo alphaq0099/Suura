@@ -15,6 +15,7 @@
     "smoke": "tsx --tsconfig tsconfig.node.json tools/smoke.ts",
     "runtime:check": "electron tools/runtime-check.cjs",
     "selftest": "electron . --selftest",
+    "scale": "electron . --scale",
     "clean": "node -e \"require('fs').rmSync('out',{recursive:true,force:true})\""
   },
   "devDependencies": {

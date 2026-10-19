@@ -12,9 +12,11 @@ import type {
   EngineStatus,
   LibraryStats,
   ListTracksQuery,
+  PlaybackSnapshot,
   Playlist,
   PlaylistDetail,
   ResolvedSource,
+  SavedPlayback,
   ScanProgress,
   TrackPage
 } from './types'
@@ -42,6 +44,9 @@ export const IPC = {
   playlistsRemoveItems: 'playlists:remove-items',
   playlistsMoveItem: 'playlists:move-item',
   playlistsClear: 'playlists:clear',
+  playbackLoad: 'playback:load',
+  playbackSave: 'playback:save',
+  playbackClear: 'playback:clear',
   mediaResolve: 'media:resolve',
   mediaReportPlay: 'media:report-play',
   engineStatus: 'engine:status'
@@ -124,6 +129,15 @@ export interface PlayerApi {
   /** Moves an entry to an index in the *resulting* order. */
   movePlaylistItem(playlistId: number, itemId: number, toIndex: number): Promise<PlaylistDetail | null>
   clearPlaylist(playlistId: number): Promise<PlaylistDetail | null>
+  /** The last session's queue, or null when there is nothing worth resuming. */
+  loadPlayback(): Promise<SavedPlayback | null>
+  /**
+   * Notes down what is playing. Fire-and-forget on purpose: it is called while
+   * the window is closing, where awaiting a reply is not an option.
+   */
+  savePlayback(snapshot: PlaybackSnapshot): void
+  /** Forgets the saved queue, so the next start is empty. */
+  clearPlayback(): void
   resolveSource(trackId: number): Promise<ResolvedSource>
   reportPlayback(trackId: number, playedMs: number, completed: boolean): Promise<void>
   getEngineStatus(): Promise<EngineStatus>

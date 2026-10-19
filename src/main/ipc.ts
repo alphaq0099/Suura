@@ -10,6 +10,7 @@ import type {
   InteractionSettings,
   LibraryClickAction,
   ListTracksQuery,
+  PlaybackSnapshot,
   QualityTier,
   RepeatMode,
   RetentionMode,
@@ -48,6 +49,34 @@ function toIdList(value: unknown, what: string): number[] {
     value.every((entry) => typeof entry === 'number' && Number.isInteger(entry) && entry > 0)
   if (!valid) throw new Error(`Expected a list of ${what} ids.`)
   return [...new Set(value as number[])]
+}
+
+/**
+ * A play-state save, or null when the message cannot be trusted.
+ *
+ * This runs on a one-way channel, so there is no caller to throw at: a message
+ * that does not look like a queue is dropped rather than written to the
+ * database, where it would be read back at the next start-up.
+ */
+function sanitizeSnapshot(value: unknown): PlaybackSnapshot | null {
+  if (typeof value !== 'object' || value === null) return null
+  const candidate = value as Partial<PlaybackSnapshot>
+  if (!Array.isArray(candidate.trackIds)) return null
+  if (candidate.trackIds.length > 50_000) return null
+
+  const valid = candidate.trackIds.every(
+    (id) => typeof id === 'number' && Number.isInteger(id) && id > 0
+  )
+  if (!valid) return null
+
+  const index = candidate.index
+  if (typeof index !== 'number' || !Number.isInteger(index) || index < -1) return null
+  if (index >= candidate.trackIds.length) return null
+
+  const positionMs = candidate.positionMs
+  if (typeof positionMs !== 'number' || !Number.isFinite(positionMs) || positionMs < 0) return null
+
+  return { trackIds: candidate.trackIds, index, positionMs }
 }
 
 const RETENTION_MODES: RetentionMode[] = ['stream', 'cache', 'keep']
@@ -318,5 +347,33 @@ export function registerIpcHandlers(container: AppContainer): void {
     const id = toId(playlistId, 'playlist')
     container.playlists.clear(id)
     return container.playlists.detail(id)
+  })
+
+  // ---- play state -------------------------------------------------------
+  // One request/response channel to read it back, and two fire-and-forget ones
+  // to write. Saving happens while the window is closing, where waiting for a
+  // reply would mean the reply arrives after the process is gone — and a
+  // malformed save is not worth a round trip, so it is logged and dropped.
+  ipcMain.handle(IPC.playbackLoad, () => container.playback.load())
+
+  ipcMain.on(IPC.playbackSave, (_event, snapshot: unknown) => {
+    const state = sanitizeSnapshot(snapshot)
+    if (!state) {
+      log.warn('ignored a malformed play-state save')
+      return
+    }
+    try {
+      container.playback.save(state, Date.now())
+    } catch (error) {
+      log.warn('could not save play state', error)
+    }
+  })
+
+  ipcMain.on(IPC.playbackClear, () => {
+    try {
+      container.playback.clear()
+    } catch (error) {
+      log.warn('could not clear play state', error)
+    }
   })
 }
