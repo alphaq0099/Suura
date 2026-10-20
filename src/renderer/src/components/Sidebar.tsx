@@ -10,7 +10,7 @@ export interface SidebarProps {
   queueLength: number
   /** How many playlists exist, or 0 when they have not loaded yet. */
   playlistCount: number
-  /** How many links the Online history remembers. */
+  /** How many links the Streaming history remembers. */
   onlineCount: number
   onSelect: (view: ViewName) => void
 }
@@ -40,7 +40,7 @@ export function Sidebar({ view, stats, queueLength, playlistCount, onlineCount, 
         title="Links you have pasted, streamed from YouTube"
       >
         <LinkIcon />
-        <span>Online</span>
+        <span>Streaming</span>
         {onlineCount > 0 ? <span className="nav-count">{formatCount(onlineCount)}</span> : null}
       </button>
 

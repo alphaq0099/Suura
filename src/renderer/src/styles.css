@@ -2298,7 +2298,7 @@ input[type='radio'] {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- Custom / Online groups in the index ---------- */
+/* ---------- Custom / Imported groups in the index ---------- */
 
 .playlist-group {
   display: flex;
@@ -2740,10 +2740,10 @@ input[type='radio'] {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: #12141d;
-  /* Five rows at a time. The history can be long, but the Online view should
-     not become a second library; older links are one wheel away. 5 × 43px of
+  /* Seven rows at a time. The history can be long, but the Streaming view should
+     not become a second library; older links are one wheel away. 7 × 43px of
      row + the box's own 2px border. */
-  max-height: 217px;
+  max-height: 303px;
   overflow: hidden auto;
 }
 
@@ -2891,7 +2891,7 @@ button.online-jump:hover {
   }
 }
 
-/* ---------- imported playlists in the Online view ---------- */
+/* ---------- imported playlists in the Streaming view ---------- */
 
 /* An imported list is one row here, not one row per track. The history is a log
    of links the user chose; a 50-track mix would otherwise bury every song they

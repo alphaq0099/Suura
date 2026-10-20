@@ -325,7 +325,7 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
       play will read without registering a token, recording history or failing the caller. A video id is asked for once
       per session and the timer dies with the track, so skimming a queue does not spawn a sidecar per row. Only the
       resolve is brought forward; the bytes are still streamed on demand.
-- [x] Paste surface: a dedicated **Online** view (sidebar, under Library) with a persistent link history — a pasted link
+- [x] Paste surface: a dedicated **Streaming** view (sidebar, under Library) with a persistent link history — a pasted link
       becomes a row at once (*Resolving…*), then fills in; **Add to queue** / **Play now**, per-row album/artist/duration,
       a right-click menu (Play, Add to queue, Copy link, Remove) and a **Streaming** badge in the player bar. Rows show a
       cached thumbnail, fetched from the video id the first time the row is drawn (and repaired if an earlier pass failed).
@@ -336,11 +336,11 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
       visiting another view and coming back keeps it, and playing an imported list from the Playlists window lights it
       up as well. Imported lists also get their own box above the history: one card per list (not one row per track),
       with **Play** for the whole list and **Open in Playlists**, so the history stays a log of links the user chose.
-      The imported box keeps three recent cards and the history five rows in view, both scrolling for the rest; a card
+      The imported box keeps three recent cards and the history seven rows in view, both scrolling for the rest; a card
       without a sleeve uses its first entry's still; and the link field has a right-click **Paste** menu beside the
       paste button.
 **Exit:** 50 hand-picked YouTube links play directly, ≥ 90% on first attempt, < 3 s to first audio, and seeking works.
-*Status: the 20-link sample resolves 20/20, and playback with seeking works end-to-end in the app through the Online
+*Status: the 20-link sample resolves 20/20, and playback with seeking works end-to-end in the app through the Streaming
 view. The median resolve is 8.8 s and only 20 of the 50 links have been run. A queued mix no longer pays that cost
 between tracks — the next entry is resolved while the current one plays — so a transition only waits for the CDN's
 first bytes; the first play of a session still pays the sidecar run. The `< 3 s` number needs a resident sidecar or a
@@ -354,7 +354,7 @@ prefetch-based definition; see [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-d
       retries and a disk-space pre-flight check.
 - [x] **Keep** action: download → tag → embed cover → move into the library → scanned row appears (default Opus, or
       MP3/M4A; folder and format are settings). Verified live: 12 s for a 4.9 MB Opus, tags and JPEG cover intact.
-- [x] **Keep an imported entry**: the same path from the Online playlist pane — a per-entry *Save to library* button and
+- [x] **Keep an imported entry**: the same path from the imported playlist pane — a per-entry *Save to library* button and
       a *Save all* that queues every entry not already in the library. The library row keeps the video id in
       `origin_kind`/`origin_id`, so *sourceId* is preserved without pretending the file is a stream.
 - [ ] **Remove download**: delete file, keep the track in playlists/queue, fall back to streaming (availability model from §4)
@@ -372,7 +372,7 @@ prefetch-based definition; see [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-d
       `music.youtube.com/playlist?list=OLAK5uy…` link is an album (list title = album, common entry uploader = album
       artist); `RD…`/`start_radio=1` mixes are imported too, capped by their own setting (default 50). `v=…&list=…` plays
       the video and offers the import; account lists (`LL…`, `WL…`, `FL…`) and channel pages are refused before a sidecar
-      runs. The Playlists view separates **Custom** from **Online**, and an imported snapshot can be played, queued,
+      runs. The Playlists view separates **Custom** from **Imported**, and an imported snapshot can be played, queued,
       re-imported, trimmed or deleted entry by entry. An imported list can be renamed: the user's name lives in
       `custom_title` (migration 8) apart from YouTube's title, so a re-import refreshes the snapshot without undoing it,
       and the list id is shown as the stable identity. A **Tracks** box beside Re-import overrides the cap for that one
@@ -525,7 +525,7 @@ player/
 5. ~~**Pick the retention defaults**~~ Done: stream-only default, 5 GB / 30-day cache budget, keep only on request.
 
 Where things stand: the sidecar spike is done (`docs/notes/yt-dlp-spike.md`), the stack and storage decisions are recorded
-(ADR 0001), streaming has a real surface — the **Online** view with a persistent link history and a separate
+(ADR 0001), streaming has a real surface — the **Streaming** view with a persistent link history and a separate
 **Imported playlists** box, one card per list — and playlist, album and mix import stores a snapshot that the Playlists
 view can play, queue, re-import, rename and trim, with a per-import track count for mixes and radios. **Saving to the
 library works**: a history row or an imported entry downloads once, is tagged with embedded artwork, moves into the music

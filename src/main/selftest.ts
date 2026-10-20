@@ -729,7 +729,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     record(fullPlayer.closingAnimated, 'closing the player window plays an exit animation')
     record(fullPlayer.closedByEscape, 'Escape closes the player window')
 
-    // The Online view is a layout too, so its history is seeded before the size
+    // The Streaming view is a layout too, so its history is seeded before the size
     // sweep: an empty state fits any window and would prove nothing.
     //
     // Two rows are given a real cached cover — the fixture drawn above — so the
@@ -794,7 +794,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       window.setSize(width, height)
       await delay(250)
 
-      const showView = async (label: 'Library' | 'Online' | 'Settings' | 'Queue'): Promise<void> => {
+      const showView = async (label: 'Library' | 'Streaming' | 'Settings' | 'Queue'): Promise<void> => {
         await evaluate(
           window,
           `(async () => {
@@ -830,11 +830,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         queue
       )
 
-      await showView('Online')
+      await showView('Streaming')
       const onlineLayout = await evaluate<LayoutProbe>(window, LAYOUT_PROBE)
       record(
         onlineLayout.hasOnline && onlineLayout.main === 0 && onlineLayout.online === 0 && onlineLayout.bar === 0 && onlineLayout.page === 0,
-        `online view fits with no horizontal overflow at ${width}x${height}`,
+        `streaming view fits with no horizontal overflow at ${width}x${height}`,
         onlineLayout
       )
 
@@ -1978,11 +1978,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     broadcast(IPC_EVENTS.onlineChanged, null)
     record(
       container.onlinePlaylists.count() === 1,
-      'online lists: an imported album is seeded as an Online playlist',
+      'online lists: an imported album is seeded as an imported playlist',
       container.onlinePlaylists.count()
     )
 
-    // ---- 14b. the Online view --------------------------------------------
+    // ---- 14b. the Streaming view ------------------------------------------
     // Only the paths that need no network are driven: pasting, inline
     // validation and the history actions. Resolving a real link costs a 7-10 s
     // sidecar run, which belongs in the M3 probe, not in a 90 s UI test.
@@ -2043,14 +2043,14 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          // Leave and come back so the view mounts fresh and reads the seeded list.
          nav('Library')
          await sleep(400)
-         nav('Online')
+         nav('Streaming')
          await sleep(600)
 
          out.rows = pickAll('.online-item').length
          out.firstTitle = text(pick('.online-title')).trim()
          out.firstArtist = text(pick('.online-artist')).trim()
          out.firstDuration = text(pick('.online-time')).trim()
-         const onlineNav = pickAll('.nav-item').find((el) => (el.textContent || '').trim().startsWith('Online'))
+         const onlineNav = pickAll('.nav-item').find((el) => (el.textContent || '').trim().startsWith('Streaming'))
          out.sidebarCount = text(onlineNav ? onlineNav.querySelector('.nav-count') : null).trim()
 
          // A row draws the cover already on its entry; one with no cover resolves
@@ -2062,13 +2062,13 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.rowCoverLoaded = covers().length > 0 && covers()[0].naturalWidth > 0
          out.rowPlaceholders = pickAll('.online-art[data-artwork="none"]').length
 
-         // The history is a window, not the whole log: five rows stay in view
+         // The history is a window, not the whole log: seven rows stay in view
          // and the wheel reaches the rest. The imported box does the same with
          // three; that check lives in the imported-list section.
          const historyList = pick('.online-list')
          const historyStyle = historyList ? getComputedStyle(historyList) : null
          out.historyScrolls = Boolean(
-           historyStyle && historyStyle.overflowY === 'auto' && parseFloat(historyStyle.maxHeight) >= 200
+           historyStyle && historyStyle.overflowY === 'auto' && parseFloat(historyStyle.maxHeight) >= 300
          )
 
          const play = buttonWith('Play now')
@@ -2144,14 +2144,14 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          return out
        })()`
     )
-    record(onlineView.rows === 3, 'the Online view lists the remembered links', onlineView.rows)
+    record(onlineView.rows === 3, 'the Streaming view lists the remembered links', onlineView.rows)
     record(onlineView.firstTitle.indexOf('Online Tone Two') === 0, 'the newest link is listed first', onlineView.firstTitle)
     record(
       onlineView.firstArtist === 'Selftest Streamer',
-      'the Online view shows the streaming artist',
+      'the Streaming view shows the streaming artist',
       onlineView.firstArtist
     )
-    record(onlineView.firstDuration === '1:30', 'the Online view shows the duration', onlineView.firstDuration)
+    record(onlineView.firstDuration === '1:30', 'the Streaming view shows the duration', onlineView.firstDuration)
     record(onlineView.sidebarCount === '3', 'the sidebar counts the remembered links', onlineView.sidebarCount)
     record(
       onlineView.rowCovers === 2 && onlineView.rowCoverLoaded && onlineView.rowPlaceholders === 1,
@@ -2166,7 +2166,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     )
     record(
       onlineView.historyScrolls,
-      'the link history keeps five rows in view and scrolls for the rest',
+      'the link history keeps seven rows in view and scrolls for the rest',
       `scrolls ${onlineView.historyScrolls}`
     )
     record(
@@ -2265,7 +2265,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            if (b) b.dispatchEvent(new MouseEvent('click', { bubbles: true }))
            return Boolean(b)
          }
-         const onlineGroup = () => pickAll('.playlist-group').find((el) => el.getAttribute('aria-label') === 'Online playlists')
+         const onlineGroup = () => pickAll('.playlist-group').find((el) => el.getAttribute('aria-label') === 'Imported playlists')
 
          nav('Playlists')
          await sleep(700)
@@ -2312,9 +2312,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          await sleep(900)
          out.playedTitle = text(pick('.player-title'))
 
-         // The Online view gets one card for the imported list, not a row per
+         // The Streaming view gets one card for the imported list, not a row per
          // track: the history is for links the user chose to play on their own.
-         nav('Online')
+         nav('Streaming')
          await sleep(800)
          out.onlineCards = pickAll('.online-imported-row').length
          out.onlineCardTitle = text(pick('.online-imported-title')).trim()
@@ -2331,11 +2331,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            importedStyle && importedStyle.overflowY === 'auto' && parseFloat(importedStyle.maxHeight) >= 150
          )
 
-         // The mark belongs to the app state, not to the Online view: a round
+         // The mark belongs to the app state, not to the Streaming view: a round
          // trip must leave the same card marked when the view comes back.
          nav('Playlists')
          await sleep(500)
-         nav('Online')
+         nav('Streaming')
          await sleep(700)
          out.playingCardAfterTrip = Boolean(pick('.online-imported-row.current'))
          nav('Playlists')
@@ -2353,15 +2353,15 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
 
          // The card is the only place the playing list is named, so deleting the
          // snapshot removes the card too; the player bar still knows the queue.
-         nav('Online')
+         nav('Streaming')
          await sleep(700)
          out.cardsAfterDelete = pickAll('.online-imported-row').length
          return out
        })()`
     )
 
-    record(onlineLists.groupTitles === 'Custom | Online', 'the Playlists index separates Custom from Online', onlineLists.groupTitles)
-    record(onlineLists.onlineRows === 1, 'the imported album appears in the Online group', onlineLists.onlineRows)
+    record(onlineLists.groupTitles === 'Custom | Imported', 'the Playlists index separates Custom from Imported', onlineLists.groupTitles)
+    record(onlineLists.onlineRows === 1, 'the imported album appears in the Imported group', onlineLists.onlineRows)
     record(onlineLists.kind === 'Album', 'an imported album is labelled as one', onlineLists.kind)
     record(onlineLists.paneTitle === 'Selftest Album', 'opening the imported album shows its snapshot', onlineLists.paneTitle)
     record(
@@ -2412,7 +2412,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     )
     record(
       container.onlineRepo.count() === 0,
-      'playing an imported entry does not echo it into the Online history',
+      'playing an imported entry does not echo it into the Streaming history',
       container.onlineRepo.count()
     )
     record(
@@ -2420,7 +2420,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         onlineLists.onlineCardTitle === 'Selftest Album Renamed' &&
         onlineLists.historyRows === 0 &&
         onlineLists.onlineCardCover,
-      'the Online view lists the imported playlist once, with its cover and no history tracks',
+      'the Streaming view lists the imported playlist once, with its cover and no history tracks',
       `${onlineLists.onlineCards} card(s): ${onlineLists.onlineCardTitle || 'none'} (${onlineLists.onlineCardMeta || 'no meta'}); cover ${onlineLists.onlineCardCover}; ${onlineLists.historyRows} history rows`
     )
     record(

@@ -61,12 +61,12 @@ export interface PlaylistsViewProps {
   /** Appends these tracks to the queue without replacing it. */
   onQueue: (tracks: Track[]) => void
   /**
-   * Records which imported list is playing, so the Online view can name it even
+   * Records which imported list is playing, so the Streaming view can name it even
    * after the user has been elsewhere. `null` means what is playing is not a list.
    */
   onPlayingListChange: (list: PlayingList | null) => void
   onReveal: (trackId: number) => void
-  /** Saving imported entries into the library, shared with the Online view. */
+  /** Saving imported entries into the library, shared with the Streaming view. */
   downloads: UseDownloadsResult
 }
 
@@ -421,7 +421,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
       ? 'Album'
       : onlineDetail?.playlist.kind === 'mix'
         ? 'Mix'
-        : 'Online playlist'
+        : 'Playlist'
   const subtitle = showingOnline
     ? `${formatCount(tracks.length)} tracks${totalDuration(tracks)} · ${kindLabel}`
     : detail
@@ -467,7 +467,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
           <p className="subtitle">
             {totalLists === 0
               ? 'Collect tracks from your library into your own order, or import a playlist from a link.'
-              : `${formatCount(playlists.length)} custom · ${formatCount(onlinePlaylists.length)} online`}
+              : `${formatCount(playlists.length)} custom · ${formatCount(onlinePlaylists.length)} imported`}
           </p>
         </div>
         <div className="header-actions">
@@ -615,9 +615,9 @@ export function PlaylistsView(props: PlaylistsViewProps) {
             ) : null}
           </div>
 
-          <div className="playlist-group" role="group" aria-label="Online playlists">
+          <div className="playlist-group" role="group" aria-label="Imported playlists">
             <h2 className="playlist-group-title">
-              Online <span className="playlist-group-count">{formatCount(onlinePlaylists.length)}</span>
+              Imported <span className="playlist-group-count">{formatCount(onlinePlaylists.length)}</span>
             </h2>
             {onlinePlaylists.length === 0 ? (
               <p className="playlist-group-empty">
@@ -923,7 +923,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
               <h2>{totalLists === 0 ? 'No playlists yet' : 'Pick a playlist'}</h2>
               <p>
                 {totalLists === 0
-                  ? 'Create one, then add tracks from the library — select some rows and choose “Add to playlist”. Or paste a playlist link in Online.'
+                  ? 'Create one, then add tracks from the library — select some rows and choose “Add to playlist”. Or paste a playlist link in Streaming.'
                   : 'Choose one on the left to see what is in it.'}
               </p>
               {playlists.length === 0 ? (
