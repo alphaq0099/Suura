@@ -1,6 +1,7 @@
 import { BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import { ACCENTS, DENSITIES, MOTION_PREFERENCES, SURFACES, THEME_MODES } from '@shared/appearance'
 import { IPC } from '@shared/ipc'
+import { isLocalLibraryFilter } from '@shared/library'
 import { isImportedPlaylistTrackId } from '@shared/online'
 import { clampPlaylistIndexWidth } from '@shared/playlists'
 import type {
@@ -304,6 +305,11 @@ function sanitizeListQuery(input: unknown): ListTracksQuery {
   const query: ListTracksQuery = {}
   if (typeof input.search === 'string' && input.search.trim().length > 0) {
     query.search = input.search.trim()
+  }
+  // `streams` is answered by the history table, not this query, so it is not a
+  // legal value here even though the renderer's Library filter uses it.
+  if (isLocalLibraryFilter(input.filter)) {
+    query.filter = input.filter
   }
   // Sorting reaches SQL as an ORDER BY fragment, so only these exact keys pass.
   if (typeof input.sort === 'string' && SORT_FIELDS.includes(input.sort as TrackSortField)) {

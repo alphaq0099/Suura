@@ -1,8 +1,9 @@
 import type { RefObject } from 'react'
-import { useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type {
   AddTracksOutcome,
   LibraryClickAction,
+  LibraryFilter,
   LibraryStats,
   Playlist,
   ScanProgress,
@@ -11,11 +12,24 @@ import type {
   TrackSortField
 } from '@shared/types'
 import { formatBytes, formatCount, formatTimestamp } from '@shared/format'
+import { LIBRARY_FILTER_OPTIONS, RECENTLY_ADDED_DAYS } from '@shared/library'
+import type { UseDownloadsResult } from '../hooks/useDownloads'
 import { AddToPlaylistMenu } from './AddToPlaylistMenu'
 import { TrackContextMenu } from './TrackContextMenu'
 import { TrackDetails } from './TrackDetails'
 import { TrackList, describeClickAction } from './TrackList'
-import { CloseIcon, FolderIcon, PlayIcon, PlaylistIcon, RefreshIcon, SearchIcon, SpinnerIcon } from './Icons'
+import {
+  CloseIcon,
+  FolderIcon,
+  LinkIcon,
+  MusicIcon,
+  PlayIcon,
+  PlaylistIcon,
+  QueueIcon,
+  RefreshIcon,
+  SearchIcon,
+  SpinnerIcon
+} from './Icons'
 
 export interface LibraryViewProps {
   tracks: Track[]
@@ -28,6 +42,12 @@ export interface LibraryViewProps {
   search: string
   error: string | null
   folders: string[]
+  filter: LibraryFilter
+  /** How many links the YouTube history remembers, before the local search. */
+  streamCount: number
+  /** True when the rows in `tracks` come from the YouTube history. */
+  showingStreams: boolean
+  streamsLoading: boolean
   sort: TrackSortField | null
   direction: SortDirection
   selectedIds: ReadonlySet<number>
@@ -48,6 +68,12 @@ export interface LibraryViewProps {
   onSelectAll: () => void
   onClearSelection: () => void
   onRequestMore: () => void
+  onFilterChange: (filter: LibraryFilter) => void
+  onOpenYouTube: () => void
+  onQueueStream: (track: Track) => void
+  onQueueSelected: () => void
+  onRemoveStream: (track: Track) => void
+  downloads: UseDownloadsResult
   /** What a click on a row does. See `LibraryClickAction`. */
   singleClick: LibraryClickAction
   doubleClick: LibraryClickAction
@@ -75,6 +101,10 @@ export function LibraryView(props: LibraryViewProps) {
     search,
     error,
     folders,
+    filter,
+    streamCount,
+    showingStreams,
+    streamsLoading,
     sort,
     direction,
     selectedIds,
@@ -94,6 +124,12 @@ export function LibraryView(props: LibraryViewProps) {
     onSelectAll,
     onClearSelection,
     onRequestMore,
+    onFilterChange,
+    onOpenYouTube,
+    onQueueStream,
+    onQueueSelected,
+    onRemoveStream,
+    downloads,
     singleClick,
     doubleClick,
     playlists,
@@ -105,11 +141,84 @@ export function LibraryView(props: LibraryViewProps) {
   const [contextMenu, setContextMenu] = useState<{ track: Track; x: number; y: number } | null>(null)
   const [detailsTrack, setDetailsTrack] = useState<Track | null>(null)
 
+  const { saved, states, save: saveToLibrary, refreshSaved } = downloads
+
+  // Switching views changes what every row means; a menu opened on the old list
+  // would otherwise stay floating over the new one.
+  useEffect(() => {
+    setAddMenu(null)
+    setContextMenu(null)
+  }, [filter])
+
+  const streamVideoIds = useMemo(() => {
+    if (!showingStreams) return []
+    return tracks.flatMap((track) => (track.sourceId ? [track.sourceId] : []))
+  }, [showingStreams, tracks])
+
+  // Ask once per list which stream rows already have a library copy. The whole
+  // history is loaded at once, so this is the same one-query-per-page contract
+  // the YouTube view uses.
+  useEffect(() => {
+    if (!showingStreams) return
+    void refreshSaved(streamVideoIds)
+  }, [showingStreams, streamVideoIds, refreshSaved])
+
+  const saveStream = useCallback(
+    (track: Track): void => {
+      if (track.sourceKind !== 'youtube' || !track.sourceId) return
+      // The row shows its own progress and error; a failed save must not look
+      // like a successful one, and the Saves dock keeps the retry.
+      void saveToLibrary({
+        videoId: track.sourceId,
+        title: track.title,
+        artist: track.artist,
+        album: track.album
+      }).catch(() => undefined)
+    },
+    [saveToLibrary]
+  )
+
   const hasFolders = folders.length > 0
   const searching = search.trim().length > 0
-  const subtitle = stats
-    ? `${formatCount(stats.tracks)} tracks · ${formatCount(stats.albums)} albums · ${formatBytes(stats.totalBytes)} · scanned ${formatTimestamp(stats.lastScanAt)}`
-    : 'Reading library…'
+  const subtitle = showingStreams
+    ? `${formatCount(streamCount)} YouTube ${streamCount === 1 ? 'link' : 'links'} · streamed, not saved`
+    : stats
+      ? `${formatCount(stats.tracks)} tracks · ${formatCount(stats.albums)} albums · ${formatBytes(stats.totalBytes)} · scanned ${formatTimestamp(stats.lastScanAt)}`
+      : 'Reading library…'
+
+  const filterCount = (value: LibraryFilter): number | null => {
+    if (value === 'streams') return streamCount
+    if (!stats) return null
+    switch (value) {
+      case 'recent':
+        return stats.recentTracks
+      case 'most-played':
+        return stats.playedTracks
+      case 'never-played':
+        return stats.unplayedTracks
+      default:
+        return stats.tracks
+    }
+  }
+
+  const localEmptyTitle = searching
+    ? 'No matching tracks'
+    : filter === 'recent'
+      ? `Nothing added in ${RECENTLY_ADDED_DAYS} days`
+      : filter === 'most-played'
+        ? 'Nothing played yet'
+        : filter === 'never-played'
+          ? 'Every track has been played'
+          : 'Nothing indexed yet'
+  const localEmptyCopy = searching
+    ? 'Try a different search term.'
+    : filter === 'recent'
+      ? `Tracks added in the last ${RECENTLY_ADDED_DAYS} days appear here, newest first.`
+      : filter === 'most-played'
+        ? 'Finish a track, or listen for 30 seconds, and it will appear here.'
+        : filter === 'never-played'
+          ? 'Every track in this library has had a completed listen.'
+          : 'Your folders are configured but no tracks have been indexed. Run a scan to pick them up.'
 
   return (
     <section className="main-view">
@@ -125,10 +234,10 @@ export function LibraryView(props: LibraryViewProps) {
               ref={searchInputRef}
               id="library-search"
               type="search"
-              placeholder="Search title, artist, album…"
+              placeholder={showingStreams ? 'Search YouTube links…' : 'Search title, artist, album…'}
               value={search}
               onChange={(event) => onSearchChange(event.target.value)}
-              aria-label="Search library"
+              aria-label={showingStreams ? 'Search YouTube links' : 'Search library'}
             />
             {searching ? (
               <button
@@ -152,6 +261,25 @@ export function LibraryView(props: LibraryViewProps) {
           </button>
         </div>
       </header>
+
+      <div className="library-filters" role="group" aria-label="Library view">
+        {LIBRARY_FILTER_OPTIONS.map((option) => {
+          const count = filterCount(option.value)
+          return (
+            <button
+              key={option.value}
+              type="button"
+              className="filter-chip"
+              aria-pressed={filter === option.value}
+              title={option.hint}
+              onClick={() => onFilterChange(option.value)}
+            >
+              <span>{option.label}</span>
+              {count !== null ? <span className="filter-count">{formatCount(count)}</span> : null}
+            </button>
+          )
+        })}
+      </div>
 
       {error ? <div className="banner error">{error}</div> : null}
 
@@ -190,21 +318,28 @@ export function LibraryView(props: LibraryViewProps) {
             <PlayIcon size={14} />
             <span>Play selected</span>
           </button>
-          <button
-            type="button"
-            onClick={(event) => {
-              const rect = event.currentTarget.getBoundingClientRect()
-              setAddMenu({
-                x: rect.left,
-                y: rect.bottom + 6,
-                trackIds: [...selectedIds],
-                heading: `${formatCount(selectedIds.size)} selected`
-              })
-            }}
-          >
-            <PlaylistIcon size={14} />
-            <span>Add to playlist</span>
-          </button>
+          {showingStreams ? (
+            <button type="button" onClick={onQueueSelected}>
+              <QueueIcon size={14} />
+              <span>Add to queue</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect()
+                setAddMenu({
+                  x: rect.left,
+                  y: rect.bottom + 6,
+                  trackIds: [...selectedIds],
+                  heading: `${formatCount(selectedIds.size)} selected`
+                })
+              }}
+            >
+              <PlaylistIcon size={14} />
+              <span>Add to playlist</span>
+            </button>
+          )}
           {selectedIds.size < tracks.length ? (
             <button type="button" onClick={onSelectAll}>
               <span>Select all loaded ({formatCount(tracks.length)})</span>
@@ -216,11 +351,69 @@ export function LibraryView(props: LibraryViewProps) {
         </div>
       ) : null}
 
-      {!hasFolders ? (
+      {showingStreams ? (
+        tracks.length === 0 ? (
+          <div className="empty-state">
+            {streamsLoading ? <SpinnerIcon size={32} /> : <LinkIcon size={32} />}
+            <h2>
+              {streamsLoading
+                ? 'Reading YouTube history…'
+                : searching
+                  ? 'No matching YouTube links'
+                  : 'No streamed links yet'}
+            </h2>
+            <p>
+              {streamsLoading
+                ? 'The links you have played are being read from the library.'
+                : searching
+                  ? 'Try a different search term.'
+                  : 'Play a YouTube link or a search result and it will appear here. A stream stays a link until you save it.'}
+            </p>
+            {streamsLoading || searching ? null : (
+              <button type="button" className="primary" onClick={onOpenYouTube}>
+                <LinkIcon />
+                <span>Open YouTube</span>
+              </button>
+            )}
+          </div>
+        ) : (
+          <TrackList
+            tracks={tracks}
+            total={total}
+            sort={null}
+            direction="asc"
+            currentTrackId={currentTrackId}
+            isPlaying={isPlaying}
+            selectedIds={selectedIds}
+            loadingMore={false}
+            rowHeight={rowHeight}
+            sortable={false}
+            listKey="streams"
+            onToggleSort={() => undefined}
+            onActivate={onPlay}
+            onSelect={onSelect}
+            onSelectAll={onSelectAll}
+            onClearSelection={onClearSelection}
+            onReveal={onReveal}
+            onSave={saveStream}
+            isSaved={(track) => (track.sourceId ? saved.has(track.sourceId) : false)}
+            saveState={(track) => (track.sourceId ? states[track.sourceId] : undefined)}
+            onQueue={onQueueStream}
+            onRemove={onRemoveStream}
+            removeLabel="Remove from history"
+            onDetails={(track) => setDetailsTrack(track)}
+            singleClick={singleClick}
+            doubleClick={doubleClick}
+          />
+        )
+      ) : !hasFolders ? (
         <div className="empty-state">
           <FolderIcon size={32} />
           <h2>No music folders yet</h2>
-          <p>Add a folder and Player will index every audio file inside it, including subfolders.</p>
+          <p>
+            Add a folder and Player will index every audio file inside it, including subfolders.
+            {streamCount > 0 ? ' Your played YouTube links are under the YouTube chip above.' : ''}
+          </p>
           <button type="button" className="primary" onClick={onAddFolder} disabled={scanning}>
             <FolderIcon />
             <span>Add music folder</span>
@@ -228,14 +421,14 @@ export function LibraryView(props: LibraryViewProps) {
         </div>
       ) : tracks.length === 0 ? (
         <div className="empty-state">
-          <SearchIcon size={32} />
-          <h2>{searching ? 'No matching tracks' : 'Nothing indexed yet'}</h2>
-          <p>
-            {searching
-              ? 'Try a different search term.'
-              : 'Your folders are configured but no tracks have been indexed. Run a scan to pick them up.'}
-          </p>
-          {searching ? null : (
+          {searching ? <SearchIcon size={32} /> : <MusicIcon size={32} />}
+          <h2>{localEmptyTitle}</h2>
+          <p>{localEmptyCopy}</p>
+          {searching ? null : filter !== 'all' ? (
+            <button type="button" onClick={() => onFilterChange('all')}>
+              <span>Show all tracks</span>
+            </button>
+          ) : (
             <button type="button" className="primary" onClick={onScan} disabled={scanning}>
               <RefreshIcon />
               <span>Scan now</span>
@@ -253,6 +446,7 @@ export function LibraryView(props: LibraryViewProps) {
           selectedIds={selectedIds}
           loadingMore={loadingMore}
           rowHeight={rowHeight}
+          listKey={filter}
           onToggleSort={onToggleSort}
           onActivate={onPlay}
           onSelect={onSelect}
@@ -273,9 +467,14 @@ export function LibraryView(props: LibraryViewProps) {
 
       {tracks.length > 0 ? (
         <p className="table-footnote">
-          Showing {formatCount(tracks.length)} of {formatCount(total)} {searching ? 'matching' : ''} tracks. Click:{' '}
-          {describeClickAction(singleClick)}, double-click: {describeClickAction(doubleClick)}.{' '}
-          {sort ? 'Sorting is applied to the whole library.' : ''}
+          Showing {formatCount(tracks.length)} of {formatCount(total)} {searching ? 'matching' : ''}{' '}
+          {showingStreams ? 'YouTube links' : 'tracks'}. Click: {describeClickAction(singleClick)}, double-click:{' '}
+          {describeClickAction(doubleClick)}.{' '}
+          {showingStreams
+            ? 'Saving downloads a copy into your music folder; the trash button forgets the link.'
+            : sort
+              ? 'Sorting is applied to the whole library.'
+              : ''}
         </p>
       ) : null}
 
@@ -313,7 +512,7 @@ export function LibraryView(props: LibraryViewProps) {
       {detailsTrack ? (
         <TrackDetails
           track={detailsTrack}
-          onReveal={onReveal}
+          onReveal={showingStreams ? undefined : onReveal}
           onClose={() => setDetailsTrack(null)}
         />
       ) : null}

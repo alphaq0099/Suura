@@ -24,6 +24,7 @@ import {
   THEME_CHOICES
 } from '@shared/appearance'
 import { DEFAULT_PREFERENCE_PATCH } from '@shared/settings-defaults'
+import { isLocalLibraryFilter, recentlyAddedCutoff } from '@shared/library'
 import { silentLogger } from '@core/logging/logger'
 import { resolveAppPaths, ensureAppDirectories } from '@core/paths'
 import { DEFAULT_SETTINGS, mergeSettings, SettingsService } from '@core/settings/settings-service'
@@ -377,6 +378,60 @@ async function main(): Promise<void> {
       library.reportPlayback(toneA.id, 31_000, false)
       checkEqual('listening past the threshold counts as played', repo.getById(toneA.id)?.playCount ?? -1, 2)
       check('the last-played timestamp was recorded', Boolean(repo.getById(toneA.id)?.lastPlayedAt))
+    }
+
+    // --- smart library views ----------------------------------------------
+    // The chips are answered by SQL, so the checks are about the sets and the
+    // natural order rather than about a renderer predicate that could drift.
+    check('the library filter allowlist accepts a local view', isLocalLibraryFilter('most-played'))
+    check('the library filter allowlist refuses the history chip', !isLocalLibraryFilter('streams'))
+    check(
+      'the library filter allowlist refuses arbitrary SQL text',
+      !isLocalLibraryFilter("recent' OR 1=1 --")
+    )
+
+    const recent = library.list({ filter: 'recent' })
+    checkEqual('recently added includes a just-scanned library', recent.total, 4)
+    check(
+      'recently added opens newest first',
+      recent.tracks.every(
+        (track, index) => index === 0 || (recent.tracks[index - 1]?.addedAt ?? 0) >= track.addedAt
+      )
+    )
+
+    const mostPlayed = library.list({ filter: 'most-played' })
+    checkEqual('most played only includes tracks with a play', mostPlayed.total, 1)
+    checkEqual('the played track is the one reported', mostPlayed.tracks[0]?.id, toneA?.id)
+
+    const neverPlayed = library.list({ filter: 'never-played' })
+    checkEqual('never played is the complement of most played', neverPlayed.total, 3)
+    check(
+      'never played excludes the track that was heard',
+      !neverPlayed.tracks.some((track) => track.id === toneA?.id)
+    )
+    checkEqual(
+      'a search and a smart filter combine',
+      library.list({ filter: 'most-played', search: 'Another' }).total,
+      0
+    )
+
+    const smartStats = library.stats()
+    checkEqual('the stats count recent rows', smartStats.recentTracks, 4)
+    checkEqual('the stats count played rows', smartStats.playedTracks, 1)
+    checkEqual('the stats count unplayed rows', smartStats.unplayedTracks, 3)
+
+    if (toneA) {
+      // Push one row outside the window without touching its file. The view has
+      // to be a date window, not "the four newest rows".
+      database.db
+        .prepare('UPDATE tracks SET added_at = ? WHERE id = ?')
+        .run(recentlyAddedCutoff() - 1, toneA.id)
+      checkEqual(
+        'recently added honours the date window',
+        library.list({ filter: 'recent' }).total,
+        3
+      )
+      checkEqual('the recent count follows the same window', library.stats().recentTracks, 3)
     }
 
     // --- allowlist --------------------------------------------------------

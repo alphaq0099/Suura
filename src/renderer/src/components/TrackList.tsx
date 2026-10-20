@@ -4,7 +4,18 @@ import type { DownloadStatus, LibraryClickAction, SortDirection, Track, TrackSor
 import { formatDuration } from '@shared/format'
 import { useRowReorder } from '../hooks/useRowReorder'
 import { ArtworkImage } from './ArtworkImage'
-import { CheckIcon, DownloadIcon, InfoIcon, MoreIcon, PlayIcon, RevealIcon, SortIcon, SpinnerIcon, TrashIcon } from './Icons'
+import {
+  CheckIcon,
+  DownloadIcon,
+  InfoIcon,
+  MoreIcon,
+  PlayIcon,
+  QueueIcon,
+  RevealIcon,
+  SortIcon,
+  SpinnerIcon,
+  TrashIcon
+} from './Icons'
 
 /** How a configured click action reads in a tooltip or a footnote. */
 export function describeClickAction(action: LibraryClickAction): string {
@@ -67,6 +78,13 @@ export interface TrackListProps {
   onRemove?: (track: Track) => void
   /** What the remove action says, e.g. "Remove from playlist". */
   removeLabel?: string
+  /** Adds an "Add to queue" action to stream rows. */
+  onQueue?: (track: Track) => void
+  /**
+   * Changes when the rows are a different list rather than a new page of the
+   * same one. The virtualizer returns to the top when it changes.
+   */
+  listKey?: string
   /**
    * Right-click (or Shift+F10) on a row. The coordinates are page coordinates,
    * so the caller can open a menu where the pointer is. When this is passed, the
@@ -137,6 +155,8 @@ export function TrackList(props: TrackListProps) {
     reorder,
     onRemove,
     removeLabel = 'Remove from this list',
+    onQueue,
+    listKey,
     onRowContextMenu,
     onDetails,
     onSave,
@@ -201,7 +221,7 @@ export function TrackList(props: TrackListProps) {
     setScrollTop(0)
     setActiveIndex(0)
     if (scrollerRef.current) scrollerRef.current.scrollTop = 0
-  }, [sort, direction])
+  }, [sort, direction, listKey])
 
   const start = Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN)
   const end = Math.min(tracks.length, Math.ceil((scrollTop + viewport) / rowHeight) + OVERSCAN)
@@ -352,7 +372,8 @@ export function TrackList(props: TrackListProps) {
       className={[
         'track-list',
         onRemove ? 'has-remove' : '',
-        onSave ? 'has-save' : ''
+        onSave ? 'has-save' : '',
+        onQueue ? 'has-queue' : ''
       ]
         .filter(Boolean)
         .join(' ')}
@@ -522,6 +543,20 @@ export function TrackList(props: TrackListProps) {
                         }}
                       >
                         {rowSaved ? <CheckIcon /> : savingActive ? <SpinnerIcon /> : <DownloadIcon />}
+                      </button>
+                    ) : null}
+                    {onQueue && isStream ? (
+                      <button
+                        type="button"
+                        className="icon-button subtle"
+                        title="Add to queue"
+                        aria-label={`Add ${track.title} to the queue`}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onQueue(track)
+                        }}
+                      >
+                        <QueueIcon size={15} />
                       </button>
                     ) : null}
                     {onRemove ? (

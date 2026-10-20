@@ -1,6 +1,7 @@
 import type { LibraryStats, ListTracksQuery, SourceKind, Track, TrackPage, TrackSortField } from '@shared/types'
+import { recentlyAddedCutoff } from '@shared/library'
 import { isPathInside, normalizePath } from './content-key'
-import type { SqlDatabase } from '../db/driver'
+import type { SqlDatabase, SqlParam } from '../db/driver'
 
 export interface TrackRow {
   id: number
@@ -165,11 +166,57 @@ const SORT_COLUMNS: Record<TrackSortField, string> = {
  */
 function buildOrder(query: ListTracksQuery): string {
   const field = query.sort
-  if (!field) return DEFAULT_ORDER
+  if (!field) {
+    // A smart view with no column chosen has an order of its own: newest first
+    // for Recently added, and most-played first for the play-count view. A
+    // column click still wins, so the header remains the way to re-sort.
+    if (query.filter === 'recent') return 'added_at DESC, id ASC'
+    if (query.filter === 'most-played') {
+      return 'play_count DESC, COALESCE(last_played_at, 0) DESC, id ASC'
+    }
+    return DEFAULT_ORDER
+  }
   const column = SORT_COLUMNS[field]
   if (!column) return DEFAULT_ORDER
   const direction = query.direction === 'desc' ? 'DESC' : 'ASC'
   return `${column} ${direction}, id ASC`
+}
+
+/**
+ * The WHERE clause and its bound values for a list query.
+ *
+ * Every fragment here is a constant chosen by the switch, never a string from
+ * the renderer; `sanitizeListQuery` narrows `filter` to these names first.
+ */
+function buildFilter(query: ListTracksQuery): { where: string; params: SqlParam[] } {
+  const conditions: string[] = []
+  const params: SqlParam[] = []
+
+  const ftsQuery = query.search ? buildFtsQuery(query.search) : null
+  if (ftsQuery) {
+    conditions.push('id IN (SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ?)')
+    params.push(ftsQuery)
+  }
+
+  switch (query.filter) {
+    case 'recent':
+      conditions.push('added_at >= ?')
+      params.push(recentlyAddedCutoff())
+      break
+    case 'most-played':
+      conditions.push('play_count > 0')
+      break
+    case 'never-played':
+      conditions.push('play_count = 0')
+      break
+    default:
+      break
+  }
+
+  return {
+    where: conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
+    params
+  }
 }
 
 /**
@@ -303,28 +350,20 @@ export class TrackRepository {
   list(query: ListTracksQuery = {}): TrackPage {
     const limit = Math.min(Math.max(query.limit ?? 5000, 1), 50000)
     const offset = Math.max(query.offset ?? 0, 0)
-    const ftsQuery = query.search ? buildFtsQuery(query.search) : null
     const order = buildOrder(query)
-
-    if (ftsQuery) {
-      const where = 'WHERE id IN (SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ?)'
-      const rows = this.db
-        .prepare(`SELECT ${TRACK_COLUMNS} FROM tracks ${where} ORDER BY ${order} LIMIT ? OFFSET ?`)
-        .all<TrackRow>(ftsQuery, limit, offset)
-      const total = this.db
-        .prepare(`SELECT COUNT(*) AS total FROM tracks ${where}`)
-        .get<{ total: number }>(ftsQuery)
-      return { tracks: rows.map(mapTrackRow), total: total?.total ?? 0 }
-    }
+    const { where, params } = buildFilter(query)
 
     const rows = this.db
-      .prepare(`SELECT ${TRACK_COLUMNS} FROM tracks ORDER BY ${order} LIMIT ? OFFSET ?`)
-      .all<TrackRow>(limit, offset)
-    const total = this.db.prepare('SELECT COUNT(*) AS total FROM tracks').get<{ total: number }>()
+      .prepare(`SELECT ${TRACK_COLUMNS} FROM tracks ${where} ORDER BY ${order} LIMIT ? OFFSET ?`)
+      .all<TrackRow>(...params, limit, offset)
+    const total = this.db
+      .prepare(`SELECT COUNT(*) AS total FROM tracks ${where}`)
+      .get<{ total: number }>(...params)
     return { tracks: rows.map(mapTrackRow), total: total?.total ?? 0 }
   }
 
   stats(): LibraryStats {
+    const cutoff = recentlyAddedCutoff()
     const row = this.db
       .prepare(
         `SELECT
@@ -332,17 +371,31 @@ export class TrackRepository {
            COUNT(DISTINCT CASE WHEN artist IS NOT NULL AND artist <> '' THEN artist END) AS artists,
            COUNT(DISTINCT CASE WHEN album IS NOT NULL AND album <> ''
              THEN artist || char(31) || album END) AS albums,
-           COALESCE(SUM(file_size), 0) AS totalBytes
+           COALESCE(SUM(file_size), 0) AS totalBytes,
+           COALESCE(SUM(CASE WHEN added_at >= ? THEN 1 ELSE 0 END), 0) AS recentTracks,
+           COALESCE(SUM(CASE WHEN play_count > 0 THEN 1 ELSE 0 END), 0) AS playedTracks,
+           COALESCE(SUM(CASE WHEN play_count = 0 THEN 1 ELSE 0 END), 0) AS unplayedTracks
          FROM tracks`
       )
-      .get<{ tracks: number; artists: number; albums: number; totalBytes: number }>()
+      .get<{
+        tracks: number
+        artists: number
+        albums: number
+        totalBytes: number
+        recentTracks: number
+        playedTracks: number
+        unplayedTracks: number
+      }>(cutoff)
 
     return {
       tracks: row?.tracks ?? 0,
       artists: row?.artists ?? 0,
       albums: row?.albums ?? 0,
       totalBytes: row?.totalBytes ?? 0,
-      lastScanAt: this.lastScanAt()
+      lastScanAt: this.lastScanAt(),
+      recentTracks: row?.recentTracks ?? 0,
+      playedTracks: row?.playedTracks ?? 0,
+      unplayedTracks: row?.unplayedTracks ?? 0
     }
   }
 

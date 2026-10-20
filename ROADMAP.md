@@ -377,7 +377,7 @@ needed for the current use and was making Settings promise behaviour that did no
 **Exit:** saving a history row or imported entry round-trips into an ordinary tagged library track; a killed process
 leaves no temp folder; cancel and retry work from the dock. The disk-budget/offline half of the old exit moves to M12.
 
-### M5 — Discovery & YouTube Library Surface  *(in progress)*
+### M5 — Discovery & YouTube Library Surface  *(complete)*
 - [x] Unified search: local results **and** YouTube results in one list, clearly badged. The new **Search** view queries
       both in parallel; every row carries a **Local** or **YouTube** badge. A local row plays a file at once. A
       YouTube row goes through the same add-link path as a pasted URL, so it is remembered in the YouTube history and
@@ -403,13 +403,19 @@ leaves no temp folder; cancel and retry work from the dock. The disk-budget/offl
       on play, and each entry (or the whole snapshot) can now be saved to the library through the M4 download path.
 - [x] Show which imported entries are already in the library — a `savedOrigins` query per page turns the save button
       into a tick, and the same information prevents a second download of the same video.
-- [ ] Smart playlists / filters (recently added, most played, never played, stream-only tracks)
-- [ ] Fold "YouTube-only" tracks into the normal library views so it feels like one library
+- [x] Smart views in the Library: a chip row for **All**, **Recently added** (the last 30 days, newest first), **Most
+      played** (play-count order), **Never played** and **YouTube**, with counts. The local views are answered in SQLite
+      rather than by filtering the loaded pages; search applies inside the chosen view and a column sort overrides its
+      natural order. There are no user-defined smart playlists yet: the chips are fixed views, not saved lists.
+- [x] Fold "YouTube-only" tracks into the normal library views so it feels like one library — the **YouTube** chip feeds
+      the played-link history through the ordinary track table, with Play, multi-select, Add to queue, Save to library,
+      Remove from history and Details. The rows stay links (they are not local tracks and the local chips do not count
+      them), but the user no longer has to leave the Library to see them.
 **Exit:** a user can go from "no music" to "a 40-track playlist playing" without touching a folder.
-*Status: the search half of this milestone is in. Search finds local and YouTube rows together, channels open in
-place, and imported lists plus the link history already cover the "start from nothing" path. Still open: smart
-playlists, and folding stream-only rows into the Library view instead of keeping them under YouTube. The channel
-page is a flat recent-videos list on purpose — no subscriptions, no channel import, no "download all".*
+*Status: complete. Search finds local and YouTube rows together, channels open in place, smart chips cover recent,
+played and unplayed views, and the YouTube chip folds stream-only history into the Library. Imported lists plus the link
+history cover the "start from nothing" path. The channel page is a flat recent-videos list on purpose — no subscriptions,
+no channel import, no "download all".*
 
 ### M6 — Settings Revamp  *(complete)*
 **Goal:** one deliberate pass over Settings after M5, instead of growing it card by card. The page currently mixes
@@ -509,7 +515,7 @@ cached tracks; "keep" → "remove" round-trips cleanly.
 | M2 | Player Quality & System Integration | Gapless, EQ, SMTC, tray | 2 w | M1 |
 | M3 | Engine Skeleton | Resolve + **stream** | 2–3 w | M0, M1 |
 | M4 | Save to Library (lite) | Stream-only / explicit keep / saves dock | 1–2 w | M3 |
-| M5 | Discovery & YouTube Surface | Unified search, channels, metadata | 2–3 w | M4 |
+| M5 | Discovery & YouTube Surface | Unified search, channels, smart Library views | 2–3 w | M4 |
 | M6 | Settings Revamp | Hierarchy, grouping, honest controls | 1–2 w | M5 |
 | M7 | Playlists, Sync & Data Care | Import/export, migrations, dedupe | 2 w | M6 |
 | M8 | Windows Release Engineering | Installer, update, telemetry, a11y | 2 w | M7 |

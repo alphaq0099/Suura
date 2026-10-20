@@ -38,9 +38,12 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
   }
 
   const watchdog = setTimeout(() => {
-    console.log('SELFTEST FAIL  test harness timed out after 120s')
+    // The suite covers the whole app now, and a cold Windows launch plus the
+    // media checks can sit well past the old two-minute guard. A timeout here
+    // still fails the run; it just no longer cuts off a healthy one.
+    console.log('SELFTEST FAIL  test harness timed out after 180s')
     app.exit(1)
-  }, 120_000)
+  }, 180_000)
 
   try {
     // Let the first render and the initial IPC round-trips settle.
@@ -780,6 +783,142 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       container.onlineRepo.count() === 3,
       'online: the history is seeded before the layout sweep',
       container.onlineRepo.count()
+    )
+
+    // ---- 9b. library smart views ---------------------------------------
+    // The chips are not a second list: they change what the same table shows.
+    // These checks use the seeded fixtures and the seeded YouTube history, so
+    // they exercise the real IPC queries and the stream rows, not a mock.
+    const libraryViews = await evaluate<{
+      chips: string
+      youtubeActive: string
+      streamRows: number
+      streamTitles: string
+      saveButtons: number
+      queueButtons: number
+      removeButtons: number
+      detailsButtons: number
+      neverActive: string
+      neverRows: number
+      neverHasStreams: boolean
+      neverHasFixture: boolean
+      allActive: string
+      allRows: number
+      allHasFixture: boolean
+      allHasStream: boolean
+    }>(
+      window,
+      `(async () => {
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const nav = [...document.querySelectorAll('.nav-item')].find((el) =>
+           (el.textContent || '').trim().startsWith('Library')
+         )
+         nav?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await sleep(250)
+
+         const chips = () => [...document.querySelectorAll('.library-filters .filter-chip')]
+         const chip = (label) => chips().find((el) => (el.textContent || '').includes(label))
+         const activeLabel = () =>
+           (document.querySelector('.filter-chip[aria-pressed="true"]')?.textContent || '').trim()
+         const titles = () =>
+           [...document.querySelectorAll('.track-row .row-title-text')].map((el) => (el.textContent || '').trim())
+
+         const chipLabels = chips().map((el) => (el.textContent || '').trim()).join('|')
+
+         chip('YouTube')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await sleep(500)
+         const streamRows = [...document.querySelectorAll('.track-row')]
+         const buttonsWith = (title) =>
+           streamRows.filter((row) =>
+             [...row.querySelectorAll('button')].some((button) => button.getAttribute('title') === title)
+           ).length
+
+         const youtubeActive = activeLabel()
+         const streamTitles = titles()
+         const saveButtons = buttonsWith('Save to your library')
+         const queueButtons = buttonsWith('Add to queue')
+         const removeButtons = buttonsWith('Remove from history')
+         const detailsButtons = buttonsWith('Details')
+
+         chip('Never played')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await sleep(450)
+         const neverActive = activeLabel()
+         const neverTitles = titles()
+         const neverRows = neverTitles.length
+         const neverHasStreams = neverTitles.some((title) => title.startsWith('Online Tone'))
+         const neverHasFixture = neverTitles.some((title) => title.startsWith('Selftest '))
+
+         chip('All')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await sleep(450)
+         const allActive = activeLabel()
+         const allTitles = titles()
+         const allRows = allTitles.length
+         const allHasFixture = allTitles.some((title) => title.startsWith('Selftest '))
+         const allHasStream = allTitles.some((title) => title.startsWith('Online Tone'))
+
+         return {
+           chips: chipLabels,
+           youtubeActive,
+           streamRows: streamRows.length,
+           streamTitles: streamTitles.join('|'),
+           saveButtons,
+           queueButtons,
+           removeButtons,
+           detailsButtons,
+           neverActive,
+           neverRows,
+           neverHasStreams,
+           neverHasFixture,
+           allActive,
+           allRows,
+           allHasFixture,
+           allHasStream
+         }
+       })()`
+    )
+    record(
+      ['All', 'Recently added', 'Most played', 'Never played', 'YouTube'].every((label) =>
+        libraryViews.chips.includes(label)
+      ),
+      'library: every smart view is reachable from one chip row',
+      libraryViews.chips
+    )
+    record(
+      libraryViews.youtubeActive.includes('YouTube') &&
+        libraryViews.streamRows === 3 &&
+        ['Online Tone One', 'Online Tone Two', 'Online Tone Three'].every((title) =>
+          libraryViews.streamTitles.includes(title)
+        ),
+      'library: the YouTube chip lists the streamed history',
+      libraryViews.streamTitles
+    )
+    record(
+      libraryViews.saveButtons === 3 &&
+        libraryViews.queueButtons === 3 &&
+        libraryViews.removeButtons === 3 &&
+        libraryViews.detailsButtons === 3,
+      'library: stream rows can be saved, queued, forgotten and inspected',
+      {
+        save: libraryViews.saveButtons,
+        queue: libraryViews.queueButtons,
+        remove: libraryViews.removeButtons,
+        details: libraryViews.detailsButtons
+      }
+    )
+    record(
+      libraryViews.neverActive.includes('Never played') &&
+        !libraryViews.neverHasStreams &&
+        (libraryViews.neverRows === 0 || libraryViews.neverHasFixture),
+      'library: a local smart view excludes the YouTube rows',
+      { rows: libraryViews.neverRows, active: libraryViews.neverActive }
+    )
+    record(
+      libraryViews.allActive.includes('All') &&
+        libraryViews.allRows > 0 &&
+        libraryViews.allHasFixture &&
+        !libraryViews.allHasStream,
+      'library: All returns to the local library and drops the stream rows',
+      { rows: libraryViews.allRows, titles: libraryViews.allHasFixture }
     )
 
     // ---- 10. layout: no view may overflow sideways ---------------------

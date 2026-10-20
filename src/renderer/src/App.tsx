@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { APPEARANCE_CACHE_KEY, DENSITY_ROW_HEIGHT } from '@shared/appearance'
-import type { AppPaths, AppSettings, DeepPartial, EngineStatus, YouTubeSearchResult } from '@shared/types'
+import type { AppPaths, AppSettings, DeepPartial, EngineStatus, Track, YouTubeSearchResult } from '@shared/types'
 import { onlineEntryToTrack, type PlayingList } from '@shared/online'
 import { youtubeWatchUrl } from '@shared/youtube'
 import { api, messageOf } from './api'
@@ -118,12 +118,15 @@ export function App() {
     progress,
     search,
     setSearch,
+    filter: libraryFilter,
+    setFilter: setLibraryFilter,
     sort,
     direction,
     toggleSort,
     selectedIds,
     select,
     selectAll,
+    selectMany,
     clearSelection,
     loadMore,
     loadingMore,
@@ -132,13 +135,46 @@ export function App() {
 
   const searchInputRef = useRef<HTMLInputElement | null>(null)
 
+  const showingStreams = libraryFilter === 'streams'
+
+  /**
+   * The YouTube history as library rows.
+   *
+   * Filtering happens here rather than in the database because the history is
+   * already fully loaded (it is a few hundred links, not a music library). The
+   * same search box then means the same thing on both chips: it narrows what is
+   * on screen instead of switching to a different search.
+   */
+  const streamTracks = useMemo(() => {
+    const term = search.trim().toLowerCase()
+    const entries = term
+      ? online.entries.filter((entry) => {
+          return (
+            entry.title.toLowerCase().includes(term) ||
+            (entry.artist ?? '').toLowerCase().includes(term) ||
+            (entry.album ?? '').toLowerCase().includes(term) ||
+            entry.videoId.toLowerCase().includes(term)
+          )
+        })
+      : online.entries
+    return entries.map(onlineEntryToTrack)
+  }, [online.entries, search])
+
+  const visibleTracks = showingStreams ? streamTracks : tracks
+  const visibleTotal = showingStreams ? streamTracks.length : total
+
   // The YouTube history is the one list that can move without this window doing
   // anything: playing a row resolves in the main process, which lifts it. So it
   // is re-read on entry as well as on the change event, otherwise the order the
   // user left behind could still be on screen when they come back.
   useEffect(() => {
-    if (view === 'online') void online.refresh()
-  }, [view, online.refresh])
+    // The YouTube chip is the same history as the YouTube view, so entering it
+    // re-reads the list for the same reason the view does. Without this a link
+    // resolved in the main process while another view was open would be missing.
+    if (view === 'online' || (view === 'library' && libraryFilter === 'streams')) {
+      void online.refresh()
+    }
+  }, [view, libraryFilter, online.refresh])
 
   // Closing is a two-step state rather than a plain toggle: the element has to
   // stay mounted for the length of the exit animation or it simply vanishes.
@@ -320,16 +356,53 @@ export function App() {
 
   const playTrack = useCallback(
     (index: number): void => {
-      player.playQueue(tracks, index)
+      if (showingStreams) setPlayingList(null)
+      player.playQueue(visibleTracks, index)
     },
-    [player, tracks]
+    [player, showingStreams, visibleTracks]
   )
 
   const playSelected = useCallback((): void => {
-    const selected = tracks.filter((track) => selectedIds.has(track.id))
+    const selected = visibleTracks.filter((track) => selectedIds.has(track.id))
     if (selected.length === 0) return
+    if (showingStreams) setPlayingList(null)
     player.playQueue(selected, 0)
-  }, [player, tracks, selectedIds])
+  }, [player, selectedIds, showingStreams, visibleTracks])
+
+  const selectAllVisible = useCallback((): void => {
+    if (showingStreams) {
+      selectMany(streamTracks.map((track) => track.id))
+      return
+    }
+    selectAll()
+  }, [selectAll, selectMany, showingStreams, streamTracks])
+
+  const queueStream = useCallback(
+    (track: Track): void => {
+      player.enqueue([track])
+    },
+    [player]
+  )
+
+  const queueSelectedStreams = useCallback((): void => {
+    const selected = streamTracks.filter((track) => selectedIds.has(track.id))
+    if (selected.length === 0) return
+    player.enqueue(selected)
+  }, [player, selectedIds, streamTracks])
+
+  const removeStream = useCallback(
+    async (track: Track): Promise<void> => {
+      try {
+        await online.remove(-track.id)
+        // Keep the rest of a multi-row selection; the row that was forgotten is
+        // the only thing that stopped existing.
+        selectMany([...selectedIds].filter((id) => id !== track.id))
+      } catch (cause) {
+        setActionError(messageOf(cause))
+      }
+    },
+    [online, selectedIds, selectMany]
+  )
 
   /**
    * Playing a discovery result is playing a link.
@@ -405,6 +478,9 @@ export function App() {
   }
 
   const combinedError = actionError ?? libraryError
+  // The YouTube history is part of Library now, so a failure to read it belongs
+  // on that view rather than only in the YouTube view's own banner.
+  const libraryViewError = actionError ?? (showingStreams ? online.error : null) ?? libraryError
 
   return (
     // The artwork preferences are published as data attributes here rather than
@@ -428,17 +504,21 @@ export function App() {
 
       {view === 'library' ? (
         <LibraryView
-          tracks={tracks}
-          total={total}
+          tracks={visibleTracks}
+          total={visibleTotal}
           stats={stats}
           progress={progress}
           scanning={scanning}
-          loadingMore={loadingMore}
+          loadingMore={showingStreams ? false : loadingMore}
           search={search}
-          error={combinedError}
+          error={libraryViewError}
           folders={settings.libraryFolders}
-          sort={sort}
-          direction={direction}
+          filter={libraryFilter}
+          streamCount={online.entries.length}
+          showingStreams={showingStreams}
+          streamsLoading={online.loading}
+          sort={showingStreams ? null : sort}
+          direction={showingStreams ? 'asc' : direction}
           selectedIds={selectedIds}
           currentTrackId={player.current?.id ?? null}
           isPlaying={player.isPlaying}
@@ -453,9 +533,15 @@ export function App() {
           onPlaySelected={playSelected}
           onReveal={(trackId) => void revealTrack(trackId)}
           onSelect={select}
-          onSelectAll={selectAll}
+          onSelectAll={selectAllVisible}
           onClearSelection={clearSelection}
-          onRequestMore={loadMore}
+          onRequestMore={showingStreams ? () => undefined : loadMore}
+          onFilterChange={setLibraryFilter}
+          onOpenYouTube={() => setView('online')}
+          onQueueStream={queueStream}
+          onQueueSelected={queueSelectedStreams}
+          onRemoveStream={(track) => void removeStream(track)}
+          downloads={downloads}
           singleClick={settings.interaction.librarySingleClick}
           doubleClick={settings.interaction.libraryDoubleClick}
           playlists={playlists.playlists}

@@ -79,6 +79,18 @@ export type ArtworkSize = 'small' | 'medium' | 'large' | 'xlarge'
  */
 export type LibraryClickAction = 'nothing' | 'select' | 'play' | 'select-play'
 
+/**
+ * A saved view of the library.
+ *
+ * `streams` is the YouTube history rather than a query over `tracks`: those rows
+ * own no file and no local id, so the Library shows them from the history table
+ * under their own chip instead of pretending they are ordinary rows.
+ */
+export type LibraryFilter = 'all' | 'recent' | 'most-played' | 'never-played' | 'streams'
+
+/** The filters the `tracks` table can answer. */
+export type LocalLibraryFilter = Exclude<LibraryFilter, 'streams'>
+
 /** A single playable item. Local files populate `filePath`; remote tracks will not. */
 export interface Track {
   id: number
@@ -137,6 +149,12 @@ export interface LibraryStats {
   albums: number
   totalBytes: number
   lastScanAt: number | null
+  /** Local rows added within `RECENTLY_ADDED_DAYS`. */
+  recentTracks: number
+  /** Local rows with at least one completed listen. */
+  playedTracks: number
+  /** Local rows that have never had a completed listen. */
+  unplayedTracks: number
 }
 
 export interface Playlist {
@@ -483,6 +501,8 @@ export interface AppPaths {
 export interface ListTracksQuery {
   /** Full-text search across title/artist/album/albumArtist/genre. */
   search?: string
+  /** A saved local-library view. `all` and an absent filter are the same query. */
+  filter?: LocalLibraryFilter
   /** Sort field. Anything else falls back to the default artist/album/track order. */
   sort?: TrackSortField
   direction?: SortDirection

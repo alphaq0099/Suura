@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { LibraryStats, ScanProgress, SortDirection, Track, TrackSortField } from '@shared/types'
+import type { LibraryFilter, LibraryStats, ScanProgress, SortDirection, Track, TrackSortField } from '@shared/types'
 import { api, messageOf } from '../api'
 
 const SEARCH_DEBOUNCE_MS = 200
@@ -22,6 +22,8 @@ export interface UseLibraryResult {
   progress: ScanProgress | null
   search: string
   setSearch: (value: string) => void
+  filter: LibraryFilter
+  setFilter: (filter: LibraryFilter) => void
   sort: TrackSortField | null
   direction: SortDirection
   /** Cycles the given column: ascending -> descending -> back to the default order. */
@@ -37,6 +39,8 @@ export interface UseLibraryResult {
   selectedIds: ReadonlySet<number>
   select: (trackId: number, mode: 'replace' | 'toggle') => void
   selectAll: () => void
+  /** Replaces the selection with an explicit set of ids (the YouTube rows). */
+  selectMany: (trackIds: number[]) => void
   clearSelection: () => void
 }
 
@@ -46,6 +50,7 @@ export function useLibrary(): UseLibraryResult {
   const [stats, setStats] = useState<LibraryStats | null>(null)
   const [progress, setProgress] = useState<ScanProgress | null>(null)
   const [search, setSearch] = useState('')
+  const [filter, setFilter] = useState<LibraryFilter>('all')
   const [sort, setSort] = useState<TrackSortField | null>(null)
   const [direction, setDirection] = useState<SortDirection>('asc')
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<number>>(() => new Set<number>())
@@ -55,8 +60,14 @@ export function useLibrary(): UseLibraryResult {
 
   // The query the loaded rows belong to. Kept in a ref because the event
   // subscription and loadMore must read it without re-subscribing.
-  const queryRef = useRef<{ search: string; sort: TrackSortField | null; direction: SortDirection }>({
+  const queryRef = useRef<{
+    search: string
+    filter: LibraryFilter
+    sort: TrackSortField | null
+    direction: SortDirection
+  }>({
     search: '',
+    filter: 'all',
     sort: null,
     direction: 'asc'
   })
@@ -75,13 +86,24 @@ export function useLibrary(): UseLibraryResult {
   }, [total])
 
   const load = useCallback(
-    async (term: string, nextSort: TrackSortField | null, nextDirection: SortDirection): Promise<void> => {
+    async (
+      term: string,
+      nextSort: TrackSortField | null,
+      nextDirection: SortDirection,
+      nextFilter: LibraryFilter
+    ): Promise<void> => {
       const token = ++requestRef.current
-      queryRef.current = { search: term, sort: nextSort, direction: nextDirection }
+      queryRef.current = { search: term, filter: nextFilter, sort: nextSort, direction: nextDirection }
       try {
         const [page, nextStats] = await Promise.all([
           api.listTracks({
             search: term.trim().length > 0 ? term.trim() : undefined,
+            // The YouTube chip is answered from the history in App; the local
+            // query is kept warm underneath so switching back is instant.
+            filter:
+              nextFilter === 'all' || nextFilter === 'streams'
+                ? undefined
+                : nextFilter,
             sort: nextSort ?? undefined,
             direction: nextDirection,
             limit: PAGE_SIZE,
@@ -103,7 +125,13 @@ export function useLibrary(): UseLibraryResult {
   )
 
   const refresh = useCallback(
-    () => load(queryRef.current.search, queryRef.current.sort, queryRef.current.direction),
+    () =>
+      load(
+        queryRef.current.search,
+        queryRef.current.sort,
+        queryRef.current.direction,
+        queryRef.current.filter
+      ),
     [load]
   )
 
@@ -112,7 +140,8 @@ export function useLibrary(): UseLibraryResult {
     const offset = loadedCountRef.current
     if (offset === 0 || offset >= totalRef.current) return
 
-    const { search: term, sort: nextSort, direction: nextDirection } = queryRef.current
+    const { search: term, filter: nextFilter, sort: nextSort, direction: nextDirection } = queryRef.current
+    if (nextFilter === 'streams') return
     const token = requestRef.current
     loadingMoreRef.current = true
     setLoadingMore(true)
@@ -120,6 +149,7 @@ export function useLibrary(): UseLibraryResult {
     void api
       .listTracks({
         search: term.trim().length > 0 ? term.trim() : undefined,
+        filter: nextFilter === 'all' ? undefined : nextFilter,
         sort: nextSort ?? undefined,
         direction: nextDirection,
         limit: PAGE_SIZE,
@@ -138,13 +168,15 @@ export function useLibrary(): UseLibraryResult {
       })
   }, [])
 
-  // Debounced (re)load whenever the search term changes.
+  // One debounced reload for every query input. Search was the only debounced
+  // field before; folding the filter and sort in means a click that changes both
+  // (a smart view resets its column order) cannot start two racing requests.
   useEffect(() => {
     const handle = setTimeout(() => {
-      void load(search, queryRef.current.sort, queryRef.current.direction)
+      void load(search, sort, direction, filter)
     }, SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(handle)
-  }, [search, load])
+  }, [search, sort, direction, filter, load])
 
   useEffect(() => {
     const progressToken = api.on('scanProgress', (update) => {
@@ -185,6 +217,15 @@ export function useLibrary(): UseLibraryResult {
     setSelectedIds(new Set<number>())
   }, [])
 
+  const changeFilter = useCallback((next: LibraryFilter): void => {
+    setFilter(next)
+    // Every smart view has its own natural order; keeping a column sort from the
+    // previous view would make "Recently added" open in album order.
+    setSort(null)
+    setDirection('asc')
+    setSelectedIds(new Set<number>())
+  }, [])
+
   const toggleSort = useCallback((field: TrackSortField): void => {
     setSelectedIds(new Set<number>())
     setSort((current) => {
@@ -202,17 +243,6 @@ export function useLibrary(): UseLibraryResult {
     })
   }, [direction])
 
-  // Sorting is applied by the main process, so the reload has to wait for the
-  // state above to settle.
-  const firstSortRender = useRef(true)
-  useEffect(() => {
-    if (firstSortRender.current) {
-      firstSortRender.current = false
-      return
-    }
-    void load(queryRef.current.search, sort, direction)
-  }, [sort, direction, load])
-
   const select = useCallback((trackId: number, mode: 'replace' | 'toggle'): void => {
     setSelectedIds((previous) => {
       if (mode === 'replace') return new Set([trackId])
@@ -227,6 +257,10 @@ export function useLibrary(): UseLibraryResult {
     setSelectedIds(new Set(tracks.map((track) => track.id)))
   }, [tracks])
 
+  const selectMany = useCallback((trackIds: number[]): void => {
+    setSelectedIds(new Set(trackIds))
+  }, [])
+
   const clearSelection = useCallback((): void => {
     setSelectedIds(new Set<number>())
   }, [])
@@ -238,6 +272,8 @@ export function useLibrary(): UseLibraryResult {
     progress,
     search,
     setSearch: changeSearch,
+    filter,
+    setFilter: changeFilter,
     sort,
     direction,
     toggleSort,
@@ -251,6 +287,7 @@ export function useLibrary(): UseLibraryResult {
     selectedIds,
     select,
     selectAll,
+    selectMany,
     clearSelection
   }
 }
