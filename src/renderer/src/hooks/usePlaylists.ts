@@ -5,6 +5,7 @@ import type {
   OnlinePlaylistDetail,
   Playlist,
   PlaylistDetail,
+  PlaylistImportOutcome,
   PlaylistItem
 } from '@shared/types'
 import { api, messageOf } from '../api'
@@ -26,6 +27,10 @@ export interface UsePlaylistsResult {
   selectOnline: (playlistId: number) => void
   /** Throws a readable message when the name is empty or already taken. */
   create: (name: string) => Promise<Playlist>
+  /** Imports a file and selects the new playlist; null when cancelled. */
+  importPlaylist: () => Promise<PlaylistImportOutcome | null>
+  /** Exports a playlist; null when the save dialog was cancelled. */
+  exportPlaylist: (playlistId: number) => Promise<string | null>
   rename: (playlistId: number, name: string) => Promise<void>
   remove: (playlistId: number) => Promise<void>
   clear: (playlistId: number) => Promise<void>
@@ -268,6 +273,25 @@ export function usePlaylists(): UsePlaylistsResult {
     [loadList]
   )
 
+  const importPlaylist = useCallback(async (): Promise<PlaylistImportOutcome | null> => {
+    const outcome = await api.importPlaylist()
+    if (!outcome) return null
+    await loadList()
+    setSelectedOnlineId(null)
+    selectedOnlineRef.current = null
+    setOnlineDetail(null)
+    setSelectedId(outcome.detail.playlist.id)
+    selectedRef.current = outcome.detail.playlist.id
+    setDetail(outcome.detail)
+    setError(null)
+    return outcome
+  }, [loadList])
+
+  const exportPlaylist = useCallback(
+    (playlistId: number): Promise<string | null> => api.exportPlaylist(playlistId),
+    []
+  )
+
   const rename = useCallback(
     async (playlistId: number, name: string): Promise<void> => {
       const renamed = await api.renamePlaylist(playlistId, name)
@@ -417,6 +441,8 @@ export function usePlaylists(): UsePlaylistsResult {
     select,
     selectOnline,
     create,
+    importPlaylist,
+    exportPlaylist,
     rename,
     remove,
     clear,

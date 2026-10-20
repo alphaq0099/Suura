@@ -19,6 +19,7 @@ import type {
   PlaybackSnapshot,
   Playlist,
   PlaylistDetail,
+  PlaylistImportOutcome,
   ResolvedSource,
   ResolvableTrack,
   SavedPlayback,
@@ -64,6 +65,9 @@ export const IPC = {
   playlistsRemoveItems: 'playlists:remove-items',
   playlistsMoveItem: 'playlists:move-item',
   playlistsClear: 'playlists:clear',
+  playlistsExport: 'playlists:export',
+  playlistsImport: 'playlists:import',
+  libraryExportCsv: 'library:export-csv',
   playbackLoad: 'playback:load',
   playbackSave: 'playback:save',
   playbackClear: 'playback:clear',
@@ -190,6 +194,27 @@ export interface PlayerApi {
   /** Moves an entry to an index in the *resulting* order. */
   movePlaylistItem(playlistId: number, itemId: number, toIndex: number): Promise<PlaylistDetail | null>
   clearPlaylist(playlistId: number): Promise<PlaylistDetail | null>
+  /**
+   * Exports a custom playlist through the native save dialog.
+   *
+   * The extension chooses M3U, M3U8 or the JSON snapshot. Resolves to the file
+   * that was written, or null when the dialog was cancelled.
+   */
+  exportPlaylist(playlistId: number): Promise<string | null>
+  /**
+   * Imports an M3U, M3U8 or Player JSON playlist as a new custom playlist.
+   *
+   * Resolves to the import summary, or null when the dialog was cancelled.
+   * Rejects with a readable message when the file cannot be parsed or none of
+   * its entries are in the library.
+   */
+  importPlaylist(): Promise<PlaylistImportOutcome | null>
+  /**
+   * Writes every library row as CSV through the native save dialog.
+   *
+   * Resolves to the file that was written, or null when the dialog was cancelled.
+   */
+  exportLibraryCsv(): Promise<string | null>
   /** The last session's queue, or null when there is nothing worth resuming. */
   loadPlayback(): Promise<SavedPlayback | null>
   /**

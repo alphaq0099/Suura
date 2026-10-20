@@ -73,6 +73,13 @@ const api: PlayerApi = {
 
   clearPlaylist: (playlistId: number) => ipcRenderer.invoke(IPC.playlistsClear, playlistId),
 
+  exportPlaylist: (playlistId: number) =>
+    ipcRenderer.invoke(IPC.playlistsExport, playlistId) as Promise<string | null>,
+
+  importPlaylist: () => ipcRenderer.invoke(IPC.playlistsImport),
+
+  exportLibraryCsv: () => ipcRenderer.invoke(IPC.libraryExportCsv) as Promise<string | null>,
+
   loadPlayback: () => ipcRenderer.invoke(IPC.playbackLoad),
 
   savePlayback: (snapshot: PlaybackSnapshot) => ipcRenderer.send(IPC.playbackSave, snapshot),

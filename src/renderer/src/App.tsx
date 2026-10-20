@@ -461,6 +461,7 @@ export function App() {
   // caused it, instead of in the global action banner.
   const backupData = useCallback(() => api.backupData(), [])
   const restoreData = useCallback(() => api.restoreData(), [])
+  const exportLibrary = useCallback(() => api.exportLibraryCsv(), [])
 
   const updateSettings = useCallback(
     (patch: DeepPartial<AppSettings>): void => {
@@ -607,6 +608,8 @@ export function App() {
           onSelect={playlists.select}
           onSelectOnline={playlists.selectOnline}
           onCreate={playlists.create}
+          onImportPlaylist={playlists.importPlaylist}
+          onExportPlaylist={playlists.exportPlaylist}
           onRename={playlists.rename}
           onDelete={playlists.remove}
           onClear={playlists.clear}
@@ -649,6 +652,7 @@ export function App() {
           onOpenPath={(target) => void openPath(target)}
           onBackupData={backupData}
           onRestoreData={restoreData}
+          onExportLibrary={exportLibrary}
         />
       )}
 

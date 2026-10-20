@@ -192,6 +192,26 @@ export interface AddTracksOutcome {
   skipped: number
 }
 
+/** The on-disk shapes a custom playlist can be exported to or imported from. */
+export type PlaylistFileFormat = 'm3u' | 'm3u8' | 'json'
+
+/**
+ * What a playlist import produced.
+ *
+ * `added` counts rows in the new playlist. `duplicates` are entries that named a
+ * track already present earlier in the same import, `missing` are paths or URLs
+ * that no longer resolve to a library row, and `invalid` are entries with
+ * neither a path nor a URL. Importing creates a playlist only when at least one
+ * entry resolves, so an import cannot leave an empty list behind by accident.
+ */
+export interface PlaylistImportOutcome {
+  detail: PlaylistDetail
+  added: number
+  duplicates: number
+  missing: number
+  invalid: number
+}
+
 /**
  * What the renderer writes down about playback, and all it writes down.
  *

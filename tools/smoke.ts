@@ -11,7 +11,7 @@ import { copyFileSync, existsSync, readdirSync } from 'node:fs'
 import { copyFile, mkdir, mkdtemp, rm, unlink, utimes, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { promisify } from 'node:util'
 
 import {
@@ -45,6 +45,14 @@ import { LibraryService } from '@core/library/library-service'
 import { FolderWatcher, isLibraryEvent, type FolderWatchEvent } from '@core/library/folder-watcher'
 import { PlaylistRepository } from '@core/library/playlist-repository'
 import { PlaylistService } from '@core/library/playlist-service'
+import {
+  MAX_PLAYLIST_ENTRIES,
+  exportPlaylistJson,
+  exportPlaylistM3U,
+  parsePlaylistFile,
+  playlistFormatFromPath
+} from '@core/library/playlist-file'
+import { libraryCsv } from '@core/library/library-csv'
 import { OnlineRepository } from '@core/library/online-repository'
 import { OnlinePlaylistRepository } from '@core/library/online-playlist-repository'
 import { PlayStateRepository } from '@core/library/play-state-repository'
@@ -681,6 +689,157 @@ async function main(): Promise<void> {
     playlists.delete(other.id)
     checkEqual('deleting a playlist removes it', playlists.detail(other.id), null)
     checkEqual('and takes its entries with it', playlists.list().length, 1)
+
+    // --- playlist transfer and CSV export ----------------------------------
+    // These are files from outside the app: the parser has to be tolerant of
+    // encodings and relative paths, but the importer must never invent library
+    // rows for files that are not there.
+    const transferTracks = library.list().tracks
+    const firstTrack = transferTracks[0]
+    const secondTrack = transferTracks[1]
+    if (!firstTrack?.filePath || !secondTrack?.filePath) throw new Error('transfer fixtures are missing paths')
+
+    checkEqual('a .m3u extension selects M3U', playlistFormatFromPath('C:\\Music\\mix.M3U'), 'm3u')
+    checkEqual('a .m3u8 extension selects M3U8', playlistFormatFromPath('C:\\Music\\mix.m3u8'), 'm3u8')
+    checkEqual('a .json extension selects JSON', playlistFormatFromPath('C:\\Music\\mix.JSON'), 'json')
+    let playlistExtensionError = ''
+    try {
+      playlistFormatFromPath('C:\\Music\\mix.txt')
+    } catch (error) {
+      playlistExtensionError = (error as Error).message
+    }
+    check('an unknown playlist extension is refused', playlistExtensionError.includes('.m3u'), playlistExtensionError)
+
+    checkEqual(
+      'a playlist path finds the same row as the scanner',
+      repo.findByFilePath(firstTrack.filePath)?.id,
+      firstTrack.id
+    )
+
+    const roadDetail = playlists.detail(road.id)
+    if (!roadDetail) throw new Error('the original playlist disappeared')
+    const roadM3U = exportPlaylistM3U(roadDetail)
+    check('an exported M3U declares itself and names the list', roadM3U.startsWith('#EXTM3U\r\n#PLAYLIST:Road Trip\r\n'))
+    checkEqual(
+      'an exported M3U writes one EXTINF per track',
+      (roadM3U.match(/#EXTINF:/g) ?? []).length,
+      roadDetail.items.length
+    )
+    check('an exported M3U contains absolute file paths', roadM3U.includes(firstTrack.filePath))
+
+    const portablePath = join(musicDir, 'portable-test.m3u8')
+    const portableText = [
+      '\uFEFF#EXTM3U',
+      '#PLAYLIST:Portable Mix',
+      `#EXTINF:12,${firstTrack.artist ?? 'Unknown'} - ${firstTrack.title}`,
+      relative(musicDir, firstTrack.filePath),
+      secondTrack.filePath,
+      'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      '#EXTINF:-1,Missing file',
+      'C:\\not-in-library.flac'
+    ].join('\r\n')
+    const portable = parsePlaylistFile(portableText, portablePath)
+    checkEqual('the #PLAYLIST name wins over the filename', portable.name, 'Portable Mix')
+    checkEqual(
+      'a relative M3U entry resolves beside the playlist',
+      normalizePath(portable.entries[0]?.path ?? ''),
+      normalizePath(firstTrack.filePath)
+    )
+    checkEqual('EXTINF seconds become milliseconds', portable.entries[0]?.durationMs, 12_000)
+    checkEqual('EXTINF "Artist - Title" is split', portable.entries[0]?.artist, firstTrack.artist)
+    checkEqual(
+      'an absolute M3U entry is kept',
+      normalizePath(portable.entries[1]?.path ?? ''),
+      normalizePath(secondTrack.filePath)
+    )
+    checkEqual('an HTTP entry stays a URL', portable.entries[2]?.url, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ')
+
+    const importedM3U = playlists.importPlaylistText(portableText, portablePath)
+    checkEqual('an M3U import creates a playlist', importedM3U.detail.playlist.name, 'Portable Mix')
+    checkEqual('two entries matched library rows', importedM3U.added, 2)
+    checkEqual('entries outside the library are counted as missing', importedM3U.missing, 2)
+    checkEqual('every M3U entry had a location', importedM3U.invalid, 0)
+    checkEqual(
+      'an import keeps the file order',
+      importedM3U.detail.items.map((item) => item.track.title).join('|'),
+      [firstTrack.title, secondTrack.title].join('|')
+    )
+
+    const secondImport = playlists.importPlaylistText(portableText, portablePath)
+    checkEqual('a repeated import gets a predictable suffix', secondImport.detail.playlist.name, 'Portable Mix (2)')
+
+    const duplicateText = ['#EXTM3U', firstTrack.filePath, firstTrack.filePath, secondTrack.filePath].join('\n')
+    const duplicateImport = playlists.importPlaylistText(duplicateText, join(musicDir, 'duplicates.m3u'))
+    checkEqual('a file name is the fallback playlist name', duplicateImport.detail.playlist.name, 'duplicates')
+    checkEqual('repeated entries within one file are dropped', duplicateImport.duplicates, 1)
+    checkEqual('only unique tracks are written', duplicateImport.added, 2)
+
+    let nothingMatched = ''
+    try {
+      playlists.importPlaylistText('#EXTM3U\nC:\\also-not-in-library.flac\n', join(musicDir, 'nothing.m3u'))
+    } catch (error) {
+      nothingMatched = (error as Error).message
+    }
+    check('an import with no library tracks is refused', nothingMatched.includes('No tracks'), nothingMatched)
+    check('a refused import leaves no empty playlist', !playlists.list().some((entry) => entry.name === 'nothing'))
+
+    const roadJson = exportPlaylistJson(roadDetail)
+    const parsedJson = parsePlaylistFile(roadJson, join(musicDir, 'road.json'))
+    checkEqual('JSON export names its list', parsedJson.name, 'Road Trip')
+    checkEqual('JSON export carries every entry', parsedJson.entries.length, roadDetail.items.length)
+    const jsonImport = playlists.importPlaylistText(roadJson, join(musicDir, 'road-copy.json'))
+    checkEqual('a JSON export round-trips into a new playlist', jsonImport.added, roadDetail.items.length)
+    checkEqual('the copy gets a suffix because the name exists', jsonImport.detail.playlist.name, 'Road Trip (2)')
+
+    let newerJson = ''
+    try {
+      parsePlaylistFile(
+        JSON.stringify({ format: 'player-playlist', version: 99, name: 'Future', entries: [] }),
+        join(musicDir, 'future.json')
+      )
+    } catch (error) {
+      newerJson = (error as Error).message
+    }
+    check('a newer JSON playlist is refused', newerJson.includes('newer version'), newerJson)
+
+    let foreignJson = ''
+    try {
+      parsePlaylistFile(JSON.stringify({ format: 'something-else', entries: [] }), join(musicDir, 'foreign.json'))
+    } catch (error) {
+      foreignJson = (error as Error).message
+    }
+    check('an unrelated JSON file is not mistaken for a playlist', foreignJson.includes('not a Player playlist'), foreignJson)
+
+    let oversizedJson = ''
+    try {
+      parsePlaylistFile(
+        JSON.stringify({
+          format: 'player-playlist',
+          version: 1,
+          name: 'Too many',
+          entries: Array.from({ length: MAX_PLAYLIST_ENTRIES + 1 }, () => ({}))
+        }),
+        join(musicDir, 'oversized.json')
+      )
+    } catch (error) {
+      oversizedJson = (error as Error).message
+    }
+    check('a playlist with too many entries is refused', oversizedJson.includes('more than'), oversizedJson)
+
+    checkEqual('the export query is not capped at one page', repo.allForExport().length, transferTracks.length)
+    const csv = libraryCsv(transferTracks)
+    check('a CSV export starts with a UTF-8 BOM', csv.charCodeAt(0) === 0xfeff)
+    check('the CSV header names the useful columns', csv.includes('Title,Artist,Album Artist,Album,Disc,Track'))
+    checkEqual('the CSV has one row per track', csv.split('\r\n').filter((line) => line.length > 0).length, transferTracks.length + 1)
+    check('the CSV includes a track path', csv.includes(firstTrack.filePath))
+    const trickyCsv = libraryCsv([{ ...firstTrack, title: 'A, "B"', artist: 'Line\nBreak' }])
+    check('the CSV quotes commas and doubles quotes', trickyCsv.includes('"A, ""B"""'))
+    check('the CSV quotes embedded newlines', trickyCsv.includes('"Line\nBreak"'))
+
+    for (const entry of playlists.list()) {
+      if (entry.id !== road.id) playlists.delete(entry.id)
+    }
+    checkEqual('transfer tests leave the original playlist alone', playlists.list().length, 1)
 
     // --- folder watching ---------------------------------------------------
     // Watching is what lets the library keep up with the disk on its own, and it

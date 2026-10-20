@@ -1276,6 +1276,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       behaviourRestored: boolean
       foldersKept: boolean
       backupCard: boolean
+      exportButton: boolean
       backupsPath: boolean
     }>(
       window,
@@ -1284,7 +1285,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            keyboardEnd: false, keyboardHome: false, watchTurnedOff: false,
            behaviourChanged: false, resetConfirmShown: false, resetStatusShown: false,
            watchRestored: false, behaviourRestored: false, foldersKept: false,
-           backupCard: false, backupsPath: false
+           backupCard: false, exportButton: false, backupsPath: false
          }
          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
          const press = (element) => { if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
@@ -1377,6 +1378,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
                (el.textContent || '').trim().startsWith('Restore from backup')
              )
          )
+         out.exportButton = [...document.querySelectorAll('.field-row button')].some((el) =>
+           (el.textContent || '').trim().startsWith('Export library as CSV')
+         )
          out.backupsPath = [...document.querySelectorAll('.path-label')].some(
            (el) => (el.textContent || '').trim() === 'Backups'
          )
@@ -1414,6 +1418,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     record(
       settingsSafety.backupCard && settingsSafety.backupsPath,
       'settings: Misc exposes backup, restore and the backups folder',
+      settingsSafety
+    )
+    record(
+      settingsSafety.exportButton,
+      'settings: Misc exports the library as CSV',
       settingsSafety
     )
 
@@ -2097,6 +2106,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     const lists = await evaluate<{
       emptyState: boolean
       created: boolean
+      hasImport: boolean
+      hasExport: boolean
       sidebarCount: string
       menuOpened: boolean
       addedViaBar: boolean
@@ -2145,7 +2156,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       window,
       `(async () => {
          const out = {
-           emptyState: false, created: false, sidebarCount: '', menuOpened: false,
+           emptyState: false, created: false, hasImport: false, hasExport: false, sidebarCount: '', menuOpened: false,
            addedViaBar: false, barStatus: '', contextMenuOpened: false,
            addedViaContext: false, contextStatus: '', countAfterAdds: -1,
            rowsAfterAdds: -1, keyboardOrder: '', dropLine: false, dragOrder: '',
@@ -2200,6 +2211,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          press(pick('.playlist-new button[type="submit"]'))
          await sleep(600)
          out.created = text(pick('.playlist-name')) === 'Selftest Mix'
+         out.hasImport = Boolean(buttonWith('.view-header', 'Import'))
+         out.hasExport = Boolean(buttonWith('.playlist-pane .header-actions', 'Export'))
          out.sidebarCount = text(pickAll('.nav-item').find((el) => text(el).trim().indexOf('Playlists') === 0).querySelector('.nav-count')).trim()
 
          // --- add a track from the library's selection bar
@@ -2409,6 +2422,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
 
     record(lists.emptyState, 'the Playlists view starts with an empty state')
     record(lists.created, 'a playlist can be created from the form', lists.created)
+    record(lists.hasImport, 'the Playlists view offers file import')
+    record(lists.hasExport, 'a selected playlist offers file export')
     record(lists.sidebarCount === '1', 'the sidebar counts the playlists', lists.sidebarCount)
     record(lists.menuOpened && lists.addedViaBar, 'the selection bar adds the selected tracks to a playlist', lists.barStatus)
     record(lists.contextMenuOpened && lists.addedViaContext, 'a row’s context menu adds that track to a playlist', lists.contextStatus)

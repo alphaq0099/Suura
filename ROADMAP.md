@@ -446,7 +446,10 @@ works, but it has no hierarchy and no way to find a single option.
 visible effect. **Met.**
 
 ### M7 - Playlists, Sync & Data Care  *(in progress)*
-- [ ] M3U / M3U8 and JSON import-export of playlists; CSV export of the library
+- [x] M3U / M3U8 and JSON import-export of playlists; CSV export of the library. Export covers hand-made playlists
+      (absolute paths, UTF-8, CRLF); import resolves relative paths, matches saved tracks by content key or YouTube
+      origin, reports added/duplicate/missing/invalid entries, and refuses to create an empty playlist. CSV is the
+      uncapped library with a BOM and RFC 4180 quoting.
 - [x] Backup/restore of `library.db` + config; automatic rotating DB backups. Manual backups are a folder with the
       database, normalized settings and a manifest; restore validates integrity and schema before staging the swap for
       the next start. Automatic copies use `VACUUM INTO` when the newest copy is more than 24 hours old and before a
@@ -457,8 +460,8 @@ visible effect. **Met.**
 - [ ] Missing-file handling: detect moved/deleted files, offer relocate by hash
 - [ ] Bulk operations: multi-select edit, tag editing, bulk keep/remove-download
 **Exit:** data survives a crash, a reinstall and a folder move.
-**Status:** backup/restore, rotation and the schema guard are in. Import/export, dedupe, relocation and bulk editing
-remain.
+**Status:** backup/restore, rotation, the schema guard, playlist transfer and CSV export are in. Dedupe, relocation and
+bulk editing remain.
 
 ### M8 — Windows Release Engineering  *(~2 weeks)*
 - [ ] Installer (per-user, no admin): MSIX or NSIS; clean uninstall; opt-in "also delete cache/library DB"

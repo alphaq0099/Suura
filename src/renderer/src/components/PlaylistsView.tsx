@@ -6,6 +6,7 @@ import type {
   OnlinePlaylistDetail,
   Playlist,
   PlaylistDetail,
+  PlaylistImportOutcome,
   Track
 } from '@shared/types'
 import { formatCount, formatDuration } from '@shared/format'
@@ -47,6 +48,10 @@ export interface PlaylistsViewProps {
   onSelectOnline: (playlistId: number) => void
   /** The menu's creator: resolves to the new playlist, or throws a readable error. */
   onCreate: (name: string) => Promise<Playlist>
+  /** Opens the native picker and imports a playlist as a new custom list. */
+  onImportPlaylist: () => Promise<PlaylistImportOutcome | null>
+  /** Opens the native save dialog for one custom playlist. */
+  onExportPlaylist: (playlistId: number) => Promise<string | null>
   onRename: (playlistId: number, name: string) => Promise<void>
   onDelete: (playlistId: number) => Promise<void>
   onClear: (playlistId: number) => Promise<void>
@@ -115,6 +120,8 @@ export function PlaylistsView(props: PlaylistsViewProps) {
     onSelect,
     onSelectOnline,
     onCreate,
+    onImportPlaylist,
+    onExportPlaylist,
     onRename,
     onDelete,
     onClear,
@@ -133,6 +140,9 @@ export function PlaylistsView(props: PlaylistsViewProps) {
 
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [transferNote, setTransferNote] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<number | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [renamingOnlineId, setRenamingOnlineId] = useState<number | null>(null)
@@ -326,6 +336,44 @@ export function PlaylistsView(props: PlaylistsViewProps) {
     }
   }, [newName, onCreate])
 
+  const runImport = useCallback(async (): Promise<void> => {
+    setImporting(true)
+    setActionError(null)
+    setTransferNote(null)
+    try {
+      const outcome = await onImportPlaylist()
+      if (!outcome) {
+        setTransferNote('Import cancelled.')
+        return
+      }
+      const parts = [`${formatCount(outcome.added)} added`]
+      if (outcome.duplicates > 0) parts.push(`${formatCount(outcome.duplicates)} duplicate`)
+      if (outcome.missing > 0) parts.push(`${formatCount(outcome.missing)} not in library`)
+      if (outcome.invalid > 0) parts.push(`${formatCount(outcome.invalid)} invalid`)
+      setTransferNote(`Imported "${outcome.detail.playlist.name}" - ${parts.join(', ')}.`)
+      setSelectedIds(new Set<number>())
+    } catch (cause) {
+      setActionError(messageOf(cause))
+    } finally {
+      setImporting(false)
+    }
+  }, [onImportPlaylist])
+
+  const runExport = useCallback(async (): Promise<void> => {
+    if (!detail) return
+    setExporting(true)
+    setActionError(null)
+    setTransferNote(null)
+    try {
+      const file = await onExportPlaylist(detail.playlist.id)
+      setTransferNote(file ? `Playlist exported to ${file}` : 'Export cancelled.')
+    } catch (cause) {
+      setActionError(messageOf(cause))
+    } finally {
+      setExporting(false)
+    }
+  }, [detail, onExportPlaylist])
+
   const submitRename = useCallback(
     async (playlistId: number): Promise<void> => {
       const trimmed = renameValue.trim()
@@ -474,6 +522,15 @@ export function PlaylistsView(props: PlaylistsViewProps) {
           </p>
         </div>
         <div className="header-actions">
+          <button
+            type="button"
+            onClick={() => void runImport()}
+            disabled={importing || exporting}
+            title="Import an M3U, M3U8 or Player JSON playlist"
+          >
+            {importing ? <SpinnerIcon /> : null}
+            <span>{importing ? 'Importing.' : 'Import'}</span>
+          </button>
           <button type="button" className="primary" onClick={() => setCreating(true)}>
             <PlusIcon />
             <span>New playlist</span>
@@ -490,6 +547,11 @@ export function PlaylistsView(props: PlaylistsViewProps) {
         </div>
       ) : null}
       {error ? <div className="banner error">{error}</div> : null}
+      {transferNote ? (
+        <p className="data-note" role="status">
+          {transferNote}
+        </p>
+      ) : null}
 
       <div
         className={draggingSplitter ? 'playlists-layout dragging' : 'playlists-layout'}
@@ -955,6 +1017,15 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                   <button type="button" onClick={() => onQueue(tracks)} disabled={tracks.length === 0}>
                     <QueueIcon size={14} />
                     <span>Add all</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void runExport()}
+                    disabled={exporting || importing}
+                    title="Export this playlist as M3U8, M3U or JSON"
+                  >
+                    {exporting ? <SpinnerIcon /> : <DownloadIcon />}
+                    <span>{exporting ? 'Exporting.' : 'Export'}</span>
                   </button>
                   <button
                     type="button"

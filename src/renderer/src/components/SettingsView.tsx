@@ -45,6 +45,7 @@ export interface SettingsViewProps {
   onOpenPath: (target: string) => void
   onBackupData: () => Promise<string | null>
   onRestoreData: () => Promise<boolean>
+  onExportLibrary: () => Promise<string | null>
 }
 
 const QUALITY_CHOICES: Array<{ value: QualityTier; label: string }> = [
@@ -133,12 +134,13 @@ export function SettingsView(props: SettingsViewProps) {
     onRefreshEngine,
     onOpenPath,
     onBackupData,
-    onRestoreData
+    onRestoreData,
+    onExportLibrary
   } = props
   const [tab, setTab] = useState<TabId>('general')
   const [confirmReset, setConfirmReset] = useState(false)
   const [resetDone, setResetDone] = useState(false)
-  const [dataBusy, setDataBusy] = useState<'backup' | 'restore' | null>(null)
+  const [dataBusy, setDataBusy] = useState<'backup' | 'restore' | 'export' | null>(null)
   const [dataNote, setDataNote] = useState<string | null>(null)
   const [dataError, setDataError] = useState<string | null>(null)
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
@@ -173,6 +175,20 @@ export function SettingsView(props: SettingsViewProps) {
     try {
       const directory = await onBackupData()
       setDataNote(directory ? `Backup saved to ${directory}` : 'Backup cancelled.')
+    } catch (cause) {
+      setDataError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setDataBusy(null)
+    }
+  }
+
+  const runExport = async (): Promise<void> => {
+    setDataBusy('export')
+    setDataError(null)
+    setDataNote(null)
+    try {
+      const file = await onExportLibrary()
+      setDataNote(file ? `Library exported to ${file}` : 'Export cancelled.')
     } catch (cause) {
       setDataError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -821,7 +837,8 @@ export function SettingsView(props: SettingsViewProps) {
                 Player keeps a consistent copy of the database when it starts, and a separate copy before any library
                 upgrade. The ten newest automatic copies live in the backups folder. Back up now adds a folder the user
                 chooses, with the database, settings and a manifest; restoring validates that folder, copies the current
-                data aside, then restarts.
+                data aside, then restarts. Export writes a spreadsheet-friendly CSV of every track, including paths and
+                play counts.
               </p>
               <div className="field-row">
                 <button type="button" onClick={() => void runBackup()} disabled={dataBusy !== null}>
@@ -831,6 +848,10 @@ export function SettingsView(props: SettingsViewProps) {
                 <button type="button" onClick={() => void runRestore()} disabled={dataBusy !== null}>
                   {dataBusy === 'restore' ? <SpinnerIcon /> : null}
                   <span>Restore from backup…</span>
+                </button>
+                <button type="button" onClick={() => void runExport()} disabled={dataBusy !== null}>
+                  {dataBusy === 'export' ? <SpinnerIcon /> : null}
+                  <span>Export library as CSV.</span>
                 </button>
                 {paths ? (
                   <button type="button" onClick={() => onOpenPath(paths.backups)}>

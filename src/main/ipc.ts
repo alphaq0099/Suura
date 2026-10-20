@@ -1,5 +1,8 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
+import { writeFile } from 'node:fs/promises'
+import { extname, join } from 'node:path'
 import { ACCENTS, DENSITIES, MOTION_PREFERENCES, SURFACES, THEME_MODES } from '@shared/appearance'
+import { sanitizeFilePart } from '@shared/files'
 import { IPC } from '@shared/ipc'
 import { isLocalLibraryFilter } from '@shared/library'
 import { isImportedPlaylistTrackId } from '@shared/online'
@@ -38,6 +41,7 @@ import {
   stageRestore
 } from '@core/db/backups'
 import { normalizePath } from '@core/library/content-key'
+import { libraryCsv } from '@core/library/library-csv'
 import { DEFAULT_SETTINGS, mergeSettings } from '@core/settings/settings-service'
 import { getEngineStatus } from '@engine/sidecar/engine-status'
 import { isSupportedCookieBrowser, isYouTubeVideoId } from '@shared/youtube'
@@ -700,6 +704,75 @@ export function registerIpcHandlers(container: AppContainer): void {
     const id = toId(playlistId, 'playlist')
     container.playlists.clear(id)
     return container.playlists.detail(id)
+  })
+
+  // ----- transfer files --------------------------------------------------
+  // Export and import are dialog-driven on purpose: the renderer never needs a
+  // filesystem path from the user, and a cancelled dialog is a null rather than
+  // an error the UI has to explain.
+  ipcMain.handle(IPC.playlistsExport, async (_event, playlistId: unknown) => {
+    const id = toId(playlistId, 'playlist')
+    const detail = container.playlists.detail(id)
+    if (!detail) throw new Error('That playlist no longer exists.')
+
+    const parent = BrowserWindow.getFocusedWindow()
+    const defaultPath = join(app.getPath('documents'), `${sanitizeFilePart(detail.playlist.name, 'playlist')}.m3u8`)
+    const options: Electron.SaveDialogOptions = {
+      title: 'Export playlist',
+      buttonLabel: 'Export',
+      defaultPath,
+      filters: [
+        { name: 'M3U8 playlist', extensions: ['m3u8'] },
+        { name: 'M3U playlist', extensions: ['m3u'] },
+        { name: 'Player playlist (JSON)', extensions: ['json'] }
+      ]
+    }
+    const result = parent ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options)
+    if (result.canceled || !result.filePath) return null
+
+    const extension = extname(result.filePath).toLowerCase()
+    const target = ['.m3u', '.m3u8', '.json'].includes(extension) ? result.filePath : `${result.filePath}.m3u8`
+    const chosen = extname(target).toLowerCase()
+    const format = chosen === '.json' ? 'json' : chosen === '.m3u' ? 'm3u' : 'm3u8'
+    const exported = container.playlists.exportPlaylist(id, format)
+    await writeFile(target, exported.text, 'utf8')
+    log.info('playlist exported', { playlistId: id, file: target, format })
+    return target
+  })
+
+  ipcMain.handle(IPC.playlistsImport, async () => {
+    const parent = BrowserWindow.getFocusedWindow()
+    const options: Electron.OpenDialogOptions = {
+      title: 'Import playlist',
+      buttonLabel: 'Import',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Playlists', extensions: ['m3u', 'm3u8', 'json'] }
+      ]
+    }
+    const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options)
+    const file = result.filePaths[0]
+    if (result.canceled || !file) return null
+    return container.playlists.importPlaylistFromFile(file)
+  })
+
+  ipcMain.handle(IPC.libraryExportCsv, async () => {
+    const parent = BrowserWindow.getFocusedWindow()
+    const date = new Date().toISOString().slice(0, 10)
+    const options: Electron.SaveDialogOptions = {
+      title: 'Export library as CSV',
+      buttonLabel: 'Export',
+      defaultPath: join(app.getPath('documents'), `Player Library ${date}.csv`),
+      filters: [{ name: 'CSV spreadsheet', extensions: ['csv'] }]
+    }
+    const result = parent ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options)
+    if (result.canceled || !result.filePath) return null
+    const target = extname(result.filePath).toLowerCase() === '.csv' ? result.filePath : `${result.filePath}.csv`
+
+    const tracks = container.repo.allForExport()
+    await writeFile(target, libraryCsv(tracks), 'utf8')
+    log.info('library exported as CSV', { file: target, tracks: tracks.length })
+    return target
   })
 
   // ---- play state -------------------------------------------------------

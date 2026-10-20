@@ -1,6 +1,6 @@
 import type { LibraryStats, ListTracksQuery, SourceKind, Track, TrackPage, TrackSortField } from '@shared/types'
 import { recentlyAddedCutoff } from '@shared/library'
-import { isPathInside, normalizePath } from './content-key'
+import { isPathInside, localContentKey, normalizePath } from './content-key'
 import type { SqlDatabase, SqlParam } from '../db/driver'
 
 export interface TrackRow {
@@ -273,6 +273,21 @@ export class TrackRepository {
     return row ? mapTrackRow(row) : null
   }
 
+  /**
+   * The row for a file path, using the same normalisation as the scanner.
+   *
+   * Playlists store paths as text, and a path copied from another machine can
+   * differ in case or separators from the one the scanner stored. The content
+   * key is already the normalised identity, so there is one answer rather than
+   * a second comparison that can disagree with deduplication.
+   */
+  findByFilePath(filePath: string): Track | null {
+    const row = this.db
+      .prepare(`SELECT ${TRACK_COLUMNS} FROM tracks WHERE content_key = ?`)
+      .get<TrackRow>(localContentKey(filePath))
+    return row ? mapTrackRow(row) : null
+  }
+
   /** The library row for a video, if that video has already been saved. */
   findByOrigin(originKind: SourceKind, originId: string): Track | null {
     const row = this.db
@@ -345,6 +360,21 @@ export class TrackRepository {
       const track = found.get(id)
       return track ? [track] : []
     })
+  }
+
+  /**
+   * Every row, for a data export.
+   *
+   * Deliberately not `list({ limit: 50000 })`: a cap that silently drops the
+   * tail of a library is the one thing an export must never do. The UI already
+   * pages through the same table, so this is only paid for when the user asks
+   * for a CSV, and the whole result is held in memory once.
+   */
+  allForExport(): Track[] {
+    return this.db
+      .prepare(`SELECT ${TRACK_COLUMNS} FROM tracks ORDER BY ${DEFAULT_ORDER}, id`)
+      .all<TrackRow>()
+      .map(mapTrackRow)
   }
 
   list(query: ListTracksQuery = {}): TrackPage {

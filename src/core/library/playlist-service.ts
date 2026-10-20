@@ -1,6 +1,15 @@
-import type { Playlist, PlaylistDetail } from '@shared/types'
+import { readFileSync, statSync } from 'node:fs'
+import type { Playlist, PlaylistDetail, PlaylistFileFormat, PlaylistImportOutcome, Track } from '@shared/types'
+import { extractYouTubeVideoId } from '@shared/youtube'
 import { PlaylistRepository, POSITION_GAP, type PositionedItem } from './playlist-repository'
 import type { TrackRepository } from './track-repository'
+import {
+  MAX_PLAYLIST_FILE_BYTES,
+  exportPlaylistJson,
+  exportPlaylistM3U,
+  parsePlaylistFile,
+  type PlaylistTransferEntry
+} from './playlist-file'
 import type { Logger } from '../logging/logger'
 
 export interface AddTracksResult {
@@ -37,6 +46,106 @@ export class PlaylistService {
 
   detail(id: number): PlaylistDetail | null {
     return this.repo.detail(id)
+  }
+
+  /**
+   * Serialises a custom playlist for the save dialog.
+   *
+   * `.m3u` and `.m3u8` share one writer; only the extension tells other players
+   * that the bytes are UTF-8. JSON carries the metadata M3U cannot, so the
+   * playlist stays readable even where a player cannot use the path itself.
+   */
+  exportPlaylist(id: number, format: PlaylistFileFormat): { name: string; text: string } {
+    const detail = this.repo.detail(id)
+    if (!detail) throw new Error('That playlist no longer exists.')
+    return {
+      name: detail.playlist.name,
+      text: format === 'json' ? exportPlaylistJson(detail) : exportPlaylistM3U(detail)
+    }
+  }
+
+  /**
+   * Reads and imports a playlist from disk.
+   *
+   * A playlist is a document from outside the app, so it is capped before it is
+   * parsed and every entry is matched against the library rather than trusted.
+   * Nothing is created when no entry matches: an empty playlist with a filename
+   * for a title is worse than a clear "nothing here is in your library".
+   */
+  importPlaylistFromFile(filePath: string): PlaylistImportOutcome {
+    let size: number
+    try {
+      size = statSync(filePath).size
+    } catch {
+      throw new Error('That playlist file could not be read.')
+    }
+    if (size > MAX_PLAYLIST_FILE_BYTES) {
+      throw new Error('That playlist file is too large to import.')
+    }
+
+    let data: Buffer
+    try {
+      data = readFileSync(filePath)
+    } catch {
+      throw new Error('That playlist file could not be read.')
+    }
+    // The file can grow between stat and read; the byte check is the one that
+    // decides, so a file swapped in mid-pick still cannot exceed the cap.
+    if (data.byteLength > MAX_PLAYLIST_FILE_BYTES) {
+      throw new Error('That playlist file is too large to import.')
+    }
+    return this.importPlaylistText(data.toString('utf8'), filePath)
+  }
+
+  /** The import path with the file already read, shared with the smoke tests. */
+  importPlaylistText(text: string, filePath: string): PlaylistImportOutcome {
+    const parsed = parsePlaylistFile(text, filePath)
+    let missing = 0
+    let invalid = 0
+    const matched: number[] = []
+
+    for (const entry of parsed.entries) {
+      if (!entry.path && !entry.url) {
+        invalid += 1
+        continue
+      }
+      const track = this.matchEntry(entry)
+      if (!track) {
+        missing += 1
+        continue
+      }
+      matched.push(track.id)
+    }
+
+    const unique = [...new Set(matched)]
+    const duplicates = matched.length - unique.length
+    if (unique.length === 0) {
+      throw new Error('No tracks from this playlist are in your library.')
+    }
+
+    const now = Date.now()
+    const detail = this.repo.transaction(() => {
+      const base = parsed.name.trim().replace(/\s+/g, ' ').slice(0, MAX_NAME_LENGTH) || 'Imported playlist'
+      const id = this.repo.create(this.uniqueName(base), now)
+      let position = POSITION_GAP
+      for (const trackId of unique) {
+        if (this.repo.addTrack(id, trackId, position, now)) position += POSITION_GAP
+      }
+      const created = this.repo.detail(id)
+      if (!created) throw new Error('The playlist could not be imported.')
+      return created
+    })
+
+    this.log.info('playlist imported', {
+      file: filePath,
+      id: detail.playlist.id,
+      name: detail.playlist.name,
+      added: detail.items.length,
+      duplicates,
+      missing,
+      invalid
+    })
+    return { detail, added: detail.items.length, duplicates, missing, invalid }
   }
 
   /**
@@ -179,6 +288,39 @@ export class PlaylistService {
     const playlist = this.repo.get(id)
     if (!playlist) throw new Error('That playlist no longer exists.')
     return playlist
+  }
+
+  /** Resolves one external entry against the library. */
+  private matchEntry(entry: PlaylistTransferEntry): Track | null {
+    if (entry.path) {
+      const byPath = this.tracks.findByFilePath(entry.path)
+      if (byPath) return byPath
+    }
+    if (entry.url) {
+      // A saved YouTube track still has its origin id, so an M3U made of watch
+      // links can resolve even though the local path is not in the file.
+      const videoId = extractYouTubeVideoId(entry.url)
+      if (videoId) return this.tracks.findByOrigin('youtube', videoId)
+    }
+    return null
+  }
+
+  /**
+   * A name that does not collide case-insensitively, with a short suffix.
+   *
+   * Imports are not a form: the file supplied the name, and asking the user to
+   * rename it before anything appears would make a drag-and-drop import feel
+   * broken. "Chill (2)" is predictable and leaves the file's name visible.
+   */
+  private uniqueName(base: string): string {
+    let candidate = base.slice(0, MAX_NAME_LENGTH)
+    let suffixNumber = 2
+    while (this.repo.idForName(candidate) !== null) {
+      const suffix = ` (${suffixNumber})`
+      candidate = `${base.slice(0, MAX_NAME_LENGTH - suffix.length)}${suffix}`
+      suffixNumber += 1
+    }
+    return candidate
   }
 
   private cleanName(rawName: string): string {
