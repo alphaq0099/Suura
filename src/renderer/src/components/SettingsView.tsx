@@ -231,6 +231,11 @@ export function SettingsView(props: SettingsViewProps) {
   }
 
   const runMergeDuplicates = async (): Promise<void> => {
+    if (!duplicates || duplicates.groups === 0) return
+    const confirmed = window.confirm(
+      `Merge ${duplicates.groups} duplicate group${duplicates.groups === 1 ? '' : 's'}?\n\nThe oldest entry in each group is kept and the ${duplicates.extraCopies} extra file${duplicates.extraCopies === 1 ? '' : 's'} will be permanently deleted. Playlists and play counts move to the kept entry.`
+    )
+    if (!confirmed) return
     setCareBusy('merge')
     setCareError(null)
     setCareNote(null)
