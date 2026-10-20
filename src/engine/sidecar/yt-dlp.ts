@@ -109,7 +109,7 @@ export interface YtChannelInfo {
  * which is the same rule pasted links follow.
  */
 export interface YtSearchProvider {
-  search(query: string, limit: number, signal?: AbortSignal): Promise<YouTubeSearchResult[]>
+  search(query: string, limit: number, offset?: number, signal?: AbortSignal): Promise<YouTubeSearchResult[]>
   channel(target: string, limit: number, signal?: AbortSignal): Promise<YtChannelInfo>
 }
 
@@ -175,19 +175,30 @@ export function buildPlaylistArgs(url: string, limit: number): string[] {
  * to ids and metadata. The cap is applied by the extractor, so asking for 20
  * results does not fetch a page of recommendations. The query goes in as one
  * argv element, so quotes and spaces are not shell syntax here.
+ *
+ * `offset` pages through that list. `ytsearch` has no continuation token, so
+ * the extractor is asked for enough entries to reach the page (`offset +
+ * limit`) and `--playlist-start` drops everything before it. Page one is still
+ * a single ten-entry request; later pages grow the listing rather than asking
+ * YouTube for a second page.
  */
-export function buildSearchArgs(query: string, limit: number): string[] {
+export function buildSearchArgs(query: string, limit: number, offset = 0): string[] {
   const count = Math.max(1, Math.min(50, Math.floor(limit)))
+  const start = Math.max(1, Math.floor(offset) + 1)
+  const end = start + count - 1
+  const fetchCount = Math.min(500, end)
   return [
     '--ignore-config',
     '--no-progress',
     '--socket-timeout',
     '15',
     '--flat-playlist',
+    '--playlist-start',
+    String(start),
     '--playlist-end',
-    String(count),
+    String(end),
     '-J',
-    `ytsearch${count}:${query.trim()}`
+    `ytsearch${fetchCount}:${query.trim()}`
   ]
 }
 
@@ -339,10 +350,15 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
     }
   }
 
-  async search(query: string, limit: number, signal?: AbortSignal): Promise<YouTubeSearchResult[]> {
+  async search(
+    query: string,
+    limit: number,
+    offset = 0,
+    signal?: AbortSignal
+  ): Promise<YouTubeSearchResult[]> {
     const text = query.trim()
     if (text.length === 0) throw new YtDlpError('Type something to search for.', 'empty-query')
-    const args = buildSearchArgs(text, limit)
+    const args = buildSearchArgs(text, limit, offset)
     const { stdout } = await this.run(args, signal, PLAYLIST_TIMEOUT_MS)
     try {
       return parseSearchResults(stdout, limit)

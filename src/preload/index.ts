@@ -89,8 +89,8 @@ const api: PlayerApi = {
 
   importOnlineList: (url: string, limit?: number) => ipcRenderer.invoke(IPC.onlineImport, url, limit),
 
-  searchYouTube: (query: string, limit?: number) =>
-    ipcRenderer.invoke(IPC.onlineSearch, query, limit),
+  searchYouTube: (query: string, limit?: number, offset?: number) =>
+    ipcRenderer.invoke(IPC.onlineSearch, query, limit, offset),
 
   getYouTubeChannel: (target: string, limit?: number) =>
     ipcRenderer.invoke(IPC.onlineChannel, target, limit),

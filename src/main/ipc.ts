@@ -420,10 +420,11 @@ export function registerIpcHandlers(container: AppContainer): void {
     return container.online.importList(link, count)
   })
 
-  ipcMain.handle(IPC.onlineSearch, (_event, query: unknown, limit: unknown) => {
+  ipcMain.handle(IPC.onlineSearch, (_event, query: unknown, limit: unknown, offset: unknown) => {
     if (typeof query !== 'string') throw new Error('Type something to search for.')
     const count = typeof limit === 'number' && Number.isFinite(limit) ? limit : undefined
-    return container.online.search(query, count)
+    const skip = typeof offset === 'number' && Number.isFinite(offset) ? offset : undefined
+    return container.online.search(query, count, skip)
   })
 
   ipcMain.handle(IPC.onlineChannel, (_event, target: unknown, limit: unknown) => {

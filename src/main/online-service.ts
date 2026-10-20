@@ -98,7 +98,7 @@ export interface OnlineService {
    * search itself cannot fill the history or touch the library. Playing a result
    * goes through `addLink`, the same path a pasted link takes.
    */
-  search(query: string, limit?: number): Promise<YouTubeSearchResult[]>
+  search(query: string, limit?: number, offset?: number): Promise<YouTubeSearchResult[]>
   /**
    * Lists a channel's recent videos.
    *
@@ -401,12 +401,13 @@ export function createOnlineService(deps: {
       return playlistId
     },
 
-    async search(query, requestedLimit) {
+    async search(query, requestedLimit, requestedOffset) {
       const text = query.trim()
       if (text.length === 0) throw new Error('Type something to search for.')
       if (text.length > 200) throw new Error('That search is too long.')
-      const limit = Math.max(1, Math.min(50, Math.round(requestedLimit ?? 20)))
-      const results = await deps.discoverProvider.search(text, limit)
+      const limit = Math.max(1, Math.min(50, Math.round(requestedLimit ?? 10)))
+      const offset = Math.max(0, Math.min(490, Math.round(requestedOffset ?? 0)))
+      const results = await deps.discoverProvider.search(text, limit, offset)
       return results.map((entry) => {
         const metadata = cleanYouTubeMetadata(entry.title, entry.artist)
         return { ...entry, title: metadata.title, artist: metadata.artist }

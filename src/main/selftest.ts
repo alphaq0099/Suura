@@ -827,12 +827,98 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         searchLayout
       )
 
+      // The result box, not the page, owns the scrollbar. A synthetic long list
+      // proves the box scrolls while the view around it stays clipped; without
+      // this, a later flex change could quietly hand the scroll back to the page.
+      const searchScroll = await evaluate<{
+        viewOverflow: string
+        listOverflow: string
+        listScrolls: boolean
+        listScrolled: boolean
+      }>(
+        window,
+        `(async () => {
+           const view = document.querySelector('.discover-view')
+           const box = document.createElement('div')
+           box.className = 'discover-results'
+           const list = document.createElement('ul')
+           list.className = 'discover-list'
+           for (let i = 0; i < 40; i += 1) {
+             const row = document.createElement('li')
+             row.className = 'discover-item'
+             row.style.height = '40px'
+             row.textContent = 'row ' + i
+             list.appendChild(row)
+           }
+           box.appendChild(list)
+           if (view) view.appendChild(box)
+           await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+           const before = list.scrollTop
+           list.scrollTop = 240
+           const out = {
+             viewOverflow: view ? getComputedStyle(view).overflowY : 'missing',
+             listOverflow: getComputedStyle(list).overflowY,
+             listScrolls: list.scrollHeight > list.clientHeight + 1,
+             listScrolled: list.scrollTop > before
+           }
+           box.remove()
+           return out
+         })()`
+      )
+      record(
+        searchScroll.viewOverflow === 'hidden' &&
+          searchScroll.listOverflow === 'auto' &&
+          searchScroll.listScrolls &&
+          searchScroll.listScrolled,
+        `search results scroll inside their own box at ${width}x${height}`,
+        searchScroll
+      )
+
       await showView('Settings')
       const settings = await evaluate<LayoutProbe>(window, LAYOUT_PROBE)
       record(
         settings.hasCards && settings.main === 0 && settings.cards === 0 && settings.bar === 0 && settings.page === 0,
         `settings view fits with no horizontal overflow at ${width}x${height}`,
         settings
+      )
+
+      const settingsTabs = await evaluate<{
+        count: number
+        labels: string
+        appearanceVisible: boolean
+        onePanel: boolean
+        restored: boolean
+      }>(
+        window,
+        `(async () => {
+           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+           const tabs = [...document.querySelectorAll('.settings-tab')]
+           const byLabel = (label) => tabs.find((el) => (el.textContent || '').trim() === label)
+           byLabel('Appearance')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+           await sleep(160)
+           const visible = [...document.querySelectorAll('.settings-panel')].filter((el) => !el.hidden)
+           const appearanceVisible = visible.some((el) => el.id === 'settings-panel-appearance')
+           const onePanel = visible.length === 1
+           byLabel('General')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+           await sleep(120)
+           const general = document.querySelector('#settings-panel-general')
+           return {
+             count: tabs.length,
+             labels: tabs.map((el) => (el.textContent || '').trim()).join('|'),
+             appearanceVisible,
+             onePanel,
+             restored: Boolean(general) && !general.hidden
+           }
+         })()`
+      )
+      record(
+        settingsTabs.count === 6 &&
+          settingsTabs.labels === 'General|Appearance|Behaviour|Streaming|Misc|About' &&
+          settingsTabs.appearanceVisible &&
+          settingsTabs.onePanel &&
+          settingsTabs.restored,
+        `settings has six tabs and shows one panel at a time at ${width}x${height}`,
+        settingsTabs
       )
 
       await showView('Queue')

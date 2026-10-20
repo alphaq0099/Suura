@@ -25,6 +25,9 @@ export interface SearchViewProps {
   onQueueYouTube: (result: YouTubeSearchResult) => Promise<void>
 }
 
+/** Ten results per page: one screenful, and a smaller first request to YouTube. */
+const YOUTUBE_PAGE_SIZE = 10
+
 /** A track-shaped stub, only so the row can borrow the shared artwork lookup. */
 function artworkTrack(result: YouTubeSearchResult): Track {
   return {
@@ -79,6 +82,9 @@ export function SearchView(props: SearchViewProps) {
   const [error, setError] = useState<string | null>(null)
   const [youtubeError, setYoutubeError] = useState<string | null>(null)
   const [busyVideoId, setBusyVideoId] = useState<string | null>(null)
+  const [youtubePage, setYoutubePage] = useState(1)
+  const [youtubeHasMore, setYoutubeHasMore] = useState(false)
+  const [youtubePageLoading, setYoutubePageLoading] = useState(false)
   const [channel, setChannel] = useState<YouTubeChannel | null>(null)
   const [channelLoading, setChannelLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -103,6 +109,8 @@ export function SearchView(props: SearchViewProps) {
     setYoutubeError(null)
     setChannel(null)
     setSubmitted(text)
+    setYoutubePage(1)
+    setYoutubeHasMore(false)
     // Clear the previous answer before waiting: a slow search that leaves the
     // old rows on screen under the new query is worse than an empty list.
     setLocal([])
@@ -110,7 +118,7 @@ export function SearchView(props: SearchViewProps) {
 
     const [localAnswer, youtubeAnswer] = await Promise.allSettled([
       api.listTracks({ search: text, limit: 25 }),
-      api.searchYouTube(text, 20)
+      api.searchYouTube(text, YOUTUBE_PAGE_SIZE, 0)
     ])
 
     if (localAnswer.status === 'fulfilled') {
@@ -122,12 +130,46 @@ export function SearchView(props: SearchViewProps) {
 
     if (youtubeAnswer.status === 'fulfilled') {
       setYoutube(youtubeAnswer.value)
+      setYoutubeHasMore(youtubeAnswer.value.length === YOUTUBE_PAGE_SIZE)
     } else {
       setYoutube([])
       setYoutubeError(messageOf(youtubeAnswer.reason))
     }
     setLoading(false)
   }, [query])
+
+  /**
+   * Fetches one page of YouTube results. The local half of the list does not
+   * move: paging is about discovery, not about searching the library again.
+   */
+  const goToYoutubePage = useCallback(
+    async (page: number): Promise<void> => {
+      if (page < 1 || page === youtubePage || submitted.length === 0) return
+      setYoutubePageLoading(true)
+      setError(null)
+      try {
+        const results = await api.searchYouTube(
+          submitted,
+          YOUTUBE_PAGE_SIZE,
+          (page - 1) * YOUTUBE_PAGE_SIZE
+        )
+        if (results.length === 0) {
+          // The end of the list, not an error: keep the page that is on screen
+          // and stop offering a next arrow.
+          setYoutubeHasMore(false)
+          return
+        }
+        setYoutube(results)
+        setYoutubePage(page)
+        setYoutubeHasMore(results.length === YOUTUBE_PAGE_SIZE)
+      } catch (cause) {
+        setError(messageOf(cause))
+      } finally {
+        setYoutubePageLoading(false)
+      }
+    },
+    [submitted, youtubePage]
+  )
 
   const submit = (event: FormEvent): void => {
     event.preventDefault()
@@ -210,6 +252,7 @@ export function SearchView(props: SearchViewProps) {
       {channel ? (
         <>
           {channelLoading ? <div className="banner">Loading the channel…</div> : null}
+          {error ? <div className="banner error">{error}</div> : null}
           {channel.entries.length === 0 ? (
             <div className="empty-state">
               <MusicIcon size={32} />
@@ -217,23 +260,24 @@ export function SearchView(props: SearchViewProps) {
               <p>YouTube returned no public videos that this app can list.</p>
             </div>
           ) : (
-            <ul className="discover-list" aria-label={`${channel.name} videos`}>
-              {channel.entries.map((result) => (
-                <YouTubeRow
-                  key={result.videoId}
-                  result={result}
-                  busy={busyVideoId === result.videoId}
-                  isSaved={saved.has(result.videoId)}
-                  savingState={states[result.videoId]}
-                  onPlay={() => void playYouTube(result)}
-                  onQueue={() => void queueYouTube(result)}
-                  onSave={() => void saveYouTube(result)}
-                  onChannel={null}
-                />
-              ))}
-            </ul>
+            <div className="discover-results">
+              <ul className="discover-list" aria-label={`${channel.name} videos`}>
+                {channel.entries.map((result) => (
+                  <YouTubeRow
+                    key={result.videoId}
+                    result={result}
+                    busy={busyVideoId === result.videoId}
+                    isSaved={saved.has(result.videoId)}
+                    savingState={states[result.videoId]}
+                    onPlay={() => void playYouTube(result)}
+                    onQueue={() => void queueYouTube(result)}
+                    onSave={() => void saveYouTube(result)}
+                    onChannel={null}
+                  />
+                ))}
+              </ul>
+            </div>
           )}
-          {error ? <div className="banner error">{error}</div> : null}
         </>
       ) : (
         <>
@@ -249,10 +293,14 @@ export function SearchView(props: SearchViewProps) {
                 aria-label="Search your library and YouTube"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                disabled={loading}
+                disabled={loading || youtubePageLoading}
               />
             </div>
-            <button type="submit" className="primary" disabled={loading || query.trim().length === 0}>
+            <button
+              type="submit"
+              className="primary"
+              disabled={loading || youtubePageLoading || query.trim().length === 0}
+            >
               {loading ? <SpinnerIcon /> : <SearchIcon />}
               <span>{loading ? 'Searching…' : 'Search'}</span>
             </button>
@@ -287,81 +335,111 @@ export function SearchView(props: SearchViewProps) {
                 </span>
                 <span className="discover-count">{formatCount(rows.length)}</span>
               </div>
-              <ul className="discover-list" aria-label="Search results">
-                {local.length > 0 ? (
-                  <li className="discover-divider">
-                    <span className="source-badge local">Local</span>
-                    <span>In your library</span>
-                    <span className="discover-count">{local.length}</span>
-                  </li>
-                ) : null}
-                {local.map((track) => (
-                  <li key={`local-${track.id}`} className="discover-item">
-                    <button
-                      type="button"
-                      className="discover-jump"
-                      title={`Play ${track.title}`}
-                      onClick={() => onPlayLocal([track])}
-                    >
-                      <ArtworkImage track={track} size={34} className="discover-art" />
-                      <span className="discover-title">{track.title}</span>
-                      <span className="discover-artist">{track.artist ?? 'Unknown artist'}</span>
-                      <span className="discover-album">{track.album ?? '—'}</span>
-                      <span className="discover-time">{formatDuration(track.durationMs)}</span>
-                    </button>
-                    <div className="discover-actions">
+              <div className="discover-results">
+                <ul className="discover-list" aria-label="Search results">
+                  {local.length > 0 ? (
+                    <li className="discover-divider">
                       <span className="source-badge local">Local</span>
+                      <span>In your library</span>
+                      <span className="discover-count">{local.length}</span>
+                    </li>
+                  ) : null}
+                  {local.map((track) => (
+                    <li key={`local-${track.id}`} className="discover-item">
                       <button
                         type="button"
-                        className="icon-button subtle"
-                        title="Add to queue"
-                        aria-label={`Add ${track.title} to the queue`}
-                        onClick={() => onQueueLocal([track])}
-                      >
-                        <QueueIcon size={15} />
-                      </button>
-                      <button
-                        type="button"
-                        className="icon-button subtle"
-                        title="Play"
-                        aria-label={`Play ${track.title}`}
+                        className="discover-jump"
+                        title={`Play ${track.title}`}
                         onClick={() => onPlayLocal([track])}
                       >
-                        <PlayIcon size={15} />
+                        <ArtworkImage track={track} size={34} className="discover-art" />
+                        <span className="discover-title">{track.title}</span>
+                        <span className="discover-artist">{track.artist ?? 'Unknown artist'}</span>
+                        <span className="discover-album">{track.album ?? '—'}</span>
+                        <span className="discover-time">{formatDuration(track.durationMs)}</span>
                       </button>
-                    </div>
-                  </li>
-                ))}
+                      <div className="discover-actions">
+                        <span className="source-badge local">Local</span>
+                        <button
+                          type="button"
+                          className="icon-button subtle"
+                          title="Add to queue"
+                          aria-label={`Add ${track.title} to the queue`}
+                          onClick={() => onQueueLocal([track])}
+                        >
+                          <QueueIcon size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-button subtle"
+                          title="Play"
+                          aria-label={`Play ${track.title}`}
+                          onClick={() => onPlayLocal([track])}
+                        >
+                          <PlayIcon size={15} />
+                        </button>
+                      </div>
+                    </li>
+                  ))}
 
-                {youtube.length > 0 ? (
-                  <li className="discover-divider">
-                    <span className="source-badge youtube">YouTube</span>
-                    <span>Not in your library</span>
-                    <span className="discover-count">{youtube.length}</span>
-                  </li>
+                  {youtube.length > 0 ? (
+                    <li className="discover-divider">
+                      <span className="source-badge youtube">YouTube</span>
+                      <span>Not in your library</span>
+                      <span className="discover-count">{youtube.length}</span>
+                    </li>
+                  ) : null}
+                  {youtube.map((result) => (
+                    <YouTubeRow
+                      key={result.videoId}
+                      result={result}
+                      busy={busyVideoId === result.videoId}
+                      isSaved={saved.has(result.videoId)}
+                      savingState={states[result.videoId]}
+                      onPlay={() => void playYouTube(result)}
+                      onQueue={() => void queueYouTube(result)}
+                      onSave={() => void saveYouTube(result)}
+                      onChannel={
+                        result.channelId || result.channelName
+                          ? () =>
+                              void openChannel(
+                                result.channelId ?? result.channelName ?? result.videoId,
+                                result.channelName ?? 'this channel'
+                              )
+                          : null
+                      }
+                    />
+                  ))}
+                </ul>
+                {youtube.length > 0 || youtubePage > 1 ? (
+                  <div className="discover-pager" aria-label="YouTube result pages">
+                    <button
+                      type="button"
+                      className="pager-button"
+                      title="Previous YouTube results"
+                      aria-label="Previous YouTube results"
+                      disabled={youtubePage <= 1 || youtubePageLoading}
+                      onClick={() => void goToYoutubePage(youtubePage - 1)}
+                    >
+                      ‹
+                    </button>
+                    <span className="discover-page" aria-label={`Page ${youtubePage}`}>
+                      {youtubePage}
+                    </span>
+                    <button
+                      type="button"
+                      className="pager-button"
+                      title="More YouTube results"
+                      aria-label="More YouTube results"
+                      disabled={!youtubeHasMore || youtubePageLoading}
+                      onClick={() => void goToYoutubePage(youtubePage + 1)}
+                    >
+                      ›
+                    </button>
+                    {youtubePageLoading ? <SpinnerIcon /> : null}
+                  </div>
                 ) : null}
-                {youtube.map((result) => (
-                  <YouTubeRow
-                    key={result.videoId}
-                    result={result}
-                    busy={busyVideoId === result.videoId}
-                    isSaved={saved.has(result.videoId)}
-                    savingState={states[result.videoId]}
-                    onPlay={() => void playYouTube(result)}
-                    onQueue={() => void queueYouTube(result)}
-                    onSave={() => void saveYouTube(result)}
-                    onChannel={
-                      result.channelId || result.channelName
-                        ? () =>
-                            void openChannel(
-                              result.channelId ?? result.channelName ?? result.videoId,
-                              result.channelName ?? 'this channel'
-                            )
-                        : null
-                    }
-                  />
-                ))}
-              </ul>
+              </div>
             </>
           ) : null}
         </>

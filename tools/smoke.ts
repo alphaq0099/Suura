@@ -1027,6 +1027,13 @@ async function main(): Promise<void> {
     check('youtube: a non-YouTube channel URL is refused', youtubeChannelUrl('https://example.com/@nope') === null)
 
     checkEqual('youtube: search asks for a capped flat list', buildSearchArgs('lofi beats', 20).at(-1), 'ytsearch20:lofi beats')
+    const searchPageTwo = buildSearchArgs('lofi beats', 10, 10)
+    check(
+      'youtube: search page two skips the first ten results',
+      searchPageTwo[searchPageTwo.indexOf('--playlist-start') + 1] === '11' &&
+        searchPageTwo[searchPageTwo.indexOf('--playlist-end') + 1] === '20' &&
+        searchPageTwo.at(-1) === 'ytsearch20:lofi beats'
+    )
     checkEqual(
       'youtube: a channel listing asks for the videos tab',
       buildChannelArgs('https://www.youtube.com/channel/UCCY_8y1FjtOegxKB4s2bWqw/videos', 5).at(-1),

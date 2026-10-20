@@ -407,20 +407,22 @@ place, and imported lists plus the link history already cover the "start from no
 playlists, and folding stream-only rows into the Library view instead of keeping them under YouTube. The channel
 page is a flat recent-videos list on purpose — no subscriptions, no channel import, no "download all".*
 
-### M6 — Settings Revamp  *(scope to be decided, ~1–2 weeks)*
+### M6 — Settings Revamp  *(in progress, ~1–2 weeks)*
 **Goal:** one deliberate pass over Settings after M5, instead of growing it card by card. The page currently mixes
 library folders, engine paths, playback choices, artwork, saving, import caps and about text in one long scroll; it
 works, but it has no hierarchy and no way to find a single option.
 
-- [ ] Decide the structure with the user before building: grouped navigation (Library / Playback / Artwork / Saving /
-      Engine / Advanced), one scrollable page with clear sections, or a searchable list
-- [ ] Make every control state what it changes and whether it applies now or on restart; no dead or duplicate controls
-- [ ] Move diagnostics (engine status, paths, logs, database location) behind an **Advanced** area rather than the main flow
-- [ ] Give saving one honest home: folder, quality, format and concurrency, plus the deferred offline-cache note in one place
-- [ ] Review defaults, reset-to-default, and which settings are worth exporting with a backup
+- [x] Structure agreed with the user: **six top tabs** — General, Appearance, Behaviour, Streaming, Misc, About — with
+      one scrollable panel at a time. The heading and tab strip stay put; the panel owns the scrollbar.
+- [x] Make every control state what it changes and whether it applies now or on restart; no dead or duplicate controls
+- [x] Move diagnostics (engine status, paths, logs, database location) behind **Misc** rather than the main flow
+- [x] Give saving one honest home: folder, quality, format and concurrency, plus the deferred offline-cache note in one
+      place under **Streaming**
+- [ ] Review defaults and reset-to-default; decide which settings are worth exporting with a backup
 - [ ] Accessibility and keyboard pass on the whole page; every field needs a real label, not a placeholder
+- [ ] Search within Settings once there are enough options to justify it
 **Exit:** a new user can find and change any setting without scrolling past unrelated cards, and every control has a
-visible effect. **Design is intentionally open; do not start this milestone until its scope is agreed.**
+visible effect. **The tab layout is now implemented; remaining work is defaults, reset and accessibility.**
 
 ### M7 — Playlists, Sync & Data Care  *(~2 weeks)*
 - [ ] M3U / M3U8 and JSON import-export of playlists; CSV export of the library

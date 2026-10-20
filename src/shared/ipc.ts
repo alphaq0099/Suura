@@ -216,8 +216,13 @@ export interface PlayerApi {
    * count for that kind of list.
    */
   importOnlineList(url: string, limit?: number): Promise<OnlinePlaylistDetail>
-  /** Searches YouTube for videos. Metadata only; nothing is stored. */
-  searchYouTube(query: string, limit?: number): Promise<YouTubeSearchResult[]>
+  /**
+   * Searches YouTube for videos. Metadata only; nothing is stored.
+   *
+   * `offset` is the number of results to skip, so the search view can page ten
+   * at a time without asking for a twenty-result list on the first page.
+   */
+  searchYouTube(query: string, limit?: number, offset?: number): Promise<YouTubeSearchResult[]>
   /** Lists a channel's recent videos by channel id, handle or URL. */
   getYouTubeChannel(target: string, limit?: number): Promise<YouTubeChannel>
   /** Every imported playlist, most recently imported first. */
