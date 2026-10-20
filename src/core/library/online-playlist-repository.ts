@@ -29,6 +29,7 @@ interface PlaylistRow {
   list_id: string
   kind: string
   title: string
+  custom_title: string | null
   owner: string | null
   source_url: string
   cover_key: string | null
@@ -48,8 +49,8 @@ interface ItemRow {
   duration_ms: number | null
 }
 
-const PLAYLIST_COLUMNS = `p.id, p.list_id, p.kind, p.title, p.owner, p.source_url, p.cover_key,
-  p.total_count, p.imported_at,
+const PLAYLIST_COLUMNS = `p.id, p.list_id, p.kind, p.title, p.custom_title, p.owner, p.source_url,
+  p.cover_key, p.total_count, p.imported_at,
   (SELECT COUNT(*) FROM online_playlist_items i WHERE i.playlist_id = p.id) AS track_count`
 
 function mapPlaylist(row: PlaylistRow): OnlinePlaylist {
@@ -57,7 +58,9 @@ function mapPlaylist(row: PlaylistRow): OnlinePlaylist {
     id: row.id,
     listId: row.list_id,
     kind: row.kind === 'album' || row.kind === 'mix' ? row.kind : 'playlist',
-    title: row.title,
+    // A name the user chose beats the one YouTube reports; a re-import refreshes
+    // the latter without touching the former.
+    title: row.custom_title ?? row.title,
     owner: row.owner,
     sourceUrl: row.source_url,
     coverKey: row.cover_key,
@@ -179,6 +182,22 @@ export class OnlinePlaylistRepository {
 
   setCoverKey(listId: string, coverKey: string): void {
     this.db.prepare('UPDATE online_playlists SET cover_key = ? WHERE list_id = ?').run(coverKey, listId)
+  }
+
+  /**
+   * Gives an imported playlist a name of its own.
+   *
+   * Stored apart from YouTube's title so "Re-import" can still refresh the
+   * source name underneath without wiping the user's choice. Returns the
+   * playlist, or null when it was deleted in the meantime.
+   */
+  rename(id: number, title: string): OnlinePlaylist | null {
+    const name = title.trim()
+    if (name.length === 0) return this.get(id)
+    const result = this.db
+      .prepare('UPDATE online_playlists SET custom_title = ? WHERE id = ?')
+      .run(name, id)
+    return result.changes > 0 ? this.get(id) : null
   }
 
   /**

@@ -87,11 +87,14 @@ const api: PlayerApi = {
 
   clearOnline: () => ipcRenderer.invoke(IPC.onlineClear) as Promise<number>,
 
-  importOnlineList: (url: string) => ipcRenderer.invoke(IPC.onlineImport, url),
+  importOnlineList: (url: string, limit?: number) => ipcRenderer.invoke(IPC.onlineImport, url, limit),
 
   listOnlinePlaylists: () => ipcRenderer.invoke(IPC.onlinePlaylists),
 
   getOnlinePlaylist: (playlistId: number) => ipcRenderer.invoke(IPC.onlinePlaylist, playlistId),
+
+  renameOnlinePlaylist: (playlistId: number, title: string) =>
+    ipcRenderer.invoke(IPC.onlinePlaylistRename, playlistId, title),
 
   deleteOnlinePlaylist: (playlistId: number) =>
     ipcRenderer.invoke(IPC.onlinePlaylistDelete, playlistId) as Promise<void>,

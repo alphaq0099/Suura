@@ -271,7 +271,10 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
 **Goal:** it is a genuinely usable local music player.
 - [x] Folder scanning (recursive, incremental index into SQLite)
 - [x] Tag reading → Artist/Album/Track ingestion; compilation & multi-artist handling
-- [x] Library UI: virtualized list, sort by title/artist/album/duration/year/added/played, search via FTS5
+- [x] Library UI: virtualized list, sort by title/artist/album/duration/year/added/played, search via FTS5. Columns are
+      **#, Title, Artist, Album, Duration, Action**; Format is not a column but a row's **Details** sheet (format, codec,
+      bitrate, sample rate, channels, size, path, added/played, YouTube origin), opened from the ⋯ button or the row menu.
+      The Queue view carries the same six-column header, aligned with its rows.
 - [x] Artwork: embedded covers extracted lazily, resized, cached content-addressed, served over `player-art://`
 - [x] Now Playing: full-window player with a blurred art backdrop, transport, volume, queue and a scrubber; the queue
       as a panel inside the window, slid in by the button that opened it and dismissed by a press anywhere outside it
@@ -330,7 +333,9 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
       wipe, and it holds only links the user added — playing a track out of an imported list never echoes it there, and
       importing a list withdraws any row a play had already made for one of its entries. After an import & play, a strip
       names the list and the track it is on; it is held by the app, not by the view, so visiting another view and coming
-      back keeps it, and playing an imported list from the Playlists window lights it up as well.
+      back keeps it, and playing an imported list from the Playlists window lights it up as well. Imported lists also get
+      their own box above the history: one card per list (not one row per track), with **Play** for the whole list and
+      **Open in Playlists**, so the history stays a log of links the user chose.
 **Exit:** 50 hand-picked YouTube links play directly, ≥ 90% on first attempt, < 3 s to first audio, and seeking works.
 *Status: the 20-link sample resolves 20/20, and playback with seeking works end-to-end in the app through the Online
 view. The median resolve is 8.8 s and only 20 of the 50 links have been run. A queued mix no longer pays that cost
@@ -365,8 +370,11 @@ prefetch-based definition; see [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-d
       artist); `RD…`/`start_radio=1` mixes are imported too, capped by their own setting (default 50). `v=…&list=…` plays
       the video and offers the import; account lists (`LL…`, `WL…`, `FL…`) and channel pages are refused before a sidecar
       runs. The Playlists view separates **Custom** from **Online**, and an imported snapshot can be played, queued,
-      re-imported, trimmed or deleted entry by entry. Metadata only for now: audio resolves lazily on play, and each
-      entry (or the whole snapshot) can now be saved to the library through the M4 download path.
+      re-imported, trimmed or deleted entry by entry. An imported list can be renamed: the user's name lives in
+      `custom_title` (migration 8) apart from YouTube's title, so a re-import refreshes the snapshot without undoing it,
+      and the list id is shown as the stable identity. A **Tracks** box beside Re-import overrides the cap for that one
+      import (1…1000), so a mix or radio can be given a length on the spot. Metadata only for now: audio resolves lazily
+      on play, and each entry (or the whole snapshot) can now be saved to the library through the M4 download path.
 - [x] Show which imported entries are already in the library — a `savedOrigins` query per page turns the save button
       into a tick, and the same information prevents a second download of the same video.
 - [ ] Channel/artist pages (basic), "more from this channel"
@@ -514,9 +522,12 @@ player/
 5. ~~**Pick the retention defaults**~~ Done: stream-only default, 5 GB / 30-day cache budget, keep only on request.
 
 Where things stand: the sidecar spike is done (`docs/notes/yt-dlp-spike.md`), the stack and storage decisions are recorded
-(ADR 0001), streaming has a real surface — the **Online** view with a persistent link history — playlist, album and mix
-import stores a snapshot that the Playlists view can play, queue, re-import and trim, and **saving to the library works**:
-a history row or an imported entry downloads once, is tagged with embedded artwork, moves into the music folder and is
-indexed as an ordinary local track that remembers its video id. What is left in M3 is the exit measurement (50 links, and
-a decision on the `< 3 s` target); what is left in M4 is the streaming cache, the Downloads screen and cancel/retry. The
-remaining M0 leftover is verifying yt-dlp/ffmpeg discovery on a clean machine.
+(ADR 0001), streaming has a real surface — the **Online** view with a persistent link history and a separate
+**Imported playlists** box, one card per list — and playlist, album and mix import stores a snapshot that the Playlists
+view can play, queue, re-import, rename and trim, with a per-import track count for mixes and radios. **Saving to the
+library works**: a history row or an imported entry downloads once, is tagged with embedded artwork, moves into the music
+folder and is indexed as an ordinary local track that remembers its video id. Every track list now shares the
+**# / Title / Artist / Album / Duration / Action** grid, with Format in a row's **Details** sheet, and the Queue has a
+header aligned with its rows. What is left in M3 is the exit measurement (50 links, and a decision on the `< 3 s` target);
+what is left in M4 is the streaming cache, the Downloads screen and cancel/retry. The remaining M0 leftover is verifying
+yt-dlp/ffmpeg discovery on a clean machine.

@@ -305,5 +305,18 @@ export const MIGRATIONS: readonly Migration[] = [
         CREATE INDEX idx_tracks_origin ON tracks(origin_kind, origin_id);
       `)
     }
+  },
+  {
+    version: 8,
+    name: 'online playlist names',
+    up: (db) => {
+      // A mix imported from a link is titled after its first track, which is a
+      // poor name and not unique. `title` stays the name YouTube reports, so a
+      // re-import can still refresh it; a name the user types lives here and
+      // wins until they change it again.
+      db.exec(`
+        ALTER TABLE online_playlists ADD COLUMN custom_title TEXT;
+      `)
+    }
   }
 ]

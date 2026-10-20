@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AddTracksOutcome, Playlist, Track } from '@shared/types'
-import { PlayIcon, PlaylistIcon, RevealIcon } from './Icons'
+import { PlayIcon, InfoIcon, PlaylistIcon, RevealIcon } from './Icons'
 import { AddToPlaylistMenu } from './AddToPlaylistMenu'
 
 export interface TrackContextMenuProps {
@@ -11,12 +11,13 @@ export interface TrackContextMenuProps {
   onAddTracks: (playlistId: number, trackIds: number[]) => Promise<AddTracksOutcome>
   onCreatePlaylist: (name: string) => Promise<Playlist>
   onPlay: () => void
+  onDetails: () => void
   onReveal: () => void
   onClose: () => void
 }
 
 const WIDTH = 240
-const HEIGHT = 160
+const HEIGHT = 200
 
 /**
  * The right-click menu on a library row.
@@ -27,7 +28,7 @@ const HEIGHT = 160
  * grow stale.
  */
 export function TrackContextMenu(props: TrackContextMenuProps) {
-  const { track, at, playlists, onAddTracks, onCreatePlaylist, onPlay, onReveal, onClose } = props
+  const { track, at, playlists, onAddTracks, onCreatePlaylist, onPlay, onDetails, onReveal, onClose } = props
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [page, setPage] = useState<'root' | 'playlists'>('root')
 
@@ -79,6 +80,18 @@ export function TrackContextMenu(props: TrackContextMenuProps) {
           <button type="button" role="menuitem" className="context-item" onClick={() => setPage('playlists')}>
             <PlaylistIcon size={14} />
             <span>Add to playlist…</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="context-item"
+            onClick={() => {
+              onDetails()
+              onClose()
+            }}
+          >
+            <InfoIcon size={14} />
+            <span>Details…</span>
           </button>
           <button
             type="button"

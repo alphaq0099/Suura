@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DownloadStatus, LibraryClickAction, SortDirection, Track, TrackSortField } from '@shared/types'
-import { formatAudioSummary, formatDuration } from '@shared/format'
+import { formatDuration } from '@shared/format'
 import { useRowReorder } from '../hooks/useRowReorder'
 import { ArtworkImage } from './ArtworkImage'
-import { CheckIcon, DownloadIcon, PlayIcon, RevealIcon, SortIcon, SpinnerIcon, TrashIcon } from './Icons'
+import { CheckIcon, DownloadIcon, InfoIcon, MoreIcon, PlayIcon, RevealIcon, SortIcon, SpinnerIcon, TrashIcon } from './Icons'
 
 /** How a configured click action reads in a tooltip or a footnote. */
 export function describeClickAction(action: LibraryClickAction): string {
@@ -69,15 +69,15 @@ export interface TrackListProps {
   removeLabel?: string
   /**
    * Right-click (or Shift+F10) on a row. The coordinates are page coordinates,
-   * so the caller can open a menu where the pointer is.
+   * so the caller can open a menu where the pointer is. When this is passed, the
+   * row's action button opens the same menu.
    */
   onRowContextMenu?: (track: Track, index: number, at: { x: number; y: number }) => void
   /**
-   * False drops the Format column: a playlist is about which recordings are in
-   * it, not which container each one came in, and the width is better spent on
-   * the title and the artist.
+   * Opens the technical sheet for a row. Used where there is no row menu (an
+   * imported playlist, whose order is not the user's to act on).
    */
-  showFormat?: boolean
+  onDetails?: (track: Track) => void
   /**
    * Adds a "Save to library" action to stream rows. Local rows never get one:
    * they are already a file, which is what saving produces.
@@ -100,8 +100,7 @@ const COLUMNS: Column[] = [
   { field: 'title', label: 'Title', className: 'col-title' },
   { field: 'artist', label: 'Artist', className: 'col-artist' },
   { field: 'album', label: 'Album', className: 'col-album' },
-  { field: null, label: 'Format', className: 'col-format' },
-  { field: 'duration', label: 'Time', className: 'col-time' },
+  { field: 'duration', label: 'Duration', className: 'col-time' },
   { field: null, label: '', className: 'col-actions' }
 ]
 
@@ -138,7 +137,7 @@ export function TrackList(props: TrackListProps) {
     onRemove,
     removeLabel = 'Remove from this list',
     onRowContextMenu,
-    showFormat = true,
+    onDetails,
     onSave,
     isSaved,
     saveState
@@ -345,15 +344,14 @@ export function TrackList(props: TrackListProps) {
   }
 
   const activeId = tracks[activeIndex] ? `track-row-${activeIndex}` : undefined
-  const columns = showFormat ? COLUMNS : COLUMNS.filter((column) => column.className !== 'col-format')
+  const columns = COLUMNS
 
   return (
     <div
       className={[
         'track-list',
         onRemove ? 'has-remove' : '',
-        onSave ? 'has-save' : '',
-        showFormat ? '' : 'no-format'
+        onSave ? 'has-save' : ''
       ]
         .filter(Boolean)
         .join(' ')}
@@ -491,11 +489,6 @@ export function TrackList(props: TrackListProps) {
                   <div role="gridcell" className="cell col-album" title={track.album ?? undefined}>
                     {track.album ?? '—'}
                   </div>
-                  {showFormat ? (
-                    <div role="gridcell" className="cell col-format">
-                      {formatAudioSummary(track.codec, track.bitrateKbps)}
-                    </div>
-                  ) : null}
                   <div role="gridcell" className="cell col-time">
                     {formatDuration(track.durationMs)}
                   </div>
@@ -541,7 +534,35 @@ export function TrackList(props: TrackListProps) {
                         <TrashIcon />
                       </button>
                     ) : null}
-                    {track.filePath ? (
+                    {onRowContextMenu ? (
+                      <button
+                        type="button"
+                        className="icon-button subtle"
+                        title="More actions"
+                        aria-label={`More actions for ${track.title}`}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setActiveIndex(index)
+                          const rect = event.currentTarget.getBoundingClientRect()
+                          onRowContextMenu(track, index, { x: rect.left, y: rect.bottom + 4 })
+                        }}
+                      >
+                        <MoreIcon />
+                      </button>
+                    ) : onDetails ? (
+                      <button
+                        type="button"
+                        className="icon-button subtle"
+                        title="Details"
+                        aria-label={`Details for ${track.title}`}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onDetails(track)
+                        }}
+                      >
+                        <InfoIcon />
+                      </button>
+                    ) : track.filePath ? (
                       <button
                         type="button"
                         className="icon-button subtle"

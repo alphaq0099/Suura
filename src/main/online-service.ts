@@ -72,8 +72,19 @@ export interface OnlineService {
    * Importing the same list again replaces that playlist's entries in place. The
    * caller is responsible for queueing the returned items: an import never starts
    * playback by itself, so "add all to queue" and "play now" share one path.
+   *
+   * `limit` overrides the Settings count for this one import (1-1000). Re-import
+   * is where a mix or radio gets a length the user picks; the setting remains the
+   * default for every other import.
    */
-  importList(input: string): Promise<OnlinePlaylistDetail>
+  importList(input: string, limit?: number): Promise<OnlinePlaylistDetail>
+  /**
+   * Renames an imported playlist.
+   *
+   * The name is stored separately from YouTube's title, so a later re-import
+   * refreshes the snapshot without undoing the rename.
+   */
+  renamePlaylist(id: number, title: string): OnlinePlaylist | null
   deletePlaylist(id: number): void
   removePlaylistItem(itemId: number): number | null
 }
@@ -278,7 +289,7 @@ export function createOnlineService(deps: {
       return detailOf(id)
     },
 
-    async importList(input) {
+    async importList(input, requestedLimit) {
       const link = parseYouTubeLink(input)
       if (link.kind === 'refused') throw new Error(describeYouTubeRefusal(link.reason))
       if (link.kind === 'video') {
@@ -289,7 +300,12 @@ export function createOnlineService(deps: {
       const engine = deps.engine()
       // The cap is a setting, not a constant: a mix is endless and a playlist can
       // be 5,000 entries, and the right number depends on how the user listens.
-      const limit = Math.max(1, kind === 'mix' ? engine.mixLimit : engine.importLimit)
+      // A count typed beside Re-import overrides it for that one refresh.
+      const fallback = Math.max(1, kind === 'mix' ? engine.mixLimit : engine.importLimit)
+      const limit =
+        requestedLimit === undefined || !Number.isFinite(requestedLimit)
+          ? fallback
+          : Math.max(1, Math.min(1000, Math.round(requestedLimit)))
       const sourceUrl = youtubeListUrl(link.listId)
       const info = await deps.listProvider.fetchPlaylist(sourceUrl, limit)
 
@@ -340,6 +356,17 @@ export function createOnlineService(deps: {
 
     deletePlaylist(id) {
       if (deps.playlists.delete(id)) deps.onChange?.()
+    },
+
+    renamePlaylist(id, title) {
+      const name = title.trim()
+      if (name.length === 0 || name.length > 120) {
+        throw new Error('A playlist name needs 1–120 characters.')
+      }
+      const renamed = deps.playlists.rename(id, name)
+      if (!renamed) return null
+      deps.onChange?.()
+      return withCover(renamed)
     },
 
     removePlaylistItem(itemId) {

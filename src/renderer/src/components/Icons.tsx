@@ -342,3 +342,14 @@ export function MoreIcon({ size = 16 }: IconProps) {
     </svg>
   )
 }
+
+/** Details: the technical sheet behind a track. */
+export function InfoIcon({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 11v5.5" />
+      <path d="M12 7.6v.1" />
+    </svg>
+  )
+}

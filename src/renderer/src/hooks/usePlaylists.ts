@@ -33,7 +33,9 @@ export interface UsePlaylistsResult {
   removeItems: (itemIds: number[]) => Promise<void>
   moveItem: (itemId: number, toIndex: number) => Promise<void>
   /** Re-reads an imported playlist's entries and stores the new snapshot. */
-  reimportOnline: (playlistId: number) => Promise<OnlinePlaylistDetail>
+  reimportOnline: (playlistId: number, limit?: number) => Promise<OnlinePlaylistDetail>
+  /** Gives an imported playlist a name of its own; it survives a re-import. */
+  renameOnline: (playlistId: number, name: string) => Promise<void>
   /** Removes an imported playlist and its entries. Nothing in the library changes. */
   deleteOnline: (playlistId: number) => Promise<void>
   /** Removes one entry and closes the gap in the imported order. */
@@ -339,15 +341,31 @@ export function usePlaylists(): UsePlaylistsResult {
   )
 
   const reimportOnline = useCallback(
-    async (playlistId: number): Promise<OnlinePlaylistDetail> => {
+    async (playlistId: number, limit?: number): Promise<OnlinePlaylistDetail> => {
       const playlist = onlinePlaylistsRef.current.find((entry) => entry.id === playlistId)
       if (!playlist) throw new Error('That playlist is no longer in the index.')
-      const next = await api.importOnlineList(playlist.sourceUrl)
+      const next = await api.importOnlineList(playlist.sourceUrl, limit)
       await loadOnlineList()
       if (selectedOnlineRef.current === next.playlist.id) setOnlineDetail(next)
       return next
     },
     [loadOnlineList]
+  )
+
+  const renameOnline = useCallback(
+    async (playlistId: number, name: string): Promise<void> => {
+      const renamed = await api.renameOnlinePlaylist(playlistId, name)
+      if (!renamed) return
+      setOnlinePlaylists((current) =>
+        current.map((entry) => (entry.id === renamed.id ? renamed : entry))
+      )
+      setOnlineDetail((current) =>
+        current && current.playlist.id === renamed.id
+          ? { ...current, playlist: renamed }
+          : current
+      )
+    },
+    []
   )
 
   const deleteOnline = useCallback(
@@ -406,6 +424,7 @@ export function usePlaylists(): UsePlaylistsResult {
     removeItems,
     moveItem,
     reimportOnline,
+    renameOnline,
     deleteOnline,
     removeOnlineItem,
     refresh

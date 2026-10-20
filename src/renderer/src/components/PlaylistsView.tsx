@@ -20,6 +20,7 @@ import {
 import { messageOf } from '../api'
 import type { UseDownloadsResult } from '../hooks/useDownloads'
 import { ArtworkImage } from './ArtworkImage'
+import { TrackDetails } from './TrackDetails'
 import { TrackList, describeClickAction } from './TrackList'
 import { PlayIcon, PlaylistIcon, PlusIcon, PencilIcon, QueueIcon, RefreshIcon, SpinnerIcon, TrashIcon, DownloadIcon } from './Icons'
 
@@ -50,7 +51,9 @@ export interface PlaylistsViewProps {
   onRemoveItems: (itemIds: number[]) => Promise<void>
   onMoveItem: (itemId: number, toIndex: number) => Promise<void>
   /** Fetches the source list again and stores a fresh snapshot. */
-  onReimportOnline: (playlistId: number) => Promise<unknown>
+  onReimportOnline: (playlistId: number, limit?: number) => Promise<unknown>
+  /** Gives an imported list a name of its own; it survives a re-import. */
+  onRenameOnline: (playlistId: number, name: string) => Promise<void>
   onDeleteOnline: (playlistId: number) => Promise<void>
   onRemoveOnlineItem: (itemId: number) => Promise<void>
   /** Replaces the queue with these tracks, starting at `index`. */
@@ -115,6 +118,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
     onRemoveItems,
     onMoveItem,
     onReimportOnline,
+    onRenameOnline,
     onDeleteOnline,
     onRemoveOnlineItem,
     onPlay,
@@ -128,6 +132,10 @@ export function PlaylistsView(props: PlaylistsViewProps) {
   const [newName, setNewName] = useState('')
   const [renamingId, setRenamingId] = useState<number | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [renamingOnlineId, setRenamingOnlineId] = useState<number | null>(null)
+  const [renameOnlineValue, setRenameOnlineValue] = useState('')
+  const [reimportLimit, setReimportLimit] = useState('')
+  const [detailsTrack, setDetailsTrack] = useState<Track | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<number>>(() => new Set<number>())
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
@@ -292,6 +300,16 @@ export function PlaylistsView(props: PlaylistsViewProps) {
     setReimporting(false)
   }, [selectedId, selectedOnlineId])
 
+  // The count beside Re-import starts at what the snapshot currently holds. A
+  // re-import that returns a different number refreshes it; a number the user is
+  // in the middle of typing is left alone.
+  const onlinePlaylistId = onlineDetail?.playlist.id ?? null
+  const onlineTrackCount = onlineDetail?.playlist.trackCount ?? 0
+  useEffect(() => {
+    setReimportLimit(onlinePlaylistId === null ? '' : String(onlineTrackCount))
+    setRenamingOnlineId(null)
+  }, [onlinePlaylistId, onlineTrackCount])
+
   const submitNew = useCallback(async (): Promise<void> => {
     const trimmed = newName.trim()
     if (trimmed.length === 0) return
@@ -321,6 +339,24 @@ export function PlaylistsView(props: PlaylistsViewProps) {
       }
     },
     [onRename, renameValue]
+  )
+
+  const submitOnlineRename = useCallback(
+    async (playlistId: number): Promise<void> => {
+      const trimmed = renameOnlineValue.trim()
+      if (trimmed.length === 0) {
+        setRenamingOnlineId(null)
+        return
+      }
+      setActionError(null)
+      try {
+        await onRenameOnline(playlistId, trimmed)
+        setRenamingOnlineId(null)
+      } catch (cause) {
+        setActionError(messageOf(cause))
+      }
+    },
+    [onRenameOnline, renameOnlineValue]
   )
 
   const removeSelected = useCallback((): void => {
@@ -360,17 +396,19 @@ export function PlaylistsView(props: PlaylistsViewProps) {
 
   const reimport = useCallback(async (): Promise<void> => {
     if (!onlineDetail) return
+    const parsed = reimportLimit.trim().length === 0 ? Number.NaN : Number(reimportLimit)
+    const limit = Number.isFinite(parsed) ? Math.max(1, Math.min(1000, Math.round(parsed))) : undefined
     setReimporting(true)
     setActionError(null)
     try {
-      await onReimportOnline(onlineDetail.playlist.id)
+      await onReimportOnline(onlineDetail.playlist.id, limit)
       setSelectedIds(new Set<number>())
     } catch (cause) {
       setActionError(messageOf(cause))
     } finally {
       setReimporting(false)
     }
-  }, [onlineDetail, onReimportOnline])
+  }, [onlineDetail, onReimportOnline, reimportLimit])
 
   const kindLabel =
     onlineDetail?.playlist.kind === 'album'
@@ -584,40 +622,84 @@ export function PlaylistsView(props: PlaylistsViewProps) {
             {onlinePlaylists.map((playlist) => (
               <div
                 key={playlist.id}
-                className={playlist.id === selectedOnlineId ? 'playlist-row active' : 'playlist-row'}
+                className={
+                  playlist.id === selectedOnlineId ? 'playlist-row online active' : 'playlist-row online'
+                }
               >
-                <button
-                  type="button"
-                  className="playlist-open"
-                  onClick={() => onSelectOnline(playlist.id)}
-                  title={playlist.owner ? `${playlist.title} · ${playlist.owner}` : playlist.title}
-                >
-                  <span className="playlist-name">
-                    <span className="playlist-title">{playlist.title}</span>
-                    <span className={`playlist-kind ${playlist.kind}`}>{listKindLabel(playlist)}</span>
-                  </span>
-                  <span className="playlist-count">{formatCount(playlist.trackCount)}</span>
-                </button>
-                {confirmDeleteOnline === playlist.id ? (
-                  <button
-                    type="button"
-                    className="icon-button subtle danger"
-                    title="Remove this imported playlist"
-                    aria-label={`Confirm removing ${playlist.title}`}
-                    onClick={() => void onDeleteOnline(playlist.id)}
+                {renamingOnlineId === playlist.id ? (
+                  <form
+                    className="playlist-rename"
+                    onSubmit={(event) => {
+                      event.preventDefault()
+                      void submitOnlineRename(playlist.id)
+                    }}
                   >
-                    <TrashIcon />
-                  </button>
+                    <input
+                      className="playlist-input"
+                      value={renameOnlineValue}
+                      autoFocus
+                      maxLength={120}
+                      aria-label={`Rename ${playlist.title}`}
+                      onChange={(event) => setRenameOnlineValue(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Escape') return
+                        event.stopPropagation()
+                        setRenamingOnlineId(null)
+                      }}
+                    />
+                    <button type="submit" className="small primary">
+                      Save
+                    </button>
+                  </form>
                 ) : (
-                  <button
-                    type="button"
-                    className="icon-button subtle"
-                    title="Remove imported playlist"
-                    aria-label={`Remove ${playlist.title}`}
-                    onClick={() => setConfirmDeleteOnline(playlist.id)}
-                  >
-                    <TrashIcon />
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className="playlist-open"
+                      onClick={() => onSelectOnline(playlist.id)}
+                      title={`${playlist.title}${playlist.owner ? ` · ${playlist.owner}` : ''} · YouTube list ${playlist.listId}`}
+                    >
+                      <span className="playlist-name">
+                        <span className="playlist-title">{playlist.title}</span>
+                        <span className={`playlist-kind ${playlist.kind}`}>{listKindLabel(playlist)}</span>
+                      </span>
+                      <span className="playlist-count">{formatCount(playlist.trackCount)}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-button subtle"
+                      title="Rename imported playlist"
+                      aria-label={`Rename ${playlist.title}`}
+                      onClick={() => {
+                        setRenamingOnlineId(playlist.id)
+                        setRenameOnlineValue(playlist.title)
+                        setConfirmDeleteOnline(null)
+                      }}
+                    >
+                      <PencilIcon />
+                    </button>
+                    {confirmDeleteOnline === playlist.id ? (
+                      <button
+                        type="button"
+                        className="icon-button subtle danger"
+                        title="Remove this imported playlist"
+                        aria-label={`Confirm removing ${playlist.title}`}
+                        onClick={() => void onDeleteOnline(playlist.id)}
+                      >
+                        <TrashIcon />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="icon-button subtle"
+                        title="Remove imported playlist"
+                        aria-label={`Remove ${playlist.title}`}
+                        onClick={() => setConfirmDeleteOnline(playlist.id)}
+                      >
+                        <TrashIcon />
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             ))}
@@ -671,7 +753,10 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                     <h2>{onlineDetail.playlist.title}</h2>
                     <p className="subtitle">
                       {subtitle}
-                      {onlineDetail.playlist.owner ? ` · ${onlineDetail.playlist.owner}` : ''}
+                      {onlineDetail.playlist.owner ? ` · ${onlineDetail.playlist.owner}` : ''} ·{' '}
+                      <span className="playlist-source-id" title="YouTube list id">
+                        {onlineDetail.playlist.listId}
+                      </span>
                     </p>
                   </div>
                 </div>
@@ -712,6 +797,27 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                     {reimporting ? <SpinnerIcon /> : <RefreshIcon />}
                     <span>{reimporting ? 'Re-importing…' : 'Re-import'}</span>
                   </button>
+                  <label
+                    className="reimport-count"
+                    title="How many tracks this snapshot keeps (1–1000). Leave empty to use the Engine setting."
+                  >
+                    <span>Tracks</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={1000}
+                      inputMode="numeric"
+                      value={reimportLimit}
+                      disabled={reimporting}
+                      aria-label="Tracks to keep when re-importing"
+                      onChange={(event) => setReimportLimit(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter') return
+                        event.preventDefault()
+                        void reimport()
+                      }}
+                    />
+                  </label>
                   <button
                     type="button"
                     className={
@@ -734,7 +840,8 @@ export function PlaylistsView(props: PlaylistsViewProps) {
               {onlineTruncated ? (
                 <p className="playlist-note">
                   YouTube lists {formatCount(onlineDetail.playlist.totalCount ?? 0)} tracks; this import kept the
-                  first {formatCount(onlineDetail.playlist.trackCount)}. The limit is in Settings → Engine.
+                  first {formatCount(onlineDetail.playlist.trackCount)}. Change the count beside Re-import, or set
+                  the default in Settings → Engine.
                 </p>
               ) : null}
 
@@ -772,6 +879,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                   onSelectAll={() => setSelectedIds(new Set(tracks.map((track) => track.id)))}
                   onClearSelection={() => setSelectedIds(new Set<number>())}
                   onReveal={onReveal}
+                  onDetails={setDetailsTrack}
                   singleClick={singleClick}
                   doubleClick={doubleClick}
                   sortable={false}
@@ -781,7 +889,6 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                     void onRemoveOnlineItem(itemId)
                   }}
                   removeLabel="Remove from this playlist"
-                  showFormat={false}
                   onSave={saveOnlineTrack}
                   isSaved={(track) => (track.sourceId ? saved.has(track.sourceId) : false)}
                   saveState={(track) => (track.sourceId ? states[track.sourceId] : undefined)}
@@ -881,6 +988,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                   onSelectAll={() => setSelectedIds(new Set(tracks.map((track) => track.id)))}
                   onClearSelection={() => setSelectedIds(new Set<number>())}
                   onReveal={onReveal}
+                  onDetails={setDetailsTrack}
                   singleClick={singleClick}
                   doubleClick={doubleClick}
                   sortable={false}
@@ -897,7 +1005,6 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                     void onRemoveItems([itemId])
                   }}
                   removeLabel="Remove from playlist"
-                  showFormat={false}
                 />
               )}
 
@@ -911,6 +1018,14 @@ export function PlaylistsView(props: PlaylistsViewProps) {
           )}
         </div>
       </div>
+
+      {detailsTrack ? (
+        <TrackDetails
+          track={detailsTrack}
+          onReveal={onReveal}
+          onClose={() => setDetailsTrack(null)}
+        />
+      ) : null}
     </section>
   )
 }

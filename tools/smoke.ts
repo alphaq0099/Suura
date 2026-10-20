@@ -1509,6 +1509,31 @@ async function main(): Promise<void> {
       checkEqual('online lists: a re-import keeps a cover it could not fetch again', reimported.coverKey, `${'c'.repeat(40)}.png`)
       checkEqual('online lists: the re-import moves the playlist to the top', repo.list()[0]?.id, album.id)
 
+      // A mix's automatic name is its first track, so the user can give it one
+      // that is actually theirs. It lives apart from YouTube's title: a later
+      // re-import refreshes the snapshot without undoing the name.
+      const renamed = repo.rename(album.id, '  My album  ')
+      checkEqual('online lists: a custom name is trimmed', renamed?.title, 'My album')
+      const afterRename = repo.upsert(
+        {
+          listId: 'OLAK5uy_test',
+          kind: 'album',
+          title: 'head or heart (deluxe)',
+          owner: 'Christina Perri',
+          sourceUrl: 'https://www.youtube.com/playlist?list=OLAK5uy_test',
+          coverKey: null,
+          totalCount: 2
+        },
+        [
+          { videoId: 'ccccccccccc', title: 'jar of hearts', artist: 'Christina Perri', album: 'head or heart (deluxe)', durationMs: 250_000 },
+          { videoId: 'ddddddddddd', title: 'distance', artist: 'Christina Perri', album: 'head or heart (deluxe)', durationMs: 240_000 }
+        ],
+        2500
+      )
+      checkEqual('online lists: a re-import keeps the custom name', afterRename.title, 'My album')
+      checkEqual('online lists: a re-import still refreshes the entries', afterRename.trackCount, 2)
+      checkEqual('online lists: renaming a missing playlist is a no-op', repo.rename(999_999, 'nobody'), null)
+
       const removedPlaylistId = repo.removeItem(repo.items(album.id)[0]?.id ?? -1)
       checkEqual('online lists: removing an entry names its playlist', removedPlaylistId, album.id)
       checkEqual('online lists: positions close the gap', repo.items(album.id)[0]?.position, 0)

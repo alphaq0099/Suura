@@ -406,13 +406,15 @@ export function registerIpcHandlers(container: AppContainer): void {
   // Importing is a long request (a flat listing is several seconds). It writes a
   // snapshot and returns it; queueing and playback are the renderer's call, so
   // "play now" and "add all" share one import path.
-  ipcMain.handle(IPC.onlineImport, (_event, input: unknown) => {
+  ipcMain.handle(IPC.onlineImport, (_event, input: unknown, limit: unknown) => {
     if (typeof input !== 'string') throw new Error('Paste a YouTube playlist, album or mix link.')
     const link = input.trim()
     if (link.length === 0 || link.length > 2048) {
       throw new Error('Paste a YouTube playlist, album or mix link.')
     }
-    return container.online.importList(link)
+    const count =
+      typeof limit === 'number' && Number.isFinite(limit) ? Math.round(limit) : undefined
+    return container.online.importList(link, count)
   })
 
   ipcMain.handle(IPC.onlinePlaylists, () => container.online.playlists())
@@ -420,6 +422,11 @@ export function registerIpcHandlers(container: AppContainer): void {
   ipcMain.handle(IPC.onlinePlaylist, (_event, id: unknown) =>
     container.online.playlist(toId(id, 'playlist'))
   )
+
+  ipcMain.handle(IPC.onlinePlaylistRename, (_event, id: unknown, title: unknown) => {
+    if (typeof title !== 'string') throw new Error('A playlist name needs 1–120 characters.')
+    return container.online.renamePlaylist(toId(id, 'playlist'), title)
+  })
 
   ipcMain.handle(IPC.onlinePlaylistDelete, (_event, id: unknown) => {
     container.online.deletePlaylist(toId(id, 'playlist'))

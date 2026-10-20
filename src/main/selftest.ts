@@ -412,6 +412,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     const transport = await evaluate<{
       itemCount: number
       hasCurrentItem: boolean
+      queueHead: string
+      queueHeadOverflow: boolean
+      queueAligned: boolean
       queueCountLabel: string
       repeatTitle: string
       repeatAfterClick: string
@@ -420,7 +423,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     }>(
       window,
       `(async () => {
-         const out = { itemCount: 0, hasCurrentItem: false, queueCountLabel: '', repeatTitle: '', repeatAfterClick: '', shufflePressed: '', shuffleAfterClick: '' }
+         const out = { itemCount: 0, hasCurrentItem: false, queueHead: '', queueHeadOverflow: true, queueAligned: false, queueCountLabel: '', repeatTitle: '', repeatAfterClick: '', shufflePressed: '', shuffleAfterClick: '' }
          const wait = (ms) => new Promise((r) => setTimeout(r, ms))
          const clickNav = (label) => {
            const button = [...document.querySelectorAll('.nav-item')].find((el) => (el.textContent || '').trim().startsWith(label))
@@ -432,6 +435,34 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          await wait(300)
          out.itemCount = document.querySelectorAll('.queue-item').length
          out.hasCurrentItem = Boolean(document.querySelector('.queue-item.current'))
+         const queueHeads = [...document.querySelectorAll('.queue-head .head-cell')]
+         out.queueHead = queueHeads.map((el) => (el.textContent || '').trim()).join(' | ')
+         out.queueHeadOverflow = queueHeads.some((el) => el.offsetWidth > 0 && el.scrollWidth > el.clientWidth + 1)
+         const visibleHeads = queueHeads.filter((el) => el.offsetWidth > 0)
+         const jump = document.querySelector('.queue-item .queue-jump')
+         const jumpCells = jump ? [...jump.children].filter((el) => el.offsetWidth > 0) : []
+         const remove = document.querySelector('.queue-item .queue-remove')
+         const actionHead = visibleHeads[visibleHeads.length - 1]
+         const centerX = (el) => {
+           const rect = el.getBoundingClientRect()
+           return rect.left + rect.width / 2
+         }
+         const cellsAligned =
+           visibleHeads.length === jumpCells.length + 1 &&
+           jumpCells.every(
+             (cell, i) =>
+               Math.abs(cell.getBoundingClientRect().left - visibleHeads[i].getBoundingClientRect().left) <= 1
+           ) &&
+           Boolean(remove) &&
+           Boolean(actionHead) &&
+           Math.abs(centerX(remove) - centerX(actionHead)) <= 1
+         const subtitle = document.querySelector('.main-view .view-header .subtitle')
+         const head = document.querySelector('.queue-head')
+         const clearOfSubtitle =
+           Boolean(subtitle) &&
+           Boolean(head) &&
+           head.getBoundingClientRect().top >= subtitle.getBoundingClientRect().bottom
+         out.queueAligned = cellsAligned && clearOfSubtitle
          const count = document.querySelector('.queue-count')
          out.queueCountLabel = count ? count.textContent : ''
 
@@ -459,6 +490,15 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     // Double-clicking a row queues the whole loaded list, so with two fixtures
     // both are queued.
     record(transport.queueCountLabel === '2', 'the player bar counts the queue', transport.queueCountLabel)
+    record(
+      transport.queueHead === '# | Title | Artist | Album / playlist | Duration | Action' &&
+        !transport.queueHeadOverflow &&
+        transport.queueAligned,
+      'the queue header names the same columns as the library, sits over its rows and clears the subtitle',
+      `${transport.queueHead || 'no header'}${transport.queueHeadOverflow ? ' (a label is clipped)' : ''}${
+        transport.queueAligned ? '' : ' (misaligned or overlapping)'
+      }`
+    )
     record(
       transport.repeatTitle === 'Repeat off' && transport.repeatAfterClick === 'Repeat all',
       'the repeat button cycles off -> all',
@@ -1520,6 +1560,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       keyboardOrder: string
       dropLine: boolean
       dragOrder: string
+      libraryColumns: string
+      libraryHeaderOverflow: boolean
+      libraryHasFormat: boolean
       listWidth: number
       titleWidth: number
       artistWidth: number
@@ -1539,6 +1582,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       rowsAfterRemove: number
       playedTitle: string
       renamed: string
+      detailsMenu: boolean
+      detailsOpen: boolean
+      detailsHasFormat: boolean
+      detailsTitle: string
+      detailsClosed: boolean
       queueMenuOpened: boolean
       queueStatus: string
       countAfterQueueSave: number
@@ -1552,8 +1600,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            addedViaBar: false, barStatus: '', contextMenuOpened: false,
            addedViaContext: false, contextStatus: '', countAfterAdds: -1,
            rowsAfterAdds: -1, keyboardOrder: '', dropLine: false, dragOrder: '',
+           libraryColumns: '', libraryHeaderOverflow: true, libraryHasFormat: true,
            viewOverflow: -1, listOverflow: -1, actionsInside: false,
-           rowsAfterRemove: -1, playedTitle: '', renamed: '', queueMenuOpened: false,
+           rowsAfterRemove: -1, playedTitle: '', renamed: '', detailsMenu: false,
+           detailsOpen: false, detailsHasFormat: false, detailsTitle: '',
+           detailsClosed: false, queueMenuOpened: false,
            queueStatus: '', countAfterQueueSave: -1, deleted: false, emptyAfterDelete: false
          }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -1605,6 +1656,10 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          // --- add a track from the library's selection bar
          nav('Library')
          await sleep(450)
+         const libraryHeads = pickAll('.main-view .track-head .head-cell')
+         out.libraryColumns = libraryHeads.map((el) => text(el).trim()).filter(Boolean).join(' | ')
+         out.libraryHeaderOverflow = libraryHeads.some((el) => el.offsetWidth > 0 && el.scrollWidth > el.clientWidth + 1)
+         out.libraryHasFormat = Boolean(pick('.main-view .track-head .col-format'))
          press(rowFor('Selftest Tone'))
          await sleep(300)
          const addButton = buttonWith('.selection-bar', 'Add to playlist')
@@ -1753,6 +1808,25 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          // --- save the queue as a playlist from the player window
          nav('Library')
          await sleep(400)
+         const menuRow = rowFor('Selftest Tone')
+         press(menuRow ? menuRow.querySelector('button[title="More actions"]') : null)
+         await sleep(350)
+         const rowMenu = pick('.context-menu')
+         const detailsItem = rowMenu
+           ? [...rowMenu.querySelectorAll('.context-item')].find((el) => text(el).indexOf('Details') >= 0)
+           : null
+         out.detailsMenu = Boolean(detailsItem)
+         press(detailsItem)
+         await sleep(300)
+         const dialog = pick('.details-dialog')
+         out.detailsOpen = Boolean(dialog)
+         out.detailsTitle = dialog ? text(pick('.details-titles h2')).trim() : ''
+         out.detailsHasFormat = dialog
+           ? [...dialog.querySelectorAll('dt')].some((el) => text(el).trim() === 'Format')
+           : false
+         press(dialog ? dialog.querySelector('.details-close') : null)
+         await sleep(250)
+         out.detailsClosed = !pick('.details-dialog')
          const toneRow = rowFor('Selftest Tone')
          if (toneRow) toneRow.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
          await sleep(700)
@@ -1810,8 +1884,15 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       `list ${lists.listWidth}px, title ${lists.titleWidth}px, header overflow ${lists.headerOverflow}`
     )
     record(
+      lists.libraryColumns === '# | Title | Artist | Album | Duration | Actions' &&
+        !lists.libraryHasFormat &&
+        !lists.libraryHeaderOverflow,
+      'the library columns are #, Title, Artist, Album and Duration, with an action button',
+      `${lists.libraryColumns || 'none'}${lists.libraryHasFormat ? ' (format still shown)' : ''}`
+    )
+    record(
       !lists.formatVisible && lists.artistWidth > 100,
-      'a playlist shows the artist and drops the format column',
+      'a playlist keeps the artist and drops the format column too',
       `format ${lists.formatVisible}, artist ${lists.artistWidth}px`
     )
     record(
@@ -1844,6 +1925,15 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     record(lists.rowsAfterRemove === 1, 'a row can be removed from the playlist', lists.rowsAfterRemove)
     record(lists.playedTitle === 'Selftest Tone', 'playing a playlist puts it in the queue', lists.playedTitle)
     record(lists.renamed === 'Selftest Renamed', 'a playlist can be renamed', lists.renamed)
+    record(lists.detailsMenu, 'the row menu offers Details')
+    record(
+      lists.detailsOpen &&
+        lists.detailsTitle === 'Selftest Tone' &&
+        lists.detailsHasFormat &&
+        lists.detailsClosed,
+      'Details shows the format and the technical sheet, then closes',
+      `${lists.detailsTitle || 'no title'} · format ${lists.detailsHasFormat} · closed ${lists.detailsClosed}`
+    )
     record(
       lists.queueMenuOpened && lists.queueStatus.length > 0 && lists.countAfterQueueSave === 2,
       'the queue can be saved as a playlist from the player window',
@@ -2095,15 +2185,30 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       bannerTrack: string
       groupEmpty: boolean
       emptyAfterDelete: boolean
+      hasListId: boolean
+      reimportCount: string
+      renamedTitle: string
+      renamedIndex: string
+      onlineCards: number
+      onlineCardTitle: string
+      onlineCardMeta: string
+      historyRows: number
     }>(
       window,
       `(async () => {
-         const out = { groupTitles: '', onlineRows: -1, kind: '', paneTitle: '', titles: '', note: '', hasReimport: false, hasClear: false, hasSaveAll: false, rowSaveButtons: 0, rowRevealButtons: 0, indexCount: '', rowsAfterRemove: -1, playedTitle: '', hasCover: false, bannerVisible: false, bannerLabel: '', bannerTrack: '', groupEmpty: false, emptyAfterDelete: false }
+         const out = { groupTitles: '', onlineRows: -1, kind: '', paneTitle: '', titles: '', note: '', hasReimport: false, hasClear: false, hasSaveAll: false, rowSaveButtons: 0, rowRevealButtons: 0, indexCount: '', rowsAfterRemove: -1, playedTitle: '', hasCover: false, bannerVisible: false, bannerLabel: '', bannerTrack: '', groupEmpty: false, emptyAfterDelete: false, hasListId: false, reimportCount: '', renamedTitle: '', renamedIndex: '', onlineCards: -1, onlineCardTitle: '', onlineCardMeta: '', historyRows: -1 }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (s) => document.querySelector(s)
          const pickAll = (s) => [...document.querySelectorAll(s)]
          const press = (el) => { if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
          const text = (el) => ((el || {}).textContent || '')
+         const setInput = (el, value) => {
+           if (!el) return false
+           const desc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')
+           desc.set.call(el, value)
+           el.dispatchEvent(new Event('input', { bubbles: true }))
+           return true
+         }
          const nav = (label) => {
            const b = pickAll('.nav-item').find((el) => (el.textContent || '').trim().startsWith(label))
            if (b) b.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2132,6 +2237,19 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.hasSaveAll = buttons.some((el) => text(el).trim().indexOf('Save all') === 0)
          out.rowSaveButtons = pickAll('.track-row button[aria-label^="Save"]').length
          out.rowRevealButtons = pickAll('.track-row button[title="Show in folder"]').length
+         out.hasListId = text(pick('.playlist-source-id')).trim().length > 0
+         out.reimportCount = pick('.reimport-count input') ? pick('.reimport-count input').value : ''
+
+         // Rename the snapshot from the index. The name is stored apart from the
+         // YouTube title, so a later Re-import cannot silently undo it.
+         press(pick('.playlist-row.online button[title="Rename imported playlist"]'))
+         await sleep(300)
+         setInput(pick('.playlist-row.online .playlist-rename input'), 'Selftest Album Renamed')
+         await sleep(150)
+         press(pick('.playlist-row.online .playlist-rename button[type="submit"]'))
+         await sleep(600)
+         out.renamedTitle = text(pick('.playlist-pane-head h2')).trim()
+         out.renamedIndex = text(pick('.playlist-row.online .playlist-title')).trim()
 
          press(pick('.track-row button[title="Remove from this playlist"]'))
          await sleep(700)
@@ -2142,6 +2260,17 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          press(pickAll('.playlist-pane-head button').find((el) => text(el).trim().indexOf('Play') === 0))
          await sleep(900)
          out.playedTitle = text(pick('.player-title'))
+
+         // The Online view gets one card for the imported list, not a row per
+         // track: the history is for links the user chose to play on their own.
+         nav('Online')
+         await sleep(800)
+         out.onlineCards = pickAll('.online-imported-row').length
+         out.onlineCardTitle = text(pick('.online-imported-title')).trim()
+         out.onlineCardMeta = text(pick('.online-imported-meta')).trim()
+         out.historyRows = pickAll('.online-item').length
+         nav('Playlists')
+         await sleep(700)
 
          const arm = pickAll('.playlist-pane-head .link-button').find((el) => text(el).trim().indexOf('Remove') === 0)
          press(arm)
@@ -2185,6 +2314,17 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       `re-import ${onlineLists.hasReimport}, clear ${onlineLists.hasClear}`
     )
     record(
+      onlineLists.hasListId && onlineLists.reimportCount === '2',
+      'the imported list shows its YouTube id and a track count beside Re-import',
+      `list id ${onlineLists.hasListId}, count ${onlineLists.reimportCount || 'empty'}`
+    )
+    record(
+      onlineLists.renamedTitle === 'Selftest Album Renamed' &&
+        onlineLists.renamedIndex === 'Selftest Album Renamed',
+      'an imported playlist can be renamed from its index row',
+      `${onlineLists.renamedIndex} / title ${onlineLists.renamedTitle}`
+    )
+    record(
       onlineLists.hasSaveAll && onlineLists.rowSaveButtons === 2 && onlineLists.rowRevealButtons === 0,
       'imported entries can be saved one by one or all at once',
       `save all ${onlineLists.hasSaveAll}, ${onlineLists.rowSaveButtons} row buttons, ${onlineLists.rowRevealButtons} reveal buttons`
@@ -2210,12 +2350,21 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       container.onlineRepo.count()
     )
     record(
+      onlineLists.onlineCards === 1 &&
+        onlineLists.onlineCardTitle === 'Selftest Album Renamed' &&
+        onlineLists.onlineCardMeta.indexOf('Album') === 0 &&
+        onlineLists.historyRows === 0,
+      'the Online view lists the imported playlist once, without its tracks in the history',
+      `${onlineLists.onlineCards} card(s): ${onlineLists.onlineCardTitle || 'none'} (${onlineLists.onlineCardMeta || 'no meta'}); ${onlineLists.historyRows} history rows`
+    )
+    record(
       onlineLists.bannerVisible,
       'the strip naming the playing list survives a trip to another view',
       `visible ${onlineLists.bannerVisible}`
     )
     record(
-      onlineLists.bannerLabel.includes('Selftest Album') && onlineLists.bannerTrack === 'Online Tone Two',
+      onlineLists.bannerLabel.includes('Selftest Album Renamed') &&
+        onlineLists.bannerTrack === 'Online Tone Two',
       'the strip names the list being played and the track it is on',
       `${onlineLists.bannerLabel} / ${onlineLists.bannerTrack}`
     )

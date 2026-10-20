@@ -72,6 +72,7 @@ export const IPC = {
   onlineImport: 'online:import',
   onlinePlaylists: 'online:playlists',
   onlinePlaylist: 'online:playlist',
+  onlinePlaylistRename: 'online:playlist-rename',
   onlinePlaylistDelete: 'online:playlist-delete',
   onlinePlaylistRemoveItem: 'online:playlist-remove-item',
   downloadSave: 'download:save',
@@ -205,11 +206,16 @@ export interface PlayerApi {
    *
    * Does not touch the queue: the caller decides whether that import plays now
    * or is only added. Importing the same list again replaces its entries.
+   *
+   * `limit` is the number of tracks to keep (1-1000). Omitted means the Settings
+   * count for that kind of list.
    */
-  importOnlineList(url: string): Promise<OnlinePlaylistDetail>
+  importOnlineList(url: string, limit?: number): Promise<OnlinePlaylistDetail>
   /** Every imported playlist, most recently imported first. */
   listOnlinePlaylists(): Promise<OnlinePlaylist[]>
   getOnlinePlaylist(playlistId: number): Promise<OnlinePlaylistDetail | null>
+  /** Renames an imported playlist; the name survives a re-import. */
+  renameOnlinePlaylist(playlistId: number, title: string): Promise<OnlinePlaylist | null>
   deleteOnlinePlaylist(playlistId: number): Promise<void>
   /** Removes one entry. Resolves to the playlist that changed, or null. */
   removeOnlinePlaylistItem(itemId: number): Promise<number | null>

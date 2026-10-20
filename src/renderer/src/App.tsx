@@ -377,6 +377,7 @@ export function App() {
       ) : view === 'online' ? (
         <OnlineView
           entries={online.entries}
+          onlinePlaylists={playlists.onlinePlaylists}
           loading={online.loading}
           historyError={online.error}
           currentVideoId={player.current?.sourceKind === 'youtube' ? (player.current.sourceId ?? null) : null}
@@ -389,6 +390,10 @@ export function App() {
           onClear={online.clear}
           onPlay={(queue, index) => player.playQueue(queue, index)}
           onQueue={player.enqueue}
+          onOpenOnlinePlaylist={(playlistId) => {
+            playlists.selectOnline(playlistId)
+            setView('playlists')
+          }}
           downloads={downloads}
         />
       ) : view === 'playlists' ? (
@@ -416,6 +421,7 @@ export function App() {
           onRemoveItems={playlists.removeItems}
           onMoveItem={playlists.moveItem}
           onReimportOnline={playlists.reimportOnline}
+          onRenameOnline={playlists.renameOnline}
           onDeleteOnline={playlists.deleteOnline}
           onRemoveOnlineItem={playlists.removeOnlineItem}
           onPlay={(queue, index) => player.playQueue(queue, index)}

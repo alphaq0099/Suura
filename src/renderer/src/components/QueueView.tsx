@@ -55,47 +55,57 @@ export function QueueView(props: QueueViewProps) {
           </button>
         </div>
       ) : (
-        <ol className="queue-list">
-          {queue.map((track, position) => {
-            const isCurrent = position === index
-            return (
-              <li
-                key={`${track.id}-${position}`}
-                className={isCurrent ? 'queue-item current' : 'queue-item'}
-              >
-                <button
-                  type="button"
-                  className="queue-jump"
-                  onClick={() => onJump(position)}
-                  title={isCurrent ? 'Restart this track' : 'Play this track'}
+        <div className="queue-table">
+          <div className="queue-head" aria-hidden="true">
+            <span className="head-cell col-index">#</span>
+            <span className="head-cell col-title">Title</span>
+            <span className="head-cell col-artist">Artist</span>
+            <span className="head-cell col-album">Album / playlist</span>
+            <span className="head-cell col-time">Duration</span>
+            <span className="head-cell col-actions">Action</span>
+          </div>
+          <ol className="queue-list">
+            {queue.map((track, position) => {
+              const isCurrent = position === index
+              return (
+                <li
+                  key={`${track.id}-${position}`}
+                  className={isCurrent ? 'queue-item current' : 'queue-item'}
                 >
-                  <span className="queue-position">
-                    {isCurrent && isPlaying ? <span className="playing-dot" /> : position + 1}
-                  </span>
-                  <span className="queue-title" title={track.title}>
-                    {track.title}
-                  </span>
-                  <span className="queue-artist" title={track.artist ?? undefined}>
-                    {track.artist ?? 'Unknown artist'}
-                  </span>
-                  <span className="queue-album" title={track.album ?? undefined}>
-                    {track.album ?? '—'}
-                  </span>
-                  <span className="queue-time">{formatDuration(track.durationMs)}</span>
-                </button>
-                <button
-                  type="button"
-                  className="icon-button subtle"
-                  title="Remove from queue"
-                  aria-label={`Remove ${track.title} from the queue`}
-                  onClick={() => onRemove(position)}
-                >
-                  <CloseIcon />
-                </button>
-              </li>
-            )
-          })}
-        </ol>
+                  <button
+                    type="button"
+                    className="queue-jump"
+                    onClick={() => onJump(position)}
+                    title={isCurrent ? 'Restart this track' : 'Play this track'}
+                  >
+                    <span className="queue-position">
+                      {isCurrent && isPlaying ? <span className="playing-dot" /> : position + 1}
+                    </span>
+                    <span className="queue-title" title={track.title}>
+                      {track.title}
+                    </span>
+                    <span className="queue-artist" title={track.artist ?? undefined}>
+                      {track.artist ?? 'Unknown artist'}
+                    </span>
+                    <span className="queue-album" title={track.album ?? undefined}>
+                      {track.album ?? '—'}
+                    </span>
+                    <span className="queue-time">{formatDuration(track.durationMs)}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button subtle queue-remove"
+                    title="Remove from queue"
+                    aria-label={`Remove ${track.title} from the queue`}
+                    onClick={() => onRemove(position)}
+                  >
+                    <CloseIcon />
+                  </button>
+                </li>
+              )
+            })}
+          </ol>
+        </div>
       )}
     </section>
   )

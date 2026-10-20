@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import type { DownloadProgress, OnlinePlaylistDetail, OnlineTrack, Track } from '@shared/types'
+import type { DownloadProgress, OnlinePlaylist, OnlinePlaylistDetail, OnlineTrack, Track } from '@shared/types'
 import { formatCount, formatDuration } from '@shared/format'
 import { onlineEntryToTrack, onlinePlaylistItemToTrack } from '@shared/online'
 import type { PlayingList } from '@shared/online'
@@ -16,6 +16,7 @@ import {
   LinkIcon,
   MoreIcon,
   PlayIcon,
+  PlaylistIcon,
   QueueIcon,
   SpinnerIcon,
   TrashIcon
@@ -23,6 +24,8 @@ import {
 
 export interface OnlineViewProps {
   entries: OnlineTrack[]
+  /** Playlists, albums and mixes imported from a link, newest first. */
+  onlinePlaylists: OnlinePlaylist[]
   loading: boolean
   historyError: string | null
   /** The video id that is playing, when the current track is a stream. */
@@ -41,6 +44,8 @@ export interface OnlineViewProps {
   onClear: () => Promise<void>
   onPlay: (tracks: Track[], index: number) => void
   onQueue: (tracks: Track[]) => void
+  /** Opens an imported playlist in the Playlists view, where it can be edited. */
+  onOpenOnlinePlaylist: (playlistId: number) => void
   /** Saving streams into the library, shared with the Playlists view. */
   downloads: UseDownloadsResult
 }
@@ -88,6 +93,7 @@ const MENU_HEIGHT = 230
 export function OnlineView(props: OnlineViewProps) {
   const {
     entries,
+    onlinePlaylists,
     loading,
     historyError,
     currentVideoId,
@@ -100,11 +106,13 @@ export function OnlineView(props: OnlineViewProps) {
     onClear,
     onPlay,
     onQueue,
+    onOpenOnlinePlaylist,
     downloads
   } = props
 
   const [url, setUrl] = useState('')
   const [busy, setBusy] = useState(false)
+  const [playingImport, setPlayingImport] = useState<number | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [pending, setPending] = useState<Pending | null>(null)
   const [offer, setOffer] = useState<ListOffer | null>(null)
@@ -300,10 +308,42 @@ export function OnlineView(props: OnlineViewProps) {
       }
     : undefined
 
+  const playImported = useCallback(
+    async (playlist: OnlinePlaylist): Promise<void> => {
+      if (playingImport !== null) return
+      setPlayingImport(playlist.id)
+      setNotice(null)
+      try {
+        const detail = await api.getOnlinePlaylist(playlist.id)
+        if (!detail) {
+          setNotice({ kind: 'error', text: 'That playlist is no longer in the index.' })
+          return
+        }
+        if (detail.items.length === 0) {
+          setNotice({
+            kind: 'error',
+            text: 'This imported playlist is empty. Re-import it from the Playlists view to take a fresh snapshot.'
+          })
+          return
+        }
+        const tracks = detail.items.map((item) => onlinePlaylistItemToTrack(item, detail.playlist))
+        onPlayingListChange({ title: detail.playlist.title, tracks })
+        onPlay(tracks, 0)
+      } catch (cause) {
+        setNotice({ kind: 'error', text: messageOf(cause) })
+      } finally {
+        setPlayingImport(null)
+      }
+    },
+    [onPlay, onPlayingListChange, playingImport]
+  )
+
   const subtitle =
     entries.length > 0
       ? `${formatCount(entries.length)} link${entries.length === 1 ? '' : 's'} · newest first · nothing is saved until you ask`
-      : 'Paste a video, playlist, album or mix link — playlists stay in the Playlists view and stream like the rest'
+      : onlinePlaylists.length > 0
+        ? `${formatCount(onlinePlaylists.length)} imported playlist${onlinePlaylists.length === 1 ? '' : 's'} · one row per list; its tracks never fill the history`
+        : 'Paste a video, playlist, album or mix link — playlists stay in the Playlists view and stream like the rest'
 
   const parsed = url.trim().length > 0 ? parseYouTubeLink(url.trim()) : null
   const listInput = parsed?.kind === 'list'
@@ -436,13 +476,83 @@ export function OnlineView(props: OnlineViewProps) {
 
       {historyError ? <div className="banner error">{historyError}</div> : null}
 
+      {onlinePlaylists.length > 0 ? (
+        <section className="online-imported" aria-label="Imported playlists">
+          <div className="online-section-head">
+            <h2>Imported playlists</h2>
+            <span className="online-section-count">{formatCount(onlinePlaylists.length)}</span>
+            <span className="online-section-hint">Play the whole list from here; open it in Playlists to edit.</span>
+          </div>
+          <div className="online-imported-list">
+            {onlinePlaylists.map((playlist) => {
+              const opening = playingImport === playlist.id
+              const kind =
+                playlist.kind === 'album' ? 'Album' : playlist.kind === 'mix' ? 'Mix' : 'Playlist'
+              return (
+                <div key={playlist.id} className="online-imported-row">
+                  <ArtworkImage
+                    track={null}
+                    artworkKey={playlist.coverKey}
+                    size={36}
+                    iconSize={16}
+                    className="online-imported-art"
+                  />
+                  <button
+                    type="button"
+                    className="online-imported-open"
+                    onClick={() => void playImported(playlist)}
+                    title={`Play ${playlist.title}`}
+                  >
+                    <span className="online-imported-title">{playlist.title}</span>
+                    <span className="online-imported-meta" title={`YouTube list ${playlist.listId}`}>
+                      {kind} · {formatCount(playlist.trackCount)} tracks
+                      {playlist.owner ? ` · ${playlist.owner}` : ''}
+                    </span>
+                  </button>
+                  <div className="online-imported-actions">
+                    <button
+                      type="button"
+                      className="small"
+                      onClick={() => void playImported(playlist)}
+                      disabled={opening}
+                      title="Replace the queue with this playlist and play it"
+                    >
+                      {opening ? <SpinnerIcon /> : <PlayIcon size={14} />}
+                      <span>{opening ? 'Opening…' : 'Play'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-button subtle"
+                      title="Open in Playlists"
+                      aria-label={`Open ${playlist.title} in Playlists`}
+                      onClick={() => onOpenOnlinePlaylist(playlist.id)}
+                    >
+                      <PlaylistIcon size={15} />
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      ) : null}
+
+      {entries.length > 0 ? (
+        <div className="online-section-head">
+          <h2>Links</h2>
+          <span className="online-section-count">{formatCount(entries.length)}</span>
+          <span className="online-section-hint">Newest activity first.</span>
+        </div>
+      ) : null}
+
       {entries.length === 0 && !pending && !loading ? (
         <div className="empty-state">
           <LinkIcon size={32} />
-          <h2>Nothing played from a link yet</h2>
+          <h2>{onlinePlaylists.length > 0 ? 'No single links yet' : 'Nothing played from a link yet'}</h2>
           <p>
-            Paste a YouTube link above and it plays straight away. A playlist, album or mix is imported as a whole and
-            appears in Playlists under Online. Streams stay here as links; save one to keep a copy in your library.
+            {onlinePlaylists.length > 0
+              ? 'Links you play on their own show up here, newest first. Imported playlists stay in the box above and never fill this history with their tracks.'
+              : 'Paste a YouTube link above and it plays straight away. A playlist, album or mix is imported as a whole and appears in Playlists under Online. Streams stay here as links; save one to keep a copy in your library.'}
           </p>
         </div>
       ) : (

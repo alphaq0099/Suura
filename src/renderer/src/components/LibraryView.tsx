@@ -13,6 +13,7 @@ import type {
 import { formatBytes, formatCount, formatTimestamp } from '@shared/format'
 import { AddToPlaylistMenu } from './AddToPlaylistMenu'
 import { TrackContextMenu } from './TrackContextMenu'
+import { TrackDetails } from './TrackDetails'
 import { TrackList, describeClickAction } from './TrackList'
 import { CloseIcon, FolderIcon, PlayIcon, PlaylistIcon, RefreshIcon, SearchIcon, SpinnerIcon } from './Icons'
 
@@ -99,6 +100,7 @@ export function LibraryView(props: LibraryViewProps) {
 
   const [addMenu, setAddMenu] = useState<AddMenuState | null>(null)
   const [contextMenu, setContextMenu] = useState<{ track: Track; x: number; y: number } | null>(null)
+  const [detailsTrack, setDetailsTrack] = useState<Track | null>(null)
 
   const hasFolders = folders.length > 0
   const searching = search.trim().length > 0
@@ -298,8 +300,17 @@ export function LibraryView(props: LibraryViewProps) {
             const index = tracks.findIndex((track) => track.id === contextMenu.track.id)
             if (index >= 0) onPlay(index)
           }}
+          onDetails={() => setDetailsTrack(contextMenu.track)}
           onReveal={() => onReveal(contextMenu.track.id)}
           onClose={() => setContextMenu(null)}
+        />
+      ) : null}
+
+      {detailsTrack ? (
+        <TrackDetails
+          track={detailsTrack}
+          onReveal={onReveal}
+          onClose={() => setDetailsTrack(null)}
         />
       ) : null}
     </section>
