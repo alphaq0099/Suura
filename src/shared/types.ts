@@ -24,7 +24,23 @@ export type RetentionMode = 'stream' | 'cache' | 'keep'
  */
 export type DownloadFormat = 'opus' | 'mp3' | 'm4a'
 
+/**
+ * `light` is the warm cream palette the UI calls **Cream**. The stored value
+ * stays `light` so older config files keep working.
+ */
 export type ThemeMode = 'system' | 'light' | 'dark'
+
+/** The five contrast-checked accent families. */
+export type AccentName = 'blue' | 'teal' | 'violet' | 'rose' | 'amber'
+
+/** How tightly rows and cards are packed. */
+export type Density = 'compact' | 'comfortable' | 'spacious'
+
+/** Solid panels, or a controlled CSS blur over the app's ambient background. */
+export type SurfaceStyle = 'solid' | 'frosted'
+
+/** Follow the OS preference, or force motion on/off. */
+export type MotionPreference = 'system' | 'reduced' | 'full'
 
 export type RepeatMode = 'off' | 'all' | 'one'
 
@@ -393,9 +409,17 @@ export interface EngineSettings {
 }
 
 export interface VisualSettings {
+  accent: AccentName
+  density: Density
+  surface: SurfaceStyle
+  motion: MotionPreference
   artworkShape: ArtworkShape
   artworkFit: ArtworkFit
   artworkSize: ArtworkSize
+  /** Whether the full-window player draws the large cover. */
+  playerArtwork: boolean
+  /** Whether cover art tints the player bar and the full-window background. */
+  playerAmbience: boolean
 }
 
 /**

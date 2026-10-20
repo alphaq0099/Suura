@@ -38,9 +38,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
   }
 
   const watchdog = setTimeout(() => {
-    console.log('SELFTEST FAIL  test harness timed out after 90s')
+    console.log('SELFTEST FAIL  test harness timed out after 120s')
     app.exit(1)
-  }, 90_000)
+  }, 120_000)
 
   try {
     // Let the first render and the initial IPC round-trips settle.
@@ -967,7 +967,295 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       )
     }
 
-    // ---- 11. artwork preferences, bar ambience, volume -----------------
+    // ---- 11. appearance: theme, accent, density, surface, motion --------
+    // These are applied as data attributes on <html>, so the checks have to go
+    // through the real controls and then read the computed result. Reading the
+    // settings object back would only prove that a write happened, not that the
+    // CSS and the virtualizer listened.
+    const appearance = await evaluate<{
+      themeReachedRoot: boolean
+      themeButtonPressed: string
+      creamBackground: string
+      accentReachedRoot: boolean
+      accentVariable: string
+      densityReachedRoot: boolean
+      compactRowHeight: number
+      compactCssHeight: string
+      surfaceReachedRoot: boolean
+      frostedBlur: string
+      motionReachedRoot: boolean
+      reducedTransitionMs: number
+      resetTheme: string
+      resetAccent: string
+      resetDensity: string
+      resetSurface: string
+      resetMotion: string
+      comfortableRowHeight: number
+    }>(
+      window,
+      `(async () => {
+         const out = {
+           themeReachedRoot: false, themeButtonPressed: '', creamBackground: '',
+           accentReachedRoot: false, accentVariable: '',
+           densityReachedRoot: false, compactRowHeight: -1, compactCssHeight: '',
+           surfaceReachedRoot: false, frostedBlur: '',
+           motionReachedRoot: false, reducedTransitionMs: -1,
+           resetTheme: '', resetAccent: '', resetDensity: '', resetSurface: '', resetMotion: '',
+           comfortableRowHeight: -1
+         }
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const press = (element) => { if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
+         const nav = (label) => {
+           const button = [...document.querySelectorAll('.nav-item')].find((el) => (el.textContent || '').trim().startsWith(label))
+           if (button) button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         }
+         const tab = (label) => {
+           const button = [...document.querySelectorAll('.settings-tab')].find((el) => (el.textContent || '').trim() === label)
+           if (button) button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         }
+         const choice = (attr, value) => document.querySelector('[' + attr + '="' + value + '"]')
+         const transitionMs = (element) => {
+           if (!element) return -1
+           const raw = getComputedStyle(element).transitionDuration.split(',')[0].trim()
+           return raw.endsWith('ms') ? parseFloat(raw) : parseFloat(raw) * 1000
+         }
+         const root = document.documentElement
+
+         nav('Settings')
+         await sleep(300)
+         tab('Appearance')
+         await sleep(200)
+
+         press(choice('data-theme-choice', 'light'))
+         await sleep(500)
+         out.themeReachedRoot = root.dataset.theme === 'light'
+         out.themeButtonPressed = choice('data-theme-choice', 'light')?.getAttribute('aria-pressed') || ''
+         out.creamBackground = getComputedStyle(document.body).backgroundColor
+
+         press(choice('data-accent-choice', 'rose'))
+         await sleep(450)
+         out.accentReachedRoot = root.dataset.accent === 'rose'
+         out.accentVariable = getComputedStyle(root).getPropertyValue('--accent').trim()
+
+         press(choice('data-density-choice', 'compact'))
+         await sleep(450)
+         out.densityReachedRoot = root.dataset.density === 'compact'
+         nav('Library')
+         await sleep(400)
+         const compactRow = document.querySelector('.track-row')
+         out.compactRowHeight = compactRow ? Math.round(compactRow.getBoundingClientRect().height) : -1
+         out.compactCssHeight = compactRow ? getComputedStyle(compactRow).height : ''
+
+         nav('Settings')
+         await sleep(300)
+         tab('Appearance')
+         await sleep(200)
+         press(choice('data-surface-choice', 'frosted'))
+         await sleep(450)
+         out.surfaceReachedRoot = root.dataset.surface === 'frosted'
+         const sidebar = document.querySelector('.sidebar')
+         out.frostedBlur = sidebar ? getComputedStyle(sidebar).backdropFilter : ''
+
+         press(choice('data-motion-choice', 'reduced'))
+         await sleep(450)
+         out.motionReachedRoot = root.dataset.motion === 'reduced'
+         out.reducedTransitionMs = transitionMs(choice('data-theme-choice', 'light'))
+
+         press(document.querySelector('.appearance-reset button'))
+         await sleep(700)
+         out.resetTheme = root.dataset.theme || ''
+         out.resetAccent = root.dataset.accent || ''
+         out.resetDensity = root.dataset.density || ''
+         out.resetSurface = root.dataset.surface || ''
+         out.resetMotion = root.dataset.motion || ''
+
+         nav('Library')
+         await sleep(400)
+         const comfortableRow = document.querySelector('.track-row')
+         out.comfortableRowHeight = comfortableRow ? Math.round(comfortableRow.getBoundingClientRect().height) : -1
+         nav('Settings')
+         await sleep(300)
+         tab('Appearance')
+         await sleep(200)
+         return out
+       })()`
+    )
+    record(
+      appearance.themeReachedRoot &&
+        appearance.themeButtonPressed === 'true' &&
+        appearance.creamBackground === 'rgb(242, 236, 225)',
+      'appearance: Cream reaches <html> and paints the warm background',
+      appearance
+    )
+    record(
+      appearance.accentReachedRoot && appearance.accentVariable.toLowerCase() === '#b83272',
+      'appearance: the accent reaches the CSS palette',
+      appearance
+    )
+    record(
+      appearance.densityReachedRoot && appearance.compactRowHeight === 32 && appearance.compactCssHeight === '32px',
+      'appearance: Compact reaches the virtualized rows',
+      appearance
+    )
+    record(
+      appearance.surfaceReachedRoot && appearance.frostedBlur.includes('blur'),
+      'appearance: Frosted uses a CSS blur rather than native acrylic',
+      appearance
+    )
+    record(
+      appearance.motionReachedRoot && appearance.reducedTransitionMs <= 0.01,
+      'appearance: Reduced motion folds transitions',
+      appearance
+    )
+    record(
+      appearance.resetTheme === 'dark' &&
+        appearance.resetAccent === 'blue' &&
+        appearance.resetDensity === 'comfortable' &&
+        appearance.resetSurface === 'solid' &&
+        appearance.resetMotion === 'system',
+      'appearance: Reset puts every choice back',
+      appearance
+    )
+    record(
+      appearance.comfortableRowHeight === 38,
+      'appearance: resetting density restores the 38px row',
+      appearance
+    )
+
+    // ---- 11b. Settings keyboard tabs and the preference reset ----------
+    // The tab strip is one tab stop with arrow-key movement, and the reset in
+    // Misc must put a changed preference back without forgetting the folder that
+    // makes the library a library.
+    const settingsSafety = await evaluate<{
+      keyboardEnd: boolean
+      keyboardHome: boolean
+      watchTurnedOff: boolean
+      behaviourChanged: boolean
+      resetConfirmShown: boolean
+      resetStatusShown: boolean
+      watchRestored: boolean
+      behaviourRestored: boolean
+      foldersKept: boolean
+    }>(
+      window,
+      `(async () => {
+         const out = {
+           keyboardEnd: false, keyboardHome: false, watchTurnedOff: false,
+           behaviourChanged: false, resetConfirmShown: false, resetStatusShown: false,
+           watchRestored: false, behaviourRestored: false, foldersKept: false
+         }
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const press = (element) => { if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
+         const nav = (label) => {
+           const button = [...document.querySelectorAll('.nav-item')].find((el) => (el.textContent || '').trim().startsWith(label))
+           if (button) button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         }
+         const tab = (label) => {
+           const button = [...document.querySelectorAll('.settings-tab')].find((el) => (el.textContent || '').trim() === label)
+           if (button) button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         }
+         const watchInput = () => {
+           const label = [...document.querySelectorAll('.field.checkbox')].find((el) => (el.textContent || '').includes('Watch the folders'))
+           return label ? label.querySelector('input') : null
+         }
+         const selectField = (label) => {
+           for (const field of document.querySelectorAll('.field')) {
+             const title = field.querySelector('span')
+             if (title && title.textContent === label) return field.querySelector('select')
+           }
+           return null
+         }
+         const setSelect = (label, value) => {
+           const select = selectField(label)
+           if (!select) return false
+           select.value = value
+           select.dispatchEvent(new Event('change', { bubbles: true }))
+           return true
+         }
+         const key = (element, key) => {
+           if (element) element.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+         }
+
+         nav('Settings')
+         await sleep(300)
+
+         const generalTab = document.getElementById('settings-tab-general')
+         generalTab?.focus()
+         key(generalTab, 'End')
+         await sleep(250)
+         const aboutTab = document.getElementById('settings-tab-about')
+         out.keyboardEnd =
+           aboutTab?.getAttribute('aria-selected') === 'true' &&
+           document.activeElement?.id === 'settings-tab-about'
+         key(aboutTab, 'Home')
+         await sleep(250)
+         out.keyboardHome =
+           generalTab?.getAttribute('aria-selected') === 'true' &&
+           document.activeElement?.id === 'settings-tab-general'
+
+         tab('General')
+         await sleep(250)
+         const foldersBefore = document.querySelectorAll('.folder-list li').length
+         const watch = watchInput()
+         if (watch && watch.checked) {
+           watch.click()
+           await sleep(500)
+         }
+         out.watchTurnedOff = watchInput()?.checked === false
+
+         tab('Behaviour')
+         await sleep(250)
+         setSelect('Single click', 'play')
+         await sleep(500)
+
+         // Switching tabs re-renders the controlled select. If the write never
+         // reached settings, React would put it straight back to 'select' here.
+         tab('Misc')
+         await sleep(300)
+         out.behaviourChanged = selectField('Single click')?.value === 'play'
+
+         const resetTrigger = [...document.querySelectorAll('.settings-reset button')].find((el) =>
+           (el.textContent || '').trim().startsWith('Reset preferences')
+         )
+         press(resetTrigger)
+         await sleep(200)
+         out.resetConfirmShown = Boolean(document.querySelector('.reset-confirm'))
+         press(document.querySelector('.reset-confirm button.primary'))
+         await sleep(700)
+         out.resetStatusShown = Boolean(document.querySelector('.settings-reset [role=\"status\"]'))
+
+         tab('General')
+         await sleep(300)
+         out.watchRestored = watchInput()?.checked === true
+         out.foldersKept = document.querySelectorAll('.folder-list li').length === foldersBefore
+         tab('Behaviour')
+         await sleep(300)
+         out.behaviourRestored = selectField('Single click')?.value === 'select'
+         return out
+       })()`
+    )
+    record(
+      settingsSafety.keyboardEnd && settingsSafety.keyboardHome,
+      'settings: the tab strip moves with End, Home and arrow-key focus',
+      settingsSafety
+    )
+    record(
+      settingsSafety.watchTurnedOff && settingsSafety.watchRestored,
+      'settings: the watch switch reaches settings and reset restores it',
+      settingsSafety
+    )
+    record(
+      settingsSafety.behaviourChanged && settingsSafety.behaviourRestored,
+      'settings: reset preferences restores a changed select',
+      settingsSafety
+    )
+    record(
+      settingsSafety.resetConfirmShown && settingsSafety.resetStatusShown && settingsSafety.foldersKept,
+      'settings: reset asks first, confirms, and keeps the library folder',
+      settingsSafety
+    )
+
+    // ---- 12. artwork preferences, bar ambience, volume -----------------
     // The Visuals setting is published as data attributes on `.app`, so the whole
     // UI follows from one place. This drives it through the actual <select>
     // elements rather than the IPC channel, because `useSettings` only learns
@@ -1398,7 +1686,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       `${visuals.barVolumeBefore} -> ${visuals.barVolumeMuted} -> ${visuals.barVolumeRestored} (pressed=${visuals.barMutePressed})`
     )
 
-    // ---- 12. artwork size and click behaviour ---------------------------
+    // ---- 13. artwork size and click behaviour ---------------------------
     // Both preferences only matter for what they change on screen, so both are
     // driven through the real controls and then measured, rather than read back
     // out of the settings object they were written to.
@@ -1596,7 +1884,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       prefs.seekBarPlayingDetail
     )
 
-    // ---- 13. the library keeps up with the disk by itself ----------------
+    // ---- 14. the library keeps up with the disk by itself ----------------
     // File watching is the difference between "the album I just copied in is
     // missing" and it appearing on its own. The fixture folder is already being
     // watched (adding it was what step 3 scanned), so a real file arriving and
@@ -1625,7 +1913,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     await rm(ignoredPath, { force: true })
     container.settings.update({ library: { watchForChanges: true } })
 
-    // ---- 14. playlists ----------------------------------------------------
+    // ---- 15. playlists ----------------------------------------------------
     // Everything here goes through the real controls: the sidebar entry, the
     // create form, the selection bar's menu, the row's context menu, Alt+arrow,
     // a synthesized drag, the row's remove button, and the player window's
@@ -2563,7 +2851,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       copiedLink
     )
 
-    // ---- 15. resuming ----------------------------------------------------
+    // ---- 16. resuming ----------------------------------------------------
     // A restart cannot be faked from inside the page: the queue lives in a hook,
     // so the only way to know it survives is to throw the page away and let it
     // build itself again. What comes back is only what was written down.

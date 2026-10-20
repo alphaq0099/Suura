@@ -411,7 +411,7 @@ place, and imported lists plus the link history already cover the "start from no
 playlists, and folding stream-only rows into the Library view instead of keeping them under YouTube. The channel
 page is a flat recent-videos list on purpose — no subscriptions, no channel import, no "download all".*
 
-### M6 — Settings Revamp  *(in progress, ~1–2 weeks)*
+### M6 — Settings Revamp  *(complete)*
 **Goal:** one deliberate pass over Settings after M5, instead of growing it card by card. The page currently mixes
 library folders, engine paths, playback choices, artwork, saving, import caps and about text in one long scroll; it
 works, but it has no hierarchy and no way to find a single option.
@@ -424,11 +424,20 @@ works, but it has no hierarchy and no way to find a single option.
       place under **Streaming**
 - [x] Streaming controls for the request budget: next-track prefetch, daily yt-dlp self-update, and an off-by-default
       browser-cookie selector with its privacy caveat
-- [ ] Review defaults and reset-to-default; decide which settings are worth exporting with a backup
-- [ ] Accessibility and keyboard pass on the whole page; every field needs a real label, not a placeholder
-- [ ] Search within Settings once there are enough options to justify it
+- [x] Bounded Appearance: Dark/Cream/Follow Windows, five contrast-checked accents, Compact/Comfortable/Spacious
+      density, Solid/Frosted surfaces (CSS blur, not native acrylic), motion preference, cover-art options and reset.
+      No arbitrary CSS, icon packs, custom fonts, layout builder, custom accent or Material theme in v1
+- [x] Review defaults and reset-to-default. **Misc → Reset preferences** restores playback, appearance, behaviour, import
+      limits, saving quality and request-budget choices from the same defaults a first launch uses, while keeping the
+      library, engine and download folders and the last engine-update timestamp. Settings export/restore is deliberately
+      left to the backup work in M7
+- [x] Accessibility and keyboard pass: tablist arrow/Home/End movement with roving focus, focusable scrollable panels,
+      real `<label>` elements around every field, `aria-pressed` on the choice buttons, a live error banner and a
+      two-step reset confirmation with a status message
+- [x] Search within Settings considered and deferred: six tabs keep every option one click away, so a second search box
+      would add a mode without removing a step. Revisit if the page outgrows the tabs
 **Exit:** a new user can find and change any setting without scrolling past unrelated cards, and every control has a
-visible effect. **The tab layout is now implemented; remaining work is defaults, reset and accessibility.**
+visible effect. **Met.**
 
 ### M7 — Playlists, Sync & Data Care  *(~2 weeks)*
 - [ ] M3U / M3U8 and JSON import-export of playlists; CSV export of the library

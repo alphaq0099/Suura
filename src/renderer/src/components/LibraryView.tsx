@@ -33,6 +33,8 @@ export interface LibraryViewProps {
   selectedIds: ReadonlySet<number>
   currentTrackId: number | null
   isPlaying: boolean
+  /** Density-derived row height, shared with the virtualizer. */
+  rowHeight: number
   searchInputRef: RefObject<HTMLInputElement | null>
   onSearchChange: (value: string) => void
   onToggleSort: (field: TrackSortField) => void
@@ -78,6 +80,7 @@ export function LibraryView(props: LibraryViewProps) {
     selectedIds,
     currentTrackId,
     isPlaying,
+    rowHeight,
     searchInputRef,
     onSearchChange,
     onToggleSort,
@@ -249,6 +252,7 @@ export function LibraryView(props: LibraryViewProps) {
           isPlaying={isPlaying}
           selectedIds={selectedIds}
           loadingMore={loadingMore}
+          rowHeight={rowHeight}
           onToggleSort={onToggleSort}
           onActivate={onPlay}
           onSelect={onSelect}

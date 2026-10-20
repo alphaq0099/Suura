@@ -1,16 +1,30 @@
-import { useState } from 'react'
+import { useRef, useState, type KeyboardEvent } from 'react'
+import {
+  ACCENT_CHOICES,
+  DEFAULT_APPEARANCE,
+  DENSITY_CHOICES,
+  MOTION_CHOICES,
+  SURFACE_CHOICES,
+  THEME_CHOICES
+} from '@shared/appearance'
+import { DEFAULT_PREFERENCE_PATCH } from '@shared/settings-defaults'
 import type {
+  AccentName,
   AppPaths,
   AppSettings,
   ArtworkFit,
   ArtworkShape,
   ArtworkSize,
   DeepPartial,
+  Density,
   DownloadFormat,
   EngineStatus,
   ExecutableStatus,
   LibraryClickAction,
-  QualityTier
+  MotionPreference,
+  QualityTier,
+  SurfaceStyle,
+  ThemeMode
 } from '@shared/types'
 import { COOKIE_BROWSERS } from '@shared/youtube'
 import { FolderIcon, RefreshIcon, SpinnerIcon, TrashIcon } from './Icons'
@@ -118,6 +132,32 @@ export function SettingsView(props: SettingsViewProps) {
     onOpenPath
   } = props
   const [tab, setTab] = useState<TabId>('general')
+  const [confirmReset, setConfirmReset] = useState(false)
+  const [resetDone, setResetDone] = useState(false)
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
+  const resetButtonRef = useRef<HTMLButtonElement | null>(null)
+
+  // A tab strip is one tab stop, not six. Arrow keys move between tabs, Home and
+  // End jump to the edges, and the newly selected tab takes focus — the pattern
+  // screen-reader and keyboard users expect from role="tablist".
+  const moveTab = (event: KeyboardEvent<HTMLButtonElement>, index: number): void => {
+    let next = index
+    if (event.key === 'ArrowRight') next = (index + 1) % TABS.length
+    else if (event.key === 'ArrowLeft') next = (index - 1 + TABS.length) % TABS.length
+    else if (event.key === 'Home') next = 0
+    else if (event.key === 'End') next = TABS.length - 1
+    else return
+    const target = TABS[next]
+    if (!target) return
+    event.preventDefault()
+    setTab(target.id)
+    tabRefs.current[next]?.focus()
+  }
+
+  const closeReset = (): void => {
+    setConfirmReset(false)
+    requestAnimationFrame(() => resetButtonRef.current?.focus())
+  }
 
   return (
     <section className="main-view settings-view">
@@ -128,19 +168,28 @@ export function SettingsView(props: SettingsViewProps) {
         </div>
       </header>
 
-      {error ? <div className="banner error">{error}</div> : null}
+      {error ? (
+        <div className="banner error" role="alert">
+          {error}
+        </div>
+      ) : null}
 
       <nav className="settings-tabs" role="tablist" aria-label="Settings sections">
-        {TABS.map((entry) => (
+        {TABS.map((entry, index) => (
           <button
             key={entry.id}
+            ref={(node) => {
+              tabRefs.current[index] = node
+            }}
             type="button"
             role="tab"
             id={`settings-tab-${entry.id}`}
             aria-selected={tab === entry.id}
             aria-controls={`settings-panel-${entry.id}`}
+            tabIndex={tab === entry.id ? 0 : -1}
             className={tab === entry.id ? 'settings-tab active' : 'settings-tab'}
             onClick={() => setTab(entry.id)}
+            onKeyDown={(event) => moveTab(event, index)}
           >
             {entry.label}
           </button>
@@ -153,6 +202,7 @@ export function SettingsView(props: SettingsViewProps) {
           role="tabpanel"
           id="settings-panel-general"
           aria-labelledby="settings-tab-general"
+          tabIndex={0}
           hidden={tab !== 'general'}
         >
           <div className="cards">
@@ -211,67 +261,218 @@ export function SettingsView(props: SettingsViewProps) {
           role="tabpanel"
           id="settings-panel-appearance"
           aria-labelledby="settings-tab-appearance"
+          tabIndex={0}
           hidden={tab !== 'appearance'}
         >
           <div className="cards">
-            <article className="card">
-              <header className="card-header">
-                <h2>Visuals</h2>
-              </header>
-              <p className="card-hint">
-                How cover art is drawn. The shape applies everywhere it appears: the library rows, the player bar and the
-                player window.
-              </p>
-              <div className="field-grid">
-                <label className="field">
-                  <span>Artwork shape</span>
-                  <select
-                    value={settings.visuals.artworkShape}
-                    onChange={(event) => onUpdate({ visuals: { artworkShape: event.target.value as ArtworkShape } })}
-                  >
-                    {SHAPE_CHOICES.map((choice) => (
-                      <option key={choice.value} value={choice.value}>
-                        {choice.label}
-                      </option>
+            <div className="cards-col">
+              <article className="card">
+                <header className="card-header">
+                  <h2>Theme</h2>
+                </header>
+                <p className="card-hint">
+                  Dark is the default. Cream is a warm off-white rather than a pure white, and Follow Windows changes
+                  with the operating system while the app is open.
+                </p>
+                <div className="theme-choices" role="group" aria-label="Theme">
+                  {THEME_CHOICES.map((choice) => (
+                    <button
+                      key={choice.value}
+                      type="button"
+                      className={settings.theme === choice.value ? 'theme-choice active' : 'theme-choice'}
+                      data-theme-choice={choice.value}
+                      aria-pressed={settings.theme === choice.value}
+                      onClick={() => onUpdate({ theme: choice.value as ThemeMode })}
+                    >
+                      <span className={`theme-preview ${choice.value}`} aria-hidden="true">
+                        <span className="theme-preview-sidebar" />
+                        <span className="theme-preview-body">
+                          <span className="theme-preview-line" />
+                          <span className="theme-preview-line short" />
+                          <span className="theme-preview-card" />
+                        </span>
+                      </span>
+                      <span className="theme-choice-label">{choice.label}</span>
+                      <span className="theme-choice-hint">{choice.hint}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="field">
+                  <span>Accent</span>
+                  <div className="accent-choices" role="group" aria-label="Accent">
+                    {ACCENT_CHOICES.map((choice) => (
+                      <button
+                        key={choice.value}
+                        type="button"
+                        className={settings.visuals.accent === choice.value ? 'accent-choice active' : 'accent-choice'}
+                        data-accent-choice={choice.value}
+                        aria-pressed={settings.visuals.accent === choice.value}
+                        onClick={() => onUpdate({ visuals: { accent: choice.value as AccentName } })}
+                      >
+                        <span className="accent-swatch" style={{ background: choice.swatch }} aria-hidden="true" />
+                        <span>{choice.label}</span>
+                      </button>
                     ))}
-                  </select>
-                </label>
-                <label className="field">
-                  <span>When a cover is not square</span>
-                  <select
-                    value={settings.visuals.artworkFit}
-                    disabled={settings.visuals.artworkShape === 'circle'}
-                    onChange={(event) => onUpdate({ visuals: { artworkFit: event.target.value as ArtworkFit } })}
-                  >
-                    {FIT_CHOICES.map((choice) => (
-                      <option key={choice.value} value={choice.value}>
+                  </div>
+                </div>
+              </article>
+
+              <article className="card">
+                <header className="card-header">
+                  <h2>Layout &amp; motion</h2>
+                </header>
+                <div className="field">
+                  <span>Density</span>
+                  <div className="segmented" role="group" aria-label="Density">
+                    {DENSITY_CHOICES.map((choice) => (
+                      <button
+                        key={choice.value}
+                        type="button"
+                        className={settings.visuals.density === choice.value ? 'active' : undefined}
+                        data-density-choice={choice.value}
+                        aria-pressed={settings.visuals.density === choice.value}
+                        title={choice.hint}
+                        onClick={() => onUpdate({ visuals: { density: choice.value as Density } })}
+                      >
                         {choice.label}
-                      </option>
+                      </button>
                     ))}
-                  </select>
-                </label>
-                <label className="field">
-                  <span>Artwork size</span>
-                  <select
-                    value={settings.visuals.artworkSize}
-                    onChange={(event) => onUpdate({ visuals: { artworkSize: event.target.value as ArtworkSize } })}
-                  >
-                    {SIZE_CHOICES.map((choice) => (
-                      <option key={choice.value} value={choice.value}>
+                  </div>
+                </div>
+                <div className="field">
+                  <span>Surface</span>
+                  <div className="segmented" role="group" aria-label="Surface">
+                    {SURFACE_CHOICES.map((choice) => (
+                      <button
+                        key={choice.value}
+                        type="button"
+                        className={settings.visuals.surface === choice.value ? 'active' : undefined}
+                        data-surface-choice={choice.value}
+                        aria-pressed={settings.visuals.surface === choice.value}
+                        title={choice.hint}
+                        onClick={() => onUpdate({ visuals: { surface: choice.value as SurfaceStyle } })}
+                      >
                         {choice.label}
-                      </option>
+                      </button>
                     ))}
-                  </select>
-                </label>
-              </div>
-              <p className="card-hint">
-                Cropping keeps every tile the same shape, which is what most players do, and is all that reads at
-                thumbnail size. Fitting is for the player window&apos;s large artwork, where the box takes the
-                cover&apos;s own proportions: nothing is cut off and nothing is left blank around it. A circle only
-                exists on a square, so round artwork is always cropped. Size applies to the player window&apos;s
-                artwork; it is a proportion of the space the window leaves over, so the cover never overflows it.
-              </p>
-            </article>
+                  </div>
+                </div>
+                <div className="field">
+                  <span>Motion</span>
+                  <div className="segmented" role="group" aria-label="Motion">
+                    {MOTION_CHOICES.map((choice) => (
+                      <button
+                        key={choice.value}
+                        type="button"
+                        className={settings.visuals.motion === choice.value ? 'active' : undefined}
+                        data-motion-choice={choice.value}
+                        aria-pressed={settings.visuals.motion === choice.value}
+                        title={choice.hint}
+                        onClick={() => onUpdate({ visuals: { motion: choice.value as MotionPreference } })}
+                      >
+                        {choice.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <p className="card-hint">
+                  Compact fits more rows on screen; Spacious gives titles and artwork more air. Frosted panels use a
+                  controlled CSS blur over the app&apos;s own background — not the native acrylic or Mica effect, so it
+                  looks and behaves the same on every Windows build.
+                </p>
+              </article>
+            </div>
+
+            <div className="cards-col">
+              <article className="card">
+                <header className="card-header">
+                  <h2>Cover art</h2>
+                </header>
+                <p className="card-hint">
+                  How cover art is drawn. The shape applies everywhere it appears: the library rows, the player bar and
+                  the player window.
+                </p>
+                <div className="field-grid">
+                  <label className="field">
+                    <span>Artwork shape</span>
+                    <select
+                      value={settings.visuals.artworkShape}
+                      onChange={(event) => onUpdate({ visuals: { artworkShape: event.target.value as ArtworkShape } })}
+                    >
+                      {SHAPE_CHOICES.map((choice) => (
+                        <option key={choice.value} value={choice.value}>
+                          {choice.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>When a cover is not square</span>
+                    <select
+                      value={settings.visuals.artworkFit}
+                      disabled={settings.visuals.artworkShape === 'circle'}
+                      onChange={(event) => onUpdate({ visuals: { artworkFit: event.target.value as ArtworkFit } })}
+                    >
+                      {FIT_CHOICES.map((choice) => (
+                        <option key={choice.value} value={choice.value}>
+                          {choice.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Artwork size</span>
+                    <select
+                      value={settings.visuals.artworkSize}
+                      onChange={(event) => onUpdate({ visuals: { artworkSize: event.target.value as ArtworkSize } })}
+                    >
+                      {SIZE_CHOICES.map((choice) => (
+                        <option key={choice.value} value={choice.value}>
+                          {choice.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="field-grid">
+                  <label className="field checkbox">
+                    <input
+                      type="checkbox"
+                      checked={settings.visuals.playerArtwork}
+                      onChange={(event) => onUpdate({ visuals: { playerArtwork: event.target.checked } })}
+                    />
+                    <span>Show the cover in the full-window player</span>
+                  </label>
+                  <label className="field checkbox">
+                    <input
+                      type="checkbox"
+                      checked={settings.visuals.playerAmbience}
+                      onChange={(event) => onUpdate({ visuals: { playerAmbience: event.target.checked } })}
+                    />
+                    <span>Tint the player with the cover&apos;s colour</span>
+                  </label>
+                </div>
+                <p className="card-hint">
+                  Cropping keeps every tile the same shape, which is what most players do, and is all that reads at
+                  thumbnail size. Fitting is for the player window&apos;s large artwork, where the box takes the
+                  cover&apos;s own proportions: nothing is cut off and nothing is left blank around it. A circle only
+                  exists on a square, so round artwork is always cropped. Size applies to the player window&apos;s
+                  artwork; it is a proportion of the space the window leaves over, so the cover never overflows it.
+                  Turning the ambience off leaves the bar and the player window on the flat theme colour, which is
+                  cheaper to render and easier on a slow machine.
+                </p>
+              </article>
+            </div>
+          </div>
+
+          <div className="appearance-reset">
+            <div>
+              <strong>Reset appearance</strong>
+              <p>Puts the theme, accent, density, surface, motion and cover-art choices back to their defaults.</p>
+            </div>
+            <button type="button" onClick={() => onUpdate(DEFAULT_APPEARANCE)}>
+              Reset appearance
+            </button>
           </div>
         </section>
 
@@ -280,6 +481,7 @@ export function SettingsView(props: SettingsViewProps) {
           role="tabpanel"
           id="settings-panel-behaviour"
           aria-labelledby="settings-tab-behaviour"
+          tabIndex={0}
           hidden={tab !== 'behaviour'}
         >
           <div className="cards">
@@ -334,6 +536,7 @@ export function SettingsView(props: SettingsViewProps) {
           role="tabpanel"
           id="settings-panel-streaming"
           aria-labelledby="settings-tab-streaming"
+          tabIndex={0}
           hidden={tab !== 'streaming'}
         >
           <div className="cards">
@@ -536,6 +739,7 @@ export function SettingsView(props: SettingsViewProps) {
           role="tabpanel"
           id="settings-panel-misc"
           aria-labelledby="settings-tab-misc"
+          tabIndex={0}
           hidden={tab !== 'misc'}
         >
           <div className="cards">
@@ -572,6 +776,59 @@ export function SettingsView(props: SettingsViewProps) {
                 <p className="card-hint">Loading…</p>
               )}
             </article>
+
+            <article className="card">
+              <header className="card-header">
+                <h2>Reset preferences</h2>
+              </header>
+              <p className="card-hint">
+                Puts playback, appearance, click behaviour, import limits, saving quality and the request-budget choices
+                back to their defaults. It keeps your library folders and the engine and download folders you chose:
+                forgetting a folder is not a preference change.
+              </p>
+              <div className="settings-reset">
+                {confirmReset ? (
+                  <div className="reset-confirm" role="alert">
+                    <p>Reset these preferences now?</p>
+                    <div className="field-row">
+                      <button
+                        type="button"
+                        className="primary"
+                        autoFocus
+                        onClick={() => {
+                          onUpdate(DEFAULT_PREFERENCE_PATCH)
+                          setConfirmReset(false)
+                          setResetDone(true)
+                        }}
+                      >
+                        Reset preferences
+                      </button>
+                      <button type="button" onClick={closeReset}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="field-row">
+                    <button
+                      ref={resetButtonRef}
+                      type="button"
+                      onClick={() => {
+                        setConfirmReset(true)
+                        setResetDone(false)
+                      }}
+                    >
+                      Reset preferences…
+                    </button>
+                    {resetDone ? <span role="status">Preferences reset.</span> : null}
+                  </div>
+                )}
+              </div>
+              <p className="card-hint">
+                A settings backup and restore belongs with the data-care work in M7, so this page resets rather than
+                exports for now.
+              </p>
+            </article>
           </div>
         </section>
 
@@ -580,19 +837,21 @@ export function SettingsView(props: SettingsViewProps) {
           role="tabpanel"
           id="settings-panel-about"
           aria-labelledby="settings-tab-about"
+          tabIndex={0}
           hidden={tab !== 'about'}
         >
           <div className="cards">
             <article className="card about-card">
               <header className="card-header">
                 <h2>About</h2>
-                <span className="badge">M5 · search and settings</span>
+                <span className="badge">M6 · settings</span>
               </header>
               <p className="card-hint">
                 The local library, playlists, the queue and YouTube playback all work, and a stream can be saved into
-                the library with its tags and cover. Unified search, channel pages and metadata cleanup are in.
-                Offline caching and the full Downloads screen are deferred to M12. The roadmap in ROADMAP.md is the
-                source of truth for what comes next.
+                the library with its tags and cover. Unified search, channel pages, metadata cleanup and the six-tab
+                Settings page are in, including the bounded Appearance choices and a preference reset. Offline caching
+                and the full Downloads screen are deferred to M12. The roadmap in ROADMAP.md is the source of truth for
+                what comes next.
               </p>
             </article>
           </div>

@@ -1,20 +1,226 @@
 :root {
+  color-scheme: dark;
+
   --bg: #0f1016;
+  --bg-rgb: 15 16 22;
   --bg-raised: #161823;
+  --bg-raised-rgb: 22 24 35;
   --bg-hover: #1e2130;
   --bg-active: #262a3d;
+  --bg-sunken: #0c0e14;
+  --bg-panel: #12141d;
+  --bg-elevated: #151824;
+  --bg-input: #10121b;
+  --bg-subtle: #171a24;
+  --bg-badge: #232739;
+  --bg-art: #1b1f2e;
+
   --border: #262a3a;
+  --border-soft: #1b1e2b;
+  --border-strong: #333852;
+
   --text: #e8eaf2;
+  --text-rgb: 232 234 242;
   --text-dim: #9aa1b8;
-  --text-faint: #6b7291;
+  --text-faint: #7f87a7;
+
   --accent: #6c8cff;
+  --accent-rgb: 108 140 255;
   --accent-strong: #8aa2ff;
+  --accent-contrast: #0b0d14;
   --danger: #ff6b72;
+  --danger-rgb: 255 107 114;
+  --danger-bg: #2a161b;
+  --danger-border: #5a2730;
+  --danger-text: #ffbcc0;
   --ok: #4dd6a1;
+  --ok-rgb: 77 214 161;
+  --ok-border: #1f3f36;
+
+  --scroll-thumb: #343a52;
+  --scroll-thumb-hover: #454d6c;
+  --overlay-rgb: 255 255 255;
+  --knob: #fff;
+
+  /* Selection follows the accent, so changing it changes the whole surface
+     language rather than only buttons and links. */
+  --row-selected: rgb(var(--accent-rgb) / 16%);
+  --row-current: rgb(var(--accent-rgb) / 9%);
+  --row-current-selected: rgb(var(--accent-rgb) / 22%);
+  --choice-selected-bg: rgb(var(--accent-rgb) / 8%);
+  --choice-selected-border: rgb(var(--accent-rgb) / 42%);
+  --tag-album-text: #b9a6ff;
+  --tag-album-border: #3b3560;
+  --tag-mix-text: #7fd0b0;
+  --tag-mix-border: #2c4d42;
+
+  --bar-scrim-rgb: 15 16 22;
+  --bar-scrim-alpha: 22%;
+  --bar-text-dim: #b6bdd2;
+  --np-scrim-rgb: 15 16 22;
+  --np-panel-rgb: 9 11 17;
+  --np-overlay-rgb: 255 255 255;
+  --np-art-border: rgb(255 255 255 / 10%);
+  --np-context-shadow: 0 1px 6px rgb(0 0 0 / 60%);
+  --np-fallback: radial-gradient(120% 100% at 50% 0%, #2b3560 0%, #161a2b 45%, var(--bg) 100%);
+
   --radius: 10px;
   --radius-sm: 7px;
-  color-scheme: dark;
+
+  --track-row-height: 38px;
+  --track-head-height: 34px;
+  --queue-row-height: 36px;
+  --density-gap: 14px;
+  --density-panel-pad: 14px;
+  --density-card-pad: 16px;
+  --density-view-pad: 20px 24px 28px;
+  --density-nav-pad: 9px 10px;
+  --density-field-gap: 10px;
 }
+
+/* Accents have two tones: one bright enough to sit on the dark surface, and one
+   dark enough to read as text on cream. Both are checked against their own
+   surface rather than reusing a single "brand" colour at every size. */
+:root[data-theme='dark'][data-accent='teal'] {
+  --accent: #3fc8b4;
+  --accent-rgb: 63 200 180;
+  --accent-strong: #7ee0d0;
+  --accent-contrast: #06201c;
+}
+
+:root[data-theme='dark'][data-accent='violet'] {
+  --accent: #a78bfa;
+  --accent-rgb: 167 139 250;
+  --accent-strong: #c4b0ff;
+  --accent-contrast: #140b2a;
+}
+
+:root[data-theme='dark'][data-accent='rose'] {
+  --accent: #f472b6;
+  --accent-rgb: 244 114 182;
+  --accent-strong: #ff9dcd;
+  --accent-contrast: #2a0717;
+}
+
+:root[data-theme='dark'][data-accent='amber'] {
+  --accent: #f2b84b;
+  --accent-rgb: 242 184 75;
+  --accent-strong: #ffd37a;
+  --accent-contrast: #241701;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #f2ece1;
+  --bg-rgb: 242 236 225;
+  --bg-raised: #fbf7ef;
+  --bg-raised-rgb: 251 247 239;
+  --bg-hover: #ebe2d4;
+  --bg-active: #e2d7c7;
+  --bg-sunken: #e9e0d2;
+  --bg-panel: #f8f2e8;
+  --bg-elevated: #fdf9f2;
+  --bg-input: #fffdf8;
+  --bg-subtle: #f5eee4;
+  --bg-badge: #e7dccb;
+  --bg-art: #e6dccb;
+
+  --border: #d8cdbb;
+  --border-soft: #e7ddcf;
+  --border-strong: #c4b7a3;
+
+  --text: #2b2620;
+  --text-rgb: 43 38 32;
+  --text-dim: #625a4e;
+  --text-faint: #716657;
+
+  --accent: #3b5ccc;
+  --accent-rgb: 59 92 204;
+  --accent-strong: #2b47a8;
+  --accent-contrast: #fffdf8;
+  --danger: #b42335;
+  --danger-rgb: 180 35 53;
+  --danger-bg: #f8e3e3;
+  --danger-border: #e4b8b8;
+  --danger-text: #8f1f2c;
+  --ok: #1f7a5c;
+  --ok-rgb: 31 122 92;
+  --ok-border: #b7d8ca;
+
+  --scroll-thumb: #c3b6a2;
+  --scroll-thumb-hover: #a99a84;
+  --overlay-rgb: 43 38 32;
+  --knob: #fff;
+
+  --tag-album-text: #5b3fc0;
+  --tag-album-border: #c9bcf0;
+  --tag-mix-text: #1d6b58;
+  --tag-mix-border: #b7d8ca;
+
+  --bar-scrim-rgb: 242 236 225;
+  --bar-scrim-alpha: 75%;
+  --bar-text-dim: #554e43;
+  --np-scrim-rgb: 242 236 225;
+  --np-panel-rgb: 251 247 239;
+  --np-overlay-rgb: 43 38 32;
+  --np-art-border: rgb(43 38 32 / 14%);
+  --np-context-shadow: 0 1px 6px rgb(255 253 248 / 75%);
+  --np-fallback: radial-gradient(120% 100% at 50% 0%, #dcd8ef 0%, #efe7dc 45%, var(--bg) 100%);
+}
+
+:root[data-theme='light'][data-accent='teal'] {
+  --accent: #0c7166;
+  --accent-rgb: 12 113 102;
+  --accent-strong: #0a5f57;
+  --accent-contrast: #fffdf8;
+}
+
+:root[data-theme='light'][data-accent='violet'] {
+  --accent: #6d4fd0;
+  --accent-rgb: 109 79 208;
+  --accent-strong: #5739b0;
+  --accent-contrast: #fffdf8;
+}
+
+:root[data-theme='light'][data-accent='rose'] {
+  --accent: #b83272;
+  --accent-rgb: 184 50 114;
+  --accent-strong: #98265d;
+  --accent-contrast: #fffdf8;
+}
+
+:root[data-theme='light'][data-accent='amber'] {
+  --accent: #8a5600;
+  --accent-rgb: 138 86 0;
+  --accent-strong: #7d4f00;
+  --accent-contrast: #fffdf8;
+}
+
+:root[data-density='compact'] {
+  --track-row-height: 32px;
+  --track-head-height: 30px;
+  --queue-row-height: 31px;
+  --density-gap: 10px;
+  --density-panel-pad: 10px;
+  --density-card-pad: 12px;
+  --density-view-pad: 16px 20px 22px;
+  --density-nav-pad: 7px 9px;
+  --density-field-gap: 8px;
+}
+
+:root[data-density='spacious'] {
+  --track-row-height: 46px;
+  --track-head-height: 40px;
+  --queue-row-height: 44px;
+  --density-gap: 18px;
+  --density-panel-pad: 18px;
+  --density-card-pad: 20px;
+  --density-view-pad: 24px 28px 34px;
+  --density-nav-pad: 11px 11px;
+  --density-field-gap: 14px;
+}
+
 
 * {
   box-sizing: border-box;
@@ -52,7 +258,7 @@ button {
 
 button:hover:not(:disabled) {
   background: var(--bg-hover);
-  border-color: #333852;
+  border-color: var(--border-strong);
 }
 
 button:disabled {
@@ -63,7 +269,7 @@ button:disabled {
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #0b0d14;
+  color: var(--accent-contrast);
   font-weight: 600;
 }
 
@@ -88,7 +294,7 @@ input,
 select {
   font: inherit;
   color: inherit;
-  background: #10121b;
+  background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 7px 10px;
@@ -160,7 +366,7 @@ input[type='radio'] {
   flex-direction: column;
   gap: 4px;
   padding: 14px 10px;
-  background: #0c0e14;
+  background: var(--bg-sunken);
   border-right: 1px solid var(--border);
   min-height: 0;
 }
@@ -194,7 +400,7 @@ input[type='radio'] {
 
 .nav-item.active {
   background: var(--bg-active);
-  border-color: #303655;
+  border-color: var(--border-strong);
   color: var(--text);
   font-weight: 600;
 }
@@ -250,7 +456,7 @@ input[type='radio'] {
   /* Chromium's default overlay bar hides itself until the mouse moves. A thin
      always-visible bar is the only cue that a long view continues below. */
   scrollbar-width: thin;
-  scrollbar-color: #343a52 transparent;
+  scrollbar-color: var(--scroll-thumb) transparent;
 }
 
 .main-view::-webkit-scrollbar {
@@ -262,13 +468,13 @@ input[type='radio'] {
 }
 
 .main-view::-webkit-scrollbar-thumb {
-  background: #343a52;
+  background: var(--scroll-thumb);
   border: 2px solid var(--bg);
   border-radius: 999px;
 }
 
 .main-view::-webkit-scrollbar-thumb:hover {
-  background: #454d6c;
+  background: var(--scroll-thumb-hover);
 }
 
 .view-header {
@@ -301,7 +507,7 @@ input[type='radio'] {
   align-items: center;
   gap: 7px;
   padding: 0 10px;
-  background: #10121b;
+  background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-faint);
@@ -329,9 +535,9 @@ input[type='radio'] {
 }
 
 .banner.error {
-  border-color: #5a2730;
-  background: #2a161b;
-  color: #ffbcc0;
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 
 .banner.scan {
@@ -345,7 +551,7 @@ input[type='radio'] {
   height: 8px;
   border-radius: 50%;
   background: var(--ok);
-  box-shadow: 0 0 0 0 rgb(77 214 161 / 45%);
+  box-shadow: 0 0 0 0 rgb(var(--ok-rgb) / 45%);
   animation: playing-pulse 1.8s ease-out infinite;
 }
 
@@ -357,10 +563,10 @@ input[type='radio'] {
 
 @keyframes playing-pulse {
   70% {
-    box-shadow: 0 0 0 7px rgb(77 214 161 / 0%);
+    box-shadow: 0 0 0 7px rgb(var(--ok-rgb) / 0%);
   }
   100% {
-    box-shadow: 0 0 0 0 rgb(77 214 161 / 0%);
+    box-shadow: 0 0 0 0 rgb(var(--ok-rgb) / 0%);
   }
 }
 
@@ -395,7 +601,7 @@ input[type='radio'] {
 .scan-bar {
   height: 3px;
   border-radius: 999px;
-  background: #232739;
+  background: var(--bg-badge);
   overflow: hidden;
 }
 
@@ -494,7 +700,7 @@ input[type='radio'] {
    whole extra word. It lives in the row's Details sheet instead. */
 .track-list {
   --track-columns: 56px minmax(0, 1fr) 168px 168px 92px var(--track-actions, 58px);
-  --row-height: 38px;
+  --row-height: var(--track-row-height);
 
   /* Columns are chosen by the width of the list, not of the window. The same
      list sits in panes of very different widths (the library takes what the
@@ -511,7 +717,7 @@ input[type='radio'] {
   flex-direction: column;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: #12141d;
+  background: var(--bg-panel);
   overflow: hidden;
 }
 
@@ -525,7 +731,7 @@ input[type='radio'] {
 }
 
 .track-head {
-  background: #151824;
+  background: var(--bg-elevated);
   border-bottom: 1px solid var(--border);
   flex: none;
 }
@@ -537,7 +743,7 @@ input[type='radio'] {
   letter-spacing: 0.5px;
   color: var(--text-faint);
   font-weight: 600;
-  height: 34px;
+  height: var(--track-head-height);
   display: flex;
   align-items: center;
   /* A last line of defence: if a column is ever narrower than its label, the
@@ -599,7 +805,7 @@ input[type='radio'] {
 .track-row {
   height: var(--row-height);
   cursor: default;
-  border-bottom: 1px solid #1b1e2b;
+  border-bottom: 1px solid var(--border-soft);
   color: var(--text-dim);
   user-select: none;
 }
@@ -617,7 +823,7 @@ input[type='radio'] {
 }
 
 .track-row.selected {
-  background: #1d2440;
+  background: var(--row-selected);
 }
 
 /* Keyboard cursor: visible while the grid has focus, so tabbing back into the
@@ -627,7 +833,7 @@ input[type='radio'] {
 }
 
 .track-row.current {
-  background: #1c2138;
+  background: var(--row-current);
   color: var(--text);
 }
 
@@ -636,7 +842,7 @@ input[type='radio'] {
 }
 
 .track-row.current.selected {
-  background: #232a4c;
+  background: var(--row-current-selected);
 }
 
 .cell.col-index {
@@ -669,7 +875,7 @@ input[type='radio'] {
   display: block;
   border-radius: 4px;
   border: 1px solid var(--border);
-  background: #1b1f2e;
+  background: var(--bg-art);
   object-fit: cover;
 }
 
@@ -824,7 +1030,7 @@ input[type='radio'] {
   height: 7px;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 0 3px rgb(108 140 255 / 22%);
+  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 22%);
 }
 
 .table-footnote {
@@ -857,7 +1063,7 @@ input[type='radio'] {
 .icon-button.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #0b0d14;
+  color: var(--accent-contrast);
   border-radius: 50%;
   width: 38px;
   height: 38px;
@@ -882,7 +1088,7 @@ input[type='radio'] {
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
-  background: #12141d;
+  background: var(--bg-panel);
 }
 
 .settings-tab {
@@ -921,7 +1127,7 @@ input[type='radio'] {
   display: flex;
   border: 1px solid var(--border);
   border-radius: 9px;
-  background: rgb(255 255 255 / 1%);
+  background: rgb(var(--overlay-rgb) / 1%);
   overflow: hidden;
 }
 
@@ -931,7 +1137,7 @@ input[type='radio'] {
   overflow-y: auto;
   padding: 14px;
   scrollbar-width: thin;
-  scrollbar-color: #343a52 transparent;
+  scrollbar-color: var(--scroll-thumb) transparent;
 }
 
 .settings-panel[hidden] {
@@ -947,13 +1153,13 @@ input[type='radio'] {
 }
 
 .settings-panel::-webkit-scrollbar-thumb {
-  background: #343a52;
-  border: 2px solid #12141d;
+  background: var(--scroll-thumb);
+  border: 2px solid var(--bg-panel);
   border-radius: 999px;
 }
 
 .settings-panel::-webkit-scrollbar-thumb:hover {
-  background: #454d6c;
+  background: var(--scroll-thumb-hover);
 }
 
 /* ---------- cards (settings) ---------- */
@@ -1038,7 +1244,7 @@ input[type='radio'] {
   letter-spacing: 0.5px;
   padding: 2px 7px;
   border-radius: 999px;
-  background: #232739;
+  background: var(--bg-badge);
   color: var(--text-dim);
   font-weight: 600;
 }
@@ -1063,7 +1269,7 @@ input[type='radio'] {
   align-items: center;
   gap: 10px;
   padding: 7px 10px;
-  background: #10121b;
+  background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font-size: 12.5px;
@@ -1089,12 +1295,12 @@ input[type='radio'] {
 }
 
 .status-list li.ok {
-  border-color: #1f3f36;
+  border-color: var(--ok-border);
 }
 
 .status-list li.bad {
-  border-color: #4a2630;
-  background: #1d1418;
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
 }
 
 .status-list li.ok .status-name::after {
@@ -1128,13 +1334,13 @@ input[type='radio'] {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: #10121b;
+  background: var(--bg-input);
   cursor: pointer;
 }
 
 .choice.selected {
-  border-color: #3a4470;
-  background: #171b2c;
+  border-color: var(--choice-selected-border);
+  background: var(--choice-selected-bg);
 }
 
 .choice span {
@@ -1212,7 +1418,7 @@ input[type='radio'] {
   flex-direction: column;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: #12141d;
+  background: var(--bg-panel);
   overflow: hidden;
 }
 
@@ -1221,7 +1427,7 @@ input[type='radio'] {
   grid-template-columns: var(--queue-columns);
   align-items: center;
   flex: none;
-  background: #151824;
+  background: var(--bg-elevated);
   border-bottom: 1px solid var(--border);
 }
 
@@ -1247,7 +1453,7 @@ input[type='radio'] {
   display: grid;
   grid-template-columns: var(--queue-columns);
   align-items: center;
-  border-bottom: 1px solid #1b1e2b;
+  border-bottom: 1px solid var(--border-soft);
 }
 
 .queue-item:last-child {
@@ -1264,7 +1470,7 @@ input[type='radio'] {
   border: none;
   border-radius: 0;
   padding: 0;
-  height: 36px;
+  height: var(--queue-row-height);
   text-align: left;
   color: var(--text-dim);
 }
@@ -1275,7 +1481,7 @@ input[type='radio'] {
 }
 
 .queue-item.current .queue-jump {
-  background: #1c2138;
+  background: var(--row-current);
   color: var(--text);
 }
 
@@ -1369,7 +1575,7 @@ input[type='radio'] {
   align-items: center;
   gap: 16px;
   padding: 10px 18px;
-  background: #0c0e14;
+  background: var(--bg-sunken);
   border-top: 1px solid var(--border);
 }
 
@@ -1407,6 +1613,18 @@ input[type='radio'] {
   filter: blur(44px) saturate(130%) brightness(118%);
   opacity: 0.5;
   mask-image: linear-gradient(180deg, transparent 0%, #000 60%, #000 100%);
+}
+
+/* A theme-coloured scrim keeps the ambience a tint rather than a background.
+   Cream is much less forgiving than the dark theme: a blue cover behind dark
+   text took the elapsed-time contrast below 2:1 without this. The scrim is
+   inside the masked element, so it fades with the glow instead of creating a
+   rectangle. */
+.player-bar-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgb(var(--bar-scrim-rgb) / var(--bar-scrim-alpha));
 }
 
 /* Everything in the bar paints over the glow. */
@@ -1479,8 +1697,8 @@ input[type='radio'] {
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--accent-strong);
-  background: rgb(108 140 255 / 14%);
-  border: 1px solid rgb(108 140 255 / 30%);
+  background: rgb(var(--accent-rgb) / 14%);
+  border: 1px solid rgb(var(--accent-rgb) / 30%);
   border-radius: 999px;
 }
 
@@ -1506,7 +1724,7 @@ input[type='radio'] {
 
 .player-subtitle {
   font-size: 11.5px;
-  color: var(--text-faint);
+  color: var(--bar-text-dim);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1545,7 +1763,7 @@ input[type='radio'] {
 
 .time {
   font-size: 11.5px;
-  color: var(--text-faint);
+  color: var(--bar-text-dim);
   font-variant-numeric: tabular-nums;
   min-width: 42px;
   text-align: center;
@@ -1585,8 +1803,8 @@ input[type='radio'] {
 /* Toggle buttons (shuffle, repeat) read as "on" without shouting. */
 .icon-button.toggle-on {
   color: var(--accent);
-  border-color: rgb(108 140 255 / 45%);
-  background: rgb(108 140 255 / 12%);
+  border-color: rgb(var(--accent-rgb) / 45%);
+  background: rgb(var(--accent-rgb) / 12%);
 }
 
 .icon-button.toggle-on:hover:not(:disabled) {
@@ -1733,7 +1951,7 @@ input[type='radio'] {
 
 /* Nothing to blur: an app-coloured glow instead of a flat black window. */
 .np-backdrop-fallback {
-  background: radial-gradient(120% 100% at 50% 0%, #2b3560 0%, #161a2b 45%, var(--bg) 100%);
+  background: var(--np-fallback);
   filter: none;
   opacity: 1;
 }
@@ -1765,15 +1983,15 @@ input[type='radio'] {
   background:
     radial-gradient(
       115% 80% at 50% 34%,
-      rgb(15 16 22 / 0%) 0%,
-      rgb(15 16 22 / 26%) 58%,
-      rgb(15 16 22 / 66%) 100%
+      rgb(var(--np-scrim-rgb) / 0%) 0%,
+      rgb(var(--np-scrim-rgb) / 26%) 58%,
+      rgb(var(--np-scrim-rgb) / 66%) 100%
     ),
     linear-gradient(
       180deg,
-      rgb(15 16 22 / 10%) 0%,
-      rgb(15 16 22 / 26%) 36%,
-      rgb(15 16 22 / 72%) 62%,
+      rgb(var(--np-scrim-rgb) / 10%) 0%,
+      rgb(var(--np-scrim-rgb) / 26%) 36%,
+      rgb(var(--np-scrim-rgb) / 72%) 62%,
       var(--bg) 76%
     );
   pointer-events: none;
@@ -1809,7 +2027,7 @@ input[type='radio'] {
      cover can wash it out. A shadow rather than more scrim: darkening the top of
      the frame would undo the point of brightening the backdrop in the first place. */
   color: var(--text);
-  text-shadow: 0 1px 6px rgb(0 0 0 / 60%);
+  text-shadow: var(--np-context-shadow);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1828,7 +2046,7 @@ input[type='radio'] {
 
 .np-art {
   border-radius: 14px;
-  border-color: rgb(255 255 255 / 10%);
+  border-color: var(--np-art-border);
   /* Two shadows rather than one, and neither of them a slab. A single
      26px-offset, 60px-blur shadow spreads 60px in every direction, which parks a
      dark rectangle under the cover — the one hard edge in a window that is
@@ -1871,7 +2089,7 @@ input[type='radio'] {
   flex-direction: column;
   width: min(340px, 84%);
   pointer-events: auto;
-  background: rgb(9 11 17 / 84%);
+  background: rgb(var(--np-panel-rgb) / 84%);
   backdrop-filter: blur(22px) saturate(120%);
   border-left: 1px solid var(--border);
   /* Hidden rather than unmounted, so the slide can play in both directions and
@@ -1977,13 +2195,13 @@ input[type='radio'] {
 }
 
 .np-queue-row:hover:not(:disabled) {
-  background: rgb(255 255 255 / 7%);
+  background: rgb(var(--np-overlay-rgb) / 7%);
   border-color: transparent;
   color: var(--text);
 }
 
 .np-queue-row.current {
-  background: rgb(108 140 255 / 14%);
+  background: rgb(var(--accent-rgb) / 14%);
   color: var(--text);
 }
 
@@ -2167,7 +2385,7 @@ input[type='radio'] {
   background: linear-gradient(
     to right,
     var(--text) var(--volume-progress, 0%),
-    rgb(255 255 255 / 12%) var(--volume-progress, 0%)
+    rgb(var(--np-overlay-rgb) / 12%) var(--volume-progress, 0%)
   );
 }
 
@@ -2235,7 +2453,7 @@ input[type='radio'] {
   background: linear-gradient(
     to right,
     var(--accent) var(--seek-progress, 0%),
-    rgb(255 255 255 / 14%) var(--seek-progress, 0%)
+    rgb(var(--np-overlay-rgb) / 14%) var(--seek-progress, 0%)
   );
 }
 
@@ -2245,7 +2463,7 @@ input[type='radio'] {
   height: 13px;
   margin-top: -3.5px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--knob);
   box-shadow: 0 1px 5px rgb(0 0 0 / 55%);
 }
 
@@ -2351,7 +2569,7 @@ input[type='radio'] {
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: #12141d;
+  background: var(--bg-panel);
 }
 
 .playlist-row {
@@ -2367,7 +2585,7 @@ input[type='radio'] {
 }
 
 .playlist-row.active {
-  background: #1d2440;
+  background: var(--row-selected);
 }
 
 .playlist-open {
@@ -2473,13 +2691,13 @@ input[type='radio'] {
 }
 
 .playlist-kind.album {
-  color: #b9a6ff;
-  border-color: #3b3560;
+  color: var(--tag-album-text);
+  border-color: var(--tag-album-border);
 }
 
 .playlist-kind.mix {
-  color: #7fd0b0;
-  border-color: #2c4d42;
+  color: var(--tag-mix-text);
+  border-color: var(--tag-mix-border);
 }
 
 .playlist-note {
@@ -2487,7 +2705,7 @@ input[type='radio'] {
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: #171a24;
+  background: var(--bg-subtle);
   font-size: 12px;
   line-height: 1.5;
   color: var(--text-dim);
@@ -2803,7 +3021,7 @@ input[type='radio'] {
   min-width: 0;
   padding: 0 6px 0 11px;
   height: 38px;
-  background: #10121b;
+  background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-faint);
@@ -2848,7 +3066,7 @@ input[type='radio'] {
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: #12141d;
+  background: var(--bg-panel);
   /* Seven rows at a time. The history can be long, but the YouTube view should
      not become a second library; older links are one wheel away. 7 × 43px of
      row + the box's own 2px border. */
@@ -2860,7 +3078,7 @@ input[type='radio'] {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  border-bottom: 1px solid #1b1e2b;
+  border-bottom: 1px solid var(--border-soft);
 }
 
 .online-item:last-child {
@@ -2868,7 +3086,7 @@ input[type='radio'] {
 }
 
 .online-item.current {
-  background: rgb(108 140 255 / 12%);
+  background: rgb(var(--accent-rgb) / 12%);
 }
 
 .online-jump {
@@ -2976,11 +3194,11 @@ button.online-jump:hover {
 }
 
 .online-item.pending {
-  background: rgb(108 140 255 / 6%);
+  background: rgb(var(--accent-rgb) / 6%);
 }
 
 .online-item.pending.failed {
-  background: rgb(255 107 114 / 8%);
+  background: rgb(var(--danger-rgb) / 8%);
 }
 
 .online-item.pending.failed .online-sub {
@@ -3049,7 +3267,7 @@ button.online-jump:hover {
   grid-template-columns: minmax(0, 1fr);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: #12141d;
+  background: var(--bg-panel);
   /* Three recent lists; the rest scroll. 3 × 51px of row + 2px of border. */
   max-height: 155px;
   overflow: hidden auto;
@@ -3061,7 +3279,7 @@ button.online-jump:hover {
   align-items: center;
   gap: 10px;
   padding: 7px 10px;
-  border-bottom: 1px solid #1b1e2b;
+  border-bottom: 1px solid var(--border-soft);
 }
 
 .online-imported-row:last-child {
@@ -3071,7 +3289,7 @@ button.online-jump:hover {
 /* The playing list is marked where it lives: its own card carries the current
    track and position instead of a separate strip repeating them. */
 .online-imported-row.current {
-  background: rgb(108 140 255 / 10%);
+  background: rgb(var(--accent-rgb) / 10%);
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
@@ -3162,7 +3380,7 @@ button.online-jump:hover {
   gap: 6px;
   height: 34px;
   padding: 0 9px;
-  background: #10121b;
+  background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-faint);
@@ -3282,7 +3500,7 @@ button.online-jump:hover {
   margin: 0;
   padding: 8px 10px;
   border-radius: var(--radius-sm);
-  background: rgb(108 140 255 / 8%);
+  background: rgb(var(--accent-rgb) / 8%);
   color: var(--text-dim);
   font-size: 12px;
   line-height: 1.5;
@@ -3315,7 +3533,7 @@ button.online-jump:hover {
   flex-direction: column;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: rgb(14 17 24 / 96%);
+  background: rgb(var(--bg-raised-rgb) / 96%);
   box-shadow: 0 14px 38px rgb(0 0 0 / 45%);
   backdrop-filter: blur(10px);
   overflow: hidden;
@@ -3360,7 +3578,7 @@ button.online-jump:hover {
 }
 
 .saves-item + .saves-item {
-  border-top: 1px solid rgb(255 255 255 / 5%);
+  border-top: 1px solid rgb(var(--overlay-rgb) / 5%);
 }
 
 .saves-icon {
@@ -3415,7 +3633,7 @@ button.online-jump:hover {
   height: 3px;
   margin-top: 3px;
   border-radius: 2px;
-  background: rgb(255 255 255 / 8%);
+  background: rgb(var(--overlay-rgb) / 8%);
   overflow: hidden;
 }
 
@@ -3459,7 +3677,7 @@ button.online-jump:hover {
   flex-direction: column;
   border: 1px solid var(--border);
   border-radius: 9px;
-  background: rgb(255 255 255 / 2%);
+  background: rgb(var(--overlay-rgb) / 2%);
   overflow: hidden;
 }
 
@@ -3478,7 +3696,7 @@ button.online-jump:hover {
   padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgb(255 255 255 / 4%);
+  background: rgb(var(--overlay-rgb) / 4%);
   color: var(--text-faint);
 }
 
@@ -3527,7 +3745,7 @@ button.online-jump:hover {
   padding: 0;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: #343a52 transparent;
+  scrollbar-color: var(--scroll-thumb) transparent;
 }
 
 .discover-list::-webkit-scrollbar {
@@ -3539,13 +3757,13 @@ button.online-jump:hover {
 }
 
 .discover-list::-webkit-scrollbar-thumb {
-  background: #343a52;
-  border: 2px solid #12141d;
+  background: var(--scroll-thumb);
+  border: 2px solid var(--bg-panel);
   border-radius: 999px;
 }
 
 .discover-list::-webkit-scrollbar-thumb:hover {
-  background: #454d6c;
+  background: var(--scroll-thumb-hover);
 }
 
 .discover-pager {
@@ -3556,7 +3774,7 @@ button.online-jump:hover {
   gap: 10px;
   padding: 5px 10px;
   border-top: 1px solid var(--border);
-  background: rgb(255 255 255 / 2%);
+  background: rgb(var(--overlay-rgb) / 2%);
 }
 
 .pager-button {
@@ -3596,7 +3814,7 @@ button.online-jump:hover {
   gap: 8px;
   padding: 7px 10px;
   border-bottom: 1px solid var(--border);
-  background: rgb(255 255 255 / 3%);
+  background: rgb(var(--overlay-rgb) / 3%);
   color: var(--text-faint);
   font-size: 11px;
   letter-spacing: 0.3px;
@@ -3617,21 +3835,21 @@ button.online-jump:hover {
 
 .discover-item + .discover-item,
 .discover-divider + .discover-item {
-  border-top: 1px solid rgb(255 255 255 / 4%);
+  border-top: 1px solid rgb(var(--overlay-rgb) / 4%);
 }
 
 .discover-item:hover {
-  background: rgb(255 255 255 / 4%);
+  background: rgb(var(--overlay-rgb) / 4%);
 }
 
 /* The playing row follows the same rule as the library and YouTube history:
    it stays marked while paused, with a quieter dot. */
 .discover-item.current {
-  background: rgb(108 140 255 / 12%);
+  background: rgb(var(--accent-rgb) / 12%);
 }
 
 .discover-item.current:hover {
-  background: rgb(108 140 255 / 16%);
+  background: rgb(var(--accent-rgb) / 16%);
 }
 
 .discover-item.current .discover-title {
@@ -3724,14 +3942,14 @@ button.online-jump:hover {
 }
 
 .source-badge.local {
-  border-color: rgb(77 214 161 / 32%);
-  background: rgb(77 214 161 / 8%);
+  border-color: rgb(var(--ok-rgb) / 32%);
+  background: rgb(var(--ok-rgb) / 8%);
   color: var(--ok);
 }
 
 .source-badge.youtube {
-  border-color: rgb(108 140 255 / 34%);
-  background: rgb(108 140 255 / 10%);
+  border-color: rgb(var(--accent-rgb) / 34%);
+  background: rgb(var(--accent-rgb) / 10%);
   color: var(--accent-strong);
 }
 
@@ -3761,5 +3979,395 @@ button.online-jump:hover {
 @media (max-width: 700px) {
   .discover-channel {
     display: none;
+  }
+}
+
+
+/* ---------- appearance controls ---------- */
+
+/* The shell owns the ambient colour for frosted panels. Solid mode leaves the
+   body colour untouched, so the effect is opt-in and has a flat fallback. */
+.app {
+  background: var(--bg);
+}
+
+:root[data-surface='frosted'] .app {
+  background:
+    radial-gradient(1200px 640px at 12% -8%, rgb(var(--accent-rgb) / 16%), transparent 62%),
+    radial-gradient(900px 520px at 100% 0%, rgb(var(--accent-rgb) / 9%), transparent 58%),
+    var(--bg);
+}
+
+:root[data-surface='frosted'] .sidebar,
+:root[data-surface='frosted'] .player-bar,
+:root[data-surface='frosted'] .settings-tabs,
+:root[data-surface='frosted'] .settings-body,
+:root[data-surface='frosted'] .card,
+:root[data-surface='frosted'] .track-list,
+:root[data-surface='frosted'] .queue-table,
+:root[data-surface='frosted'] .playlist-index,
+:root[data-surface='frosted'] .online-list,
+:root[data-surface='frosted'] .online-imported-list {
+  background: rgb(var(--bg-raised-rgb) / 72%);
+  backdrop-filter: blur(18px) saturate(128%);
+}
+
+/* Without backdrop-filter, translucency would only reduce contrast. */
+@supports not (backdrop-filter: blur(1px)) {
+  :root[data-surface='frosted'] .sidebar,
+  :root[data-surface='frosted'] .player-bar,
+  :root[data-surface='frosted'] .settings-tabs,
+  :root[data-surface='frosted'] .settings-body,
+  :root[data-surface='frosted'] .card,
+  :root[data-surface='frosted'] .track-list,
+  :root[data-surface='frosted'] .queue-table,
+  :root[data-surface='frosted'] .playlist-index,
+  :root[data-surface='frosted'] .online-list,
+  :root[data-surface='frosted'] .online-imported-list {
+    background: var(--bg-raised);
+  }
+}
+
+/* The density value is applied in three places: the token block above, the
+   virtualizer's rowHeight prop in TrackList, and these spacing rules. The row
+   height must stay in step with the prop or scrolling jumps. */
+.main-view {
+  padding: var(--density-view-pad);
+  gap: var(--density-gap);
+}
+
+.nav-item {
+  padding: var(--density-nav-pad);
+}
+
+.settings-panel {
+  padding: var(--density-panel-pad);
+}
+
+.cards,
+.cards-col {
+  gap: var(--density-gap);
+}
+
+.card {
+  padding: var(--density-card-pad);
+  gap: calc(var(--density-gap) - 2px);
+}
+
+.field-grid {
+  gap: var(--density-field-gap);
+}
+
+/* Theme choices are miniature previews, not swatches: the dark, cream and
+   split system options have to be distinguishable before their labels are read. */
+.theme-choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.theme-choice {
+  display: grid;
+  justify-items: stretch;
+  gap: 5px;
+  padding: 7px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  text-align: left;
+}
+
+.theme-choice:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.theme-choice.active {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--text);
+}
+
+.theme-preview {
+  display: grid;
+  grid-template-columns: 26% minmax(0, 1fr);
+  height: 52px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #f2ece1;
+}
+
+.theme-preview.dark {
+  background: #0f1016;
+  border-color: #333852;
+}
+
+.theme-preview.light {
+  background: #f2ece1;
+}
+
+.theme-preview.system {
+  background: linear-gradient(105deg, #0f1016 0 50%, #f2ece1 50% 100%);
+}
+
+.theme-preview-sidebar {
+  background: #e3d9c9;
+}
+
+.theme-preview.dark .theme-preview-sidebar {
+  background: #0c0e14;
+}
+
+.theme-preview-body {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px;
+}
+
+.theme-preview-line,
+.theme-preview-card {
+  display: block;
+  border-radius: 2px;
+}
+
+.theme-preview-line {
+  height: 4px;
+  background: #cfc3b0;
+}
+
+.theme-preview.dark .theme-preview-line {
+  background: #3a4160;
+}
+
+.theme-preview-line.short {
+  width: 62%;
+}
+
+.theme-preview-card {
+  height: 13px;
+  background: #fbf7ef;
+  border: 1px solid #d8cdbb;
+}
+
+.theme-preview.dark .theme-preview-card {
+  background: #1e2130;
+  border-color: #262a3a;
+}
+
+.theme-preview.system .theme-preview-line {
+  background: linear-gradient(90deg, #3a4160 0 50%, #cfc3b0 50% 100%);
+}
+
+.theme-preview.system .theme-preview-card {
+  background: linear-gradient(90deg, #1e2130 0 50%, #fbf7ef 50% 100%);
+}
+
+.theme-choice-label {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-choice-hint {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accent-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.accent-choice {
+  padding: 6px 9px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.accent-choice:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.accent-choice.active {
+  background: rgb(var(--accent-rgb) / 10%);
+  border-color: var(--accent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.accent-swatch {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border: 1px solid rgb(var(--overlay-rgb) / 22%);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 22%);
+}
+
+.segmented {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+}
+
+.segmented button {
+  flex: 1 1 0;
+  justify-content: center;
+  min-width: 0;
+  padding: 6px 8px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.segmented button + button {
+  border-left: 1px solid var(--border);
+}
+
+.segmented button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: transparent;
+}
+
+.segmented button.active {
+  background: var(--bg-active);
+  box-shadow: inset 0 -2px 0 var(--accent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.appearance-reset {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: var(--density-gap);
+  padding: 12px 14px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+
+.appearance-reset strong {
+  font-size: 13px;
+}
+
+.appearance-reset p {
+  margin: 2px 0 0;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.settings-reset {
+  margin: 4px 0 10px;
+  padding: 12px 14px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: rgb(var(--overlay-rgb) / 2%);
+}
+
+.settings-reset .field-row {
+  align-items: center;
+}
+
+.settings-reset [role='status'] {
+  color: var(--ok);
+  font-size: 12px;
+}
+
+.reset-confirm p {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-panel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -4px;
+  border-radius: var(--radius);
+}
+
+/* The full-window player's artwork and ambience are independent choices. The
+   bar keeps its own artwork tile either way; the large cover and the ambient
+   colour are the expensive, optional parts. */
+.app[data-player-artwork='false'] .np-stage {
+  display: none;
+}
+
+.app[data-player-ambience='false'] .player-bar-bg,
+.app[data-player-ambience='false'] .np-bg {
+  display: none;
+}
+
+/* Motion: system follows Windows, reduced folds the transition to nothing,
+   and full leaves the authored animation alone. Keeping the visibility
+   transition alive matters for the queue panel, which relies on it to stay
+   closed rather than merely transparent. */
+:root[data-motion='reduced'] *,
+:root[data-motion='reduced'] *::before,
+:root[data-motion='reduced'] *::after {
+  animation-delay: 0s !important;
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-delay: 0s !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-motion='system'] *,
+  :root[data-motion='system'] *::before,
+  :root[data-motion='system'] *::after {
+    animation-delay: 0s !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-delay: 0s !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* A spinner is how the app says "still working". Freezing it at one frame makes
+   a slow resolve look broken, so reduced motion slows it down instead of removing
+   it. This is the one intentional exception. */
+:root[data-motion='reduced'] .spin,
+:root[data-motion='reduced'] .spin * {
+  animation-delay: 0s !important;
+  animation-duration: 1.2s !important;
+  animation-iteration-count: infinite !important;
+  animation-timing-function: linear !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-motion='system'] .spin,
+  :root[data-motion='system'] .spin * {
+    animation-delay: 0s !important;
+    animation-duration: 1.2s !important;
+    animation-iteration-count: infinite !important;
+    animation-timing-function: linear !important;
   }
 }

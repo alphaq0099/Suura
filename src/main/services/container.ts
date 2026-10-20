@@ -1,4 +1,4 @@
-import { app } from 'electron'
+import { app, nativeTheme } from 'electron'
 import { ensureAppDirectories, resolveAppPaths } from '@core/paths'
 import { createLogger, type Logger } from '@core/logging/logger'
 import { SettingsService } from '@core/settings/settings-service'
@@ -154,6 +154,16 @@ export function createContainer(): AppContainer {
   applyWatchSettings(settings.get())
   const unwatchSettings = settings.onChange(applyWatchSettings)
 
+  // Keep Electron's own chrome (title bar, scrollbars, context menus and native
+  // dialogs) in step with the in-app theme. The renderer draws the palette
+  // itself; this is the other half that CSS cannot reach. `system` is passed
+  // through rather than resolved so Windows can keep following live changes.
+  const applyTheme = (next: AppSettings): void => {
+    nativeTheme.themeSource = next.theme === 'system' ? 'system' : next.theme
+  }
+  applyTheme(settings.get())
+  const unwatchTheme = settings.onChange(applyTheme)
+
   return {
     paths,
     log,
@@ -173,6 +183,7 @@ export function createContainer(): AppContainer {
     onlinePlaylists,
     dispose: () => {
       unwatchSettings()
+      unwatchTheme()
       downloads.dispose()
       watcher.stop()
       database.close()

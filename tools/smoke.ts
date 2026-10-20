@@ -14,9 +14,19 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 
+import {
+  ACCENT_CHOICES,
+  DENSITY_CHOICES,
+  DENSITY_ROW_HEIGHT,
+  DEFAULT_APPEARANCE,
+  MOTION_CHOICES,
+  SURFACE_CHOICES,
+  THEME_CHOICES
+} from '@shared/appearance'
+import { DEFAULT_PREFERENCE_PATCH } from '@shared/settings-defaults'
 import { silentLogger } from '@core/logging/logger'
 import { resolveAppPaths, ensureAppDirectories } from '@core/paths'
-import { DEFAULT_SETTINGS, SettingsService } from '@core/settings/settings-service'
+import { DEFAULT_SETTINGS, mergeSettings, SettingsService } from '@core/settings/settings-service'
 import { latestVersion, openLibraryDatabase } from '@core/db/database'
 import { TrackRepository, buildFtsQuery, type ScanRunSummary } from '@core/library/track-repository'
 import { LibraryService } from '@core/library/library-service'
@@ -1288,6 +1298,79 @@ async function main(): Promise<void> {
 
     check('settings: prefetch is on by default', DEFAULT_SETTINGS.engine.prefetchNext)
     check('settings: browser cookies are off by default', DEFAULT_SETTINGS.engine.cookiesFromBrowser === null)
+
+    // Appearance is deliberately bounded: the UI offers a fixed set, so these
+    // checks guard against a choice being added to the renderer without a
+    // matching default, label or validation value.
+    checkEqual('appearance: Dark is the default theme', DEFAULT_SETTINGS.theme, 'dark')
+    checkEqual('appearance: the five accents are offered', ACCENT_CHOICES.length, 5)
+    check('appearance: every theme has a label and a hint', THEME_CHOICES.every((choice) => choice.label.length > 0 && choice.hint.length > 0))
+    check('appearance: every density has a label', DENSITY_CHOICES.every((choice) => choice.label.length > 0))
+    check('appearance: every surface has a label', SURFACE_CHOICES.every((choice) => choice.label.length > 0))
+    check('appearance: every motion choice has a label', MOTION_CHOICES.every((choice) => choice.label.length > 0))
+    check(
+      'appearance: row height grows with density',
+      DENSITY_ROW_HEIGHT.compact < DENSITY_ROW_HEIGHT.comfortable &&
+        DENSITY_ROW_HEIGHT.comfortable < DENSITY_ROW_HEIGHT.spacious
+    )
+    check(
+      'appearance: the default includes artwork and player choices',
+      DEFAULT_APPEARANCE.visuals?.playerArtwork === true && DEFAULT_APPEARANCE.visuals?.playerAmbience === true
+    )
+
+    const appearanceSettings = mergeSettings(DEFAULT_SETTINGS, {
+      theme: 'light',
+      visuals: {
+        accent: 'rose',
+        density: 'compact',
+        surface: 'frosted',
+        motion: 'reduced',
+        artworkShape: 'circle',
+        artworkFit: 'contain',
+        artworkSize: 'xlarge',
+        playerArtwork: false,
+        playerAmbience: false
+      }
+    })
+    checkEqual('appearance: a theme patch deep-merges', appearanceSettings.theme, 'light')
+    checkEqual('appearance: an accent patch deep-merges', appearanceSettings.visuals.accent, 'rose')
+    checkEqual('appearance: a density patch deep-merges', appearanceSettings.visuals.density, 'compact')
+    checkEqual('appearance: a surface patch deep-merges', appearanceSettings.visuals.surface, 'frosted')
+    checkEqual('appearance: a motion patch deep-merges', appearanceSettings.visuals.motion, 'reduced')
+    checkEqual('appearance: an artwork patch deep-merges', appearanceSettings.visuals.artworkShape, 'circle')
+    checkEqual('appearance: a player-artwork patch deep-merges', appearanceSettings.visuals.playerArtwork, false)
+    const resetAppearance = mergeSettings(appearanceSettings, DEFAULT_APPEARANCE)
+    checkEqual('appearance: reset restores the default theme', resetAppearance.theme, 'dark')
+    checkEqual('appearance: reset restores the default accent', resetAppearance.visuals.accent, 'blue')
+
+    // Reset preferences is not reset-everything: a chosen folder is a location,
+    // not a taste, and losing one silently would be the worst kind of reset.
+    const beforeReset = mergeSettings(DEFAULT_SETTINGS, {
+      libraryFolders: ['D:\\Music'],
+      volume: 0.32,
+      theme: 'light',
+      visuals: { accent: 'rose', density: 'compact' },
+      interaction: { librarySingleClick: 'play' },
+      engine: { binDir: 'D:\\Tools', lastUpdateCheckAt: 123_456, importLimit: 42 },
+      retention: { downloadFolder: 'D:\\Downloads', qualityTier: 'data-saver' }
+    })
+    const afterReset = mergeSettings(beforeReset, DEFAULT_PREFERENCE_PATCH)
+    checkEqual('reset: keeps library folders', afterReset.libraryFolders[0], 'D:\\Music')
+    checkEqual('reset: keeps the engine folder', afterReset.engine.binDir, 'D:\\Tools')
+    checkEqual('reset: keeps the download folder', afterReset.retention.downloadFolder, 'D:\\Downloads')
+    checkEqual('reset: keeps the last update timestamp', afterReset.engine.lastUpdateCheckAt, 123_456)
+    checkEqual('reset: restores volume', afterReset.volume, DEFAULT_SETTINGS.volume)
+    checkEqual('reset: restores the theme', afterReset.theme, 'dark')
+    checkEqual('reset: restores the accent', afterReset.visuals.accent, 'blue')
+    checkEqual('reset: restores click behaviour', afterReset.interaction.librarySingleClick, 'select')
+    checkEqual('reset: restores import limits', afterReset.engine.importLimit, DEFAULT_SETTINGS.engine.importLimit)
+    checkEqual('reset: restores saving quality', afterReset.retention.qualityTier, 'high')
+    check(
+      'reset: the patch leaves path fields out entirely',
+      !('libraryFolders' in DEFAULT_PREFERENCE_PATCH) &&
+        !('binDir' in (DEFAULT_PREFERENCE_PATCH.engine ?? {})) &&
+        !('downloadFolder' in (DEFAULT_PREFERENCE_PATCH.retention ?? {}))
+    )
 
     let cacheNow = 1_000
     let cacheLoads = 0

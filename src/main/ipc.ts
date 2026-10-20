@@ -1,18 +1,23 @@
 import { BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
+import { ACCENTS, DENSITIES, MOTION_PREFERENCES, SURFACES, THEME_MODES } from '@shared/appearance'
 import { IPC } from '@shared/ipc'
 import { isImportedPlaylistTrackId } from '@shared/online'
 import { clampPlaylistIndexWidth } from '@shared/playlists'
 import type {
+  AccentName,
   AppSettings,
   ArtworkFit,
   ArtworkShape,
   ArtworkSize,
   DeepPartial,
+  Density,
   DownloadFormat,
   EngineSettings,
   InteractionSettings,
   LibraryClickAction,
+  LibrarySettings,
   ListTracksQuery,
+  MotionPreference,
   PlaybackSnapshot,
   QualityTier,
   RepeatMode,
@@ -20,6 +25,7 @@ import type {
   RetentionMode,
   RetentionSettings,
   SaveToLibraryRequest,
+  SurfaceStyle,
   ThemeMode,
   TrackSortField,
   VisualSettings
@@ -134,7 +140,6 @@ const RETENTION_MODES: RetentionMode[] = ['stream']
 const QUALITY_TIERS: QualityTier[] = ['best', 'high', 'balanced', 'data-saver']
 const DOWNLOAD_FORMATS: DownloadFormat[] = ['opus', 'mp3', 'm4a']
 const REPEAT_MODES: RepeatMode[] = ['off', 'all', 'one']
-const THEMES: ThemeMode[] = ['system', 'light', 'dark']
 const ARTWORK_SHAPES: ArtworkShape[] = ['square', 'circle']
 const ARTWORK_FITS: ArtworkFit[] = ['cover', 'contain']
 const ARTWORK_SIZES: ArtworkSize[] = ['small', 'medium', 'large', 'xlarge']
@@ -172,8 +177,16 @@ export function sanitizeSettingsPatch(input: unknown): DeepPartial<AppSettings> 
   if (typeof input.repeat === 'string' && REPEAT_MODES.includes(input.repeat as RepeatMode)) {
     patch.repeat = input.repeat as RepeatMode
   }
-  if (typeof input.theme === 'string' && THEMES.includes(input.theme as ThemeMode)) {
+  if (typeof input.theme === 'string' && THEME_MODES.includes(input.theme as ThemeMode)) {
     patch.theme = input.theme as ThemeMode
+  }
+
+  if (isPlainObject(input.library)) {
+    const library: DeepPartial<LibrarySettings> = {}
+    if (typeof input.library.watchForChanges === 'boolean') {
+      library.watchForChanges = input.library.watchForChanges
+    }
+    patch.library = library
   }
 
   if (isPlainObject(input.visuals)) {
@@ -187,6 +200,24 @@ export function sanitizeSettingsPatch(input: unknown): DeepPartial<AppSettings> 
     }
     if (typeof source.artworkSize === 'string' && ARTWORK_SIZES.includes(source.artworkSize as ArtworkSize)) {
       visuals.artworkSize = source.artworkSize as ArtworkSize
+    }
+    if (typeof source.accent === 'string' && ACCENTS.includes(source.accent as AccentName)) {
+      visuals.accent = source.accent as AccentName
+    }
+    if (typeof source.density === 'string' && DENSITIES.includes(source.density as Density)) {
+      visuals.density = source.density as Density
+    }
+    if (typeof source.surface === 'string' && SURFACES.includes(source.surface as SurfaceStyle)) {
+      visuals.surface = source.surface as SurfaceStyle
+    }
+    if (typeof source.motion === 'string' && MOTION_PREFERENCES.includes(source.motion as MotionPreference)) {
+      visuals.motion = source.motion as MotionPreference
+    }
+    if (typeof source.playerArtwork === 'boolean') {
+      visuals.playerArtwork = source.playerArtwork
+    }
+    if (typeof source.playerAmbience === 'boolean') {
+      visuals.playerAmbience = source.playerAmbience
     }
     patch.visuals = visuals
   }

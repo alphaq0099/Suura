@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { DENSITY_ROW_HEIGHT } from '@shared/appearance'
 import type { DownloadStatus, LibraryClickAction, SortDirection, Track, TrackSortField } from '@shared/types'
 import { formatDuration } from '@shared/format'
 import { useRowReorder } from '../hooks/useRowReorder'
@@ -18,13 +19,6 @@ export function describeClickAction(action: LibraryClickAction): string {
       return 'select'
   }
 }
-
-/**
- * Fixed row height, in pixels. Must match `--row-height` in styles.css: the
- * virtualizer computes which rows are visible by dividing the scroll offset by
- * this number, so a mismatch shows up as rows jumping while scrolling.
- */
-const ROW_HEIGHT = 38
 
 /** Rows rendered beyond the visible window, so a fast flick does not show blanks. */
 const OVERSCAN = 6
@@ -61,6 +55,12 @@ export interface TrackListProps {
    * column cannot keep an order.
    */
   sortable?: boolean
+  /**
+   * Height of a rendered row, in pixels. It comes from the density preference
+   * and must match `--row-height` in styles.css; the virtualizer divides the
+   * scroll offset by this number, so a mismatch shows up as rows jumping.
+   */
+  rowHeight?: number
   /** Turns rows into draggable items. Alt+arrow does the same thing from the keyboard. */
   reorder?: { onMove: (fromIndex: number, toIndex: number) => void }
   /** Adds a "Remove from this list" action to every row. */
@@ -133,6 +133,7 @@ export function TrackList(props: TrackListProps) {
     singleClick,
     doubleClick,
     sortable = true,
+    rowHeight = DENSITY_ROW_HEIGHT.comfortable,
     reorder,
     onRemove,
     removeLabel = 'Remove from this list',
@@ -151,7 +152,7 @@ export function TrackList(props: TrackListProps) {
   const drag = useRowReorder({
     enabled: Boolean(reorder),
     itemCount: tracks.length,
-    rowHeight: ROW_HEIGHT,
+    rowHeight: rowHeight,
     scroller: scrollerRef,
     onMove: (fromIndex, toIndex) => {
       reorder?.onMove(fromIndex, toIndex)
@@ -202,8 +203,8 @@ export function TrackList(props: TrackListProps) {
     if (scrollerRef.current) scrollerRef.current.scrollTop = 0
   }, [sort, direction])
 
-  const start = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
-  const end = Math.min(tracks.length, Math.ceil((scrollTop + viewport) / ROW_HEIGHT) + OVERSCAN)
+  const start = Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN)
+  const end = Math.min(tracks.length, Math.ceil((scrollTop + viewport) / rowHeight) + OVERSCAN)
   const visible = tracks.slice(start, end)
 
   // Fetch the next page once the window reaches the end of what is loaded.
@@ -217,15 +218,15 @@ export function TrackList(props: TrackListProps) {
   const scrollRowIntoView = useCallback((index: number, center = false): void => {
     const element = scrollerRef.current
     if (!element) return
-    const top = index * ROW_HEIGHT
-    const bottom = top + ROW_HEIGHT
+    const top = index * rowHeight
+    const bottom = top + rowHeight
     if (center) {
-      element.scrollTop = Math.max(0, top - (element.clientHeight - ROW_HEIGHT) / 2)
+      element.scrollTop = Math.max(0, top - (element.clientHeight - rowHeight) / 2)
       return
     }
     if (top < element.scrollTop) element.scrollTop = top
     else if (bottom > element.scrollTop + element.clientHeight) element.scrollTop = bottom - element.clientHeight
-  }, [])
+  }, [rowHeight])
 
   const moveActive = useCallback(
     (next: number): void => {
@@ -255,14 +256,14 @@ export function TrackList(props: TrackListProps) {
 
     const element = scrollerRef.current
     if (!element) return
-    const top = index * ROW_HEIGHT
-    const bottom = top + ROW_HEIGHT
+    const top = index * rowHeight
+    const bottom = top + rowHeight
     if (top >= element.scrollTop && bottom <= element.scrollTop + element.clientHeight) return
     scrollRowIntoView(index, true)
   }, [currentTrackId, tracks, scrollRowIntoView])
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
-    const page = Math.max(1, Math.floor(viewport / ROW_HEIGHT) - 1)
+    const page = Math.max(1, Math.floor(viewport / rowHeight) - 1)
     // Handled keys are also stopped from propagating: the global shortcut layer
     // listens on window, and the arrow keys mean "move the row cursor" here while
     // they mean "seek" and "volume" there.
@@ -395,8 +396,8 @@ export function TrackList(props: TrackListProps) {
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
         onKeyDown={handleKeyDown}
       >
-        <div className="list-rows" style={{ height: tracks.length * ROW_HEIGHT }}>
-          <div className="list-window" style={{ transform: `translateY(${start * ROW_HEIGHT}px)` }}>
+        <div className="list-rows" style={{ height: tracks.length * rowHeight }}>
+          <div className="list-window" style={{ transform: `translateY(${start * rowHeight}px)` }}>
             {visible.map((track, offset) => {
               const index = start + offset
               const isCurrent = track.id === currentTrackId
@@ -431,7 +432,7 @@ export function TrackList(props: TrackListProps) {
                   aria-rowindex={index + 2}
                   aria-selected={isSelected}
                   className={rowClass}
-                  style={{ height: ROW_HEIGHT }}
+                  style={{ height: rowHeight }}
                   draggable={Boolean(reorder) || undefined}
                   onDragStart={(event) => drag.start(event, index)}
                   onDragOver={(event) => drag.over(event, index)}

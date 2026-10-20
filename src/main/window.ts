@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { BrowserWindow, shell } from 'electron'
+import { BrowserWindow, nativeTheme, shell } from 'electron'
 import type { Logger } from '@core/logging/logger'
 
 /**
@@ -17,7 +17,10 @@ export function createMainWindow(log: Logger): BrowserWindow {
     minHeight: 580,
     show: false,
     title: 'Player',
-    backgroundColor: '#0f1016',
+    // The container has already applied the saved theme to nativeTheme, so the
+    // window's first paint matches the palette instead of flashing dark over a
+    // cream desktop.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0f1016' : '#f2ece1',
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

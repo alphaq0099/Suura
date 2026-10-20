@@ -38,6 +38,8 @@ export interface PlaylistsViewProps {
   isPlaying: boolean
   singleClick: LibraryClickAction
   doubleClick: LibraryClickAction
+  /** Density-derived row height, shared with the virtualizer. */
+  rowHeight: number
   /** Width of the list of playlists, in CSS pixels. */
   indexWidth: number
   onIndexWidthChange: (width: number) => void
@@ -107,6 +109,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
     isPlaying,
     singleClick,
     doubleClick,
+    rowHeight,
     indexWidth: storedIndexWidth,
     onIndexWidthChange,
     onSelect,
@@ -873,6 +876,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                   isPlaying={isPlaying}
                   selectedIds={selectedIds}
                   loadingMore={loading}
+                  rowHeight={rowHeight}
                   onToggleSort={() => undefined}
                   onActivate={(index) =>
                     playList(tracks, index, {
@@ -988,6 +992,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                   isPlaying={isPlaying}
                   selectedIds={selectedIds}
                   loadingMore={loading}
+                  rowHeight={rowHeight}
                   onToggleSort={() => undefined}
                   onActivate={(index) => playList(tracks, index, null)}
                   onSelect={(trackId, mode) =>

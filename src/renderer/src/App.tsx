@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { APPEARANCE_CACHE_KEY, DENSITY_ROW_HEIGHT } from '@shared/appearance'
 import type { AppPaths, AppSettings, DeepPartial, EngineStatus, YouTubeSearchResult } from '@shared/types'
 import { onlineEntryToTrack, type PlayingList } from '@shared/online'
 import { youtubeWatchUrl } from '@shared/youtube'
@@ -48,6 +49,61 @@ export function App() {
   const [playingList, setPlayingList] = useState<PlayingList | null>(null)
 
   const { settings, error: settingsError, update, reload } = useSettings()
+
+  // Theme is applied as data attributes on <html> rather than on `.app` so the
+  // page background, native scrollbars and `color-scheme` change with it. The
+  // OS query is live because "Follow Windows" has to react without a restart.
+  const [systemTheme, setSystemTheme] = useState<'dark' | 'light'>(() =>
+    window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  )
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-color-scheme: dark)')
+    const updateSystemTheme = (): void => setSystemTheme(query.matches ? 'dark' : 'light')
+    updateSystemTheme()
+    query.addEventListener('change', updateSystemTheme)
+    return () => query.removeEventListener('change', updateSystemTheme)
+  }, [])
+
+  const resolvedTheme: 'dark' | 'light' = !settings
+    ? 'dark'
+    : settings.theme === 'system'
+      ? systemTheme
+      : settings.theme
+
+  useEffect(() => {
+    const root = document.documentElement
+    root.dataset.theme = resolvedTheme
+    if (!settings) return
+    root.dataset.accent = settings.visuals.accent
+    root.dataset.density = settings.visuals.density
+    root.dataset.surface = settings.visuals.surface
+    root.dataset.motion = settings.visuals.motion
+    // The settings live in the main process and arrive one IPC round-trip after
+    // the first paint. Caching the resolved palette here lets main.tsx paint the
+    // right background immediately next launch instead of flashing dark.
+    try {
+      localStorage.setItem(
+        APPEARANCE_CACHE_KEY,
+        JSON.stringify({
+          mode: settings.theme,
+          theme: resolvedTheme,
+          accent: settings.visuals.accent,
+          density: settings.visuals.density,
+          surface: settings.visuals.surface,
+          motion: settings.visuals.motion
+        })
+      )
+    } catch {
+      // A full or disabled localStorage is not a reason to break a settings view.
+    }
+  }, [
+    resolvedTheme,
+    settings?.visuals.accent,
+    settings?.visuals.density,
+    settings?.visuals.surface,
+    settings?.visuals.motion
+  ])
+
   const library = useLibrary()
   const playlists = usePlaylists()
   const online = useOnline()
@@ -358,6 +414,8 @@ export function App() {
       className="app"
       data-artwork-shape={settings.visuals.artworkShape}
       data-artwork-size={settings.visuals.artworkSize}
+      data-player-artwork={settings.visuals.playerArtwork ? 'true' : 'false'}
+      data-player-ambience={settings.visuals.playerAmbience ? 'true' : 'false'}
     >
       <Sidebar
         view={view}
@@ -384,6 +442,7 @@ export function App() {
           selectedIds={selectedIds}
           currentTrackId={player.current?.id ?? null}
           isPlaying={player.isPlaying}
+          rowHeight={DENSITY_ROW_HEIGHT[settings.visuals.density]}
           searchInputRef={searchInputRef}
           onSearchChange={setSearch}
           onToggleSort={toggleSort}
@@ -450,6 +509,7 @@ export function App() {
           isPlaying={player.isPlaying}
           singleClick={settings.interaction.librarySingleClick}
           doubleClick={settings.interaction.libraryDoubleClick}
+          rowHeight={DENSITY_ROW_HEIGHT[settings.visuals.density]}
           indexWidth={settings.playlists.indexWidth}
           onIndexWidthChange={setPlaylistIndexWidth}
           onSelect={playlists.select}
