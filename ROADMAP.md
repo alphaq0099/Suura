@@ -445,7 +445,7 @@ works, but it has no hierarchy and no way to find a single option.
 **Exit:** a new user can find and change any setting without scrolling past unrelated cards, and every control has a
 visible effect. **Met.**
 
-### M7 - Playlists, Sync & Data Care  *(in progress)*
+### M7 - Playlists, Sync & Data Care  *(complete)*
 - [x] M3U / M3U8 and JSON import-export of playlists; CSV export of the library. Export covers hand-made playlists
       (absolute paths, UTF-8, CRLF); import resolves relative paths, matches saved tracks by content key or YouTube
       origin, reports added/duplicate/missing/invalid entries, and refuses to create an empty playlist. CSV is the
@@ -456,12 +456,17 @@ visible effect. **Met.**
       migration, and the ten newest managed copies rotate.
 - [x] DB migrations framework: append-only versioned migrations, a `user_version` guard that refuses a newer schema, and
       a pre-migration backup whose path is named in a migration failure.
-- [ ] Duplicate detection with safe merge (audio-hash based)
-- [ ] Missing-file handling: detect moved/deleted files, offer relocate by hash
-- [ ] Bulk operations: multi-select edit, tag editing, bulk keep/remove-download
-**Exit:** data survives a crash, a reinstall and a folder move.
-**Status:** backup/restore, rotation, the schema guard, playlist transfer and CSV export are in. Dedupe, relocation and
-bulk editing remain.
+- [x] Duplicate detection with safe merge: present local files are fingerprinted lazily with SHA-256, grouped, and
+      merged oldest row first. Playlist entries and play counts move to the keeper; the redundant file is deleted only
+      after the rows merge. The scanner resets a hash when a file changes.
+- [x] Missing-file handling: a vanished file keeps its row with `missing_at`, stays in its playlists and history, and
+      is hidden from normal lists. Relocation scans a chosen folder and matches by stored hash first, then by exact
+      size and modification time, folding any already-indexed target into the retained row.
+- [x] Bulk operations: multi-select play, queue, add-to-playlist and remove-from-library. Removing rows never deletes
+      files. Tag writing needs a tag writer, and keep/remove-download belongs to the M12 cache, so both remain deferred.
+**Exit:** data survives a crash, a reinstall and a folder move. **Met:** manual and rotating automatic backups, staged
+restore, migration guard, and id-preserving relocation were exercised in the smoke test and the UI self-test.
+**Status:** complete.
 
 ### M8 — Windows Release Engineering  *(~2 weeks)*
 - [ ] Installer (per-user, no admin): MSIX or NSIS; clean uninstall; opt-in "also delete cache/library DB"
@@ -624,5 +629,5 @@ from every view, with cancel, retry and reveal. **M3 is measured** at 50/50 link
 display target. **M5's core is in**: a unified **Search** view over the local library and YouTube, channel pages, and
 title/artist cleanup. Every track list shares the **# / Title / Artist / Album / Duration / Action** grid, with Format
 in a row's **Details** sheet, and the Queue has a header aligned with its rows. Next is the **Settings revamp (M6)**,
-whose design is still to be agreed, then data care (M7). Offline caching and the full Downloads screen stay deferred to
-M12.
+whose design is still to be agreed, then data care (M7), which is now complete. Offline caching and the full Downloads
+screen stay deferred to M12.
