@@ -30,7 +30,9 @@ export interface PositionedItem {
 
 const PLAYLIST_COLUMNS = `
   p.id, p.name, p.created_at, p.updated_at, p.sort_order,
-  (SELECT COUNT(*) FROM playlist_items i WHERE i.playlist_id = p.id) AS track_count
+  (SELECT COUNT(*) FROM playlist_items i
+   JOIN tracks t ON t.id = i.track_id AND t.missing_at IS NULL
+   WHERE i.playlist_id = p.id) AS track_count
 `
 
 function mapPlaylist(row: PlaylistRow): Playlist {
@@ -112,7 +114,7 @@ export class PlaylistRepository {
         `SELECT i.id AS item_id, ${trackColumns('t')}
          FROM playlist_items i
          JOIN tracks t ON t.id = i.track_id
-         WHERE i.playlist_id = ?
+         WHERE i.playlist_id = ? AND t.missing_at IS NULL
          ORDER BY i.position, i.id`
       )
       .all<TrackRow & { item_id: number }>(playlistId)

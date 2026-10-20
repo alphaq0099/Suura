@@ -775,6 +775,32 @@ export function registerIpcHandlers(container: AppContainer): void {
     return target
   })
 
+  ipcMain.handle(IPC.libraryFindDuplicates, () => container.dataCare.findDuplicates())
+
+  ipcMain.handle(IPC.libraryMergeDuplicates, async () => {
+    const outcome = await container.dataCare.mergeDuplicates()
+    log.info('duplicate merge finished', outcome)
+    return outcome
+  })
+
+  ipcMain.handle(IPC.libraryRemoveTracks, (_event, input: unknown) => {
+    const ids = toIdList(input, 'track')
+    return container.library.removeTracks(ids)
+  })
+
+  ipcMain.handle(IPC.libraryRelocate, async () => {
+    const parent = BrowserWindow.getFocusedWindow()
+    const options: Electron.OpenDialogOptions = {
+      title: 'Find moved files',
+      buttonLabel: 'Search this folder',
+      properties: ['openDirectory']
+    }
+    const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options)
+    const folder = result.filePaths[0]
+    if (result.canceled || !folder) return null
+    return container.dataCare.relocate(folder)
+  })
+
   // ---- play state -------------------------------------------------------
   // One request/response channel to read it back, and two fire-and-forget ones
   // to write. Saving happens while the window is closing, where waiting for a

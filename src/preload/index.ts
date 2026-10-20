@@ -80,6 +80,14 @@ const api: PlayerApi = {
 
   exportLibraryCsv: () => ipcRenderer.invoke(IPC.libraryExportCsv) as Promise<string | null>,
 
+  findDuplicates: () => ipcRenderer.invoke(IPC.libraryFindDuplicates),
+
+  mergeDuplicates: () => ipcRenderer.invoke(IPC.libraryMergeDuplicates),
+
+  relocateMissing: () => ipcRenderer.invoke(IPC.libraryRelocate),
+
+  removeTracks: (trackIds: number[]) => ipcRenderer.invoke(IPC.libraryRemoveTracks, trackIds),
+
   loadPlayback: () => ipcRenderer.invoke(IPC.playbackLoad),
 
   savePlayback: (snapshot: PlaybackSnapshot) => ipcRenderer.send(IPC.playbackSave, snapshot),

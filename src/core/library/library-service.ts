@@ -63,6 +63,23 @@ export class LibraryService {
     this.emitChanged()
   }
 
+  /**
+   * Removes rows from the library without touching the files.
+   *
+   * Used by the selection bar. A later scan will index the files again, which is
+   * the honest behaviour for "remove from the library" rather than "delete the
+   * music": the folder remains a source, and the user can hide it deliberately
+   * from Settings.
+   */
+  removeTracks(ids: number[]): number {
+    const removed = this.repo.deleteByIds(ids)
+    if (removed > 0) {
+      this.log.info('tracks removed from the library', { removed })
+      this.emitChanged()
+    }
+    return removed
+  }
+
   /** Removes a folder and forgets every track that lived inside it. */
   removeFolder(folder: string, options: { deleteTracks?: boolean } = {}): void {
     const normalized = normalizePath(folder)
@@ -70,7 +87,7 @@ export class LibraryService {
     this.settings.update({ libraryFolders: folders })
     this.repo.removeLibraryFolder(normalized)
     if (options.deleteTracks ?? true) {
-      const removed = this.repo.pruneMissing([normalized], new Set())
+      const removed = this.repo.deleteInFolders([normalized])
       this.log.info('removed folder and its tracks', { folder: normalized, removed })
     }
     this.emitChanged()

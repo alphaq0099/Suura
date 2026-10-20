@@ -8,7 +8,7 @@
  */
 import { execFile } from 'node:child_process'
 import { copyFileSync, existsSync, readdirSync } from 'node:fs'
-import { copyFile, mkdir, mkdtemp, rm, unlink, utimes, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, rename, rm, unlink, utimes, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
@@ -42,6 +42,7 @@ import {
 import { openDatabase } from '@core/db/driver'
 import { TrackRepository, buildFtsQuery, type ScanRunSummary } from '@core/library/track-repository'
 import { LibraryService } from '@core/library/library-service'
+import { DataCareService } from '@core/library/data-care-service'
 import { FolderWatcher, isLibraryEvent, type FolderWatchEvent } from '@core/library/folder-watcher'
 import { PlaylistRepository } from '@core/library/playlist-repository'
 import { PlaylistService } from '@core/library/playlist-service'
@@ -919,9 +920,14 @@ async function main(): Promise<void> {
     }
 
     // --- clearing a playlist ----------------------------------------------
-    const beforeClear = titlesOf(road.id).length
+    // The visible length omits a missing row, but clearing removes stored
+    // entries, so compare against the table rather than the filtered view.
+    const storedBeforeClear =
+      database.db
+        .prepare('SELECT COUNT(*) AS total FROM playlist_items WHERE playlist_id = ?')
+        .get<{ total: number }>(road.id)?.total ?? 0
     const cleared = playlists.clear(road.id)
-    checkEqual('clearing removes every entry', cleared, beforeClear)
+    checkEqual('clearing removes every entry', cleared, storedBeforeClear)
     checkEqual('a cleared playlist is empty', playlists.detail(road.id)?.items.length, 0)
     checkEqual('clearing keeps the playlist itself', playlists.list().length, 1)
 
@@ -1232,6 +1238,128 @@ async function main(): Promise<void> {
     check('the database file exists on disk', existsSync(paths.database))
   } finally {
     await rm(root, { recursive: true, force: true }).catch(() => undefined)
+  }
+
+  // --- M7: duplicate detection and moved files ----------------------------
+  // This runs against its own small library so a merge can delete rows and a
+  // move can hide one without disturbing the counts the main checks rely on.
+  {
+    const root = await mkdtemp(join(tmpdir(), 'player-data-care-'))
+    const music = join(root, 'music')
+    await mkdir(music, { recursive: true })
+    const movedDir = join(root, 'moved')
+    await mkdir(movedDir, { recursive: true })
+    const firstPath = await generateFlac(
+      ffmpegPath,
+      music,
+      'First Copy.flac',
+      { title: 'First Copy', artist: 'Care Artist', album: 'Care', track: 1, year: 2024 },
+      320
+    )
+    const secondPath = await generateFlac(
+      ffmpegPath,
+      music,
+      'Second.flac',
+      { title: 'Second', artist: 'Care Artist', album: 'Care', track: 2, year: 2024 },
+      420
+    )
+    const duplicatePath = join(music, 'First Copy Again.flac')
+    await copyFile(firstPath, duplicatePath)
+
+    const paths = resolveAppPaths(join(root, 'userData'))
+    ensureAppDirectories(paths)
+    const handle = openLibraryDatabase(paths.database, silentLogger)
+    try {
+      const repo = new TrackRepository(handle.db)
+      const settings = new SettingsService(paths.config, silentLogger)
+      const library = new LibraryService(repo, settings, silentLogger)
+      const playlists = new PlaylistService(new PlaylistRepository(handle.db), repo, silentLogger)
+      const care = new DataCareService(repo, silentLogger)
+
+      await library.scan(music)
+      checkEqual('data care: the scan indexed both copies and the second file', repo.stats().tracks, 3)
+      const indexed = library.list().tracks
+      const first = indexed.find(
+        (track) => track.filePath !== null && normalizePath(track.filePath) === normalizePath(firstPath)
+      )
+      const duplicate = indexed.find(
+        (track) => track.filePath !== null && normalizePath(track.filePath) === normalizePath(duplicatePath)
+      )
+      const second = indexed.find(
+        (track) => track.filePath !== null && normalizePath(track.filePath) === normalizePath(secondPath)
+      )
+      if (!first || !duplicate || !second) throw new Error('data care fixtures were not indexed')
+
+      const firstList = playlists.create('Care First')
+      const secondList = playlists.create('Care Second')
+      playlists.addTracks(firstList.id, [first.id, second.id])
+      playlists.addTracks(secondList.id, [duplicate.id])
+      library.reportPlayback(duplicate.id, 31_000, true)
+
+      const report = await care.findDuplicates()
+      checkEqual('data care: identical files form one duplicate group', report.groups, 1)
+      checkEqual('data care: the extra copy is counted', report.extraCopies, 1)
+      checkEqual('data care: every present file was fingerprinted', report.hashed, 3)
+
+      const keeperId = Math.min(first.id, duplicate.id)
+      const keeperPath = keeperId === first.id ? firstPath : duplicatePath
+      const redundantPath = keeperId === first.id ? duplicatePath : firstPath
+      const merged = await care.mergeDuplicates()
+      checkEqual('data care: the merge removed one row', merged.removed, 1)
+      checkEqual('data care: the merge deleted the redundant file', merged.filesRemoved, 1)
+      checkEqual('data care: the duplicate row is gone', repo.stats().tracks, 2)
+      check('data care: the keeper file stayed on disk', existsSync(keeperPath))
+      check('data care: the redundant file is gone', !existsSync(redundantPath))
+      checkEqual(
+        'data care: the duplicate playlist points at the keeper',
+        playlists.detail(secondList.id)?.items[0]?.track.id,
+        keeperId
+      )
+      checkEqual('data care: the keeper inherited the play', repo.getById(keeperId)?.playCount, 1)
+      checkEqual('data care: the original playlist still has both tracks', playlists.detail(firstList.id)?.items.length, 2)
+
+      const movedPath = join(movedDir, 'Second.flac')
+      await rename(secondPath, movedPath)
+      await library.scan()
+      checkEqual('data care: a moved file disappears from the normal list', repo.stats().tracks, 1)
+      checkEqual('data care: the row is kept as missing', repo.stats().missingTracks, 1)
+      checkEqual('data care: the missing row is still in the playlist', playlists.detail(firstList.id)?.items.length, 1)
+
+      const relocated = await care.relocate(movedDir)
+      checkEqual('data care: the moved file was matched', relocated.relocated, 1)
+      checkEqual('data care: the library is whole again', repo.stats().tracks, 2)
+      checkEqual('data care: nothing is missing now', repo.stats().missingTracks, 0)
+      checkEqual(
+        'data care: the row id survived the move',
+        normalizePath(repo.getById(second.id)?.filePath ?? ''),
+        normalizePath(movedPath)
+      )
+      checkEqual('data care: the playlist entry came back', playlists.detail(firstList.id)?.items.length, 2)
+
+      // A row that was never fingerprinted falls back to exact size+mtime.
+      handle.db.prepare('UPDATE tracks SET file_hash = NULL WHERE id = ?').run(keeperId)
+      const movedAgainDir = join(root, 'moved-again')
+      await mkdir(movedAgainDir, { recursive: true })
+      const movedAgain = join(movedAgainDir, 'Keeper Again.flac')
+      await rename(keeperPath, movedAgain)
+      await library.scan()
+      checkEqual('data care: the moved keeper is missing', repo.stats().missingTracks, 1)
+      const relocatedByStat = await care.relocate(movedAgainDir)
+      checkEqual('data care: size and mtime relocate a hashless row', relocatedByStat.relocated, 1)
+      checkEqual(
+        'data care: the same row was matched without a hash',
+        normalizePath(repo.getById(keeperId)?.filePath ?? ''),
+        normalizePath(movedAgain)
+      )
+      checkEqual('data care: the library still has both rows', repo.stats().tracks, 2)
+
+      checkEqual('bulk: removing a row reports one track', library.removeTracks([keeperId]), 1)
+      checkEqual('bulk: the row left the library', repo.stats().tracks, 1)
+      check('bulk: removing from the library keeps the file', existsSync(movedAgain))
+    } finally {
+      handle.close()
+      await rm(root, { recursive: true, force: true }).catch(() => undefined)
+    }
   }
 
   // --- M3: links, the stream proxy and the resolver cache -----------------

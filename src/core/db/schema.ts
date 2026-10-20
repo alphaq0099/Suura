@@ -318,6 +318,24 @@ export const MIGRATIONS: readonly Migration[] = [
         ALTER TABLE online_playlists ADD COLUMN custom_title TEXT;
       `)
     }
+  },
+  {
+    version: 9,
+    name: 'data care',
+    up: (db) => {
+      // A row is no longer deleted just because its file vanished. Keeping it
+      // preserves playlist entries, play counts and the last known path, so a
+      // moved folder can be repaired instead of silently losing history. Lists
+      // hide missing rows until they are relocated; `file_hash` is filled in
+      // lazily by duplicate detection and makes relocation exact when known.
+      db.exec(`
+        ALTER TABLE tracks ADD COLUMN missing_at INTEGER;
+        ALTER TABLE tracks ADD COLUMN file_hash TEXT;
+
+        CREATE INDEX idx_tracks_file_hash ON tracks(file_hash);
+        CREATE INDEX idx_tracks_missing ON tracks(missing_at);
+      `)
+    }
   }
 ]
 

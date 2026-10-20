@@ -26,6 +26,8 @@ export interface TrackRow {
   file_size: number | null
   file_mtime_ms: number | null
   file_path: string | null
+  missing_at: number | null
+  file_hash: string | null
   artwork_key: string | null
   added_at: number
   updated_at: number
@@ -114,6 +116,8 @@ const TRACK_COLUMN_NAMES = [
   'file_size',
   'file_mtime_ms',
   'file_path',
+  'missing_at',
+  'file_hash',
   'artwork_key',
   'added_at',
   'updated_at',
@@ -189,7 +193,9 @@ function buildOrder(query: ListTracksQuery): string {
  * the renderer; `sanitizeListQuery` narrows `filter` to these names first.
  */
 function buildFilter(query: ListTracksQuery): { where: string; params: SqlParam[] } {
-  const conditions: string[] = []
+  // Missing rows stay in the table so their history and playlist entries can be
+  // repaired, but every normal list is a list of playable things.
+  const conditions: string[] = ['missing_at IS NULL']
   const params: SqlParam[] = []
 
   const ftsQuery = query.search ? buildFtsQuery(query.search) : null
@@ -255,6 +261,7 @@ export function mapTrackRow(row: TrackRow): Track {
     sampleRate: row.sample_rate,
     channels: row.channels,
     fileSize: row.file_size,
+    missingAt: row.missing_at,
     filePath: row.file_path,
     // The '' sentinel is an implementation detail of the artwork cache; the rest
     // of the app only needs to know whether there is something to display.
@@ -283,7 +290,7 @@ export class TrackRepository {
    */
   findByFilePath(filePath: string): Track | null {
     const row = this.db
-      .prepare(`SELECT ${TRACK_COLUMNS} FROM tracks WHERE content_key = ?`)
+      .prepare(`SELECT ${TRACK_COLUMNS} FROM tracks WHERE content_key = ? AND missing_at IS NULL`)
       .get<TrackRow>(localContentKey(filePath))
     return row ? mapTrackRow(row) : null
   }
@@ -293,7 +300,7 @@ export class TrackRepository {
     const row = this.db
       .prepare(
         `SELECT ${TRACK_COLUMNS} FROM tracks
-         WHERE origin_kind = ? AND origin_id = ?
+         WHERE origin_kind = ? AND origin_id = ? AND missing_at IS NULL
          ORDER BY id ASC LIMIT 1`
       )
       .get<TrackRow>(originKind, originId)
@@ -315,7 +322,7 @@ export class TrackRepository {
       const rows = this.db
         .prepare(
           `SELECT DISTINCT origin_id FROM tracks
-           WHERE origin_kind = ? AND origin_id IN (${placeholders})`
+           WHERE origin_kind = ? AND origin_id IN (${placeholders}) AND missing_at IS NULL`
         )
         .all<{ origin_id: string | null }>(originKind, ...batch)
       for (const row of rows) if (row.origin_id) found.add(row.origin_id)
@@ -372,7 +379,7 @@ export class TrackRepository {
    */
   allForExport(): Track[] {
     return this.db
-      .prepare(`SELECT ${TRACK_COLUMNS} FROM tracks ORDER BY ${DEFAULT_ORDER}, id`)
+      .prepare(`SELECT ${TRACK_COLUMNS} FROM tracks WHERE missing_at IS NULL ORDER BY ${DEFAULT_ORDER}, id`)
       .all<TrackRow>()
       .map(mapTrackRow)
   }
@@ -404,8 +411,10 @@ export class TrackRepository {
            COALESCE(SUM(file_size), 0) AS totalBytes,
            COALESCE(SUM(CASE WHEN added_at >= ? THEN 1 ELSE 0 END), 0) AS recentTracks,
            COALESCE(SUM(CASE WHEN play_count > 0 THEN 1 ELSE 0 END), 0) AS playedTracks,
-           COALESCE(SUM(CASE WHEN play_count = 0 THEN 1 ELSE 0 END), 0) AS unplayedTracks
-         FROM tracks`
+           COALESCE(SUM(CASE WHEN play_count = 0 THEN 1 ELSE 0 END), 0) AS unplayedTracks,
+           (SELECT COUNT(*) FROM tracks WHERE missing_at IS NOT NULL) AS missingTracks
+         FROM tracks
+         WHERE missing_at IS NULL`
       )
       .get<{
         tracks: number
@@ -415,6 +424,7 @@ export class TrackRepository {
         recentTracks: number
         playedTracks: number
         unplayedTracks: number
+        missingTracks: number
       }>(cutoff)
 
     return {
@@ -425,7 +435,8 @@ export class TrackRepository {
       lastScanAt: this.lastScanAt(),
       recentTracks: row?.recentTracks ?? 0,
       playedTracks: row?.playedTracks ?? 0,
-      unplayedTracks: row?.unplayedTracks ?? 0
+      unplayedTracks: row?.unplayedTracks ?? 0,
+      missingTracks: row?.missingTracks ?? 0
     }
   }
 
@@ -496,7 +507,8 @@ export class TrackRepository {
            origin_kind = ?, origin_id = ?,
            title = ?, artist = ?, album_artist = ?, album = ?, track_no = ?, disc_no = ?,
            year = ?, genre = ?, duration_ms = ?, codec = ?, bitrate_kbps = ?, sample_rate = ?,
-           channels = ?, file_size = ?, file_mtime_ms = ?, file_path = ?, updated_at = ?
+           channels = ?, file_size = ?, file_mtime_ms = ?, file_path = ?,
+           missing_at = NULL, file_hash = NULL, updated_at = ?
          WHERE id = ?`
       )
       .run(
@@ -550,27 +562,251 @@ export class TrackRepository {
   }
 
   /**
-   * Deletes local rows inside `folders` that were not present in this scan.
+   * Marks local rows inside `folders` that were not present in this scan, and
+   * clears the mark when a missing file is seen again.
    *
-   * Loads the candidate rows rather than filtering in SQL, because SQL LIKE
+   * Rows are kept rather than deleted: the next scan may be a moved folder, and
+   * a row is the only thing that still knows the playlist entries and play
+   * count. Loads candidates rather than filtering in SQL, because SQL LIKE
    * cannot express "inside this directory" safely with Windows separators.
-   * Only `content_key`, `file_path` and `id` are read, so this stays cheap.
    */
-  pruneMissing(folders: string[], seenKeys: Set<string>): number {
+  markMissing(folders: string[], seenKeys: Set<string>, now: number): number {
     if (folders.length === 0) return 0
     const candidates = this.db
-      .prepare(`SELECT id, content_key, file_path FROM tracks WHERE source_kind = 'local'`)
-      .all<{ id: number; content_key: string; file_path: string | null }>()
+      .prepare(
+        `SELECT id, content_key, file_path, missing_at FROM tracks WHERE source_kind = 'local'`
+      )
+      .all<{ id: number; content_key: string; file_path: string | null; missing_at: number | null }>()
 
-    const staleIds = candidates
-      .filter((row) => {
-        if (seenKeys.has(row.content_key)) return false
-        if (!row.file_path) return false
-        return folders.some((folder) => isPathInside(folder, row.file_path as string))
-      })
+    const newlyMissing: number[] = []
+    const restored: number[] = []
+    for (const row of candidates) {
+      if (!row.file_path) continue
+      if (!folders.some((folder) => isPathInside(folder, row.file_path as string))) continue
+      if (seenKeys.has(row.content_key)) {
+        if (row.missing_at !== null) restored.push(row.id)
+      } else if (row.missing_at === null) {
+        newlyMissing.push(row.id)
+      }
+    }
+
+    this.db.transaction(() => {
+      for (const chunk of chunked(newlyMissing, 400)) {
+        const placeholders = chunk.map(() => '?').join(', ')
+        this.db.prepare(`UPDATE tracks SET missing_at = ? WHERE id IN (${placeholders})`).run(now, ...chunk)
+      }
+      for (const chunk of chunked(restored, 400)) {
+        const placeholders = chunk.map(() => '?').join(', ')
+        this.db.prepare(`UPDATE tracks SET missing_at = NULL WHERE id IN (${placeholders})`).run(...chunk)
+      }
+    })
+    return newlyMissing.length
+  }
+
+  /** Rows the user explicitly discarded by removing their library folder. */
+  deleteInFolders(folders: string[]): number {
+    if (folders.length === 0) return 0
+    const candidates = this.db
+      .prepare(`SELECT id, file_path FROM tracks WHERE source_kind = 'local'`)
+      .all<{ id: number; file_path: string | null }>()
+    const ids = candidates
+      .filter((row) => row.file_path && folders.some((folder) => isPathInside(folder, row.file_path as string)))
       .map((row) => row.id)
+    return this.deleteByIds(ids)
+  }
 
-    return this.deleteByIds(staleIds)
+  /** Missing local rows, in the order they were last seen. */
+  missingTracks(): Track[] {
+    return this.db
+      .prepare(
+        `SELECT ${TRACK_COLUMNS} FROM tracks
+         WHERE source_kind = 'local' AND missing_at IS NOT NULL
+         ORDER BY missing_at, id`
+      )
+      .all<TrackRow>()
+      .map(mapTrackRow)
+  }
+
+  /** The stat/hash facts relocation needs, without exposing them on Track. */
+  missingFileStates(): Array<{
+    id: number
+    filePath: string
+    fileSize: number | null
+    fileMtimeMs: number | null
+    fileHash: string | null
+  }> {
+    return this.db
+      .prepare(
+        `SELECT id, file_path, file_size, file_mtime_ms, file_hash FROM tracks
+         WHERE source_kind = 'local' AND missing_at IS NOT NULL AND file_path IS NOT NULL
+         ORDER BY missing_at, id`
+      )
+      .all<{
+        id: number
+        file_path: string
+        file_size: number | null
+        file_mtime_ms: number | null
+        file_hash: string | null
+      }>()
+      .map((row) => ({
+        id: row.id,
+        filePath: row.file_path,
+        fileSize: row.file_size,
+        fileMtimeMs: row.file_mtime_ms,
+        fileHash: row.file_hash
+      }))
+  }
+
+  /** Present local rows whose hash has not been computed, or was invalidated. */
+  localTracksAwaitingHash(): Track[] {
+    return this.db
+      .prepare(
+        `SELECT ${TRACK_COLUMNS} FROM tracks
+         WHERE source_kind = 'local' AND missing_at IS NULL AND file_hash IS NULL AND file_path IS NOT NULL
+         ORDER BY id`
+      )
+      .all<TrackRow>()
+      .map(mapTrackRow)
+  }
+
+  setFileHash(id: number, fileHash: string): void {
+    this.db.prepare('UPDATE tracks SET file_hash = ? WHERE id = ?').run(fileHash, id)
+  }
+
+  /** Present local rows that share a full-file hash, newest groups first. */
+  duplicateGroups(): Array<{ hash: string; tracks: Track[] }> {
+    const rows = this.db
+      .prepare(
+        `SELECT ${TRACK_COLUMNS} FROM tracks
+         WHERE source_kind = 'local' AND missing_at IS NULL AND file_hash IS NOT NULL
+         ORDER BY file_hash, added_at, id`
+      )
+      .all<TrackRow>()
+    const groups = new Map<string, Track[]>()
+    for (const row of rows) {
+      const hash = row.file_hash as string
+      const list = groups.get(hash) ?? []
+      list.push(mapTrackRow(row))
+      groups.set(hash, list)
+    }
+    return [...groups.entries()]
+      .filter(([, tracks]) => tracks.length > 1)
+      .map(([hash, tracks]) => ({ hash, tracks }))
+  }
+
+  /**
+   * Folds duplicate rows into a keeper without losing what the duplicates knew.
+   *
+   * Playlist entries are copied first, so the unique index decides whether a
+   * list already had the keeper. Play counts add up, the earliest add date and
+   * latest play date win, and a missing cover/origin is adopted. This method
+   * only changes rows; DataCareService deletes the redundant file after it
+   * returns, so a failed merge never loses the file.
+   */
+  mergeDuplicates(keeperId: number, duplicateIds: number[], now: number): number {
+    const ids = [...new Set(duplicateIds)].filter((id) => id !== keeperId)
+    if (ids.length === 0) return 0
+    this.db.transaction(() => {
+      const keeper = this.db
+        .prepare('SELECT id, file_hash FROM tracks WHERE id = ? AND missing_at IS NULL')
+        .get<{ id: number; file_hash: string | null }>(keeperId)
+      if (!keeper) throw new Error('The track to keep is no longer in the library.')
+      if (!keeper.file_hash) throw new Error('That track has not been fingerprinted yet.')
+
+      for (const duplicateId of ids) {
+        const duplicate = this.db
+          .prepare('SELECT id, file_hash FROM tracks WHERE id = ? AND missing_at IS NULL')
+          .get<{ id: number; file_hash: string | null }>(duplicateId)
+        if (!duplicate) continue
+        if (duplicate.file_hash !== keeper.file_hash) {
+          throw new Error('Those tracks are not identical copies, so they were left alone.')
+        }
+        this.foldRow(keeperId, duplicateId, now)
+      }
+    })
+    return ids.length
+  }
+
+  /**
+   * Points a missing row at a file that was found elsewhere, keeping its id.
+   *
+   * When the scanner already indexed the new path, that second row is folded
+   * into the missing one first and removed, so playlist entries and play state
+   * keep pointing at the row that had the history.
+   */
+  relocateTrack(
+    missingId: number,
+    targetId: number | null,
+    input: { filePath: string; fileSize: number; fileMtimeMs: number },
+    now: number
+  ): void {
+    this.db.transaction(() => {
+      const missing = this.db
+        .prepare('SELECT id FROM tracks WHERE id = ? AND missing_at IS NOT NULL')
+        .get<{ id: number }>(missingId)
+      if (!missing) throw new Error('That missing track was already repaired.')
+      if (targetId !== null && targetId !== missingId) {
+        const target = this.db
+          .prepare('SELECT id FROM tracks WHERE id = ? AND missing_at IS NULL')
+          .get<{ id: number }>(targetId)
+        if (target) this.foldRow(missingId, targetId, now)
+      }
+      this.db
+        .prepare(
+          `UPDATE tracks SET
+             content_key = ?, file_path = ?, file_size = ?, file_mtime_ms = ?,
+             missing_at = NULL, file_hash = NULL, updated_at = ?
+           WHERE id = ?`
+        )
+        .run(localContentKey(input.filePath), input.filePath, input.fileSize, input.fileMtimeMs, now, missingId)
+    })
+  }
+
+  /** Copy one row's history into another, then delete the first. */
+  private foldRow(keeperId: number, duplicateId: number, now: number): void {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO playlist_items (playlist_id, track_id, position, added_at)
+         SELECT playlist_id, ?, position, added_at FROM playlist_items WHERE track_id = ?`
+      )
+      .run(keeperId, duplicateId)
+    this.db
+      .prepare(
+        `UPDATE playlists SET updated_at = ?
+         WHERE id IN (SELECT playlist_id FROM playlist_items WHERE track_id = ?)`
+      )
+      .run(now, duplicateId)
+    this.db
+      .prepare(
+        `UPDATE tracks SET
+           play_count = play_count + (SELECT play_count FROM tracks WHERE id = ?),
+           last_played_at = CASE
+             WHEN last_played_at IS NULL THEN (SELECT last_played_at FROM tracks WHERE id = ?)
+             WHEN (SELECT last_played_at FROM tracks WHERE id = ?) IS NULL THEN last_played_at
+             ELSE MAX(last_played_at, (SELECT last_played_at FROM tracks WHERE id = ?))
+           END,
+           added_at = MIN(added_at, (SELECT added_at FROM tracks WHERE id = ?)),
+           origin_kind = COALESCE(origin_kind, (SELECT origin_kind FROM tracks WHERE id = ?)),
+           origin_id = COALESCE(origin_id, (SELECT origin_id FROM tracks WHERE id = ?)),
+           artwork_key = COALESCE(artwork_key, (SELECT artwork_key FROM tracks WHERE id = ?)),
+           updated_at = ?
+         WHERE id = ?`
+      )
+      .run(
+        duplicateId,
+        duplicateId,
+        duplicateId,
+        duplicateId,
+        duplicateId,
+        duplicateId,
+        duplicateId,
+        duplicateId,
+        now,
+        keeperId
+      )
+    // The foreign key cascades any playlist entries that could not be copied,
+    // and the FTS delete trigger keeps search in step.
+    this.db.prepare('DELETE FROM tracks WHERE id = ?').run(duplicateId)
   }
 
   deleteByIds(ids: number[]): number {

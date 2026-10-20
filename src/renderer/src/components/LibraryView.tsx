@@ -28,7 +28,8 @@ import {
   QueueIcon,
   RefreshIcon,
   SearchIcon,
-  SpinnerIcon
+  SpinnerIcon,
+  TrashIcon
 } from './Icons'
 
 export interface LibraryViewProps {
@@ -72,6 +73,7 @@ export interface LibraryViewProps {
   onOpenYouTube: () => void
   onQueueStream: (track: Track) => void
   onQueueSelected: () => void
+  onRemoveTracks: (trackIds: number[]) => Promise<number>
   onRemoveStream: (track: Track) => void
   downloads: UseDownloadsResult
   /** What a click on a row does. See `LibraryClickAction`. */
@@ -128,6 +130,7 @@ export function LibraryView(props: LibraryViewProps) {
     onOpenYouTube,
     onQueueStream,
     onQueueSelected,
+    onRemoveTracks,
     onRemoveStream,
     downloads,
     singleClick,
@@ -140,6 +143,8 @@ export function LibraryView(props: LibraryViewProps) {
   const [addMenu, setAddMenu] = useState<AddMenuState | null>(null)
   const [contextMenu, setContextMenu] = useState<{ track: Track; x: number; y: number } | null>(null)
   const [detailsTrack, setDetailsTrack] = useState<Track | null>(null)
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [bulkError, setBulkError] = useState<string | null>(null)
 
   const { saved, states, save: saveToLibrary, refreshSaved } = downloads
 
@@ -177,6 +182,25 @@ export function LibraryView(props: LibraryViewProps) {
     },
     [saveToLibrary]
   )
+
+  const removeSelected = async (): Promise<void> => {
+    const ids = [...selectedIds]
+    if (ids.length === 0) return
+    const confirmed = window.confirm(
+      `Remove ${formatCount(ids.length)} track${ids.length === 1 ? '' : 's'} from the library?\n\nThe files stay on disk, so a later scan will find them again. Use Settings to remove a whole folder instead.`
+    )
+    if (!confirmed) return
+    setBulkBusy(true)
+    setBulkError(null)
+    try {
+      await onRemoveTracks(ids)
+      onClearSelection()
+    } catch (cause) {
+      setBulkError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setBulkBusy(false)
+    }
+  }
 
   const hasFolders = folders.length > 0
   const searching = search.trim().length > 0
@@ -340,6 +364,17 @@ export function LibraryView(props: LibraryViewProps) {
               <span>Add to playlist</span>
             </button>
           )}
+          {!showingStreams ? (
+            <button
+              type="button"
+              className="danger-button"
+              onClick={() => void removeSelected()}
+              disabled={bulkBusy}
+            >
+              {bulkBusy ? <SpinnerIcon size={14} /> : <TrashIcon size={14} />}
+              <span>Remove from library</span>
+            </button>
+          ) : null}
           {selectedIds.size < tracks.length ? (
             <button type="button" onClick={onSelectAll}>
               <span>Select all loaded ({formatCount(tracks.length)})</span>
@@ -348,6 +383,11 @@ export function LibraryView(props: LibraryViewProps) {
           <button type="button" className="link-button" onClick={onClearSelection}>
             Clear
           </button>
+        </div>
+      ) : null}
+      {bulkError ? (
+        <div className="banner error" role="alert">
+          {bulkError}
         </div>
       ) : null}
 

@@ -30,6 +30,7 @@ export function onlineEntryToTrack(entry: OnlineTrack): Track {
     sampleRate: null,
     channels: null,
     fileSize: null,
+    missingAt: null,
     filePath: null,
     artworkKey: entry.artworkKey,
     addedAt: entry.addedAt,
@@ -101,6 +102,7 @@ export function onlinePlaylistItemToTrack(item: OnlinePlaylistItem, playlist: On
     sampleRate: null,
     channels: null,
     fileSize: null,
+    missingAt: null,
     filePath: null,
     // An album's rows all show the sleeve. A plain playlist's cover is one video's
     // still blown up, so each row keeps its own and asks for it lazily instead.

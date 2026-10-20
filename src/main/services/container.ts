@@ -10,6 +10,7 @@ import { LibraryService } from '@core/library/library-service'
 import { FolderWatcher } from '@core/library/folder-watcher'
 import { PlaylistRepository } from '@core/library/playlist-repository'
 import { PlaylistService } from '@core/library/playlist-service'
+import { DataCareService } from '@core/library/data-care-service'
 import { OnlineRepository } from '@core/library/online-repository'
 import { OnlinePlaylistRepository } from '@core/library/online-playlist-repository'
 import { PlayStateRepository } from '@core/library/play-state-repository'
@@ -43,6 +44,8 @@ export interface AppContainer {
   /** Downloads a stream into the library (keep). */
   downloads: DownloadService
   playlists: PlaylistService
+  /** Duplicate detection, safe merges and moved-file repair. */
+  dataCare: DataCareService
   /** The last session's queue, saved as it plays and read once at start-up. */
   playback: PlaybackService
   resolvers: ResolverRegistry
@@ -151,6 +154,7 @@ export function createContainer(): AppContainer {
   // through: pruning a track drops its playlist entries by foreign key, and the
   // two can never disagree about what a track id means.
   const playlists = new PlaylistService(new PlaylistRepository(database.db), repo, log.child('playlists'))
+  const dataCare = new DataCareService(repo, log.child('data-care'))
 
   const playback = new PlaybackService(new PlayStateRepository(database.db), repo)
 
@@ -192,6 +196,7 @@ export function createContainer(): AppContainer {
     watcher,
     downloads,
     playlists,
+    dataCare,
     playback,
     resolvers,
     artwork,

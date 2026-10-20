@@ -18,11 +18,14 @@ import type {
   DeepPartial,
   Density,
   DownloadFormat,
+  DuplicateMergeOutcome,
+  DuplicateReport,
   EngineStatus,
   ExecutableStatus,
   LibraryClickAction,
   MotionPreference,
   QualityTier,
+  RelocateReport,
   SurfaceStyle,
   ThemeMode
 } from '@shared/types'
@@ -46,6 +49,10 @@ export interface SettingsViewProps {
   onBackupData: () => Promise<string | null>
   onRestoreData: () => Promise<boolean>
   onExportLibrary: () => Promise<string | null>
+  missingTracks: number
+  onFindDuplicates: () => Promise<DuplicateReport>
+  onMergeDuplicates: () => Promise<DuplicateMergeOutcome>
+  onRelocateMissing: () => Promise<RelocateReport | null>
 }
 
 const QUALITY_CHOICES: Array<{ value: QualityTier; label: string }> = [
@@ -135,7 +142,11 @@ export function SettingsView(props: SettingsViewProps) {
     onOpenPath,
     onBackupData,
     onRestoreData,
-    onExportLibrary
+    onExportLibrary,
+    missingTracks,
+    onFindDuplicates,
+    onMergeDuplicates,
+    onRelocateMissing
   } = props
   const [tab, setTab] = useState<TabId>('general')
   const [confirmReset, setConfirmReset] = useState(false)
@@ -143,6 +154,10 @@ export function SettingsView(props: SettingsViewProps) {
   const [dataBusy, setDataBusy] = useState<'backup' | 'restore' | 'export' | null>(null)
   const [dataNote, setDataNote] = useState<string | null>(null)
   const [dataError, setDataError] = useState<string | null>(null)
+  const [careBusy, setCareBusy] = useState<'duplicates' | 'merge' | 'relocate' | null>(null)
+  const [careNote, setCareNote] = useState<string | null>(null)
+  const [careError, setCareError] = useState<string | null>(null)
+  const [duplicates, setDuplicates] = useState<DuplicateReport | null>(null)
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
   const resetButtonRef = useRef<HTMLButtonElement | null>(null)
 
@@ -193,6 +208,66 @@ export function SettingsView(props: SettingsViewProps) {
       setDataError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setDataBusy(null)
+    }
+  }
+
+  const runFindDuplicates = async (): Promise<void> => {
+    setCareBusy('duplicates')
+    setCareError(null)
+    setCareNote(null)
+    try {
+      const report = await onFindDuplicates()
+      setDuplicates(report)
+      setCareNote(
+        report.groups === 0
+          ? `No duplicate copies found. ${report.hashed} file${report.hashed === 1 ? '' : 's'} fingerprinted.`
+          : `${report.groups} duplicate group${report.groups === 1 ? '' : 's'} found, ${report.extraCopies} extra cop${report.extraCopies === 1 ? 'y' : 'ies'}.`
+      )
+    } catch (cause) {
+      setCareError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setCareBusy(null)
+    }
+  }
+
+  const runMergeDuplicates = async (): Promise<void> => {
+    setCareBusy('merge')
+    setCareError(null)
+    setCareNote(null)
+    try {
+      const outcome = await onMergeDuplicates()
+      setDuplicates({ groups: 0, extraCopies: 0, hashed: 0 })
+      setCareNote(
+        outcome.removed === 0
+          ? 'There was nothing left to merge.'
+          : `Merged ${outcome.removed} duplicate row${outcome.removed === 1 ? '' : 's'} into ${outcome.groups} kept row${outcome.groups === 1 ? '' : 's'} and removed ${outcome.filesRemoved} duplicate file${outcome.filesRemoved === 1 ? '' : 's'}.${outcome.fileErrors > 0 ? ` ${outcome.fileErrors} file${outcome.fileErrors === 1 ? '' : 's'} could not be deleted and will reappear on the next scan.` : ''}`
+      )
+    } catch (cause) {
+      setCareError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setCareBusy(null)
+    }
+  }
+
+  const runRelocate = async (): Promise<void> => {
+    setCareBusy('relocate')
+    setCareError(null)
+    setCareNote(null)
+    try {
+      const report = await onRelocateMissing()
+      if (!report) {
+        setCareNote('Relocation cancelled.')
+        return
+      }
+      setCareNote(
+        report.relocated === 0
+          ? `Scanned ${report.scanned} audio file${report.scanned === 1 ? '' : 's'}; none matched the ${report.unmatched} missing track${report.unmatched === 1 ? '' : 's'}.`
+          : `Relocated ${report.relocated} track${report.relocated === 1 ? '' : 's'}; ${report.unmatched} still missing.`
+      )
+    } catch (cause) {
+      setCareError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setCareBusy(null)
     }
   }
 
@@ -867,6 +942,59 @@ export function SettingsView(props: SettingsViewProps) {
               {dataNote ? (
                 <p className="data-note" role="status">
                   {dataNote}
+                </p>
+              ) : null}
+            </article>
+
+            <article className="card">
+              <header className="card-header">
+                <h2>Library health</h2>
+              </header>
+              <p className="card-hint">
+                Duplicate detection compares whole files, not tags, so only byte-identical copies are
+                grouped. Merging keeps the oldest entry, combines its playlists and play counts, and
+                deletes the redundant file. Missing tracks keep their history while the file is away,
+                and can be matched again after a folder move.
+              </p>
+              <div className="field-row">
+                <button
+                  type="button"
+                  onClick={() => void runFindDuplicates()}
+                  disabled={careBusy !== null}
+                >
+                  {careBusy === 'duplicates' ? <SpinnerIcon /> : null}
+                  <span>Find duplicates.</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void runMergeDuplicates()}
+                  disabled={careBusy !== null || !duplicates || duplicates.groups === 0}
+                >
+                  {careBusy === 'merge' ? <SpinnerIcon /> : null}
+                  <span>Merge duplicates.</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void runRelocate()}
+                  disabled={careBusy !== null || missingTracks === 0}
+                >
+                  {careBusy === 'relocate' ? <SpinnerIcon /> : null}
+                  <span>Find moved files.</span>
+                </button>
+              </div>
+              <p className="data-note">
+                {missingTracks === 0
+                  ? 'No files are missing from the library.'
+                  : `${missingTracks} missing track${missingTracks === 1 ? '' : 's'} kept with history and playlist entries.`}
+              </p>
+              {careError ? (
+                <div className="banner error" role="alert">
+                  {careError}
+                </div>
+              ) : null}
+              {careNote ? (
+                <p className="data-note" role="status">
+                  {careNote}
                 </p>
               ) : null}
             </article>

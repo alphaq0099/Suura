@@ -18,7 +18,7 @@ export interface ScanOptions {
   log: Logger
   onProgress?: (progress: ScanProgress) => void
   signal?: AbortSignal
-  /** Delete rows whose files disappeared during a complete scan. */
+  /** Mark rows whose files disappeared during a complete scan. */
   prune?: boolean
 }
 
@@ -152,12 +152,12 @@ export async function scanLibraryFolders(options: ScanOptions): Promise<ScanResu
     emit()
   }
 
-  // Only prune when the walk completed and every folder was readable. A partial
-  // scan must never delete rows for files it simply did not get to.
+  // Only mark missing when the walk completed and every folder was readable. A
+  // partial scan must never hide rows for files it simply did not get to.
   const aborted = Boolean(signal?.aborted)
   if (options.prune && !aborted && failedFolders.size === 0) {
     const prunableFolders = folders.filter((folder) => !failedFolders.has(folder))
-    progress.pruned = repo.pruneMissing(prunableFolders, seenKeys)
+    progress.pruned = repo.markMissing(prunableFolders, seenKeys, Date.now())
   }
 
   progress.phase = 'done'

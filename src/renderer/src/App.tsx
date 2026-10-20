@@ -462,6 +462,25 @@ export function App() {
   const backupData = useCallback(() => api.backupData(), [])
   const restoreData = useCallback(() => api.restoreData(), [])
   const exportLibrary = useCallback(() => api.exportLibraryCsv(), [])
+  const findDuplicates = useCallback(() => api.findDuplicates(), [])
+  const mergeDuplicates = useCallback(async () => {
+    const outcome = await api.mergeDuplicates()
+    await refresh()
+    return outcome
+  }, [refresh])
+  const relocateMissing = useCallback(async () => {
+    const report = await api.relocateMissing()
+    if (report) await refresh()
+    return report
+  }, [refresh])
+  const removeTracks = useCallback(
+    async (trackIds: number[]) => {
+      const removed = await api.removeTracks(trackIds)
+      await refresh()
+      return removed
+    },
+    [refresh]
+  )
 
   const updateSettings = useCallback(
     (patch: DeepPartial<AppSettings>): void => {
@@ -547,6 +566,7 @@ export function App() {
           onOpenYouTube={() => setView('online')}
           onQueueStream={queueStream}
           onQueueSelected={queueSelectedStreams}
+          onRemoveTracks={removeTracks}
           onRemoveStream={(track) => void removeStream(track)}
           downloads={downloads}
           singleClick={settings.interaction.librarySingleClick}
@@ -653,6 +673,10 @@ export function App() {
           onBackupData={backupData}
           onRestoreData={restoreData}
           onExportLibrary={exportLibrary}
+          missingTracks={stats?.missingTracks ?? 0}
+          onFindDuplicates={findDuplicates}
+          onMergeDuplicates={mergeDuplicates}
+          onRelocateMissing={relocateMissing}
         />
       )}
 

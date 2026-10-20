@@ -1029,6 +1029,11 @@ input[type='radio'] {
   margin-left: auto;
 }
 
+.selection-bar .danger-button {
+  color: var(--danger);
+  border-color: var(--danger-border);
+}
+
 .clear-search {
   padding: 2px;
 }

@@ -10,10 +10,13 @@ import type {
   AppSettings,
   DeepPartial,
   DownloadProgress,
+  DuplicateMergeOutcome,
+  DuplicateReport,
   EngineStatus,
   LibraryStats,
   ListTracksQuery,
   OnlinePlaylist,
+  RelocateReport,
   OnlinePlaylistDetail,
   OnlineTrack,
   PlaybackSnapshot,
@@ -68,6 +71,10 @@ export const IPC = {
   playlistsExport: 'playlists:export',
   playlistsImport: 'playlists:import',
   libraryExportCsv: 'library:export-csv',
+  libraryFindDuplicates: 'library:find-duplicates',
+  libraryMergeDuplicates: 'library:merge-duplicates',
+  libraryRelocate: 'library:relocate',
+  libraryRemoveTracks: 'library:remove-tracks',
   playbackLoad: 'playback:load',
   playbackSave: 'playback:save',
   playbackClear: 'playback:clear',
@@ -215,6 +222,25 @@ export interface PlayerApi {
    * Resolves to the file that was written, or null when the dialog was cancelled.
    */
   exportLibraryCsv(): Promise<string | null>
+  /**
+   * Hashes unread local rows and reports byte-identical copies.
+   *
+   * The first scan reads every file; later scans only hash rows whose file has
+   * changed. The files themselves are never touched by a merge.
+   */
+  findDuplicates(): Promise<DuplicateReport>
+  /** Merges every current duplicate group, keeping the oldest row. */
+  mergeDuplicates(): Promise<DuplicateMergeOutcome>
+  /**
+   * Opens a folder picker and points missing rows at matching files inside it.
+   * Resolves null when the picker was cancelled.
+   */
+  relocateMissing(): Promise<RelocateReport | null>
+  /**
+   * Forgets library rows without deleting their files. A later scan indexes the
+   * files again; removing a folder in Settings is the way to stop that.
+   */
+  removeTracks(trackIds: number[]): Promise<number>
   /** The last session's queue, or null when there is nothing worth resuming. */
   loadPlayback(): Promise<SavedPlayback | null>
   /**

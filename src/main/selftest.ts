@@ -1278,6 +1278,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       backupCard: boolean
       exportButton: boolean
       backupsPath: boolean
+      healthCard: boolean
+      healthActions: boolean
     }>(
       window,
       `(async () => {
@@ -1285,7 +1287,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            keyboardEnd: false, keyboardHome: false, watchTurnedOff: false,
            behaviourChanged: false, resetConfirmShown: false, resetStatusShown: false,
            watchRestored: false, behaviourRestored: false, foldersKept: false,
-           backupCard: false, exportButton: false, backupsPath: false
+           backupCard: false, exportButton: false, backupsPath: false,
+           healthCard: false, healthActions: false
          }
          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
          const press = (element) => { if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
@@ -1384,6 +1387,17 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.backupsPath = [...document.querySelectorAll('.path-label')].some(
            (el) => (el.textContent || '').trim() === 'Backups'
          )
+         const healthHeading = [...document.querySelectorAll('.card h2')].find(
+           (el) => (el.textContent || '').trim() === 'Library health'
+         )
+         out.healthCard = Boolean(healthHeading)
+         out.healthActions =
+           Boolean(healthHeading) &&
+           ['Find duplicates.', 'Merge duplicates.', 'Find moved files.'].every((label) =>
+             [...healthHeading.closest('.card').querySelectorAll('button')].some(
+               (el) => (el.textContent || '').trim() === label
+             )
+           )
 
          tab('General')
          await sleep(300)
@@ -1423,6 +1437,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     record(
       settingsSafety.exportButton,
       'settings: Misc exports the library as CSV',
+      settingsSafety
+    )
+    record(
+      settingsSafety.healthCard && settingsSafety.healthActions,
+      'settings: Misc offers duplicate and missing-file care',
       settingsSafety
     )
 
@@ -2111,6 +2130,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       sidebarCount: string
       menuOpened: boolean
       addedViaBar: boolean
+      hasRemoveFromLibrary: boolean
       barStatus: string
       contextMenuOpened: boolean
       addedViaContext: boolean
@@ -2157,7 +2177,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       `(async () => {
          const out = {
            emptyState: false, created: false, hasImport: false, hasExport: false, sidebarCount: '', menuOpened: false,
-           addedViaBar: false, barStatus: '', contextMenuOpened: false,
+           addedViaBar: false, hasRemoveFromLibrary: false, barStatus: '', contextMenuOpened: false,
            addedViaContext: false, contextStatus: '', countAfterAdds: -1,
            rowsAfterAdds: -1, keyboardOrder: '', dropLine: false, dragOrder: '',
            libraryColumns: '', libraryHeaderOverflow: true, libraryHasFormat: true,
@@ -2226,6 +2246,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          await sleep(300)
          const addButton = buttonWith('.selection-bar', 'Add to playlist')
          out.menuOpened = Boolean(addButton)
+         out.hasRemoveFromLibrary = Boolean(buttonWith('.selection-bar', 'Remove from library'))
          press(addButton)
          await sleep(300)
          press(menuItem('.add-to-playlist', 'Selftest Mix'))
@@ -2426,6 +2447,10 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     record(lists.hasExport, 'a selected playlist offers file export')
     record(lists.sidebarCount === '1', 'the sidebar counts the playlists', lists.sidebarCount)
     record(lists.menuOpened && lists.addedViaBar, 'the selection bar adds the selected tracks to a playlist', lists.barStatus)
+    record(
+      lists.hasRemoveFromLibrary,
+      'the selection bar can remove tracks from the library without deleting files'
+    )
     record(lists.contextMenuOpened && lists.addedViaContext, 'a row’s context menu adds that track to a playlist', lists.contextStatus)
     record(
       lists.countAfterAdds === 2 && lists.rowsAfterAdds === 2,

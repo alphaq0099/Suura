@@ -120,6 +120,8 @@ export interface Track {
   sampleRate: number | null
   channels: number | null
   fileSize: number | null
+  /** Epoch ms when the file was last found absent, or null while it is present. */
+  missingAt: number | null
   /** Absolute path. Only meaningful for `local` tracks. */
   filePath: string | null
   /**
@@ -155,6 +157,40 @@ export interface LibraryStats {
   playedTracks: number
   /** Local rows that have never had a completed listen. */
   unplayedTracks: number
+  /** Rows kept in the library whose file is currently absent. */
+  missingTracks: number
+}
+
+/**
+ * What a duplicate scan found.
+ *
+ * Only present local rows are hashed. A group is two or more rows with the same
+ * full-file SHA-256, so these are byte-identical copies, not merely the same
+ * song at two bitrates. `extraCopies` is what merging would remove.
+ */
+export interface DuplicateReport {
+  groups: number
+  extraCopies: number
+  /** Rows that had to be read to answer this question. */
+  hashed: number
+}
+
+/** What a merge removed and whether anything was found to merge. */
+export interface DuplicateMergeOutcome {
+  groups: number
+  /** Library rows folded into their keepers. */
+  removed: number
+  /** Redundant files deleted after their rows were merged. */
+  filesRemoved: number
+  /** Files that could not be deleted; their rows are gone until the next scan. */
+  fileErrors: number
+}
+
+/** What a relocation pass found in the folder the user picked. */
+export interface RelocateReport {
+  scanned: number
+  relocated: number
+  unmatched: number
 }
 
 export interface Playlist {
@@ -390,7 +426,7 @@ export interface ScanProgress {
   skipped: number
   /** Files that could not be read or parsed. */
   failed: number
-  /** Rows deleted because the file no longer exists. */
+  /** Rows newly marked missing because the file no longer exists. */
   pruned: number
   currentFile: string | null
   folder: string | null

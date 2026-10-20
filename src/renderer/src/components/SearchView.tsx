@@ -56,6 +56,7 @@ function artworkTrack(result: YouTubeSearchResult): Track {
     sampleRate: null,
     channels: null,
     fileSize: null,
+    missingAt: null,
     filePath: null,
     artworkKey: null,
     addedAt: 0,
