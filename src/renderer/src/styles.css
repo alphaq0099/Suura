@@ -247,6 +247,28 @@ input[type='radio'] {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* Chromium's default overlay bar hides itself until the mouse moves. A thin
+     always-visible bar is the only cue that a long view continues below. */
+  scrollbar-width: thin;
+  scrollbar-color: #343a52 transparent;
+}
+
+.main-view::-webkit-scrollbar {
+  width: 10px;
+}
+
+.main-view::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.main-view::-webkit-scrollbar-thumb {
+  background: #343a52;
+  border: 2px solid var(--bg);
+  border-radius: 999px;
+}
+
+.main-view::-webkit-scrollbar-thumb:hover {
+  background: #454d6c;
 }
 
 .view-header {
@@ -2740,7 +2762,7 @@ input[type='radio'] {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: #12141d;
-  /* Seven rows at a time. The history can be long, but the Streaming view should
+  /* Seven rows at a time. The history can be long, but the YouTube view should
      not become a second library; older links are one wheel away. 7 × 43px of
      row + the box's own 2px border. */
   max-height: 303px;
@@ -2891,7 +2913,7 @@ button.online-jump:hover {
   }
 }
 
-/* ---------- imported playlists in the Streaming view ---------- */
+/* ---------- imported playlists in the YouTube view ---------- */
 
 /* An imported list is one row here, not one row per track. The history is a log
    of links the user chose; a 50-track mix would otherwise bury every song they
@@ -3336,6 +3358,14 @@ button.online-jump:hover {
   min-height: 0;
 }
 
+/* The results list is a flex child of the scrolling view. Without this it
+   shrinks to the viewport and its own `overflow: hidden` silently clips every
+   row past the fold — the view's scrollHeight never grows, so no scrollbar
+   appears either. Keeping natural height is what makes the view scroll. */
+.discover-view > * {
+  flex-shrink: 0;
+}
+
 .discover-bar {
   display: flex;
   align-items: center;
@@ -3520,7 +3550,7 @@ button.online-jump:hover {
   color: var(--ok);
 }
 
-.source-badge.streaming {
+.source-badge.youtube {
   border-color: rgb(108 140 255 / 34%);
   background: rgb(108 140 255 / 10%);
   color: var(--accent-strong);

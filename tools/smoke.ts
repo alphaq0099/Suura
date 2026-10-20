@@ -1234,9 +1234,10 @@ async function main(): Promise<void> {
     const args = buildInfoArgs('dQw4w9WgXcQ', 'best')
     checkEqual('youtube: the user config is always ignored', args.slice(0, 2).join(' '), '--ignore-config --no-playlist')
     check('youtube: the format is audio-only with a muxed fallback', args.includes('bestaudio/best'))
+    const botCheckMessage = describeYouTubeFailure('ERROR: Sign in to confirm you are not a bot').toLowerCase()
     check(
-      'youtube: a bot check becomes a human message',
-      describeYouTubeFailure('ERROR: Sign in to confirm you are not a bot').toLowerCase().includes('sign-in check')
+      'youtube: a bot check becomes a human message that says retrying is the way',
+      botCheckMessage.includes('automated traffic') && botCheckMessage.includes('does not sign in')
     )
     check(
       'youtube: an unavailable video becomes a human message',

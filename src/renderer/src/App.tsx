@@ -41,7 +41,7 @@ export function App() {
   /**
    * The imported list whose tracks are playing, if any.
    *
-   * It lives here rather than in the Streaming view because that view unmounts on a
+   * It lives here rather than in the YouTube view because that view unmounts on a
    * view switch: a strip that vanished the moment the user looked at Playlists
    * would not be an indicator of anything.
    */
@@ -76,7 +76,7 @@ export function App() {
 
   const searchInputRef = useRef<HTMLInputElement | null>(null)
 
-  // The Streaming history is the one list that can move without this window doing
+  // The YouTube history is the one list that can move without this window doing
   // anything: playing a row resolves in the main process, which lifts it. So it
   // is re-read on entry as well as on the change event, otherwise the order the
   // user left behind could still be on screen when they come back.
@@ -279,7 +279,7 @@ export function App() {
    *
    * It goes through the same `online.addLink` path a pasted URL takes, so the
    * history, the fetch of the thumbnail and the resolve cache all agree with the
-   * Streaming view. The resolve is what makes the user wait; the row says so by
+   * YouTube view. The resolve is what makes the user wait; the row says so by
    * staying in its busy state until this promise settles.
    */
   const playYouTubeResult = useCallback(
@@ -519,7 +519,7 @@ export function App() {
         onOpenNowPlaying={openNowPlaying}
       />
 
-      {/* Streamed links live in the Streaming view now, not in a dialog: a resolve
+      {/* Streamed links live in the YouTube view now, not in a dialog: a resolve
           takes seconds, and a modal is the wrong place to put a collection. */}
 
       {/* Rendered last so it stacks over the bar it was opened from. The views

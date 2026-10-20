@@ -48,7 +48,7 @@ function isCancellation(message: string): boolean {
  * Saving streams to the library.
  *
  * One hook for the whole app, because a download outlives the view that started
- * it: the Streaming history, an imported playlist and the player bar all name the
+ * it: the YouTube history, an imported playlist and the player bar all name the
  * same video, and all of them should show the same percentage. The main process
  * owns the queue; this only mirrors its events, remembers which ids are done and
  * keeps the request so a failed save can be retried without the view.

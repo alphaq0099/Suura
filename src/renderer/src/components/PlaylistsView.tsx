@@ -61,12 +61,12 @@ export interface PlaylistsViewProps {
   /** Appends these tracks to the queue without replacing it. */
   onQueue: (tracks: Track[]) => void
   /**
-   * Records which imported list is playing, so the Streaming view can name it even
+   * Records which imported list is playing, so the YouTube view can name it even
    * after the user has been elsewhere. `null` means what is playing is not a list.
    */
   onPlayingListChange: (list: PlayingList | null) => void
   onReveal: (trackId: number) => void
-  /** Saving imported entries into the library, shared with the Streaming view. */
+  /** Saving imported entries into the library, shared with the YouTube view. */
   downloads: UseDownloadsResult
 }
 
@@ -923,7 +923,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
               <h2>{totalLists === 0 ? 'No playlists yet' : 'Pick a playlist'}</h2>
               <p>
                 {totalLists === 0
-                  ? 'Create one, then add tracks from the library — select some rows and choose “Add to playlist”. Or paste a playlist link in Streaming.'
+                  ? 'Create one, then add tracks from the library — select some rows and choose “Add to playlist”. Or paste a playlist link in YouTube.'
                   : 'Choose one on the left to see what is in it.'}
               </p>
               {playlists.length === 0 ? (

@@ -384,7 +384,7 @@ export function youtubeFormatSelector(tier: QualityTier): string {
 export function describeYouTubeFailure(stderr: string): string {
   const text = stderr.toLowerCase()
   if (/sign in to confirm|not a bot|confirm you're not a bot|cookies/.test(text)) {
-    return 'YouTube asked for a sign-in check on this video. Try another link, or open this one in a browser first.'
+    return 'YouTube is checking this request for automated traffic. Wait a minute and retry, or try another result. The app does not sign in or use cookies.'
   }
   if (/age.?restricted|confirm your age/.test(text)) {
     return 'This video is age-restricted, so it cannot be played here.'

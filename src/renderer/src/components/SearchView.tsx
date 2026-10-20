@@ -335,8 +335,8 @@ export function SearchView(props: SearchViewProps) {
 
                 {youtube.length > 0 ? (
                   <li className="discover-divider">
-                    <span className="source-badge streaming">Streaming</span>
-                    <span>From YouTube</span>
+                    <span className="source-badge youtube">YouTube</span>
+                    <span>Not in your library</span>
                     <span className="discover-count">{youtube.length}</span>
                   </li>
                 ) : null}
@@ -405,9 +405,9 @@ function YouTubeRow(props: {
         <span className="discover-time">{busy ? 'Resolving…' : formatDuration(result.durationMs)}</span>
       </button>
       <div className="discover-actions">
-        <span className="source-badge streaming">
+        <span className="source-badge youtube">
           <LinkIcon size={11} />
-          Streaming
+          YouTube
         </span>
         {onChannel ? (
           <button

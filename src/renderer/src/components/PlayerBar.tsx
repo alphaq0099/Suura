@@ -112,9 +112,9 @@ export function PlayerBar(props: PlayerBarProps) {
               {current ? current.title : 'Nothing playing'}
             </div>
             {current?.sourceKind === 'youtube' ? (
-              <span className="stream-badge" title="Streaming from YouTube — nothing is saved">
+              <span className="stream-badge" title="Playing from YouTube — nothing is saved">
                 <span className="stream-dot" aria-hidden="true" />
-                Streaming
+                YouTube
               </span>
             ) : null}
           </div>

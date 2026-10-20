@@ -729,7 +729,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     record(fullPlayer.closingAnimated, 'closing the player window plays an exit animation')
     record(fullPlayer.closedByEscape, 'Escape closes the player window')
 
-    // The Streaming view is a layout too, so its history is seeded before the size
+    // The YouTube view is a layout too, so its history is seeded before the size
     // sweep: an empty state fits any window and would prove nothing.
     //
     // Two rows are given a real cached cover — the fixture drawn above — so the
@@ -794,7 +794,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       window.setSize(width, height)
       await delay(250)
 
-      const showView = async (label: 'Library' | 'Search' | 'Streaming' | 'Settings' | 'Queue'): Promise<void> => {
+      const showView = async (label: 'Library' | 'Search' | 'YouTube' | 'Settings' | 'Queue'): Promise<void> => {
         await evaluate(
           window,
           `(async () => {
@@ -817,8 +817,13 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       await showView('Search')
       const searchLayout = await evaluate<LayoutProbe>(window, LAYOUT_PROBE)
       record(
-        searchLayout.hasDiscover && searchLayout.main === 0 && searchLayout.discover === 0 && searchLayout.bar === 0 && searchLayout.page === 0,
-        `search view fits with no horizontal overflow at ${width}x${height}`,
+        searchLayout.hasDiscover &&
+          searchLayout.discoverShrink === '0' &&
+          searchLayout.main === 0 &&
+          searchLayout.discover === 0 &&
+          searchLayout.bar === 0 &&
+          searchLayout.page === 0,
+        `search view fits and can scroll vertically at ${width}x${height}`,
         searchLayout
       )
 
@@ -838,7 +843,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         queue
       )
 
-      await showView('Streaming')
+      await showView('YouTube')
       const onlineLayout = await evaluate<LayoutProbe>(window, LAYOUT_PROBE)
       record(
         onlineLayout.hasOnline && onlineLayout.main === 0 && onlineLayout.online === 0 && onlineLayout.bar === 0 && onlineLayout.page === 0,
@@ -1990,7 +1995,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       container.onlinePlaylists.count()
     )
 
-    // ---- 14b. the Streaming view ------------------------------------------
+    // ---- 14b. the YouTube view ------------------------------------------
     // Only the paths that need no network are driven: pasting, inline
     // validation and the history actions. Resolving a real link costs a 7-10 s
     // sidecar run, which belongs in the M3 probe, not in a 90 s UI test.
@@ -2051,14 +2056,14 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          // Leave and come back so the view mounts fresh and reads the seeded list.
          nav('Library')
          await sleep(400)
-         nav('Streaming')
+         nav('YouTube')
          await sleep(600)
 
          out.rows = pickAll('.online-item').length
          out.firstTitle = text(pick('.online-title')).trim()
          out.firstArtist = text(pick('.online-artist')).trim()
          out.firstDuration = text(pick('.online-time')).trim()
-         const onlineNav = pickAll('.nav-item').find((el) => (el.textContent || '').trim().startsWith('Streaming'))
+         const onlineNav = pickAll('.nav-item').find((el) => (el.textContent || '').trim().startsWith('YouTube'))
          out.sidebarCount = text(onlineNav ? onlineNav.querySelector('.nav-count') : null).trim()
 
          // A row draws the cover already on its entry; one with no cover resolves
@@ -2152,14 +2157,14 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          return out
        })()`
     )
-    record(onlineView.rows === 3, 'the Streaming view lists the remembered links', onlineView.rows)
+    record(onlineView.rows === 3, 'the YouTube view lists the remembered links', onlineView.rows)
     record(onlineView.firstTitle.indexOf('Online Tone Two') === 0, 'the newest link is listed first', onlineView.firstTitle)
     record(
       onlineView.firstArtist === 'Selftest Streamer',
-      'the Streaming view shows the streaming artist',
+      'the YouTube view shows the artist',
       onlineView.firstArtist
     )
-    record(onlineView.firstDuration === '1:30', 'the Streaming view shows the duration', onlineView.firstDuration)
+    record(onlineView.firstDuration === '1:30', 'the YouTube view shows the duration', onlineView.firstDuration)
     record(onlineView.sidebarCount === '3', 'the sidebar counts the remembered links', onlineView.sidebarCount)
     record(
       onlineView.rowCovers === 2 && onlineView.rowCoverLoaded && onlineView.rowPlaceholders === 1,
@@ -2320,9 +2325,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          await sleep(900)
          out.playedTitle = text(pick('.player-title'))
 
-         // The Streaming view gets one card for the imported list, not a row per
+         // The YouTube view gets one card for the imported list, not a row per
          // track: the history is for links the user chose to play on their own.
-         nav('Streaming')
+         nav('YouTube')
          await sleep(800)
          out.onlineCards = pickAll('.online-imported-row').length
          out.onlineCardTitle = text(pick('.online-imported-title')).trim()
@@ -2339,11 +2344,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            importedStyle && importedStyle.overflowY === 'auto' && parseFloat(importedStyle.maxHeight) >= 150
          )
 
-         // The mark belongs to the app state, not to the Streaming view: a round
+         // The mark belongs to the app state, not to the YouTube view: a round
          // trip must leave the same card marked when the view comes back.
          nav('Playlists')
          await sleep(500)
-         nav('Streaming')
+         nav('YouTube')
          await sleep(700)
          out.playingCardAfterTrip = Boolean(pick('.online-imported-row.current'))
          nav('Playlists')
@@ -2361,7 +2366,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
 
          // The card is the only place the playing list is named, so deleting the
          // snapshot removes the card too; the player bar still knows the queue.
-         nav('Streaming')
+         nav('YouTube')
          await sleep(700)
          out.cardsAfterDelete = pickAll('.online-imported-row').length
          return out
@@ -2420,7 +2425,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     )
     record(
       container.onlineRepo.count() === 0,
-      'playing an imported entry does not echo it into the Streaming history',
+      'playing an imported entry does not echo it into the YouTube history',
       container.onlineRepo.count()
     )
     record(
@@ -2428,7 +2433,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         onlineLists.onlineCardTitle === 'Selftest Album Renamed' &&
         onlineLists.historyRows === 0 &&
         onlineLists.onlineCardCover,
-      'the Streaming view lists the imported playlist once, with its cover and no history tracks',
+      'the YouTube view lists the imported playlist once, with its cover and no history tracks',
       `${onlineLists.onlineCards} card(s): ${onlineLists.onlineCardTitle || 'none'} (${onlineLists.onlineCardMeta || 'no meta'}); cover ${onlineLists.onlineCardCover}; ${onlineLists.historyRows} history rows`
     )
     record(
@@ -2623,6 +2628,7 @@ interface LayoutProbe {
   hasOnline: boolean
   discover: number
   hasDiscover: boolean
+  discoverShrink: string | null
   hasNowPlaying: boolean
 }
 
@@ -2650,6 +2656,12 @@ const LAYOUT_PROBE = `(() => {
     hasOnline: Boolean(document.querySelector('.online-list')),
     discover: overflow('.discover-list') + overflow('.discover-bar'),
     hasDiscover: Boolean(document.querySelector('.discover-bar') || document.querySelector('.discover-list')),
+    // A flex child that is allowed to shrink clips its own rows instead of
+    // making the view scroll. Every direct child must keep its natural height.
+    discoverShrink: (() => {
+      const el = document.querySelector('.discover-view > *')
+      return el ? getComputedStyle(el).flexShrink : null
+    })(),
     hasNowPlaying: Boolean(document.querySelector('.now-playing')),
     offenders: (() => {
       // Elements whose right edge sits past the view's content box. This is what

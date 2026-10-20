@@ -105,7 +105,7 @@ function playlistArtworkTrack(playlist: OnlinePlaylist): Track | null {
 }
 
 /**
- * The Streaming view.
+ * The YouTube view.
  *
  * Links the user pastes become rows here and stay until they are removed — not
  * because they were copied, only because they were pasted. A link is resolved
@@ -420,7 +420,7 @@ export function OnlineView(props: OnlineViewProps) {
     <section className="main-view online-view">
       <header className="view-header">
         <div className="view-heading">
-          <h1>Streaming</h1>
+          <h1>YouTube</h1>
           <p className="subtitle">{subtitle}</p>
         </div>
         {entries.length > 0 ? (
@@ -634,7 +634,7 @@ export function OnlineView(props: OnlineViewProps) {
           <p>
             {onlinePlaylists.length > 0
               ? 'Links you play on their own show up here, newest first. Imported playlists stay in the box above and never fill this history with their tracks.'
-              : 'Paste a YouTube link above and it plays straight away. A playlist, album or mix is imported as a whole and appears in Playlists under Imported. Streams stay here as links; save one to keep a copy in your library.'}
+              : 'Paste a YouTube link above and it plays straight away. A playlist, album or mix is imported as a whole and appears in Playlists under Imported. Links stay here; save one to keep a copy in your library.'}
           </p>
         </div>
       ) : (

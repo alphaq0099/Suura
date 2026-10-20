@@ -51,7 +51,7 @@ Working today:
   and the album or the artist drops out as a pane gets narrower rather than squeezing the title.
 - **It picks up where it left off**: the queue, the track and the position are written down as they play and put back
   on the next start — paused, at the same spot, with tracks that have since been deleted left out.
-- **The Streaming view** (M3): a sidebar entry under Library where a pasted YouTube link becomes a row that stays. Paste
+- **The YouTube view** (M3): a sidebar entry under Library where a pasted YouTube link becomes a row that stays. Paste
   from the clipboard with the button in the field, or right-click the field and choose **Paste**, then **Add to queue**
   or **Play now**. Resolving takes 7–10 s, so a submitted link appears as a *Resolving…* row at once and fills in — or
   reports *Could not play this link* with Retry — instead of blocking on a dialog. The view is split into two boxes.
@@ -75,8 +75,8 @@ Working today:
   cancellation, and **Reveal** once the file is in the library. A crash or force-quit leaves no temp folder behind:
   the next start sweeps the downloads directory for this service's own UUID folders and `.part` files.
 - **Search** (M5): the sidebar's **Search** view asks the local library and YouTube at the same time and puts both
-  answers in one list. Every row says where it would play from: **Local** rows play a file immediately, **Streaming**
-  rows run the same add-link path as a pasted URL, so they join the Streaming history and use the same resolve cache.
+  answers in one list. Every row says where it would play from: **Local** rows play a file immediately, **YouTube**
+  rows run the same add-link path as a pasted URL, so they join the YouTube history and use the same resolve cache.
   YouTube results are metadata only — a search resolves nothing and writes nothing until a result is chosen. Rows offer
   **Play**, **Add to queue** and **Save to library**; a result's channel opens a page of that channel's recent videos in
   place, with the same actions, and **Back to results** returns without losing the search. There is no recommendation
@@ -105,7 +105,7 @@ Working today:
   target is therefore a **warm** target (cached or prefetched playback, which meets it), while a cold paste has a
   **≤ 10 s** display target and shows *Resolving…* while it waits. See
   [`docs/notes/yt-dlp-50.md`](./docs/notes/yt-dlp-50.md). The player
-  bar marks a stream with a **Streaming** badge. Four seconds into a stream the app
+  bar marks a stream with a **YouTube** badge. Four seconds into a stream the app
   resolves the *next* queue entry in the background, so the 7–10 s sidecar run happens while the current song is still
   playing and pressing Next (or reaching the end) only waits for the CDN's first bytes. Only the resolve is brought
   forward — the audio itself is still streamed on demand by the `<audio>` element, not downloaded ahead. Next cuts the
@@ -257,7 +257,7 @@ the next track does arrive, `resolve` finds the answer already there.
 
 ### How a pasted link becomes history
 
-The Streaming view is a list of *links*, not of files. Pasting one calls `online:add-link`, which resolves it (warming the
+The YouTube view is a list of *links*, not of files. Pasting one calls `online:add-link`, which resolves it (warming the
 cache playback will read) and writes a row to the `online_tracks` table: the video id, the metadata yt-dlp reported, the
 canonical `watch?v=` URL and two timestamps. Identity is the video id, so pasting the same link again refreshes one row
 instead of adding another. Ordering is "most recent activity first", where activity is either being added or being played
@@ -292,7 +292,7 @@ row id, because an entry imported from a playlist has no history row at all.
 The Search view runs two reads in parallel: the library's existing FTS query and a YouTube `ytsearchN:` fetch with
 `--flat-playlist`. The YouTube side returns ids, titles, channels and durations only — no formats, no signed URLs — so a
 search costs one sidecar run and cannot start playback, write a file or fill the history by itself. Every result is
-badged **Local** or **Streaming**, and both kinds share the same row layout and actions.
+badged **Local** or **YouTube**, and both kinds share the same row layout and actions.
 
 Choosing a YouTube result calls the same `online:add-link` path as a pasted URL. That is deliberate: the history and the
 resolve cache should not care whether a video arrived by clipboard or by search. Choosing a local result plays the file
@@ -373,7 +373,7 @@ save(videoId) ──▶ already saved? ──yes──▶ the existing row
 
 The file is an ordinary `local` track: its `source_kind` stays `local` because that is how it plays (offline, from
 disk), and the video it came from lives in the separate `origin_kind`/`origin_id` pair. That split matters in both
-directions — a saved file plays through the local resolver with no special case, and the Streaming view can ask "is this
+directions — a saved file plays through the local resolver with no special case, and the YouTube view can ask "is this
 video already in my library?" (one `savedOrigins` query for a whole page) without pretending a file is a stream. A tag
 check would not be enough on its own: Opus carries yt-dlp's watch URL as a comment, but MP3 puts it in an ID3
 `TXXX:comment` frame that `music-metadata` only exposes natively, so `extractMetadata` reads both, and the downloader

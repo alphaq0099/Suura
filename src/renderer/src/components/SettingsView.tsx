@@ -326,7 +326,7 @@ export function SettingsView(props: SettingsViewProps) {
           <article className="card">
             <header className="card-header">
               <h2>
-                Streaming engine <span className="badge">used from M3</span>
+                YouTube engine <span className="badge">used from M3</span>
               </h2>
               <button type="button" onClick={onRefreshEngine} disabled={engineLoading}>
                 {engineLoading ? <SpinnerIcon /> : <RefreshIcon />}
@@ -334,7 +334,7 @@ export function SettingsView(props: SettingsViewProps) {
               </button>
             </header>
             <p className="card-hint">
-              The app shells out to yt-dlp for YouTube audio and ffmpeg for transcoding, tagging and covers. Streaming,
+              The app shells out to yt-dlp for YouTube audio and ffmpeg for transcoding, tagging and covers. Playback,
               importing lists and saving tracks all need these two binaries; this reports whether they are ready.
             </p>
 

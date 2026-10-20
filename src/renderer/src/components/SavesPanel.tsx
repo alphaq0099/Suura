@@ -38,7 +38,7 @@ function statusText(item: SaveItem): string {
  * A small dock for saves that are running, failed or just finished.
  *
  * Saving is the one job that outlives the view that started it: a link in the
- * Streaming history, an imported entry and a Save all can all be writing at the
+ * YouTube history, an imported entry and a Save all can all be writing at the
  * same time. This panel is mounted once by the app, so those jobs stay visible
  * from every screen, and each row carries the only three actions a save needs —
  * cancel while it runs, retry when it failed, reveal once it is in the library.

@@ -328,9 +328,9 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
       play will read without registering a token, recording history or failing the caller. A video id is asked for once
       per session and the timer dies with the track, so skimming a queue does not spawn a sidecar per row. Only the
       resolve is brought forward; the bytes are still streamed on demand.
-- [x] Paste surface: a dedicated **Streaming** view (sidebar, under Library) with a persistent link history — a pasted link
+- [x] Paste surface: a dedicated **YouTube** view (sidebar, under Library) with a persistent link history — a pasted link
       becomes a row at once (*Resolving…*), then fills in; **Add to queue** / **Play now**, per-row album/artist/duration,
-      a right-click menu (Play, Add to queue, Copy link, Remove) and a **Streaming** badge in the player bar. Rows show a
+      a right-click menu (Play, Add to queue, Copy link, Remove) and a **YouTube** badge in the player bar. Rows show a
       cached thumbnail, fetched from the video id the first time the row is drawn (and repaired if an earlier pass failed).
       Saving a row into the library is M4 (done). The history is links, not files, so it survives a restart and a cache
       wipe, and it holds only links the user added — playing a track out of an imported list never echoes it there, and
@@ -344,7 +344,7 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
       paste button.
 **Exit:** 50 hand-picked YouTube links play directly, ≥ 90% on first attempt, < 3 s to first audio, and seeking works.
 *Status: **exit measured and met on the agreed definition.** A fresh 50-link sample resolved **50/50 (100%)**, and
-playback with seeking works end-to-end through the Streaming view. The median cold resolve was **8.3 s** (6.8–11.5 s)
+playback with seeking works end-to-end through the YouTube view. The median cold resolve was **8.3 s** (6.8–11.5 s)
 and the CDN's first 2 KB arrived in a median **0.46 s** (176–1263 ms), so the sidecar is the cost, not the stream. The
 `< 3 s` target is therefore adopted for **warm playback**: pressing play on a track whose URL is already in the session
 cache, or moving to a prefetched next track, starts audio in well under a second. A **cold paste** has a display target
@@ -375,8 +375,8 @@ leaves no temp folder; cancel and retry work from the dock. The disk-budget/offl
 
 ### M5 — Discovery & YouTube Library Surface  *(in progress)*
 - [x] Unified search: local results **and** YouTube results in one list, clearly badged. The new **Search** view queries
-      both in parallel; every row carries a **Local** or **Streaming** badge. A local row plays a file at once. A
-      YouTube row goes through the same add-link path as a pasted URL, so it is remembered in the Streaming history and
+      both in parallel; every row carries a **Local** or **YouTube** badge. A local row plays a file at once. A
+      YouTube row goes through the same add-link path as a pasted URL, so it is remembered in the YouTube history and
       uses the same resolve cache. Rows offer Play, Add to queue and Save to library; a YouTube search returns metadata
       only, so no result is resolved or written until it is chosen.
 - [x] Channel/artist pages (basic), **more from this channel**. A search result's channel id or handle opens a page of
@@ -404,7 +404,7 @@ leaves no temp folder; cancel and retry work from the dock. The disk-budget/offl
 **Exit:** a user can go from "no music" to "a 40-track playlist playing" without touching a folder.
 *Status: the search half of this milestone is in. Search finds local and YouTube rows together, channels open in
 place, and imported lists plus the link history already cover the "start from nothing" path. Still open: smart
-playlists, and folding stream-only rows into the Library view instead of keeping them under Streaming. The channel
+playlists, and folding stream-only rows into the Library view instead of keeping them under YouTube. The channel
 page is a flat recent-videos list on purpose — no subscriptions, no channel import, no "download all".*
 
 ### M6 — Settings Revamp  *(scope to be decided, ~1–2 weeks)*
@@ -574,14 +574,14 @@ player/
 1. ~~**Run the sidecar spike**~~ Done: `docs/notes/yt-dlp-spike.md`, followed by the 20-link sample and the 50-link M3
    measurement in `docs/notes/yt-dlp-50.md`. yt-dlp + ffmpeg resolve, seek, download and tag on this machine.
 2. ~~**Decide the stack** (§3) once the spike has told you what the engine actually needs. Write it down as an ADR.~~ Done: `docs/adr/0001-stack-and-storage.md` (Electron + TypeScript + React, `node:sqlite`, no native build tools).
-3. ~~**Wireframe the 6 core screens**~~ Done, and built: Library, Streaming, Search, Playlists, Queue, Settings and Now
+3. ~~**Wireframe the 6 core screens**~~ Done, and built: Library, YouTube, Search, Playlists, Queue, Settings and Now
    Playing all exist; the full Downloads screen is deferred to M12.
 4. ~~**Write the two specs**~~ Done: `IMediaResolver` is `src/engine/resolver.ts`; the IPC event schema is `src/shared/ipc.ts`.
 5. ~~**Pick the retention defaults**~~ Done: stream-only is the default and is currently the only accepted mode; the
    5 GB / 30-day cache fields remain dormant for M12, and saving is always explicit.
 
-Where things stand: the stack and storage decisions are recorded (ADR 0001). Streaming has a real surface — the
-**Streaming** view with a persistent link history and a separate **Imported** box, one card per list — and playlist,
+Where things stand: the stack and storage decisions are recorded (ADR 0001). YouTube playback has a real surface — the
+**YouTube** view with a persistent link history and a separate **Imported** box, one card per list — and playlist,
 album and mix import stores a snapshot that the Playlists view can play, queue, re-import, rename and trim, with a
 per-import track count for mixes and radios. **Saving to the library works**: a history row, a search result or an
 imported entry downloads once, is tagged with embedded artwork, moves into the music folder and is indexed as an
