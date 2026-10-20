@@ -5,13 +5,17 @@ import type { Logger } from '@core/logging/logger'
 import type { EngineSettings, QualityTier, YouTubeSearchResult } from '@shared/types'
 import {
   describeYouTubeFailure,
+  isRetryableYouTubeFailure,
   isYouTubeVideoId,
   normalizeArtistName,
+  withBrowserCookies,
   youtubeChannelUrl,
   youtubeFormatSelector,
   youtubeWatchUrl
 } from '@shared/youtube'
 import { locateExecutable, wellKnownDirectories } from './locate'
+import { RequestScheduler } from './request-scheduler'
+import { YouTubeGate } from './youtube-gate'
 
 /** Resolving is 7-10 s on a normal connection; 25 s leaves room for a slow night. */
 const DEFAULT_TIMEOUT_MS = 25_000
@@ -30,6 +34,25 @@ const PROGRESS_INTERVAL_MS = 250
 
 /** Enough to identify the failure without holding a whole yt-dlp transcript. */
 const MAX_STDERR_BYTES = 64 * 1024
+
+/**
+ * yt-dlp starts are paced.
+ *
+ * Two metadata requests may run together, but starts are separated by a few
+ * hundred milliseconds with jitter. A download can hold its slot for minutes,
+ * so it has its own lane; a save must never sit in front of a play request.
+ */
+const METADATA_CONCURRENCY = 2
+const METADATA_GAP_MS = 350
+const METADATA_JITTER_MS = 250
+const DOWNLOAD_CONCURRENCY = 8
+const DOWNLOAD_GAP_MS = 750
+const DOWNLOAD_JITTER_MS = 500
+
+/** One retry for a transient network failure, never for a bot check. */
+const TRANSIENT_RETRY_DELAY_MS = 2_000
+const TRANSIENT_RETRY_JITTER_MS = 1_000
+const UPDATE_TIMEOUT_MS = 90_000
 
 export interface YtMediaInfo {
   videoId: string
@@ -317,18 +340,44 @@ export function buildDownloadArgs(
  */
 export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearchProvider {
   private binary: string | null = null
+  private updateInFlight: Promise<string> | null = null
+  readonly gate: YouTubeGate
+
+  private readonly metadataScheduler: RequestScheduler
+  private readonly downloadScheduler: RequestScheduler
 
   constructor(
     private readonly deps: {
       engine: () => EngineSettings
       log: Logger
       timeoutMs?: number
+      gate?: YouTubeGate
+      metadataScheduler?: RequestScheduler
+      downloadScheduler?: RequestScheduler
+      /** Injectable for tests; the real default is two seconds plus jitter. */
+      transientRetryDelayMs?: number
     }
-  ) {}
+  ) {
+    this.gate = deps.gate ?? new YouTubeGate()
+    this.metadataScheduler =
+      deps.metadataScheduler ??
+      new RequestScheduler({
+        maxConcurrent: METADATA_CONCURRENCY,
+        minGapMs: METADATA_GAP_MS,
+        jitterMs: METADATA_JITTER_MS
+      })
+    this.downloadScheduler =
+      deps.downloadScheduler ??
+      new RequestScheduler({
+        maxConcurrent: DOWNLOAD_CONCURRENCY,
+        minGapMs: DOWNLOAD_GAP_MS,
+        jitterMs: DOWNLOAD_JITTER_MS
+      })
+  }
 
   async fetchInfo(videoId: string, quality: QualityTier, signal?: AbortSignal): Promise<YtMediaInfo> {
     const args = buildInfoArgs(videoId, quality)
-    const { stdout } = await this.run(args, signal)
+    const { stdout } = await this.runWithRetry(args, signal)
     try {
       return parseInfo(stdout, videoId)
     } catch (error) {
@@ -342,7 +391,7 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
 
   async fetchPlaylist(url: string, limit: number, signal?: AbortSignal): Promise<YtPlaylistInfo> {
     const args = buildPlaylistArgs(url, limit)
-    const { stdout } = await this.run(args, signal, PLAYLIST_TIMEOUT_MS)
+    const { stdout } = await this.runWithRetry(args, signal, PLAYLIST_TIMEOUT_MS)
     try {
       return parsePlaylist(stdout, limit)
     } catch (error) {
@@ -363,7 +412,7 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
     const text = query.trim()
     if (text.length === 0) throw new YtDlpError('Type something to search for.', 'empty-query')
     const args = buildSearchArgs(text, limit, offset)
-    const { stdout } = await this.run(args, signal, PLAYLIST_TIMEOUT_MS)
+    const { stdout } = await this.runWithRetry(args, signal, PLAYLIST_TIMEOUT_MS)
     try {
       return parseSearchResults(stdout, limit)
     } catch (error) {
@@ -382,7 +431,7 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
     if (!url) {
       throw new YtDlpError('That does not look like a channel link or id.', 'bad-channel')
     }
-    const { stdout } = await this.run(buildChannelArgs(url, limit, offset), signal, PLAYLIST_TIMEOUT_MS)
+    const { stdout } = await this.runWithRetry(buildChannelArgs(url, limit, offset), signal, PLAYLIST_TIMEOUT_MS)
     try {
       return parseChannel(stdout, limit, url)
     } catch (error) {
@@ -400,10 +449,39 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
    * process exited. The output template must contain `%(ext)s`.
    */
   download(videoId: string, options: YtDownloadOptions): Promise<string> {
-    const args = buildDownloadArgs(videoId, options.quality, options.format, options.outputTemplate)
-    const binary = this.resolveBinary()
-    const timeoutMs = options.timeoutMs ?? DOWNLOAD_TIMEOUT_MS
+    try {
+      this.gate.assertReady()
+      const args = withBrowserCookies(
+        buildDownloadArgs(videoId, options.quality, options.format, options.outputTemplate),
+        this.deps.engine().cookiesFromBrowser
+      )
+      const binary = this.resolveBinary()
+      const timeoutMs = options.timeoutMs ?? DOWNLOAD_TIMEOUT_MS
 
+      return this.downloadScheduler
+        .schedule(
+          () => {
+            this.gate.assertReady()
+            return this.spawnDownload(binary, args, videoId, options, timeoutMs)
+          },
+          { signal: options.signal, onAbort: () => new Error('Saving the track was cancelled.') }
+        )
+        .catch((error) => {
+          this.gate.recordFailure(error)
+          throw error
+        })
+    } catch (error) {
+      return Promise.reject(error)
+    }
+  }
+
+  private spawnDownload(
+    binary: string,
+    args: string[],
+    videoId: string,
+    options: YtDownloadOptions,
+    timeoutMs: number
+  ): Promise<string> {
     return new Promise((resolve, reject) => {
       const signal = options.signal
       if (signal?.aborted) {
@@ -525,17 +603,111 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
     return located.path
   }
 
+  /** Updates the yt-dlp binary in place (`yt-dlp -U`). */
+  update(signal?: AbortSignal): Promise<string> {
+    if (this.updateInFlight) return this.updateInFlight
+
+    let binary: string
+    try {
+      binary = this.resolveBinary()
+    } catch (error) {
+      return Promise.reject(error)
+    }
+
+    const work = this.spawnBuffered(
+      binary,
+      ['--ignore-config', '-U'],
+      signal,
+      UPDATE_TIMEOUT_MS,
+      'Updating yt-dlp was cancelled.'
+    )
+      .then(({ stdout, stderr }) => {
+        const output = [stdout, stderr]
+          .map((part) => part.trim())
+          .filter(Boolean)
+          .join('\n')
+          .trim()
+        this.deps.log.info('yt-dlp update finished', { output: output.slice(-1000) })
+        return output || 'yt-dlp is up to date.'
+      })
+      .catch((error) => {
+        this.deps.log.warn('yt-dlp update failed', error)
+        throw error
+      })
+      .finally(() => {
+        this.updateInFlight = null
+      })
+
+    this.updateInFlight = work
+    return work
+  }
+
+  /**
+   * One retry for a transient network failure.
+   *
+   * A bot check is explicitly not retryable. The second attempt goes through
+   * the scheduler again, so it still respects the start gap and the breaker.
+   */
+  private async runWithRetry(
+    args: string[],
+    signal?: AbortSignal,
+    timeoutOverrideMs?: number
+  ): Promise<{ stdout: string; stderr: string }> {
+    try {
+      return await this.run(args, signal, timeoutOverrideMs)
+    } catch (error) {
+      if (signal?.aborted || !isRetryableError(error)) throw error
+      const base = this.deps.transientRetryDelayMs ?? TRANSIENT_RETRY_DELAY_MS
+      const delay = base + Math.floor(Math.random() * TRANSIENT_RETRY_JITTER_MS)
+      this.deps.log.info('retrying yt-dlp after a transient network failure', { delay })
+      await delayWithSignal(delay, signal, 'Resolving the link was cancelled.')
+      return this.run(args, signal, timeoutOverrideMs)
+    }
+  }
+
   private run(
     args: string[],
     signal?: AbortSignal,
     timeoutOverrideMs?: number
   ): Promise<{ stdout: string; stderr: string }> {
-    const binary = this.resolveBinary()
-    const timeoutMs = timeoutOverrideMs ?? this.deps.timeoutMs ?? DEFAULT_TIMEOUT_MS
+    let binary: string
+    try {
+      binary = this.resolveBinary()
+      this.gate.assertReady()
+    } catch (error) {
+      return Promise.reject(error)
+    }
 
+    const timeoutMs = timeoutOverrideMs ?? this.deps.timeoutMs ?? DEFAULT_TIMEOUT_MS
+    // Read the cookie setting at call time; changing it in Settings must affect
+    // the next request, not only the next launch.
+    const commandArgs = withBrowserCookies(args, this.deps.engine().cookiesFromBrowser)
+
+    return this.metadataScheduler
+      .schedule(
+        () => {
+          // The breaker may have tripped while this job waited for a slot.
+          this.gate.assertReady()
+          return this.spawnBuffered(binary, commandArgs, signal, timeoutMs)
+        },
+        { signal, onAbort: () => new Error('Resolving the link was cancelled.') }
+      )
+      .catch((error) => {
+        this.gate.recordFailure(error)
+        throw error
+      })
+  }
+
+  private spawnBuffered(
+    binary: string,
+    args: string[],
+    signal: AbortSignal | undefined,
+    timeoutMs: number,
+    abortMessage = 'Resolving the link was cancelled.'
+  ): Promise<{ stdout: string; stderr: string }> {
     return new Promise((resolve, reject) => {
       if (signal?.aborted) {
-        reject(new Error('Resolving the link was cancelled.'))
+        reject(new Error(abortMessage))
         return
       }
 
@@ -569,7 +741,7 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
         stop(new YtDlpError('YouTube took too long to answer. Try again.', 'timeout'))
       }, timeoutMs)
 
-      const onAbort = (): void => stop(new Error('Resolving the link was cancelled.'))
+      const onAbort = (): void => stop(new Error(abortMessage))
       signal?.addEventListener('abort', onAbort, { once: true })
 
       child.stdout?.on('data', (chunk: Buffer) => {
@@ -607,6 +779,27 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
       })
     })
   }
+}
+
+function isRetryableError(error: unknown): boolean {
+  if (!(error instanceof YtDlpError)) return false
+  return isRetryableYouTubeFailure(`${error.message}\n${error.detail}`)
+}
+
+function delayWithSignal(ms: number, signal: AbortSignal | undefined, message: string): Promise<void> {
+  if (signal?.aborted) return Promise.reject(new Error(message))
+  return new Promise((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout>
+    const onAbort = (): void => {
+      clearTimeout(timer)
+      reject(new Error(message))
+    }
+    timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
 }
 
 /** yt-dlp can leave a deno/ffmpeg child behind; killing the tree is the only clean stop. */

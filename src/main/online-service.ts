@@ -22,6 +22,7 @@ import {
   youtubeThumbnailCandidates,
   youtubeWatchUrl
 } from '@shared/youtube'
+import { AsyncTtlCache } from './async-cache'
 import type { ArtworkService } from './artwork-service'
 
 export interface OnlineService {
@@ -122,6 +123,18 @@ const MAX_THUMBNAIL_BYTES = 4 * 1024 * 1024
 const MAX_ARTWORK_DOWNLOADS = 4
 
 /**
+ * Search and channel pages are cached for five minutes.
+ *
+ * The pager makes it easy to bounce between two pages, and a result's channel
+ * page is often opened and then returned to. Five minutes is long enough to
+ * absorb that, short enough that a changed query or a re-import still sees
+ * YouTube's current answer.
+ */
+const DISCOVERY_CACHE_TTL_MS = 5 * 60_000
+const MAX_CACHED_SEARCHES = 60
+const MAX_CACHED_CHANNELS = 30
+
+/**
  * The Online history and the playlists imported from links.
  *
  * Playback is not this service's job — it only warms the resolver cache on the
@@ -172,6 +185,35 @@ export function createOnlineService(deps: {
    * session-long "no picture" verdict would be wrong the moment it recovers.
    */
   const videoArtwork = new Map<string, string>()
+
+  const searchCache = new AsyncTtlCache<YouTubeSearchResult[]>({
+    ttlMs: DISCOVERY_CACHE_TTL_MS,
+    maxEntries: MAX_CACHED_SEARCHES,
+    now: deps.now
+  })
+  const channelCache = new AsyncTtlCache<YouTubeChannel>({
+    ttlMs: DISCOVERY_CACHE_TTL_MS,
+    maxEntries: MAX_CACHED_CHANNELS,
+    now: deps.now
+  })
+
+  const cleanEntries = (entries: YouTubeSearchResult[]): YouTubeSearchResult[] =>
+    entries.map((entry) => {
+      const metadata = cleanYouTubeMetadata(entry.title, entry.artist)
+      return { ...entry, title: metadata.title, artist: metadata.artist }
+    })
+
+  /**
+   * One search page, cached and single-flighted.
+   *
+   * The channel fallback for a display name uses the same path, so opening a
+   * channel and then pressing Back to the search does not ask twice.
+   */
+  const searchPage = (text: string, limit: number, offset: number): Promise<YouTubeSearchResult[]> =>
+    searchCache.get(`${text.toLowerCase()}:${limit}:${offset}`, async () => {
+      const results = await deps.discoverProvider.search(text, limit, offset)
+      return cleanEntries(results)
+    })
 
   let activeDownloads = 0
   const waitingDownloads: Array<() => void> = []
@@ -407,40 +449,36 @@ export function createOnlineService(deps: {
       if (text.length > 200) throw new Error('That search is too long.')
       const limit = Math.max(1, Math.min(50, Math.round(requestedLimit ?? 10)))
       const offset = Math.max(0, Math.min(490, Math.round(requestedOffset ?? 0)))
-      const results = await deps.discoverProvider.search(text, limit, offset)
-      return results.map((entry) => {
-        const metadata = cleanYouTubeMetadata(entry.title, entry.artist)
-        return { ...entry, title: metadata.title, artist: metadata.artist }
-      })
+      return searchPage(text, limit, offset)
     },
 
     async channel(target, requestedLimit, requestedOffset) {
+      const text = target.trim()
+      if (text.length === 0) throw new Error('That does not look like a channel link or id.')
       const limit = Math.max(1, Math.min(50, Math.round(requestedLimit ?? 10)))
       const offset = Math.max(0, Math.min(490, Math.round(requestedOffset ?? 0)))
-      const clean = (entries: YouTubeSearchResult[]): YouTubeSearchResult[] =>
-        entries.map((entry) => {
-          const metadata = cleanYouTubeMetadata(entry.title, entry.artist)
-          return { ...entry, title: metadata.title, artist: metadata.artist }
-        })
+      const key = `${text.toLowerCase()}:${limit}:${offset}`
 
-      const channelUrl = youtubeChannelUrl(target)
-      if (!channelUrl) {
-        // A search result usually carries a channel id or handle, but YouTube
-        // sometimes only reports a display name. There is no page to point at in
-        // that case, so the honest fallback is a search for the name; the view
-        // says it is a channel and still lets every row play.
-        const entries = clean(await deps.discoverProvider.search(target, limit, offset))
-        if (entries.length === 0 && offset === 0) {
-          throw new Error('No videos were found for that channel.')
+      return channelCache.get(key, async () => {
+        const channelUrl = youtubeChannelUrl(text)
+        if (!channelUrl) {
+          // A search result usually carries a channel id or handle, but YouTube
+          // sometimes only reports a display name. There is no page to point at in
+          // that case, so the honest fallback is a search for the name; the view
+          // says it is a channel and still lets every row play.
+          const entries = await searchPage(text, limit, offset)
+          if (entries.length === 0 && offset === 0) {
+            throw new Error('No videos were found for that channel.')
+          }
+          return { channelId: null, name: text, url: '', entries }
         }
-        return { channelId: null, name: target, url: '', entries }
-      }
 
-      const info = await deps.discoverProvider.channel(target, limit, offset)
-      if (info.entries.length === 0 && offset === 0) {
-        throw new Error('This channel has no public videos that this app can list.')
-      }
-      return { ...info, entries: clean(info.entries) }
+        const info = await deps.discoverProvider.channel(text, limit, offset)
+        if (info.entries.length === 0 && offset === 0) {
+          throw new Error('This channel has no public videos that this app can list.')
+        }
+        return { ...info, entries: cleanEntries(info.entries) }
+      })
     }
   }
 }

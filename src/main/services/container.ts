@@ -85,6 +85,7 @@ export function createContainer(): AppContainer {
     engine: () => settings.get().engine,
     log: log.child('yt-dlp')
   })
+  scheduleEngineAutoUpdate({ settings, ytDlp, log: log.child('yt-dlp-update') })
   const youtube = createYoutubeService(
     new YouTubeResolver({
       info: ytDlp,
@@ -178,4 +179,46 @@ export function createContainer(): AppContainer {
       log.info('shutdown complete')
     }
   }
+}
+
+const AUTO_UPDATE_INTERVAL_MS = 24 * 60 * 60_000
+const AUTO_UPDATE_DELAY_MS = 20_000
+
+/**
+ * Keeps yt-dlp current without making every launch pay for it.
+ *
+ * `yt-dlp -U` is a network request, not a YouTube request. It runs in the
+ * background once a day, after the window has settled, and a failed update is
+ * logged rather than shown: an install managed by winget or pip may not allow
+ * self-updates, and that must not look like a broken player.
+ */
+function scheduleEngineAutoUpdate(deps: {
+  settings: SettingsService
+  ytDlp: YtDlpClient
+  log: Logger
+}): void {
+  if (process.env.PLAYER_SKIP_ENGINE_UPDATE === '1') return
+  const engine = deps.settings.get().engine
+  if (!engine.autoUpdate) return
+
+  const last = typeof engine.lastUpdateCheckAt === 'number' ? engine.lastUpdateCheckAt : 0
+  if (Date.now() - last < AUTO_UPDATE_INTERVAL_MS) return
+
+  const timer = setTimeout(() => {
+    // The switch or the timestamp may have changed while the timer waited.
+    const current = deps.settings.get().engine
+    const checkedAt = typeof current.lastUpdateCheckAt === 'number' ? current.lastUpdateCheckAt : 0
+    if (!current.autoUpdate || Date.now() - checkedAt < AUTO_UPDATE_INTERVAL_MS) return
+
+    void deps.ytDlp
+      .update()
+      .then((message) => deps.log.info('yt-dlp is current', { message: message.slice(-1000) }))
+      .catch((error) => deps.log.warn('yt-dlp could not update itself', error))
+      .finally(() => {
+        // Record the attempt even on failure. Otherwise a binary that cannot
+        // self-update would be retried on every single launch.
+        deps.settings.update({ engine: { lastUpdateCheckAt: Date.now() } })
+      })
+  }, AUTO_UPDATE_DELAY_MS)
+  timer.unref?.()
 }

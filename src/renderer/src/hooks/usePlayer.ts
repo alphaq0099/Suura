@@ -19,6 +19,8 @@ export interface UsePlayerOptions {
   /** From settings; changing it re-orders the live queue without interrupting playback. */
   repeat: RepeatMode
   shuffle: boolean
+  /** Resolve the next YouTube entry while this one plays. */
+  prefetchNext: boolean
   onVolumeChange: (volume: number) => void
   /** Called with listened milliseconds; `completed` means the track reached its end. */
   onReport: (trackId: number, playedMs: number, completed: boolean) => void
@@ -103,7 +105,7 @@ function describeMediaError(error: MediaError | null): string {
  * is what will let remote streaming slot in without changing this file.
  */
 export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
-  const { initialVolume, repeat, shuffle, onVolumeChange, onReport } = options
+  const { initialVolume, repeat, shuffle, prefetchNext, onVolumeChange, onReport } = options
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const [entries, setEntries] = useState<Track[]>([])
@@ -339,7 +341,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
   // The current track may be a local file with a stream behind it, so the guard is
   // on the *next* entry rather than on what is playing now.
   useEffect(() => {
-    if (!current || !isPlaying) return
+    if (!current || !isPlaying || !prefetchNext) return
     const timer = setTimeout(() => {
       const decision = nextDecision(indexRef.current, entriesRef.current.length, repeatRef.current, false)
       if (decision.kind !== 'play') return
@@ -359,7 +361,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
         .catch(() => undefined)
     }, PREFETCH_DELAY_MS)
     return () => clearTimeout(timer)
-  }, [current, isPlaying])
+  }, [current, isPlaying, prefetchNext])
 
   // Shuffle is a setting, so it can change while something is playing. Rebuild
   // the order around the current track instead of restarting playback.

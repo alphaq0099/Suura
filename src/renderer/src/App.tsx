@@ -129,6 +129,7 @@ export function App() {
     initialVolume: settings?.volume ?? 0.8,
     repeat: settings?.repeat ?? 'off',
     shuffle: settings?.shuffle ?? false,
+    prefetchNext: settings?.engine.prefetchNext ?? true,
     onVolumeChange: handleVolumeChange,
     onReport: handleReport
   })

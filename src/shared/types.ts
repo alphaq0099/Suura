@@ -360,11 +360,23 @@ export interface RetentionSettings {
 export interface EngineSettings {
   /** Folder holding yt-dlp(.exe) and ffmpeg(.exe). Null means "search PATH". */
   binDir: string | null
+  /** Check and update the yt-dlp binary at most once a day. */
   autoUpdate: boolean
+  /** Epoch ms of the last automatic update attempt. Null means never. */
+  lastUpdateCheckAt: number | null
   /** Max concurrent downloads. Resolver concurrency is capped separately. */
   downloadConcurrency: number
-  /** e.g. "chrome", "edge", "firefox". Null disables cookie import. */
+  /**
+   * Opt-in browser cookie source for yt-dlp. Null is the default and means no
+   * cookies are read. Account lists remain unsupported either way.
+   */
   cookiesFromBrowser: string | null
+  /**
+   * Resolve the next queued YouTube track while the current one plays. On by
+   * default because it removes the 8 s gap between songs; off means one fewer
+   * speculative request per track.
+   */
+  prefetchNext: boolean
   /**
    * How many tracks an imported playlist or album keeps.
    *

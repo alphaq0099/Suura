@@ -16,7 +16,7 @@ import { promisify } from 'node:util'
 
 import { silentLogger } from '@core/logging/logger'
 import { resolveAppPaths, ensureAppDirectories } from '@core/paths'
-import { SettingsService } from '@core/settings/settings-service'
+import { DEFAULT_SETTINGS, SettingsService } from '@core/settings/settings-service'
 import { latestVersion, openLibraryDatabase } from '@core/db/database'
 import { TrackRepository, buildFtsQuery, type ScanRunSummary } from '@core/library/track-repository'
 import { LibraryService } from '@core/library/library-service'
@@ -33,6 +33,8 @@ import { youtubeOriginOf, youtubeOriginOfNative } from '@core/library/metadata'
 import { artworkKeyFor, extractArtwork, extensionForMime } from '@core/library/artwork'
 import { LocalFileResolver } from '@engine/local-file-resolver'
 import { getEngineStatus } from '@engine/sidecar/engine-status'
+import { RequestScheduler } from '@engine/sidecar/request-scheduler'
+import { YouTubeGate } from '@engine/sidecar/youtube-gate'
 import type { YtInfoProvider, YtMediaInfo } from '@engine/sidecar/yt-dlp'
 import {
   buildChannelArgs,
@@ -54,8 +56,11 @@ import {
   cleanYouTubeMetadata,
   describeYouTubeFailure,
   extractYouTubeVideoId,
+  isRetryableYouTubeFailure,
+  isYouTubeBotCheck,
   normalizeArtistName,
   parseYouTubeLink,
+  withBrowserCookies,
   youtubeChannelUrl,
   youtubeListTitle,
   youtubeListUrl,
@@ -68,6 +73,7 @@ import { nextDecision, shuffleFrom, shuffled } from '@shared/queue'
 import { parseRangeHeader } from '@shared/range'
 import { isImportedPlaylistTrackId, onlineEntryToTrack, onlinePlaylistItemToTrack } from '@shared/online'
 import { sanitizeFilePart, savePathParts } from '@shared/files'
+import { AsyncTtlCache } from '../src/main/async-cache'
 import { cleanupAbandonedDownloads, DownloadService } from '../src/main/download-service'
 
 const execFileAsync = promisify(execFile)
@@ -155,8 +161,10 @@ async function main(): Promise<void> {
   const engine = await getEngineStatus({
     binDir: null,
     autoUpdate: false,
+    lastUpdateCheckAt: null,
     downloadConcurrency: 1,
     cookiesFromBrowser: null,
+    prefetchNext: true,
     importLimit: 200,
     mixLimit: 50
   })
@@ -1255,6 +1263,89 @@ async function main(): Promise<void> {
     check(
       'youtube: an unavailable video becomes a human message',
       describeYouTubeFailure('ERROR: Video unavailable').toLowerCase().includes('unavailable')
+    )
+    check('youtube: the bot-check classifier is shared', isYouTubeBotCheck('ERROR: Sign in to confirm you are not a bot'))
+    check(
+      'youtube: a failed cookie read is not mistaken for a bot check',
+      !isYouTubeBotCheck('ERROR: could not find chrome cookies database')
+    )
+    check('youtube: a transient network failure is retryable', isRetryableYouTubeFailure('ERROR: Connection reset by peer'))
+    check(
+      'youtube: a bot check is never retryable',
+      !isRetryableYouTubeFailure('ERROR: Sign in to confirm you are not a bot')
+    )
+    check('youtube: a 25-second timeout is not doubled by a retry', !isRetryableYouTubeFailure('timeout'))
+    checkEqual(
+      'youtube: cookies are passed only when a browser is chosen',
+      withBrowserCookies(['--ignore-config'], 'chrome').slice(0, 3).join(' '),
+      '--ignore-config --cookies-from-browser chrome'
+    )
+    checkEqual(
+      'youtube: cookie arguments are absent by default',
+      withBrowserCookies(['--ignore-config'], null).join(' '),
+      '--ignore-config'
+    )
+
+    check('settings: prefetch is on by default', DEFAULT_SETTINGS.engine.prefetchNext)
+    check('settings: browser cookies are off by default', DEFAULT_SETTINGS.engine.cookiesFromBrowser === null)
+
+    let cacheNow = 1_000
+    let cacheLoads = 0
+    const cache = new AsyncTtlCache<number>({ ttlMs: 1_000, maxEntries: 2, now: () => cacheNow })
+    const loadCached = async (): Promise<number> => {
+      cacheLoads += 1
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      return 42
+    }
+    const [cachedA, cachedB] = await Promise.all([cache.get('same', loadCached), cache.get('same', loadCached)])
+    checkEqual('cache: simultaneous identical reads share one load', cacheLoads, 1)
+    checkEqual('cache: both callers get the value', cachedA + cachedB, 84)
+    await cache.get('same', loadCached)
+    checkEqual('cache: a fresh hit does not load again', cacheLoads, 1)
+    cacheNow += 1_001
+    await cache.get('same', loadCached)
+    checkEqual('cache: an expired entry is loaded again', cacheLoads, 2)
+
+    let gateNow = 1_000
+    const gate = new YouTubeGate({
+      now: () => gateNow,
+      cooldownMs: 60_000,
+      longCooldownMs: 120_000,
+      strikeWindowMs: 300_000
+    })
+    gate.assertReady()
+    gate.recordFailure(new Error("ERROR: Sign in to confirm you're not a bot"))
+    checkEqual('gate: a bot check pauses requests for five minutes', gate.remainingMs(), 60_000)
+    let gateBlocked = false
+    try {
+      gate.assertReady()
+    } catch (error) {
+      gateBlocked = error instanceof Error && error.message.includes('paused')
+    }
+    check('gate: the cooldown refuses a new request with a human message', gateBlocked)
+    gateNow += 60_001
+    gate.assertReady()
+    gate.recordFailure(new Error("Sign in to confirm you're not a bot"))
+    checkEqual('gate: a repeat check inside the window pauses longer', gate.remainingMs(), 120_000)
+
+    const scheduler = new RequestScheduler({ maxConcurrent: 2, minGapMs: 30, jitterMs: 0 })
+    let schedulerActive = 0
+    let schedulerPeak = 0
+    const schedulerStarts: number[] = []
+    const schedulerJob = async (): Promise<void> => {
+      schedulerActive += 1
+      schedulerPeak = Math.max(schedulerPeak, schedulerActive)
+      schedulerStarts.push(Date.now())
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      schedulerActive -= 1
+    }
+    await Promise.all([schedulerJob, schedulerJob, schedulerJob].map(() => scheduler.schedule(schedulerJob)))
+    checkEqual('scheduler: concurrency stays at its cap', schedulerPeak, 2)
+    check(
+      'scheduler: starts are separated by the gap',
+      schedulerStarts.length === 3 &&
+        (schedulerStarts[1] ?? 0) - (schedulerStarts[0] ?? 0) >= 20 &&
+        (schedulerStarts[2] ?? 0) - (schedulerStarts[1] ?? 0) >= 20
     )
 
     const tokenId = '00000000-0000-4000-8000-000000000000'

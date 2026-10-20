@@ -10,6 +10,37 @@ import type { QualityTier } from './types'
 
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/
 
+/**
+ * Browsers yt-dlp can read cookies from on Windows.
+ *
+ * Cookies are off by default. This list exists so the setting can name the
+ * browsers that are actually supported and so the main process can reject a
+ * hand-edited config that asks for something else.
+ */
+export const COOKIE_BROWSERS = ['chrome', 'edge', 'firefox', 'brave', 'chromium', 'opera', 'vivaldi'] as const
+
+export type CookieBrowser = (typeof COOKIE_BROWSERS)[number]
+
+export function isSupportedCookieBrowser(value: unknown): value is CookieBrowser {
+  return typeof value === 'string' && (COOKIE_BROWSERS as readonly string[]).includes(value)
+}
+
+/**
+ * Adds the opt-in cookie argument to a yt-dlp call.
+ *
+ * The argument never appears unless the user chose a browser in Settings. It is
+ * kept here rather than in each builder so search, resolve, imports and saves
+ * all use exactly the same policy.
+ */
+export function withBrowserCookies(args: readonly string[], browser: string | null | undefined): string[] {
+  if (!isSupportedCookieBrowser(browser)) return [...args]
+  const cookieArgs = ['--cookies-from-browser', browser]
+  // Keep `--ignore-config` first: it is the promise that a local yt-dlp config
+  // cannot change what this app does. The cookie switch is still explicit.
+  if (args[0] === '--ignore-config') return [args[0], ...cookieArgs, ...args.slice(1)]
+  return [...cookieArgs, ...args]
+}
+
 export function isYouTubeVideoId(value: string): boolean {
   return VIDEO_ID.test(value)
 }
@@ -182,8 +213,9 @@ const YOUTUBE_HOSTS = new Set(['youtube.com', 'm.youtube.com', 'music.youtube.co
  *
  * `OLAK5uy_` is YouTube Music's auto-generated album list, `RD` is a radio/mix.
  * `LL`/`WL`/`FL`/`UU`/`UL` are the account's liked videos, watch later,
- * favourites and a channel's uploads — all of which need the signed-in account's
- * cookies, which this app deliberately never reads.
+ * favourites and a channel's uploads - all of which belong to a signed-in
+ * account. This app does not sign in, so those lists are refused even when the
+ * optional browser-cookie setting is on.
  */
 export function explicitListKind(listId: string): YouTubeListKind | 'account' | null {
   const id = listId.startsWith('VL') ? listId.slice(2) : listId
@@ -198,13 +230,14 @@ export function explicitListKind(listId: string): YouTubeListKind | 'account' | 
 /**
  * What to tell someone whose link cannot be imported.
  *
- * The refusals are product decisions, not errors: account lists need cookies the
- * app never reads, and picking one video out of a channel page is not an import.
+ * The refusals are product decisions, not errors: account lists belong to a
+ * signed-in account, and picking one video out of a channel page is not an
+ * import.
  */
 export function describeYouTubeRefusal(reason: YouTubeRefusal): string {
   switch (reason) {
     case 'account-list':
-      return 'Liked videos, Watch Later and channel uploads belong to a YouTube account. This app never signs in, so it cannot read them. Import a playlist, album or mix instead.'
+      return 'Liked videos, Watch Later and channel uploads belong to a YouTube account. This app does not sign in, so it cannot read them. Import a playlist, album or mix instead.'
     case 'channel':
       return 'That is a channel page, not a playlist. Open one of its playlists and paste that link.'
     default:
@@ -374,6 +407,36 @@ export function youtubeFormatSelector(tier: QualityTier): string {
 }
 
 /**
+ * Whether a failure looks like YouTube's automated-traffic challenge.
+ *
+ * Kept separate from the human message so the circuit breaker and the retry
+ * policy can agree on what is not retryable.
+ */
+export function isYouTubeBotCheck(stderr: string): boolean {
+  const text = stderr.toLowerCase()
+  // Deliberately narrower than "mentions cookies": a failed browser-cookie
+  // read is a configuration error, not a challenge, and must not pause the app.
+  return /sign in to confirm.*not a bot|confirm you(?:'re| are|\u2019re) not a bot|not a bot|automated traffic|unusual traffic|too many requests|http error 429/.test(
+    text
+  )
+}
+
+/**
+ * A transient network failure that is safe to retry once.
+ *
+ * Bot checks, age restrictions, unavailable videos and bad links are excluded:
+ * retrying those only spends another request, and for a bot check it makes the
+ * next challenge more likely.
+ */
+export function isRetryableYouTubeFailure(stderr: string): boolean {
+  if (isYouTubeBotCheck(stderr)) return false
+  const text = stderr.toLowerCase()
+  return /connection reset|econnreset|socket timeout|temporarily unavailable|http error 5\d\d|unable to download webpage|network is unreachable|eai_again|enotfound|getaddrinfo/.test(
+    text
+  )
+}
+
+/**
  * Turns yt-dlp's stderr into something a person can act on.
  *
  * The raw text is logged, never shown: it contains URLs, absolute paths and
@@ -382,10 +445,10 @@ export function youtubeFormatSelector(tier: QualityTier): string {
  * "Something went wrong".
  */
 export function describeYouTubeFailure(stderr: string): string {
-  const text = stderr.toLowerCase()
-  if (/sign in to confirm|not a bot|confirm you're not a bot|cookies/.test(text)) {
-    return 'YouTube is checking this request for automated traffic. Wait a minute and retry, or try another result. The app does not sign in or use cookies.'
+  if (isYouTubeBotCheck(stderr)) {
+    return 'YouTube is checking this request for automated traffic. New YouTube requests pause for a few minutes after this. The app does not sign in; browser cookies are an opt-in last resort in Settings.'
   }
+  const text = stderr.toLowerCase()
   if (/age.?restricted|confirm your age/.test(text)) {
     return 'This video is age-restricted, so it cannot be played here.'
   }

@@ -22,6 +22,11 @@ const SCALE = process.argv.includes('--scale')
 const HEADLESS = SELFTEST || SCALE
 let headlessDataDir: string | null = null
 
+// The headless runs use throwaway settings, so an automatic `yt-dlp -U` would
+// be a real network request with no lasting benefit, and it could race the
+// tests that probe the binary.
+if (HEADLESS) process.env.PLAYER_SKIP_ENGINE_UPDATE = '1'
+
 if (HEADLESS) {
   headlessDataDir = join(tmpdir(), `player-${SELFTEST ? 'selftest' : 'scale'}-${Date.now()}`)
   app.setPath('userData', headlessDataDir)

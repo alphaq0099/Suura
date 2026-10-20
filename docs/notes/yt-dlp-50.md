@@ -70,7 +70,12 @@ process, or a different resolver), not the player or the HTTP path.
 - A bot check is per request, not a property of the measurement. It can appear on a search, a channel listing, a
   playlist import, a cold resolve, a prefetch or a save, and is more likely after a burst of requests, repeated
   retries, on a shared/VPN address, or for a video with an age or account restriction. The 50-link burst above did not
-  trigger one; that does not mean every future burst will be as lucky. The app does not sign in or use cookies.
+  trigger one; that does not mean every future burst will be as lucky.
+- The measurement predates the request governor added after it: metadata starts are now capped at two with a jittered
+  gap, search/channel pages are cached for five minutes, a bot check pauses new sidecars for five minutes (fifteen on a
+  repeat), and prefetch can be switched off. These measures reduce the chance of a challenge; they cannot remove it.
+  The app does not sign in. Browser cookies are off by default and only read when the user explicitly selects a browser
+  in Settings.
 - One machine, one network, one afternoon. Absolute times will move with the connection and with YouTube's responses.
 - Search-derived links are more representative than a hand-picked list, but they are still a snapshot; a future sample
   should be re-run after a yt-dlp update or a YouTube change.

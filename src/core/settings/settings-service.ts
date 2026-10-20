@@ -54,8 +54,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   engine: {
     binDir: null,
     autoUpdate: true,
+    lastUpdateCheckAt: null,
     downloadConcurrency: 2,
+    // Off by default: reading a browser's cookies is a deliberate last resort,
+    // never something the app does quietly.
     cookiesFromBrowser: null,
+    // One resolve ahead is what makes Next feel instant; the cost is one extra
+    // sidecar start per track, which can be turned off on a metered connection.
+    prefetchNext: true,
     // Big enough for a double album, small enough that a queue stays a queue.
     importLimit: 200,
     // A mix never ends, so its "length" is whatever this says.

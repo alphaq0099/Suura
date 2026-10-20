@@ -12,6 +12,7 @@ import type {
   LibraryClickAction,
   QualityTier
 } from '@shared/types'
+import { COOKIE_BROWSERS } from '@shared/youtube'
 import { FolderIcon, RefreshIcon, SpinnerIcon, TrashIcon } from './Icons'
 
 export interface SettingsViewProps {
@@ -41,6 +42,14 @@ const FORMAT_CHOICES: Array<{ value: DownloadFormat; label: string }> = [
   { value: 'opus', label: 'Opus (no re-encode)' },
   { value: 'mp3', label: 'MP3 320 (compatibility)' },
   { value: 'm4a', label: 'M4A / AAC (Apple devices)' }
+]
+
+const COOKIE_CHOICES: Array<{ value: string; label: string }> = [
+  { value: '', label: 'Off (recommended)' },
+  ...COOKIE_BROWSERS.map((browser) => ({
+    value: browser,
+    label: browser.charAt(0).toUpperCase() + browser.slice(1)
+  }))
 ]
 
 const SHAPE_CHOICES: Array<{ value: ArtworkShape; label: string }> = [
@@ -413,7 +422,37 @@ export function SettingsView(props: SettingsViewProps) {
                     />
                     <span>Keep yt-dlp up to date automatically</span>
                   </label>
+                  <label className="field checkbox">
+                    <input
+                      type="checkbox"
+                      checked={settings.engine.prefetchNext}
+                      onChange={(event) => onUpdate({ engine: { prefetchNext: event.target.checked } })}
+                    />
+                    <span>Prefetch the next track</span>
+                  </label>
+                  <label className="field">
+                    <span>Browser cookies (last resort)</span>
+                    <select
+                      value={settings.engine.cookiesFromBrowser ?? ''}
+                      onChange={(event) =>
+                        onUpdate({ engine: { cookiesFromBrowser: event.target.value || null } })
+                      }
+                    >
+                      {COOKIE_CHOICES.map((choice) => (
+                        <option key={choice.value} value={choice.value}>
+                          {choice.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
+                <p className="card-hint">
+                  The automatic update checks at most once a day and never runs during a test. Prefetch resolves the
+                  next queued YouTube track while the current one plays; turn it off to send one fewer request per
+                  track. Browser cookies stay off unless you choose one: when enabled, yt-dlp reads that browser&apos;s
+                  YouTube cookies on this PC, which can help a sign-in challenge but also grants access to that
+                  account. The app itself never signs in, and account playlists remain unsupported.
+                </p>
                 <p className="card-hint">
                   A playlist or album import keeps the first N tracks; a mix never ends, so N is its whole definition.
                   Both caps are applied while listing, so the rest of the list is never fetched or queued.

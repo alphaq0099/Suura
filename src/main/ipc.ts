@@ -26,7 +26,7 @@ import type {
 } from '@shared/types'
 import { normalizePath } from '@core/library/content-key'
 import { getEngineStatus } from '@engine/sidecar/engine-status'
-import { isYouTubeVideoId } from '@shared/youtube'
+import { isSupportedCookieBrowser, isYouTubeVideoId } from '@shared/youtube'
 import type { AppContainer } from './services/container'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -240,10 +240,13 @@ export function sanitizeSettingsPatch(input: unknown): DeepPartial<AppSettings> 
       engine.binDir = source.binDir === null ? null : normalizePath(source.binDir)
     }
     if (typeof source.autoUpdate === 'boolean') engine.autoUpdate = source.autoUpdate
+    if (typeof source.prefetchNext === 'boolean') engine.prefetchNext = source.prefetchNext
     if (typeof source.downloadConcurrency === 'number' && Number.isFinite(source.downloadConcurrency)) {
       engine.downloadConcurrency = Math.round(clamp(source.downloadConcurrency, 1, 8))
     }
-    if (typeof source.cookiesFromBrowser === 'string' || source.cookiesFromBrowser === null) {
+    if (source.cookiesFromBrowser === null) {
+      engine.cookiesFromBrowser = null
+    } else if (isSupportedCookieBrowser(source.cookiesFromBrowser)) {
       engine.cookiesFromBrowser = source.cookiesFromBrowser
     }
     if (typeof source.importLimit === 'number' && Number.isFinite(source.importLimit)) {

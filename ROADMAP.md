@@ -214,7 +214,7 @@ Rules:
 - Run yt-dlp as a **long-lived worker** with `--newline` (parseable progress) or better `--progress-template` emitting structured lines, plus `--no-playlist` by default.
 - Prefer **machine-readable output**: `--dump-single-json` for metadata, `--print` with a template for URLs/fields.
 - One JSON message per line over stdout/stderr → a typed event stream in the core (`JobStarted`, `Progress`, `JobFinished`, `Error`).
-- **Job queue with concurrency limits** (e.g. max 2 concurrent downloads, max 4 concurrent resolves) to avoid triggering YouTube throttling.
+- **Job queue with concurrency limits**: two metadata starts at a time with a jittered gap; downloads use a separate lane capped by the user setting, so a long save never blocks playback.
 - **Timeouts and cancellation**: a cancel must kill the process tree; no zombies.
 - **Retry policy**: exponential backoff; on `429`/`403`, re-resolve rather than retrying the same URL.
 
@@ -228,8 +228,8 @@ Rules:
 | Problem | Mitigation |
 |---|---|
 | Signed CDN URL expiry | Re-resolve on `403`; keep `Source.expires_at`; the local proxy hides this from the player |
-| Bot checks / "Sign in to confirm you're not a bot" | Cookie jar import from the user's browser (opt-in), `--cookies`, and PO-token/JS-runtime support; surface a clear in-app message |
-| Rate limiting (`429`) | Global concurrency cap, staggered requests, backoff, and a UI-visible cooldown |
+| Bot checks / "Sign in to confirm you're not a bot" | Opt-in browser-cookie import (`--cookies-from-browser`), a 5/15-minute circuit breaker, and a clear in-app message; PO-token/JS-runtime support remains future work |
+| Rate limiting (`429`) | Two metadata starts at a time with jitter, one transient retry, a 5/15-minute breaker, and a UI-visible cooldown message |
 | Extractor breakage | yt-dlp ships frequent fixes → **auto-update the sidecar**, keep the last-known-good binary, roll back on failure |
 | Bundling ffmpeg | Ship an LGPL build to keep licensing simpler, or fetch on first use; verify checksums |
 | Region/age restrictions, geo-blocks | Detect the specific error and give a human-readable reason instead of "failed" |
@@ -323,6 +323,10 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
 - [x] Error taxonomy & user-facing messages (expired URL, bot check, geo-block, unavailable, network)
 - [x] Re-resolve on failure/expiry, transparent to the player
 - [x] Resolve-result metadata cache (avoid re-resolving the same video within a session)
+- [x] Request governor: two metadata sidecars at most, jittered start gap, five-minute search/channel cache with
+      single-flight, one transient-failure retry, and a bot-check breaker (5 min / 15 min on a repeat) that leaves
+      already-resolved streams playing. Prefetch is a setting, and browser cookies are an explicit off-by-default
+      last resort.
 - [x] Next-track prefetch: four seconds into a stream the player asks the main process to resolve the entry it will
       play next (`media:prefetch` → `ResolverRegistry.prefetch` → `YouTubeResolver.prefetch`), filling the cache the
       play will read without registering a token, recording history or failing the caller. A video id is asked for once
@@ -418,6 +422,8 @@ works, but it has no hierarchy and no way to find a single option.
 - [x] Move diagnostics (engine status, paths, logs, database location) behind **Misc** rather than the main flow
 - [x] Give saving one honest home: folder, quality, format and concurrency, plus the deferred offline-cache note in one
       place under **Streaming**
+- [x] Streaming controls for the request budget: next-track prefetch, daily yt-dlp self-update, and an off-by-default
+      browser-cookie selector with its privacy caveat
 - [ ] Review defaults and reset-to-default; decide which settings are worth exporting with a backup
 - [ ] Accessibility and keyboard pass on the whole page; every field needs a real label, not a placeholder
 - [ ] Search within Settings once there are enough options to justify it
@@ -436,7 +442,8 @@ visible effect. **The tab layout is now implemented; remaining work is defaults,
 ### M8 — Windows Release Engineering  *(~2 weeks)*
 - [ ] Installer (per-user, no admin): MSIX or NSIS; clean uninstall; opt-in "also delete cache/library DB"
 - [ ] Code signing (or at least a documented SmartScreen workaround plan)
-- [ ] Auto-update channel (stable/beta) + engine auto-update with rollback
+- [x] Daily yt-dlp self-update, throttled to once per 24 h and recorded in `engine.lastUpdateCheckAt`
+- [ ] App auto-update channel (stable/beta) and engine rollback
 - [ ] Crash reporting (opt-in) and log export ("Send diagnostics" button)
 - [ ] Windows 10/11 compatibility matrix, HiDPI, multi-monitor, 4K scaling
 - [ ] Performance budget tests in CI: cold start, scan 10k files, memory under playback
@@ -513,7 +520,7 @@ run beside them.
 | Risk | Impact | Likelihood | Mitigation |
 |---|---|---|---|
 | yt-dlp extractor breaks after a YouTube change | Streaming stops working | **High** — recur periodically | Auto-update + last-known-good rollback; abstraction layer so a broken resolver degrades to "local library still works" |
-| YouTube bot checks / `403`s | Feature unreliable for some users | High | Cookie import, PO-token/JS-runtime support, re-resolve, clear messaging |
+| YouTube bot checks / `403`s | Feature unreliable for some users | High | Opt-in browser cookies, a circuit breaker, re-resolve and clear messaging; PO-token/JS-runtime support is still future work |
 | Signed-URL expiry mid-listening | Playback stalls | Medium | Re-resolve on 403, buffer-ahead, local proxy that hides expiry |
 | Legal / ToS exposure | Distribution blocked, takedown | Medium | Personal-use framing, no bundled catalogue, no redistribution features, documented disclaimer; keep Android distribution decision (Play Store vs APK) explicit |
 | Disk bloat from cache/downloads | User frustration, data loss trust | Medium | Hard budgets, visible manager, sane defaults (stream-only), pin/evict rules |
