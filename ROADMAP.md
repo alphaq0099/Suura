@@ -445,14 +445,20 @@ works, but it has no hierarchy and no way to find a single option.
 **Exit:** a new user can find and change any setting without scrolling past unrelated cards, and every control has a
 visible effect. **Met.**
 
-### M7 — Playlists, Sync & Data Care  *(~2 weeks)*
+### M7 - Playlists, Sync & Data Care  *(in progress)*
 - [ ] M3U / M3U8 and JSON import-export of playlists; CSV export of the library
-- [ ] Backup/restore of `library.db` + config; automatic rotating DB backups
-- [ ] DB migrations framework (needed before any real users)
+- [x] Backup/restore of `library.db` + config; automatic rotating DB backups. Manual backups are a folder with the
+      database, normalized settings and a manifest; restore validates integrity and schema before staging the swap for
+      the next start. Automatic copies use `VACUUM INTO` when the newest copy is more than 24 hours old and before a
+      migration, and the ten newest managed copies rotate.
+- [x] DB migrations framework: append-only versioned migrations, a `user_version` guard that refuses a newer schema, and
+      a pre-migration backup whose path is named in a migration failure.
 - [ ] Duplicate detection with safe merge (audio-hash based)
 - [ ] Missing-file handling: detect moved/deleted files, offer relocate by hash
 - [ ] Bulk operations: multi-select edit, tag editing, bulk keep/remove-download
 **Exit:** data survives a crash, a reinstall and a folder move.
+**Status:** backup/restore, rotation and the schema guard are in. Import/export, dedupe, relocation and bulk editing
+remain.
 
 ### M8 — Windows Release Engineering  *(~2 weeks)*
 - [ ] Installer (per-user, no admin): MSIX or NSIS; clean uninstall; opt-in "also delete cache/library DB"

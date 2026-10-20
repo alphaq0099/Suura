@@ -31,6 +31,10 @@ const api: PlayerApi = {
 
   openPath: (target: string) => ipcRenderer.invoke(IPC.openPath, target) as Promise<void>,
 
+  backupData: () => ipcRenderer.invoke(IPC.dataBackup) as Promise<string | null>,
+
+  restoreData: () => ipcRenderer.invoke(IPC.dataRestore) as Promise<boolean>,
+
   scanLibrary: (folder?: string) => ipcRenderer.invoke(IPC.libraryScan, folder),
 
   cancelScan: () => ipcRenderer.invoke(IPC.libraryScanCancel) as Promise<void>,

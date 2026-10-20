@@ -456,6 +456,12 @@ export function App() {
     }
   }, [])
 
+  // The data-care dialogs own their own error presentation. Letting the rejected
+  // IPC promise reach Settings is what puts the message next to the buttons that
+  // caused it, instead of in the global action banner.
+  const backupData = useCallback(() => api.backupData(), [])
+  const restoreData = useCallback(() => api.restoreData(), [])
+
   const updateSettings = useCallback(
     (patch: DeepPartial<AppSettings>): void => {
       void update(patch)
@@ -641,6 +647,8 @@ export function App() {
           onPickDownloadFolder={() => void pickDownloadFolder()}
           onRefreshEngine={() => void refreshEngine()}
           onOpenPath={(target) => void openPath(target)}
+          onBackupData={backupData}
+          onRestoreData={restoreData}
         />
       )}
 

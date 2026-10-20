@@ -1,4 +1,4 @@
-import { BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import { ACCENTS, DENSITIES, MOTION_PREFERENCES, SURFACES, THEME_MODES } from '@shared/appearance'
 import { IPC } from '@shared/ipc'
 import { isLocalLibraryFilter } from '@shared/library'
@@ -31,13 +31,28 @@ import type {
   TrackSortField,
   VisualSettings
 } from '@shared/types'
+import {
+  createBackupBundle,
+  inspectBackupBundle,
+  nextBackupDirectory,
+  stageRestore
+} from '@core/db/backups'
 import { normalizePath } from '@core/library/content-key'
+import { DEFAULT_SETTINGS, mergeSettings } from '@core/settings/settings-service'
 import { getEngineStatus } from '@engine/sidecar/engine-status'
 import { isSupportedCookieBrowser, isYouTubeVideoId } from '@shared/youtube'
 import type { AppContainer } from './services/container'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function showMessage(parent: BrowserWindow | null, options: Electron.MessageBoxOptions) {
+  return parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options)
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -353,6 +368,106 @@ export function registerIpcHandlers(container: AppContainer): void {
     }
     const failure = await shell.openPath(target)
     if (failure) throw new Error(failure)
+  })
+
+  // ----- data care -------------------------------------------------------
+  ipcMain.handle(IPC.dataBackup, async () => {
+    const parent = BrowserWindow.getFocusedWindow()
+    const options: Electron.OpenDialogOptions = {
+      title: 'Choose where to put the backup',
+      buttonLabel: 'Save backup here',
+      properties: ['openDirectory', 'createDirectory']
+    }
+    const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options)
+    const parentDirectory = result.filePaths[0]
+    if (result.canceled || !parentDirectory) return null
+
+    // The picker chooses the parent; the app owns the timestamped folder so two
+    // backups from the same minute cannot overwrite each other.
+    const directory = nextBackupDirectory(parentDirectory, 'Player backup', new Date())
+    const summary = createBackupBundle({
+      db: container.database.db,
+      directory,
+      config: settings.get(),
+      appVersion: app.getVersion(),
+      schemaVersion: container.database.schemaVersion
+    })
+    log.info('manual backup created', {
+      directory: summary.directory,
+      schemaVersion: summary.manifest.schemaVersion
+    })
+    return summary.directory
+  })
+
+  ipcMain.handle(IPC.dataRestore, async () => {
+    const parent = BrowserWindow.getFocusedWindow()
+    const options: Electron.OpenDialogOptions = {
+      title: 'Choose a Player backup folder',
+      buttonLabel: 'Choose backup',
+      properties: ['openDirectory']
+    }
+    const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options)
+    const directory = result.filePaths[0]
+    if (result.canceled || !directory) return false
+
+    let backup: ReturnType<typeof inspectBackupBundle>
+    try {
+      backup = inspectBackupBundle(directory)
+    } catch (error) {
+      await showMessage(parent, {
+        type: 'error',
+        title: 'That backup cannot be restored',
+        message: 'That backup cannot be restored',
+        detail: messageOf(error)
+      })
+      throw error
+    }
+
+    let config: AppSettings
+    try {
+      // A backup is a file the user could have edited or brought from another
+      // machine, so it goes through the same allowlist as the Settings form.
+      config = mergeSettings(DEFAULT_SETTINGS, sanitizeSettingsPatch(backup.config))
+    } catch (error) {
+      await showMessage(parent, {
+        type: 'error',
+        title: 'That backup cannot be restored',
+        message: 'The backup settings are not valid',
+        detail: messageOf(error)
+      })
+      throw error
+    }
+
+    const confirmation = await showMessage(parent, {
+      type: 'warning',
+      title: 'Restore this backup?',
+      message: 'Replace the current library and settings?',
+      detail: `The current database and settings are copied to the backups folder first. Player will restart to finish the restore.\n\nBackup: ${directory}`,
+      buttons: ['Restore and restart', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true
+    })
+    if (confirmation.response !== 0) return false
+
+    stageRestore({
+      backup,
+      userDataDir: container.paths.userData,
+      config
+    })
+    log.info('restore staged for the next start', {
+      backup: directory,
+      schemaVersion: backup.schemaVersion
+    })
+    // Give the IPC reply a moment to reach the renderer so it can show its
+    // "restarting" note before the window goes away. `quit`, not `exit`, so the
+    // normal will-quit disposal checkpoints and closes the database first; the
+    // next start then swaps the staged files in.
+    setTimeout(() => {
+      app.relaunch()
+      app.quit()
+    }, 250)
+    return true
   })
 
   ipcMain.handle(IPC.libraryScan, async (_event, folder: unknown) => {

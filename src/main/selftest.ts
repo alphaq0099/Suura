@@ -1275,13 +1275,16 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       watchRestored: boolean
       behaviourRestored: boolean
       foldersKept: boolean
+      backupCard: boolean
+      backupsPath: boolean
     }>(
       window,
       `(async () => {
          const out = {
            keyboardEnd: false, keyboardHome: false, watchTurnedOff: false,
            behaviourChanged: false, resetConfirmShown: false, resetStatusShown: false,
-           watchRestored: false, behaviourRestored: false, foldersKept: false
+           watchRestored: false, behaviourRestored: false, foldersKept: false,
+           backupCard: false, backupsPath: false
          }
          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
          const press = (element) => { if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
@@ -1362,6 +1365,21 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          press(document.querySelector('.reset-confirm button.primary'))
          await sleep(700)
          out.resetStatusShown = Boolean(document.querySelector('.settings-reset [role=\"status\"]'))
+         const backupHeading = [...document.querySelectorAll('.card h2')].find(
+           (el) => (el.textContent || '').trim() === 'Backup & restore'
+         )
+         out.backupCard = Boolean(
+           backupHeading &&
+             [...document.querySelectorAll('.field-row button')].some((el) =>
+               (el.textContent || '').trim().startsWith('Back up now')
+             ) &&
+             [...document.querySelectorAll('.field-row button')].some((el) =>
+               (el.textContent || '').trim().startsWith('Restore from backup')
+             )
+         )
+         out.backupsPath = [...document.querySelectorAll('.path-label')].some(
+           (el) => (el.textContent || '').trim() === 'Backups'
+         )
 
          tab('General')
          await sleep(300)
@@ -1391,6 +1409,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     record(
       settingsSafety.resetConfirmShown && settingsSafety.resetStatusShown && settingsSafety.foldersKept,
       'settings: reset asks first, confirms, and keeps the library folder',
+      settingsSafety
+    )
+    record(
+      settingsSafety.backupCard && settingsSafety.backupsPath,
+      'settings: Misc exposes backup, restore and the backups folder',
       settingsSafety
     )
 
@@ -2540,13 +2563,14 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       menuItems: string
       saveEnabled: boolean
       rowSaveButtons: number
+      copiedLink: string
       removedRows: number
       clearedRows: number
       emptyAfterClear: boolean
     }>(
       window,
       `(async () => {
-         const out = { rows: 0, firstTitle: '', firstArtist: '', firstDuration: '', sidebarCount: '', rowCovers: 0, rowCoverLoaded: false, rowPlaceholders: 0, pasteFilled: '', pasteMenuVisible: false, pasteMenuItems: '', pasteMenuFilled: '', pasteMenuClosed: false, historyScrolls: false, playDisabled: false, invalidError: '', refusedError: '', refusedPending: 0, pendingRows: 0, menuItems: '', saveEnabled: false, rowSaveButtons: 0, removedRows: -1, clearedRows: -1, emptyAfterClear: false }
+         const out = { rows: 0, firstTitle: '', firstArtist: '', firstDuration: '', sidebarCount: '', rowCovers: 0, rowCoverLoaded: false, rowPlaceholders: 0, pasteFilled: '', pasteMenuVisible: false, pasteMenuItems: '', pasteMenuFilled: '', pasteMenuClosed: false, historyScrolls: false, playDisabled: false, invalidError: '', refusedError: '', refusedPending: 0, pendingRows: 0, menuItems: '', saveEnabled: false, rowSaveButtons: 0, copiedLink: '', removedRows: -1, clearedRows: -1, emptyAfterClear: false }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (s) => document.querySelector(s)
          const pickAll = (s) => [...document.querySelectorAll(s)]
@@ -2655,6 +2679,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.saveEnabled = Boolean(save && !save.disabled)
          press(items.find((el) => text(el).trim() === 'Copy link'))
          await sleep(300)
+         // Read it back now. The system clipboard is global, and later steps or
+         // another program could overwrite it before the assertion at the end.
+         out.copiedLink = await window.player.readClipboardText()
 
          // Remove one row with its own button, then clear the rest.
          press(pickAll('.online-item button[aria-label^="Remove"]')[0])
@@ -2983,7 +3010,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       'removing the imported album needs a confirmation and leaves an empty index',
       `group empty ${onlineLists.groupEmpty}, empty state ${onlineLists.emptyAfterDelete}`
     )
-    const copiedLink = await clipboard.readText()
+    const copiedLink = onlineView.copiedLink
     record(
       copiedLink === 'https://www.youtube.com/watch?v=selftestbb2',
       'Copy link puts the canonical URL on the clipboard',

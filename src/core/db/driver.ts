@@ -24,6 +24,34 @@ export interface SqlStatement {
   all<T>(...params: SqlParam[]): T[]
 }
 
+export interface DatabaseInspection {
+  /** SQLite's `user_version`, which is this app's schema version. */
+  schemaVersion: number
+  /** The result of `PRAGMA integrity_check`; `ok` when the file is sound. */
+  integrity: string
+}
+
+/**
+ * Reads a database file without opening it for writing.
+ *
+ * Used to vet a backup before it is copied over the live library. A normal
+ * `openDatabase` would create the WAL sidecars and could run startup pragmas
+ * against a file that is only being inspected.
+ */
+export function inspectDatabaseFile(file: string): DatabaseInspection {
+  const db = new DatabaseSync(file, { readOnly: true })
+  try {
+    const version = db.prepare('PRAGMA user_version').get() as { user_version: number } | undefined
+    const integrity = db.prepare('PRAGMA integrity_check').get() as { integrity_check: string } | undefined
+    return {
+      schemaVersion: version?.user_version ?? 0,
+      integrity: integrity?.integrity_check ?? 'unknown'
+    }
+  } finally {
+    db.close()
+  }
+}
+
 export interface SqlDatabase {
   exec(sql: string): void
   prepare(sql: string): SqlStatement

@@ -1,7 +1,9 @@
+import { existsSync } from 'node:fs'
 import { app, nativeTheme } from 'electron'
 import { ensureAppDirectories, resolveAppPaths } from '@core/paths'
 import { createLogger, type Logger } from '@core/logging/logger'
 import { SettingsService } from '@core/settings/settings-service'
+import { applyPendingRestore, ensureDailyBackup } from '@core/db/backups'
 import { openLibraryDatabase, type DatabaseHandle } from '@core/db/database'
 import { TrackRepository } from '@core/library/track-repository'
 import { LibraryService } from '@core/library/library-service'
@@ -66,8 +68,24 @@ export function createContainer(): AppContainer {
   })
   log.info('starting', { version: app.getVersion(), userData: paths.userData, electron: process.versions.electron })
 
+  // A restore is swapped in before anything opens the database. The marker was
+  // staged by the previous run; if it is broken, applyPendingRestore leaves the
+  // old library alone and records why.
+  const hadDatabase = existsSync(paths.database)
+  const restored = applyPendingRestore(paths, log.child('restore'))
+
   const settings = new SettingsService(paths.config, log.child('settings'))
-  const database = openLibraryDatabase(paths.database, log.child('db'))
+  const database = openLibraryDatabase(paths.database, log.child('db'), { backupsDir: paths.backups })
+  if (hadDatabase || restored) {
+    try {
+      const backup = ensureDailyBackup(database.db, paths.backups)
+      if (backup) log.info('daily database backup created', { backup })
+    } catch (error) {
+      // A full disk is not a reason to refuse to play music.
+      log.warn('could not create the daily database backup', error)
+    }
+  }
+  if (restored) log.info('started from a restored backup', { database: paths.database })
   const repo = new TrackRepository(database.db)
 
   // Settings are the source of truth for the folder list, so make sure the

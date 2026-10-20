@@ -4353,9 +4353,15 @@ button.online-jump:hover {
   align-items: center;
 }
 
-.settings-reset [role='status'] {
+.settings-reset [role='status'],
+.data-note {
   color: var(--ok);
   font-size: 12px;
+}
+
+.data-note {
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
 }
 
 .reset-confirm p {

@@ -496,6 +496,8 @@ export interface AppPaths {
   logs: string
   cache: string
   downloads: string
+  /** Automatic and pre-restore database copies. */
+  backups: string
 }
 
 export interface ListTracksQuery {

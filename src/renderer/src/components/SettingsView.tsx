@@ -43,6 +43,8 @@ export interface SettingsViewProps {
   onPickDownloadFolder: () => void
   onRefreshEngine: () => void
   onOpenPath: (target: string) => void
+  onBackupData: () => Promise<string | null>
+  onRestoreData: () => Promise<boolean>
 }
 
 const QUALITY_CHOICES: Array<{ value: QualityTier; label: string }> = [
@@ -129,11 +131,16 @@ export function SettingsView(props: SettingsViewProps) {
     onPickEngineDir,
     onPickDownloadFolder,
     onRefreshEngine,
-    onOpenPath
+    onOpenPath,
+    onBackupData,
+    onRestoreData
   } = props
   const [tab, setTab] = useState<TabId>('general')
   const [confirmReset, setConfirmReset] = useState(false)
   const [resetDone, setResetDone] = useState(false)
+  const [dataBusy, setDataBusy] = useState<'backup' | 'restore' | null>(null)
+  const [dataNote, setDataNote] = useState<string | null>(null)
+  const [dataError, setDataError] = useState<string | null>(null)
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
   const resetButtonRef = useRef<HTMLButtonElement | null>(null)
 
@@ -157,6 +164,34 @@ export function SettingsView(props: SettingsViewProps) {
   const closeReset = (): void => {
     setConfirmReset(false)
     requestAnimationFrame(() => resetButtonRef.current?.focus())
+  }
+
+  const runBackup = async (): Promise<void> => {
+    setDataBusy('backup')
+    setDataError(null)
+    setDataNote(null)
+    try {
+      const directory = await onBackupData()
+      setDataNote(directory ? `Backup saved to ${directory}` : 'Backup cancelled.')
+    } catch (cause) {
+      setDataError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setDataBusy(null)
+    }
+  }
+
+  const runRestore = async (): Promise<void> => {
+    setDataBusy('restore')
+    setDataError(null)
+    setDataNote(null)
+    try {
+      const staged = await onRestoreData()
+      setDataNote(staged ? 'Restoring — Player will restart.' : 'Restore cancelled.')
+    } catch (cause) {
+      setDataError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setDataBusy(null)
+    }
   }
 
   return (
@@ -758,7 +793,8 @@ export function SettingsView(props: SettingsViewProps) {
                       ['Config', paths.config],
                       ['Logs', paths.logs],
                       ['Artwork cache', paths.cache],
-                      ['Downloads', paths.downloads]
+                      ['Downloads', paths.downloads],
+                      ['Backups', paths.backups]
                     ] as const
                   ).map(([label, target]) => (
                     <li key={label}>
@@ -775,6 +811,43 @@ export function SettingsView(props: SettingsViewProps) {
               ) : (
                 <p className="card-hint">Loading…</p>
               )}
+            </article>
+
+            <article className="card">
+              <header className="card-header">
+                <h2>Backup &amp; restore</h2>
+              </header>
+              <p className="card-hint">
+                Player keeps a consistent copy of the database when it starts, and a separate copy before any library
+                upgrade. The ten newest automatic copies live in the backups folder. Back up now adds a folder the user
+                chooses, with the database, settings and a manifest; restoring validates that folder, copies the current
+                data aside, then restarts.
+              </p>
+              <div className="field-row">
+                <button type="button" onClick={() => void runBackup()} disabled={dataBusy !== null}>
+                  {dataBusy === 'backup' ? <SpinnerIcon /> : null}
+                  <span>Back up now…</span>
+                </button>
+                <button type="button" onClick={() => void runRestore()} disabled={dataBusy !== null}>
+                  {dataBusy === 'restore' ? <SpinnerIcon /> : null}
+                  <span>Restore from backup…</span>
+                </button>
+                {paths ? (
+                  <button type="button" onClick={() => onOpenPath(paths.backups)}>
+                    Open backups folder
+                  </button>
+                ) : null}
+              </div>
+              {dataError ? (
+                <div className="banner error" role="alert">
+                  {dataError}
+                </div>
+              ) : null}
+              {dataNote ? (
+                <p className="data-note" role="status">
+                  {dataNote}
+                </p>
+              ) : null}
             </article>
 
             <article className="card">
@@ -825,8 +898,7 @@ export function SettingsView(props: SettingsViewProps) {
                 )}
               </div>
               <p className="card-hint">
-                A settings backup and restore belongs with the data-care work in M7, so this page resets rather than
-                exports for now.
+                A preference reset is not a data reset: the library, playlists and backups stay where they are.
               </p>
             </article>
           </div>

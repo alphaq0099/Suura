@@ -1,7 +1,7 @@
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, dialog } from 'electron'
 import { registerIpcHandlers } from './ipc'
 import { installArtworkProtocolHandler } from './artwork-protocol'
 import { registerMediaKeys } from './media-keys'
@@ -116,6 +116,12 @@ function start(): void {
       // and stderr, and the process exits non-zero rather than hanging invisibly.
       console.error('Failed to start Player:', error)
       container?.log.error('startup failed', error)
+      if (!HEADLESS) {
+        dialog.showErrorBox(
+          'Player could not open its library',
+          error instanceof Error ? error.message : String(error)
+        )
+      }
       app.exit(1)
     })
 }

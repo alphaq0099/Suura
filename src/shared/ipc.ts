@@ -46,6 +46,8 @@ export const IPC = {
   pathsGet: 'app:paths',
   pickFolder: 'dialogs:pick-folder',
   openPath: 'shell:open-path',
+  dataBackup: 'data:backup',
+  dataRestore: 'data:restore',
   libraryScan: 'library:scan',
   libraryScanCancel: 'library:scan-cancel',
   libraryListTracks: 'library:list-tracks',
@@ -147,6 +149,19 @@ export interface PlayerApi {
   /** Opens the native folder picker. Resolves to null if the user cancels. */
   pickFolder(): Promise<string | null>
   openPath(target: string): Promise<void>
+  /**
+   * Copies the database and settings into a new backup folder the user chooses.
+   *
+   * Resolves to the folder, or null when the folder picker was cancelled.
+   */
+  backupData(): Promise<string | null>
+  /**
+   * Vets a backup and, after confirmation, stages it for the next start.
+   *
+   * Resolves true when the app is about to relaunch. It resolves false only when
+   * the user cancelled; an invalid backup rejects with a readable message.
+   */
+  restoreData(): Promise<boolean>
   scanLibrary(folder?: string): Promise<LibraryStats>
   cancelScan(): Promise<void>
   listTracks(query?: ListTracksQuery): Promise<TrackPage>

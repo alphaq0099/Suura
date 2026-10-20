@@ -7,7 +7,7 @@
  * test could never give you: that the core is correct on real files.
  */
 import { execFile } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
+import { copyFileSync, existsSync, readdirSync } from 'node:fs'
 import { copyFile, mkdir, mkdtemp, rm, unlink, utimes, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -28,7 +28,18 @@ import { isLocalLibraryFilter, recentlyAddedCutoff } from '@shared/library'
 import { silentLogger } from '@core/logging/logger'
 import { resolveAppPaths, ensureAppDirectories } from '@core/paths'
 import { DEFAULT_SETTINGS, mergeSettings, SettingsService } from '@core/settings/settings-service'
-import { latestVersion, openLibraryDatabase } from '@core/db/database'
+import { DatabaseSchemaTooNewError, latestVersion, openLibraryDatabase } from '@core/db/database'
+import {
+  applyPendingRestore,
+  createBackupBundle,
+  createDatabaseBackup,
+  ensureDailyBackup,
+  inspectBackupBundle,
+  nextBackupDirectory,
+  pruneDatabaseBackups,
+  stageRestore
+} from '@core/db/backups'
+import { openDatabase } from '@core/db/driver'
 import { TrackRepository, buildFtsQuery, type ScanRunSummary } from '@core/library/track-repository'
 import { LibraryService } from '@core/library/library-service'
 import { FolderWatcher, isLibraryEvent, type FolderWatchEvent } from '@core/library/folder-watcher'
@@ -954,10 +965,110 @@ async function main(): Promise<void> {
       )
     }
 
-    // --- persistence ------------------------------------------------------
+    // --- data care: backups, restore and the schema guard -----------------
+    const trackCountBeforeRestore = repo.stats().tracks
+    const backupDirectory = nextBackupDirectory(join(root, 'manual-backups'), 'Player backup', new Date('2026-10-20T12:00:00Z'))
+    const bundle = createBackupBundle({
+      db: database.db,
+      directory: backupDirectory,
+      config: settings.get(),
+      appVersion: '0.1.0-smoke',
+      schemaVersion: database.schemaVersion,
+      now: new Date('2026-10-20T12:00:00Z')
+    })
+    check(
+      'a manual backup contains the database, settings and manifest',
+      existsSync(bundle.database) && existsSync(bundle.config) && existsSync(join(bundle.directory, 'manifest.json'))
+    )
+    checkEqual('the backup manifest records the schema', bundle.manifest.schemaVersion, latestVersion())
+    const inspected = inspectBackupBundle(backupDirectory)
+    checkEqual('a backup database passes integrity and schema checks', inspected.schemaVersion, latestVersion())
+    checkEqual(
+      'a backup carries the current settings',
+      (inspected.config as { volume: number }).volume,
+      settings.get().volume
+    )
+
+    const automatic = ensureDailyBackup(database.db, paths.backups, { now: Date.now() })
+    check('the first start of the day creates an automatic backup', Boolean(automatic && existsSync(automatic)))
+    check(
+      'a second start on the same day does not add another automatic backup',
+      ensureDailyBackup(database.db, paths.backups, { now: Date.now() + 1000 }) === null
+    )
+
+    const rotationDirectory = join(root, 'rotation')
+    for (let index = 0; index < 5; index += 1) {
+      createDatabaseBackup(database.db, rotationDirectory, `auto-${index}`, new Date(Date.now() + index * 1000))
+    }
+    checkEqual('rotation starts with five automatic copies', readdirSync(rotationDirectory).length, 5)
+    checkEqual('rotation removes the oldest copies', pruneDatabaseBackups(rotationDirectory, 2), 3)
+    checkEqual('rotation keeps the requested number', readdirSync(rotationDirectory).length, 2)
+
+    const futureDatabase = join(root, 'future.db')
+    copyFileSync(
+      createDatabaseBackup(database.db, join(root, 'guard'), 'auto-guard', new Date()),
+      futureDatabase
+    )
+    const future = openDatabase(futureDatabase)
+    future.exec('PRAGMA user_version = 99')
+    future.close()
+    let schemaGuard = ''
+    try {
+      openLibraryDatabase(futureDatabase, silentLogger)
+    } catch (error) {
+      schemaGuard = error instanceof DatabaseSchemaTooNewError ? error.message : String(error)
+    }
+    check('a library from a newer build is refused before migration', schemaGuard.includes('newer version'))
+
+    const newerBackup = join(root, 'newer-backup')
+    await mkdir(newerBackup, { recursive: true })
+    copyFileSync(futureDatabase, join(newerBackup, 'library.db'))
+    await writeFile(join(newerBackup, 'config.json'), JSON.stringify(settings.get()))
+    await writeFile(
+      join(newerBackup, 'manifest.json'),
+      JSON.stringify({
+        format: 'player-backup',
+        version: 1,
+        appVersion: '0.1.0-future',
+        createdAt: new Date().toISOString(),
+        schemaVersion: 99
+      })
+    )
+    let backupGuard = ''
+    try {
+      inspectBackupBundle(newerBackup)
+    } catch (error) {
+      backupGuard = error instanceof Error ? error.message : String(error)
+    }
+    check('a backup from a newer build is refused before restore', backupGuard.includes('newer version'))
+
+    // --- persistence and restore -----------------------------------------
     database.close()
+    stageRestore({
+      backup: inspected,
+      userDataDir: paths.userData,
+      config: settings.get(),
+      now: new Date('2026-10-20T12:00:00Z')
+    })
+    check(
+      'a staged restore leaves a marker for the next start',
+      existsSync(join(paths.userData, 'restore-pending.json'))
+    )
+    check('a staged restore is applied on the next start', applyPendingRestore(paths, silentLogger))
+    check('a successful restore removes its marker', !existsSync(join(paths.userData, 'restore-pending.json')))
+    check(
+      'a restore keeps the replaced data aside',
+      readdirSync(paths.backups, { withFileTypes: true }).filter(
+        (entry) => entry.isDirectory() && entry.name.startsWith('Pre-restore')
+      ).length === 1
+    )
     const reopened = openLibraryDatabase(paths.database, silentLogger)
     checkEqual('database reopens at the current schema version', reopened.schemaVersion, latestVersion())
+    checkEqual(
+      'the restored database still has the library',
+      new TrackRepository(reopened.db).stats().tracks,
+      trackCountBeforeRestore
+    )
     reopened.close()
     check('the database file exists on disk', existsSync(paths.database))
   } finally {

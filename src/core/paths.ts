@@ -14,12 +14,13 @@ export function resolveAppPaths(userDataDir: string): AppPaths {
     database: join(userDataDir, 'library.db'),
     logs: join(userDataDir, 'logs', 'player.log'),
     cache: join(userDataDir, 'cache'),
-    downloads: join(userDataDir, 'downloads')
+    downloads: join(userDataDir, 'downloads'),
+    backups: join(userDataDir, 'backups')
   }
 }
 
 export function ensureAppDirectories(paths: AppPaths): void {
-  const dirs = [paths.userData, dirname(paths.logs), paths.cache, paths.downloads]
+  const dirs = [paths.userData, dirname(paths.logs), paths.cache, paths.downloads, paths.backups]
   for (const dir of dirs) {
     mkdirSync(dir, { recursive: true })
   }

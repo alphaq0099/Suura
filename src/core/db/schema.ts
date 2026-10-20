@@ -320,3 +320,8 @@ export const MIGRATIONS: readonly Migration[] = [
     }
   }
 ]
+
+/** The schema version this build writes and can open. */
+export function latestVersion(): number {
+  return MIGRATIONS.reduce((max, migration) => Math.max(max, migration.version), 0)
+}
