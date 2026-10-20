@@ -391,7 +391,13 @@ export function PlaylistsView(props: PlaylistsViewProps) {
     const index = tracks.findIndex((track) => selectedIds.has(track.id))
     if (index < 0) return
     const chosen = tracks.filter((track) => selectedIds.has(track.id))
-    playList(chosen, 0, showingOnline && onlineDetail ? { title: onlineDetail.playlist.title, tracks } : null)
+    playList(
+      chosen,
+      0,
+      showingOnline && onlineDetail
+        ? { title: onlineDetail.playlist.title, tracks, playlistId: onlineDetail.playlist.id }
+        : null
+    )
   }, [playList, onlineDetail, selectedIds, showingOnline, tracks])
 
   const reimport = useCallback(async (): Promise<void> => {
@@ -764,7 +770,11 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                   <button
                     type="button"
                     onClick={() =>
-                      playList(tracks, 0, { title: onlineDetail.playlist.title, tracks })
+                      playList(tracks, 0, {
+                        title: onlineDetail.playlist.title,
+                        tracks,
+                        playlistId: onlineDetail.playlist.id
+                      })
                     }
                     disabled={tracks.length === 0}
                   >
@@ -865,7 +875,11 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                   loadingMore={loading}
                   onToggleSort={() => undefined}
                   onActivate={(index) =>
-                    playList(tracks, index, { title: onlineDetail.playlist.title, tracks })
+                    playList(tracks, index, {
+                      title: onlineDetail.playlist.title,
+                      tracks,
+                      playlistId: onlineDetail.playlist.id
+                    })
                   }
                   onSelect={(trackId, mode) =>
                     setSelectedIds((previous) => {

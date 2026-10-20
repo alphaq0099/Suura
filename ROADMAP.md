@@ -331,11 +331,14 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
       cached thumbnail, fetched from the video id the first time the row is drawn (and repaired if an earlier pass failed).
       Saving a row into the library is M4 (done). The history is links, not files, so it survives a restart and a cache
       wipe, and it holds only links the user added — playing a track out of an imported list never echoes it there, and
-      importing a list withdraws any row a play had already made for one of its entries. After an import & play, a strip
-      names the list and the track it is on; it is held by the app, not by the view, so visiting another view and coming
-      back keeps it, and playing an imported list from the Playlists window lights it up as well. Imported lists also get
-      their own box above the history: one card per list (not one row per track), with **Play** for the whole list and
-      **Open in Playlists**, so the history stays a log of links the user chose.
+      importing a list withdraws any row a play had already made for one of its entries. After an import & play, the
+      card itself names the list, the current track and its position; the mark is held by the app, not by the view, so
+      visiting another view and coming back keeps it, and playing an imported list from the Playlists window lights it
+      up as well. Imported lists also get their own box above the history: one card per list (not one row per track),
+      with **Play** for the whole list and **Open in Playlists**, so the history stays a log of links the user chose.
+      The imported box keeps three recent cards and the history five rows in view, both scrolling for the rest; a card
+      without a sleeve uses its first entry's still; and the link field has a right-click **Paste** menu beside the
+      paste button.
 **Exit:** 50 hand-picked YouTube links play directly, ≥ 90% on first attempt, < 3 s to first audio, and seeking works.
 *Status: the 20-link sample resolves 20/20, and playback with seeking works end-to-end in the app through the Online
 view. The median resolve is 8.8 s and only 20 of the 50 links have been run. A queued mix no longer pays that cost

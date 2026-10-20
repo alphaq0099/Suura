@@ -246,6 +246,12 @@ export interface OnlinePlaylist {
   owner: string | null
   sourceUrl: string
   coverKey: string | null
+  /**
+   * The first entry's video id, used as the card's thumbnail when the list has
+   * no cover of its own. A playlist or mix has no sleeve, but its first still
+   * is still a better face than a generic note icon.
+   */
+  firstVideoId: string | null
   trackCount: number
   /** How many entries YouTube reports, or null when it reports none (a mix). */
   totalCount: number | null

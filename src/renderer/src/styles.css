@@ -317,18 +317,6 @@ input[type='radio'] {
   gap: 8px;
 }
 
-/* The imported list that is playing. It is a strip rather than a notice: it has
-   to name the current track and follow the queue as it advances, so the text is
-   two lines and only the tail of the list title is ever clipped. */
-.banner.playing-banner {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  border-color: #2c3d63;
-  background: linear-gradient(90deg, #182238, #141a2a);
-}
-
 .playing-dot {
   flex: none;
   width: 8px;
@@ -358,37 +346,6 @@ input[type='radio'] {
   .playing-dot {
     animation: none;
   }
-}
-
-.playing-text {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.playing-label {
-  font-size: 11.5px;
-  color: var(--text-faint);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.playing-track {
-  font-size: 13px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.playing-count {
-  flex: none;
-  font-size: 11.5px;
-  color: var(--text-faint);
-  font-variant-numeric: tabular-nums;
 }
 
 .scan-line {
@@ -2712,6 +2669,12 @@ input[type='radio'] {
   color: var(--text);
 }
 
+/* The link field has only three actions, so it does not need the row menu's
+   full width. */
+.field-menu {
+  width: 190px;
+}
+
 /* ---------- online ---------- */
 
 .online-bar {
@@ -2777,7 +2740,11 @@ input[type='radio'] {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: #12141d;
-  overflow: hidden;
+  /* Five rows at a time. The history can be long, but the Online view should
+     not become a second library; older links are one wheel away. 5 × 43px of
+     row + the box's own 2px border. */
+  max-height: 217px;
+  overflow: hidden auto;
 }
 
 .online-item {
@@ -2974,7 +2941,9 @@ button.online-jump:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: #12141d;
-  overflow: hidden;
+  /* Three recent lists; the rest scroll. 3 × 51px of row + 2px of border. */
+  max-height: 155px;
+  overflow: hidden auto;
 }
 
 .online-imported-row {
@@ -2988,6 +2957,26 @@ button.online-jump:hover {
 
 .online-imported-row:last-child {
   border-bottom: none;
+}
+
+/* The playing list is marked where it lives: its own card carries the current
+   track and position instead of a separate strip repeating them. */
+.online-imported-row.current {
+  background: rgb(108 140 255 / 10%);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.online-imported-row.current .online-imported-title {
+  color: var(--accent-strong);
+}
+
+.online-imported-row.current .online-imported-meta {
+  color: var(--text-dim);
+}
+
+.online-imported-meta .playing-dot {
+  margin-right: 5px;
+  vertical-align: 1px;
 }
 
 .online-imported-art {

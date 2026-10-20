@@ -32,8 +32,8 @@ export interface OnlineViewProps {
   currentVideoId: string | null
   isPlaying: boolean
   /**
-   * The imported list whose tracks are playing, held by the app so this strip is
-   * still here after a trip to another view and back.
+   * The imported list whose tracks are playing, held by the app so its card is
+   * still marked after a trip to another view and back.
    */
   playingList: PlayingList | null
   onPlayingListChange: (list: PlayingList | null) => void
@@ -77,6 +77,32 @@ interface ListOffer {
 
 const MENU_WIDTH = 230
 const MENU_HEIGHT = 230
+const FIELD_MENU_WIDTH = 190
+const FIELD_MENU_HEIGHT = 130
+
+/**
+ * The art a list card can show when it has no cover of its own.
+ *
+ * A playlist or mix has no sleeve; its first entry's still is the closest thing
+ * to a face. The synthetic entry exists only to reach the same artwork path a
+ * row uses — it is never queued or stored, so its placeholder id is harmless.
+ */
+function playlistArtworkTrack(playlist: OnlinePlaylist): Track | null {
+  if (playlist.coverKey || !playlist.firstVideoId) return null
+  return onlinePlaylistItemToTrack(
+    {
+      id: 0,
+      playlistId: playlist.id,
+      position: 0,
+      videoId: playlist.firstVideoId,
+      title: playlist.title,
+      artist: playlist.owner,
+      album: null,
+      durationMs: null
+    },
+    playlist
+  )
+}
 
 /**
  * The Online view.
@@ -118,8 +144,10 @@ export function OnlineView(props: OnlineViewProps) {
   const [offer, setOffer] = useState<ListOffer | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const [menu, setMenu] = useState<MenuState | null>(null)
+  const [fieldMenu, setFieldMenu] = useState<{ x: number; y: number } | null>(null)
 
   const inputRef = useRef<HTMLInputElement | null>(null)
+  const playingCardRef = useRef<HTMLDivElement | null>(null)
   // Bumped per submit so an answer that arrives after a newer paste is ignored.
   const submitTokenRef = useRef(0)
 
@@ -148,6 +176,14 @@ export function OnlineView(props: OnlineViewProps) {
       : null
   let liveIndex = -1
   if (playingList && liveTrack) liveIndex = playingList.tracks.indexOf(liveTrack)
+
+  // If the playing list is older than the newest three, bring its card into the
+  // box's window instead of leaving the mark below the fold. `nearest` moves the
+  // box, not the whole view, once the card is already on screen.
+  useEffect(() => {
+    if (playingList?.playlistId === undefined) return
+    playingCardRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [playingList?.playlistId])
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -180,9 +216,13 @@ export function OnlineView(props: OnlineViewProps) {
           const tracks = detail.items.map((item) => onlinePlaylistItemToTrack(item, detail.playlist))
           if (mode === 'play') {
             onPlay(tracks, 0)
-            // The banner names the list and follows the track it is on; a static
+            // The card names the list and follows the track it is on; a static
             // "are playing" notice went stale the moment the first track ended.
-            onPlayingListChange({ title: detail.playlist.title, tracks })
+            onPlayingListChange({
+              title: detail.playlist.title,
+              tracks,
+              playlistId: detail.playlist.id
+            })
             setNotice(null)
           } else {
             onQueue(tracks)
@@ -259,6 +299,33 @@ export function OnlineView(props: OnlineViewProps) {
     }
   }, [])
 
+  const copyField = useCallback(async (): Promise<void> => {
+    try {
+      await api.writeClipboardText(url)
+      setNotice({ kind: 'info', text: 'Link copied.' })
+    } catch (cause) {
+      setNotice({ kind: 'error', text: messageOf(cause) })
+    }
+  }, [url])
+
+  const openFieldMenu = (event: ReactMouseEvent): void => {
+    event.preventDefault()
+    setFieldMenu({ x: event.clientX, y: event.clientY })
+  }
+
+  const openFieldMenuFromKeyboard = (): void => {
+    const rect = inputRef.current?.getBoundingClientRect()
+    if (!rect) return
+    setFieldMenu({ x: rect.left + 10, y: rect.bottom + 4 })
+  }
+
+  const fieldMenuStyle = fieldMenu
+    ? {
+        left: Math.max(8, Math.min(fieldMenu.x, window.innerWidth - FIELD_MENU_WIDTH - 8)),
+        top: Math.max(8, Math.min(fieldMenu.y, window.innerHeight - FIELD_MENU_HEIGHT - 8))
+      }
+    : undefined
+
   const playAt = (index: number): void => {
     if (index < 0 || index >= entries.length) return
     onPlayingListChange(null)
@@ -327,7 +394,7 @@ export function OnlineView(props: OnlineViewProps) {
           return
         }
         const tracks = detail.items.map((item) => onlinePlaylistItemToTrack(item, detail.playlist))
-        onPlayingListChange({ title: detail.playlist.title, tracks })
+        onPlayingListChange({ title: detail.playlist.title, tracks, playlistId: detail.playlist.id })
         onPlay(tracks, 0)
       } catch (cause) {
         setNotice({ kind: 'error', text: messageOf(cause) })
@@ -377,7 +444,7 @@ export function OnlineView(props: OnlineViewProps) {
       </header>
 
       <form className="online-bar" onSubmit={submit}>
-        <div className="online-input">
+        <div className="online-input" onContextMenu={openFieldMenu}>
           <LinkIcon />
           <input
             ref={inputRef}
@@ -391,6 +458,14 @@ export function OnlineView(props: OnlineViewProps) {
             onChange={(event) => {
               setUrl(event.target.value)
               if (notice) setNotice(null)
+            }}
+            onKeyDown={(event) => {
+              // The field is the only thing on the page with an edit menu of its
+              // own; Shift+F10 is how a keyboard reaches it without a mouse.
+              if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+                event.preventDefault()
+                openFieldMenuFromKeyboard()
+              }
             }}
             disabled={busy}
           />
@@ -416,28 +491,6 @@ export function OnlineView(props: OnlineViewProps) {
           </button>
         </div>
       </form>
-
-      {playingList && liveTrack ? (
-        <div className="banner playing-banner">
-          <span className={isPlaying ? 'playing-dot' : 'playing-dot paused'} aria-hidden="true" />
-          <span className="playing-text">
-            <span className="playing-label">
-              {isPlaying ? 'Playing' : 'Paused'} · {playingList.title}
-            </span>
-            <span className="playing-track" title={liveTrack.title}>
-              {liveTrack.title}
-            </span>
-          </span>
-          {liveIndex >= 0 ? (
-            <span className="playing-count">
-              {liveIndex + 1} / {playingList.tracks.length}
-            </span>
-          ) : null}
-          <button type="button" className="link-button" onClick={() => onPlayingListChange(null)}>
-            Hide
-          </button>
-        </div>
-      ) : null}
 
       {offer ? (
         <div className="banner import-offer">
@@ -488,11 +541,19 @@ export function OnlineView(props: OnlineViewProps) {
               const opening = playingImport === playlist.id
               const kind =
                 playlist.kind === 'album' ? 'Album' : playlist.kind === 'mix' ? 'Mix' : 'Playlist'
+              // The card is the playing indicator now: one place for the list and
+              // the track it is on, instead of a separate strip repeating it.
+              const playingHere =
+                playingList?.playlistId === playlist.id && liveTrack !== null
               return (
-                <div key={playlist.id} className="online-imported-row">
+                <div
+                  key={playlist.id}
+                  ref={playingHere ? playingCardRef : undefined}
+                  className={playingHere ? 'online-imported-row current' : 'online-imported-row'}
+                >
                   <ArtworkImage
-                    track={null}
-                    artworkKey={playlist.coverKey}
+                    track={playlistArtworkTrack(playlist)}
+                    artworkKey={playlist.coverKey ?? undefined}
                     size={36}
                     iconSize={16}
                     className="online-imported-art"
@@ -501,12 +562,33 @@ export function OnlineView(props: OnlineViewProps) {
                     type="button"
                     className="online-imported-open"
                     onClick={() => void playImported(playlist)}
-                    title={`Play ${playlist.title}`}
+                    title={`${playingHere ? 'Restart' : 'Play'} ${playlist.title}`}
                   >
                     <span className="online-imported-title">{playlist.title}</span>
-                    <span className="online-imported-meta" title={`YouTube list ${playlist.listId}`}>
-                      {kind} · {formatCount(playlist.trackCount)} tracks
-                      {playlist.owner ? ` · ${playlist.owner}` : ''}
+                    <span
+                      className="online-imported-meta"
+                      title={
+                        playingHere
+                          ? `${liveTrack.title} · YouTube list ${playlist.listId}`
+                          : `YouTube list ${playlist.listId}`
+                      }
+                    >
+                      {playingHere ? (
+                        <>
+                          <span
+                            className={isPlaying ? 'playing-dot' : 'playing-dot paused'}
+                            aria-hidden="true"
+                          />
+                          {`${isPlaying ? 'Playing' : 'Paused'} · ${liveTrack.title} · ${
+                            liveIndex + 1
+                          } / ${playingList?.tracks.length ?? 0}`}
+                        </>
+                      ) : (
+                        <>
+                          {kind} · {formatCount(playlist.trackCount)} tracks
+                          {playlist.owner ? ` · ${playlist.owner}` : ''}
+                        </>
+                      )}
                     </span>
                   </button>
                   <div className="online-imported-actions">
@@ -518,7 +600,7 @@ export function OnlineView(props: OnlineViewProps) {
                       title="Replace the queue with this playlist and play it"
                     >
                       {opening ? <SpinnerIcon /> : <PlayIcon size={14} />}
-                      <span>{opening ? 'Opening…' : 'Play'}</span>
+                      <span>{opening ? 'Opening…' : playingHere ? 'Restart' : 'Play'}</span>
                     </button>
                     <button
                       type="button"
@@ -700,11 +782,20 @@ export function OnlineView(props: OnlineViewProps) {
         </ul>
       )}
 
-      <p className="table-footnote">
-        {isPlaying && currentVideoId ? 'Streaming now. ' : ''}
-        Saving downloads one file into your music folder, tags it with its cover and adds it to the library; the row
-        then shows a tick. Nothing is cached while you stream.
-      </p>
+      {fieldMenu ? (
+        <FieldContextMenu
+          style={fieldMenuStyle}
+          hasValue={url.trim().length > 0}
+          onPaste={() => void paste()}
+          onCopy={() => void copyField()}
+          onClear={() => {
+            setUrl('')
+            setNotice(null)
+            inputRef.current?.focus()
+          }}
+          onClose={() => setFieldMenu(null)}
+        />
+      ) : null}
 
       {menu ? (
         <OnlineContextMenu
@@ -721,6 +812,95 @@ export function OnlineView(props: OnlineViewProps) {
         />
       ) : null}
     </section>
+  )
+}
+
+/**
+ * The link field's own menu.
+ *
+ * Electron gives a bare input no menu at all, and the app's other menus are
+ * custom, so this one offers the two things a link field is for: putting a link
+ * in and taking it back out. Paste is the reason it exists; Copy and Clear just
+ * keep the right-click from feeling like a one-trick shortcut.
+ */
+function FieldContextMenu(props: {
+  style: { left: number; top: number } | undefined
+  hasValue: boolean
+  onPaste: () => void
+  onCopy: () => void
+  onClear: () => void
+  onClose: () => void
+}) {
+  const { style, hasValue, onPaste, onCopy, onClear, onClose } = props
+  const containerRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent): void => {
+      const node = event.target as Node | null
+      if (node && containerRef.current?.contains(node)) return
+      onClose()
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        onClose()
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [onClose])
+
+  return (
+    <div
+      ref={containerRef}
+      className="context-menu field-menu"
+      style={style}
+      role="menu"
+      aria-label="Link field actions"
+    >
+      <button
+        type="button"
+        role="menuitem"
+        className="context-item"
+        onClick={() => {
+          onPaste()
+          onClose()
+        }}
+      >
+        <ClipboardIcon size={14} />
+        <span>Paste</span>
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        className="context-item"
+        disabled={!hasValue}
+        onClick={() => {
+          onCopy()
+          onClose()
+        }}
+      >
+        <CopyIcon size={14} />
+        <span>Copy</span>
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        className="context-item"
+        disabled={!hasValue}
+        onClick={() => {
+          onClear()
+          onClose()
+        }}
+      >
+        <CloseIcon size={14} />
+        <span>Clear</span>
+      </button>
+    </div>
   )
 }
 

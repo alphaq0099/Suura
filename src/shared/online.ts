@@ -63,14 +63,20 @@ export function isImportedPlaylistTrackId(id: number): boolean {
 /**
  * The imported list whose tracks are the queue that is playing.
  *
- * Held by the app rather than the view that started it, so the strip naming the
- * list — and the track it is on — survives a trip to another view and back. The
- * tracks are a snapshot, not a live read: the list can be deleted while its queue
- * is still playing.
+ * Held by the app rather than the view that started it, so the imported card
+ * that names the list — and the track it is on — still knows about it after a
+ * trip to another view and back. The tracks are a snapshot, not a live read:
+ * the list can be deleted while its queue is still playing.
  */
 export interface PlayingList {
   title: string
   tracks: Track[]
+  /**
+   * The imported list's row id, when the queue came from one. The Online view
+   * matches this to mark the right card; playing a hand-made playlist leaves it
+   * undefined.
+   */
+  playlistId?: number
 }
 
 export function onlinePlaylistItemToTrack(item: OnlinePlaylistItem, playlist: OnlinePlaylist): Track {

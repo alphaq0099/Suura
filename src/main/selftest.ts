@@ -2001,6 +2001,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       rowCoverLoaded: boolean
       rowPlaceholders: number
       pasteFilled: string
+      pasteMenuVisible: boolean
+      pasteMenuItems: string
+      pasteMenuFilled: string
+      pasteMenuClosed: boolean
+      historyScrolls: boolean
       playDisabled: boolean
       invalidError: string
       refusedError: string
@@ -2015,7 +2020,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     }>(
       window,
       `(async () => {
-         const out = { rows: 0, firstTitle: '', firstArtist: '', firstDuration: '', sidebarCount: '', rowCovers: 0, rowCoverLoaded: false, rowPlaceholders: 0, pasteFilled: '', playDisabled: false, invalidError: '', refusedError: '', refusedPending: 0, pendingRows: 0, menuItems: '', saveEnabled: false, rowSaveButtons: 0, removedRows: -1, clearedRows: -1, emptyAfterClear: false }
+         const out = { rows: 0, firstTitle: '', firstArtist: '', firstDuration: '', sidebarCount: '', rowCovers: 0, rowCoverLoaded: false, rowPlaceholders: 0, pasteFilled: '', pasteMenuVisible: false, pasteMenuItems: '', pasteMenuFilled: '', pasteMenuClosed: false, historyScrolls: false, playDisabled: false, invalidError: '', refusedError: '', refusedPending: 0, pendingRows: 0, menuItems: '', saveEnabled: false, rowSaveButtons: 0, removedRows: -1, clearedRows: -1, emptyAfterClear: false }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (s) => document.querySelector(s)
          const pickAll = (s) => [...document.querySelectorAll(s)]
@@ -2057,6 +2062,15 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.rowCoverLoaded = covers().length > 0 && covers()[0].naturalWidth > 0
          out.rowPlaceholders = pickAll('.online-art[data-artwork="none"]').length
 
+         // The history is a window, not the whole log: five rows stay in view
+         // and the wheel reaches the rest. The imported box does the same with
+         // three; that check lives in the imported-list section.
+         const historyList = pick('.online-list')
+         const historyStyle = historyList ? getComputedStyle(historyList) : null
+         out.historyScrolls = Boolean(
+           historyStyle && historyStyle.overflowY === 'auto' && parseFloat(historyStyle.maxHeight) >= 200
+         )
+
          const play = buttonWith('Play now')
          out.playDisabled = Boolean(play && play.disabled)
 
@@ -2064,6 +2078,27 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          press(pick('.online-paste'))
          await sleep(500)
          out.pasteFilled = (pick('.online-input input') || {}).value || ''
+
+         // Right-clicking the field offers the same clipboard read. The menu is
+         // the app's own, so the native menu cannot be the only way to paste.
+         setInput(pick('.online-input input'), '')
+         await sleep(150)
+         const field = pick('.online-input input')
+         if (field) field.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 180, clientY: 180 }))
+         await sleep(300)
+         const fieldMenu = pick('.field-menu')
+         out.pasteMenuVisible = Boolean(fieldMenu)
+         out.pasteMenuItems = fieldMenu
+           ? pickAll('.field-menu .context-item').map((el) => text(el).trim()).join(' | ')
+           : ''
+         press(
+           fieldMenu
+             ? pickAll('.field-menu .context-item').find((el) => text(el).trim() === 'Paste')
+             : null
+         )
+         await sleep(600)
+         out.pasteMenuFilled = (pick('.online-input input') || {}).value || ''
+         out.pasteMenuClosed = !pick('.field-menu')
 
          // A link that is not YouTube is refused inline, before any request.
          setInput(pick('.online-input input'), 'not a youtube link')
@@ -2130,6 +2165,19 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       onlineView.pasteFilled
     )
     record(
+      onlineView.historyScrolls,
+      'the link history keeps five rows in view and scrolls for the rest',
+      `scrolls ${onlineView.historyScrolls}`
+    )
+    record(
+      onlineView.pasteMenuVisible &&
+        onlineView.pasteMenuItems.indexOf('Paste') >= 0 &&
+        onlineView.pasteMenuFilled === 'https://www.youtube.com/watch?v=selftestaa1' &&
+        onlineView.pasteMenuClosed,
+      'right-clicking the link field offers Paste and fills it',
+      `${onlineView.pasteMenuVisible ? 'menu' : 'no menu'} (${onlineView.pasteMenuItems || 'empty'}): ${onlineView.pasteMenuFilled || 'not filled'}`
+    )
+    record(
       onlineView.invalidError.toLowerCase().includes('youtube') && onlineView.pendingRows === 0,
       'a link that is not YouTube shows an inline error and adds no row',
       onlineView.invalidError || 'no error text'
@@ -2180,9 +2228,12 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       rowsAfterRemove: number
       playedTitle: string
       hasCover: boolean
-      bannerVisible: boolean
-      bannerLabel: string
-      bannerTrack: string
+      playingCard: boolean
+      separateStrip: boolean
+      playingCardAfterTrip: boolean
+      onlineCardCover: boolean
+      importedScrolls: boolean
+      cardsAfterDelete: number
       groupEmpty: boolean
       emptyAfterDelete: boolean
       hasListId: boolean
@@ -2196,7 +2247,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     }>(
       window,
       `(async () => {
-         const out = { groupTitles: '', onlineRows: -1, kind: '', paneTitle: '', titles: '', note: '', hasReimport: false, hasClear: false, hasSaveAll: false, rowSaveButtons: 0, rowRevealButtons: 0, indexCount: '', rowsAfterRemove: -1, playedTitle: '', hasCover: false, bannerVisible: false, bannerLabel: '', bannerTrack: '', groupEmpty: false, emptyAfterDelete: false, hasListId: false, reimportCount: '', renamedTitle: '', renamedIndex: '', onlineCards: -1, onlineCardTitle: '', onlineCardMeta: '', historyRows: -1 }
+         const out = { groupTitles: '', onlineRows: -1, kind: '', paneTitle: '', titles: '', note: '', hasReimport: false, hasClear: false, hasSaveAll: false, rowSaveButtons: 0, rowRevealButtons: 0, indexCount: '', rowsAfterRemove: -1, playedTitle: '', hasCover: false, playingCard: false, separateStrip: false, playingCardAfterTrip: false, onlineCardCover: false, importedScrolls: false, cardsAfterDelete: -1, groupEmpty: false, emptyAfterDelete: false, hasListId: false, reimportCount: '', renamedTitle: '', renamedIndex: '', onlineCards: -1, onlineCardTitle: '', onlineCardMeta: '', historyRows: -1 }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (s) => document.querySelector(s)
          const pickAll = (s) => [...document.querySelectorAll(s)]
@@ -2269,6 +2320,24 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.onlineCardTitle = text(pick('.online-imported-title')).trim()
          out.onlineCardMeta = text(pick('.online-imported-meta')).trim()
          out.historyRows = pickAll('.online-item').length
+         out.playingCard = Boolean(pick('.online-imported-row.current'))
+         out.separateStrip = Boolean(pick('.playing-banner'))
+         out.onlineCardCover = Boolean(
+           pick('.online-imported-row.current .online-imported-art[data-artwork="ready"]')
+         )
+         const importedList = pick('.online-imported-list')
+         const importedStyle = importedList ? getComputedStyle(importedList) : null
+         out.importedScrolls = Boolean(
+           importedStyle && importedStyle.overflowY === 'auto' && parseFloat(importedStyle.maxHeight) >= 150
+         )
+
+         // The mark belongs to the app state, not to the Online view: a round
+         // trip must leave the same card marked when the view comes back.
+         nav('Playlists')
+         await sleep(500)
+         nav('Online')
+         await sleep(700)
+         out.playingCardAfterTrip = Boolean(pick('.online-imported-row.current'))
          nav('Playlists')
          await sleep(700)
 
@@ -2282,14 +2351,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.groupEmpty = Boolean(groupGone) && groupGone.querySelectorAll('.playlist-row').length === 0
          out.emptyAfterDelete = text(pick('.empty-state h2')).trim() === 'No playlists yet'
 
-         // The strip naming the playing list belongs to the app, not to the Online
-         // view: leaving Playlists and coming back must not lose it, which is
-         // exactly what happened when the state lived in the view.
+         // The card is the only place the playing list is named, so deleting the
+         // snapshot removes the card too; the player bar still knows the queue.
          nav('Online')
          await sleep(700)
-         out.bannerVisible = Boolean(pick('.playing-banner'))
-         out.bannerLabel = text(pick('.playing-banner .playing-label')).trim()
-         out.bannerTrack = text(pick('.playing-banner .playing-track')).trim()
+         out.cardsAfterDelete = pickAll('.online-imported-row').length
          return out
        })()`
     )
@@ -2352,21 +2418,39 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     record(
       onlineLists.onlineCards === 1 &&
         onlineLists.onlineCardTitle === 'Selftest Album Renamed' &&
-        onlineLists.onlineCardMeta.indexOf('Album') === 0 &&
-        onlineLists.historyRows === 0,
-      'the Online view lists the imported playlist once, without its tracks in the history',
-      `${onlineLists.onlineCards} card(s): ${onlineLists.onlineCardTitle || 'none'} (${onlineLists.onlineCardMeta || 'no meta'}); ${onlineLists.historyRows} history rows`
+        onlineLists.historyRows === 0 &&
+        onlineLists.onlineCardCover,
+      'the Online view lists the imported playlist once, with its cover and no history tracks',
+      `${onlineLists.onlineCards} card(s): ${onlineLists.onlineCardTitle || 'none'} (${onlineLists.onlineCardMeta || 'no meta'}); cover ${onlineLists.onlineCardCover}; ${onlineLists.historyRows} history rows`
     )
     record(
-      onlineLists.bannerVisible,
-      'the strip naming the playing list survives a trip to another view',
-      `visible ${onlineLists.bannerVisible}`
+      onlineLists.playingCard &&
+        !onlineLists.separateStrip &&
+        (onlineLists.onlineCardMeta.indexOf('Playing') === 0 ||
+          onlineLists.onlineCardMeta.indexOf('Paused') === 0),
+      'the playing list is marked on its own card, not in a separate strip',
+      `card ${onlineLists.playingCard}, strip ${onlineLists.separateStrip}, meta ${onlineLists.onlineCardMeta || 'none'}`
     )
     record(
-      onlineLists.bannerLabel.includes('Selftest Album Renamed') &&
-        onlineLists.bannerTrack === 'Online Tone Two',
-      'the strip names the list being played and the track it is on',
-      `${onlineLists.bannerLabel} / ${onlineLists.bannerTrack}`
+      onlineLists.onlineCardMeta.includes('Online Tone Two') &&
+        onlineLists.onlineCardMeta.includes('1 / 1'),
+      'the card names the track the list is on and its position',
+      onlineLists.onlineCardMeta
+    )
+    record(
+      onlineLists.playingCardAfterTrip,
+      'the playing mark survives a trip to another view',
+      `marked ${onlineLists.playingCardAfterTrip}`
+    )
+    record(
+      onlineLists.importedScrolls,
+      'the imported list keeps three recent cards in view and scrolls for the rest',
+      `scrolls ${onlineLists.importedScrolls}`
+    )
+    record(
+      onlineLists.cardsAfterDelete === 0,
+      'deleting the imported snapshot removes its card',
+      `${onlineLists.cardsAfterDelete} card(s) after delete`
     )
     record(
       onlineLists.groupEmpty && onlineLists.emptyAfterDelete,

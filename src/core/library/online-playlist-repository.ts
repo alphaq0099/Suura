@@ -36,6 +36,7 @@ interface PlaylistRow {
   total_count: number | null
   imported_at: number
   track_count: number
+  first_video_id: string | null
 }
 
 interface ItemRow {
@@ -51,7 +52,9 @@ interface ItemRow {
 
 const PLAYLIST_COLUMNS = `p.id, p.list_id, p.kind, p.title, p.custom_title, p.owner, p.source_url,
   p.cover_key, p.total_count, p.imported_at,
-  (SELECT COUNT(*) FROM online_playlist_items i WHERE i.playlist_id = p.id) AS track_count`
+  (SELECT COUNT(*) FROM online_playlist_items i WHERE i.playlist_id = p.id) AS track_count,
+  (SELECT i.video_id FROM online_playlist_items i WHERE i.playlist_id = p.id
+    ORDER BY i.position ASC, i.id ASC LIMIT 1) AS first_video_id`
 
 function mapPlaylist(row: PlaylistRow): OnlinePlaylist {
   return {
@@ -64,6 +67,7 @@ function mapPlaylist(row: PlaylistRow): OnlinePlaylist {
     owner: row.owner,
     sourceUrl: row.source_url,
     coverKey: row.cover_key,
+    firstVideoId: row.first_video_id,
     trackCount: row.track_count,
     totalCount: row.total_count,
     importedAt: row.imported_at

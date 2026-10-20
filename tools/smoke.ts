@@ -1476,6 +1476,8 @@ async function main(): Promise<void> {
       checkEqual('online lists: the total YouTube reported is kept', album.totalCount, 3)
       checkEqual('online lists: entries keep the source order', repo.items(album.id).map((item) => item.videoId).join(','), 'aaaaaaaaaaa,bbbbbbbbbbb,ccccccccccc')
       checkEqual('online lists: positions start at zero', repo.items(album.id)[0]?.position, 0)
+      // A list without a sleeve shows its first entry's still on the Online card.
+      checkEqual('online lists: the first entry is the card cover fallback', album.firstVideoId, 'aaaaaaaaaaa')
 
       const item = repo.findItemByVideo('bbbbbbbbbbb')
       checkEqual('online lists: a video can be found for its first play', item?.artist, 'Christina Perri')
@@ -1538,6 +1540,7 @@ async function main(): Promise<void> {
       checkEqual('online lists: removing an entry names its playlist', removedPlaylistId, album.id)
       checkEqual('online lists: positions close the gap', repo.items(album.id)[0]?.position, 0)
       checkEqual('online lists: the remaining entry is the right one', repo.items(album.id)[0]?.videoId, 'ddddddddddd')
+      checkEqual('online lists: the card fallback follows the snapshot', repo.get(album.id)?.firstVideoId, 'ddddddddddd')
 
       const mix = repo.upsert(
         {
@@ -1553,6 +1556,7 @@ async function main(): Promise<void> {
         3000
       )
       checkEqual('online lists: a mix is its own playlist', mix.kind, 'mix')
+      checkEqual('online lists: a mix offers its first still as a card cover', mix.firstVideoId, 'eeeeeeeeeee')
       checkEqual('online lists: the newest import is first', repo.list()[0]?.id, mix.id)
 
       check('online lists: deleting removes the playlist', repo.delete(mix.id))
