@@ -121,10 +121,11 @@ export class SettingsService {
   }
 
   private read(): AppSettings {
+    let settings: AppSettings
     try {
       const raw = readFileSync(this.file, 'utf8')
       const parsed = JSON.parse(raw) as DeepPartial<AppSettings>
-      return mergeSettings(DEFAULT_SETTINGS, parsed)
+      settings = mergeSettings(DEFAULT_SETTINGS, parsed)
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code
       if (code !== 'ENOENT') {
@@ -132,6 +133,16 @@ export class SettingsService {
       }
       return structuredClone(DEFAULT_SETTINGS)
     }
+
+    // Offline caching is deliberately disabled until its own phase. A config
+    // written by an earlier build may still say `cache`; keeping it would make
+    // the app claim a behaviour it does not have, so the mode is pinned to
+    // stream-only on every read. The budget fields stay in the file untouched,
+    // ready for the phase that implements them.
+    if (settings.retention.mode !== 'stream') {
+      settings = { ...settings, retention: { ...settings.retention, mode: 'stream' } }
+    }
+    return settings
   }
 
   /** Write to a temp file then rename, so a crash mid-write cannot corrupt config. */

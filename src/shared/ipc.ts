@@ -25,7 +25,9 @@ import type {
   SaveToLibraryRequest,
   ScanProgress,
   Track,
-  TrackPage
+  TrackPage,
+  YouTubeChannel,
+  YouTubeSearchResult
 } from './types'
 
 /**
@@ -70,12 +72,15 @@ export const IPC = {
   onlineRemove: 'online:remove',
   onlineClear: 'online:clear',
   onlineImport: 'online:import',
+  onlineSearch: 'online:search',
+  onlineChannel: 'online:channel',
   onlinePlaylists: 'online:playlists',
   onlinePlaylist: 'online:playlist',
   onlinePlaylistRename: 'online:playlist-rename',
   onlinePlaylistDelete: 'online:playlist-delete',
   onlinePlaylistRemoveItem: 'online:playlist-remove-item',
   downloadSave: 'download:save',
+  downloadCancel: 'download:cancel',
   downloadSavedIds: 'download:saved-ids',
   clipboardRead: 'clipboard:read-text',
   clipboardWrite: 'clipboard:write-text',
@@ -211,6 +216,10 @@ export interface PlayerApi {
    * count for that kind of list.
    */
   importOnlineList(url: string, limit?: number): Promise<OnlinePlaylistDetail>
+  /** Searches YouTube for videos. Metadata only; nothing is stored. */
+  searchYouTube(query: string, limit?: number): Promise<YouTubeSearchResult[]>
+  /** Lists a channel's recent videos by channel id, handle or URL. */
+  getYouTubeChannel(target: string, limit?: number): Promise<YouTubeChannel>
   /** Every imported playlist, most recently imported first. */
   listOnlinePlaylists(): Promise<OnlinePlaylist[]>
   getOnlinePlaylist(playlistId: number): Promise<OnlinePlaylistDetail | null>
@@ -227,6 +236,14 @@ export interface PlayerApi {
    * Progress is pushed on `downloadChanged` while it works.
    */
   saveToLibrary(request: SaveToLibraryRequest): Promise<number>
+  /**
+   * Stops a save, whether it is queued or already downloading.
+   *
+   * The promise `saveToLibrary` returned rejects; a cancel is reported as a
+   * `cancelled` progress event rather than a failure, so the UI can offer Retry
+   * without treating the user's own decision as an error.
+   */
+  cancelSave(videoId: string): Promise<void>
   /** Which video ids already have a library row, for "already saved" badges. */
   savedVideoIds(videoIds: string[]): Promise<string[]>
   /** The system clipboard text, so the paste button needs no select-all. */

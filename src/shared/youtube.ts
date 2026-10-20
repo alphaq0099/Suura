@@ -76,6 +76,86 @@ export function youtubeListUrl(listId: string): string {
   return youtubePlaylistUrl(listId)
 }
 
+/**
+ * The URL that lists a channel's videos.
+ *
+ * A search result carries a channel id (`UC…`), a handle (`@name`) or sometimes
+ * only the display name. Only the first two are identities; a display name is
+ * not something yt-dlp can be pointed at without searching for it first, so the
+ * caller falls back to the search route in that case.
+ */
+export function youtubeChannelUrl(input: string): string | null {
+  const trimmed = input.trim()
+  if (trimmed.length === 0) return null
+
+  if (/^UC[\w-]{22}$/.test(trimmed)) {
+    return `https://www.youtube.com/channel/${trimmed}/videos`
+  }
+  if (/^@[\w.-]+$/.test(trimmed)) {
+    return `https://www.youtube.com/${trimmed}/videos`
+  }
+
+  let url: URL
+  try {
+    url = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`)
+  } catch {
+    return null
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return null
+
+  const host = url.hostname.toLowerCase().replace(/^www\./, '')
+  if (!YOUTUBE_HOSTS.has(host)) return null
+
+  const parts = url.pathname.split('/').filter(Boolean)
+  const first = parts[0] ?? ''
+  const second = parts[1] ?? ''
+  if (first === 'channel' && /^UC[\w-]{22}$/.test(second)) {
+    return `https://www.youtube.com/channel/${second}/videos`
+  }
+  if (first.startsWith('@')) return `https://www.youtube.com/${first}/videos`
+  if ((first === 'c' || first === 'user') && second) {
+    return `https://www.youtube.com/${first}/${second}/videos`
+  }
+  return null
+}
+
+/**
+ * Turns a YouTube title into the title a music library would use.
+ *
+ * Uploads carry marketing decoration that is not part of the song: brackets
+ * around "Official Video", "Lyrics" or "4K", and a `Artist - ` prefix that only
+ * repeats the channel. Both are stripped only when the pattern is unambiguous;
+ * "(Live)" is deliberately kept, because that is a different recording, not
+ * decoration. Exported because the rules are worth testing without a sidecar.
+ */
+export function cleanYouTubeMetadata(
+  title: string,
+  artist: string | null | undefined
+): { title: string; artist: string | null } {
+  const noise =
+    /\s*[\[(](?:official\s+(?:music\s+)?video|official\s+audio|official\s+lyric\s+video|lyric\s+video|lyrics?|audio|visuali[sz]er|music\s+video|m\/v|mv|hd|hq|4k|8k|explicit|clean|remaster(?:ed)?(?:\s+\d{4})?)[\])]/gi
+  let cleaned = title
+    .replace(noise, ' ')
+    .replace(/\s*[|•]\s*(?:official\s+)?(?:music\s+)?video\s*$/i, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+  if (cleaned.length === 0) cleaned = title.trim()
+
+  const name = normalizeArtistName(artist)
+  if (!name) return { title: cleaned, artist: null }
+
+  const prefix = new RegExp(`^${escapeRegExp(name)}\\s*[-–—:]\\s*`, 'i')
+  const withoutArtist = cleaned.replace(prefix, '').trim()
+  if (withoutArtist.length >= 2 && withoutArtist !== cleaned) {
+    return { title: withoutArtist, artist: name }
+  }
+  return { title: cleaned, artist: name }
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 /** What a `list=` id is. `account` means it belongs to a signed-in account. */
 export type YouTubeListKind = 'playlist' | 'album' | 'mix'
 

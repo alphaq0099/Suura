@@ -408,7 +408,10 @@ export function TrackList(props: TrackListProps) {
               const rowSaved = isStream && (isSaved?.(track) ?? false)
               const saving = isStream ? saveState?.(track) : undefined
               const savingActive =
-                saving !== undefined && saving.status !== 'saved' && saving.status !== 'failed'
+                saving !== undefined &&
+                saving.status !== 'saved' &&
+                saving.status !== 'failed' &&
+                saving.status !== 'cancelled'
               const rowClass = [
                 'track-row',
                 isCurrent ? 'current' : '',

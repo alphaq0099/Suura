@@ -3,6 +3,9 @@
 **Date:** 2026-10-19 · **Goal:** turn the spike's single-link timing into a success rate and a format/header baseline
 before M3's resolver was wired to the UI.
 
+> **Superseded for the M3 exit measurement by [`yt-dlp-50.md`](./yt-dlp-50.md)** (50/50, median 8.3 s, CDN first bytes
+> 0.46 s). This 20-link note remains the record of the earlier sample and of the format/header baseline.
+
 ## Method
 
 - yt-dlp `2026.10.10.233141`, ffmpeg `2025-10-21`, Windows, 8 GB RAM.

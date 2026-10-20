@@ -682,7 +682,10 @@ export function OnlineView(props: OnlineViewProps) {
             const saving = states[entry.videoId]
             const isSaved = saved.has(entry.videoId)
             const savingActive =
-              saving !== undefined && saving.status !== 'saved' && saving.status !== 'failed'
+              saving !== undefined &&
+              saving.status !== 'saved' &&
+              saving.status !== 'failed' &&
+              saving.status !== 'cancelled'
             const savingLabel =
               saving?.status === 'queued'
                 ? 'Queued'
@@ -921,7 +924,8 @@ function OnlineContextMenu(props: {
 }) {
   const { state, style, saved, saving, onPlay, onQueue, onSave, onCopy, onRemove, onClose } = props
   const containerRef = useRef<HTMLDivElement | null>(null)
-  const savingActive = saving !== undefined && saving !== 'saved' && saving !== 'failed'
+  const savingActive =
+    saving !== undefined && saving !== 'saved' && saving !== 'failed' && saving !== 'cancelled'
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent): void => {

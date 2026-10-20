@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AppPaths, AppSettings, DeepPartial, EngineStatus } from '@shared/types'
-import type { PlayingList } from '@shared/online'
+import type { AppPaths, AppSettings, DeepPartial, EngineStatus, YouTubeSearchResult } from '@shared/types'
+import { onlineEntryToTrack, type PlayingList } from '@shared/online'
+import { youtubeWatchUrl } from '@shared/youtube'
 import { api, messageOf } from './api'
 import { LibraryView } from './components/LibraryView'
 import { NowPlayingView } from './components/NowPlayingView'
@@ -8,6 +9,8 @@ import { OnlineView } from './components/OnlineView'
 import { PlayerBar } from './components/PlayerBar'
 import { PlaylistsView } from './components/PlaylistsView'
 import { QueueView } from './components/QueueView'
+import { SavesPanel } from './components/SavesPanel'
+import { SearchView } from './components/SearchView'
 import { SettingsView } from './components/SettingsView'
 import { Sidebar, type ViewName } from './components/Sidebar'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
@@ -271,6 +274,31 @@ export function App() {
     player.playQueue(selected, 0)
   }, [player, tracks, selectedIds])
 
+  /**
+   * Playing a discovery result is playing a link.
+   *
+   * It goes through the same `online.addLink` path a pasted URL takes, so the
+   * history, the fetch of the thumbnail and the resolve cache all agree with the
+   * Streaming view. The resolve is what makes the user wait; the row says so by
+   * staying in its busy state until this promise settles.
+   */
+  const playYouTubeResult = useCallback(
+    async (result: YouTubeSearchResult): Promise<void> => {
+      const entry = await online.addLink(youtubeWatchUrl(result.videoId))
+      setPlayingList(null)
+      player.playQueue([onlineEntryToTrack(entry)], 0)
+    },
+    [online, player]
+  )
+
+  const queueYouTubeResult = useCallback(
+    async (result: YouTubeSearchResult): Promise<void> => {
+      const entry = await online.addLink(youtubeWatchUrl(result.videoId))
+      player.enqueue([onlineEntryToTrack(entry)])
+    },
+    [online, player]
+  )
+
   // Repeat cycles off -> all -> one -> off, the order every player uses.
   const cycleRepeat = useCallback((): void => {
     const current = settings?.repeat ?? 'off'
@@ -374,6 +402,14 @@ export function App() {
           onAddTracksToPlaylist={playlists.addTracks}
           onCreatePlaylist={playlists.create}
         />
+      ) : view === 'search' ? (
+        <SearchView
+          downloads={downloads}
+          onPlayLocal={(queue) => player.playQueue(queue, 0)}
+          onQueueLocal={player.enqueue}
+          onPlayYouTube={playYouTubeResult}
+          onQueueYouTube={queueYouTubeResult}
+        />
       ) : view === 'online' ? (
         <OnlineView
           entries={online.entries}
@@ -457,6 +493,8 @@ export function App() {
           onOpenPath={(target) => void openPath(target)}
         />
       )}
+
+      <SavesPanel downloads={downloads} onReveal={(trackId) => void revealTrack(trackId)} />
 
       <PlayerBar
         current={player.current}

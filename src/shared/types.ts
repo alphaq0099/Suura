@@ -263,8 +263,40 @@ export interface OnlinePlaylistDetail {
   items: OnlinePlaylistItem[]
 }
 
+/**
+ * One result from a YouTube search or a channel listing.
+ *
+ * Deliberately smaller than `OnlineTrack`: nothing is stored yet, so there is no
+ * history id and no cached artwork key. The video id is enough for the view to
+ * draw a still and for playback to add the link to the history.
+ */
+export interface YouTubeSearchResult {
+  videoId: string
+  title: string
+  artist: string | null
+  durationMs: number | null
+  channelId: string | null
+  channelName: string | null
+}
+
+/** A channel and the videos shown on its page. */
+export interface YouTubeChannel {
+  channelId: string | null
+  name: string
+  url: string
+  entries: YouTubeSearchResult[]
+}
+
 /** Where a saved track is in its journey from YouTube to the library. */
-export type DownloadStatus = 'queued' | 'downloading' | 'finishing' | 'indexing' | 'saved' | 'failed'
+export type DownloadStatus =
+  | 'queued'
+  | 'downloading'
+  | 'finishing'
+  | 'indexing'
+  | 'saved'
+  | 'failed'
+  /** The user stopped it, so it is not an error to retry or explain. */
+  | 'cancelled'
 
 /**
  * One track's download, as the main process reports it.

@@ -1,18 +1,22 @@
 import type { Logger } from '@core/logging/logger'
 import type { OnlinePlaylistRepository } from '@core/library/online-playlist-repository'
 import type { OnlineRepository } from '@core/library/online-repository'
-import type { YtPlaylistProvider } from '@engine/sidecar/yt-dlp'
+import type { YtPlaylistProvider, YtSearchProvider } from '@engine/sidecar/yt-dlp'
 import type { YouTubeResolver } from '@engine/youtube-resolver'
 import type {
   EngineSettings,
   OnlinePlaylist,
   OnlinePlaylistDetail,
-  OnlineTrack
+  OnlineTrack,
+  YouTubeChannel,
+  YouTubeSearchResult
 } from '@shared/types'
 import {
+  cleanYouTubeMetadata,
   describeYouTubeRefusal,
   normalizeArtistName,
   parseYouTubeLink,
+  youtubeChannelUrl,
   youtubeListTitle,
   youtubeListUrl,
   youtubeThumbnailCandidates,
@@ -87,6 +91,21 @@ export interface OnlineService {
   renamePlaylist(id: number, title: string): OnlinePlaylist | null
   deletePlaylist(id: number): void
   removePlaylistItem(itemId: number): number | null
+  /**
+   * Searches YouTube for videos.
+   *
+   * Metadata only: a result is not remembered, downloaded or resolved, so the
+   * search itself cannot fill the history or touch the library. Playing a result
+   * goes through `addLink`, the same path a pasted link takes.
+   */
+  search(query: string, limit?: number): Promise<YouTubeSearchResult[]>
+  /**
+   * Lists a channel's recent videos.
+   *
+   * A channel link is accepted by id, handle or URL; a display name is not an
+   * identity, so the view falls back to a search when it has only that.
+   */
+  channel(target: string, limit?: number): Promise<YouTubeChannel>
 }
 
 /** A thumbnail is decoration: cap each attempt so a hung CDN cannot stall a cover indefinitely. */
@@ -118,6 +137,8 @@ export function createOnlineService(deps: {
    * resolver because importing is a different read: no formats, no stream URLs.
    */
   listProvider: YtPlaylistProvider
+  /** Search and channel listings, kept separate from playback resolves. */
+  discoverProvider: YtSearchProvider
   engine: () => EngineSettings
   artwork: ArtworkService
   log: Logger
@@ -197,12 +218,13 @@ export function createOnlineService(deps: {
       // Validation and resolution live in the resolver, so a bad link is refused
       // with the same message the player already knows how to show.
       const link = await deps.resolver.resolveLink(input)
+      const metadata = cleanYouTubeMetadata(link.track.title, link.track.artist)
 
       const entry = deps.repo.upsert(
         {
           videoId: link.track.sourceId,
-          title: link.track.title,
-          artist: link.track.artist,
+          title: metadata.title,
+          artist: metadata.artist,
           // Album fields arrive with playlist/album import (M5). A single watch
           // link carries no album, and inventing one would be worse than null.
           album: null,
@@ -332,15 +354,19 @@ export function createOnlineService(deps: {
           coverKey,
           totalCount: info.total
         },
-        info.entries.map((entry) => ({
-          videoId: entry.videoId,
-          title: entry.title,
-          // In an album every row is by the album artist and belongs to the album;
-          // in a playlist the uploader is the best artist we have and it has none.
-          artist: normalizeArtistName(entry.artist) ?? (kind === 'album' ? owner : null),
-          album: kind === 'album' ? title : null,
-          durationMs: entry.durationMs
-        })),
+        info.entries.map((entry) => {
+          const fallbackArtist = normalizeArtistName(entry.artist) ?? (kind === 'album' ? owner : null)
+          const metadata = cleanYouTubeMetadata(entry.title, fallbackArtist)
+          return {
+            videoId: entry.videoId,
+            title: metadata.title,
+            // In an album every row is by the album artist and belongs to the album;
+            // in a playlist the uploader is the best artist we have and it has none.
+            artist: metadata.artist,
+            album: kind === 'album' ? title : null,
+            durationMs: entry.durationMs
+          }
+        }),
         deps.now?.() ?? Date.now()
       )
 
@@ -373,6 +399,46 @@ export function createOnlineService(deps: {
       const playlistId = deps.playlists.removeItem(itemId)
       if (playlistId !== null) deps.onChange?.()
       return playlistId
+    },
+
+    async search(query, requestedLimit) {
+      const text = query.trim()
+      if (text.length === 0) throw new Error('Type something to search for.')
+      if (text.length > 200) throw new Error('That search is too long.')
+      const limit = Math.max(1, Math.min(50, Math.round(requestedLimit ?? 20)))
+      const results = await deps.discoverProvider.search(text, limit)
+      return results.map((entry) => {
+        const metadata = cleanYouTubeMetadata(entry.title, entry.artist)
+        return { ...entry, title: metadata.title, artist: metadata.artist }
+      })
+    },
+
+    async channel(target, requestedLimit) {
+      const limit = Math.max(1, Math.min(50, Math.round(requestedLimit ?? 30)))
+      const clean = (entries: YouTubeSearchResult[]): YouTubeSearchResult[] =>
+        entries.map((entry) => {
+          const metadata = cleanYouTubeMetadata(entry.title, entry.artist)
+          return { ...entry, title: metadata.title, artist: metadata.artist }
+        })
+
+      const channelUrl = youtubeChannelUrl(target)
+      if (!channelUrl) {
+        // A search result usually carries a channel id or handle, but YouTube
+        // sometimes only reports a display name. There is no page to point at in
+        // that case, so the honest fallback is a search for the name; the view
+        // says it is a channel and still lets every row play.
+        const entries = clean(await deps.discoverProvider.search(target, limit))
+        if (entries.length === 0) {
+          throw new Error('No videos were found for that channel.')
+        }
+        return { channelId: null, name: target, url: '', entries }
+      }
+
+      const info = await deps.discoverProvider.channel(target, limit)
+      if (info.entries.length === 0) {
+        throw new Error('This channel has no public videos that this app can list.')
+      }
+      return { ...info, entries: clean(info.entries) }
     }
   }
 }

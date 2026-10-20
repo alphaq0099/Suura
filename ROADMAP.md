@@ -4,7 +4,7 @@ A music player that manages a **local music library** and can also **search, str
 
 - **Platform order:** Windows desktop first → Android later
 - **Streaming first:** play immediately, no waiting for a full download
-- **User's choice:** decide per-track / per-playlist whether downloaded audio is kept on disk, cached temporarily, or never written to disk at all
+- **User's choice:** decide per-track / per-playlist whether downloaded audio is kept on disk, cached temporarily, or never written to disk at all. **Offline caching is deferred to M12**; stream-only and explicit saving are what ship today.
 - **Status of this document:** the plan. Implementation has started — see [`README.md`](./README.md) for what actually
   works today, and the milestone checkboxes below for progress.
 
@@ -37,8 +37,10 @@ A single app where a user's music lives in one place:
 ### 1.4 Success criteria for v1 (Windows)
 - Library of 10,000 tracks scans, indexes and is searchable; cold start < 2 s
 - Playing a local file: < 300 ms to first audio
-- Playing a YouTube track: < 3 s to first audio on a normal connection
-- Cache/download manager never exceeds the configured disk budget
+- Playing a YouTube track already resolved this session (or prefetched): < 3 s to first audio; a cold paste has a
+  ≤ 10 s median display target while it resolves
+- Cache/download manager never exceeds the configured disk budget *(cache arrives in M12; explicit saves are bounded by
+  the queue and reported in the Saves dock)*
 - Crash-free sessions > 99%; no orphaned yt-dlp processes after exit
 
 ---
@@ -257,13 +259,14 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
 **Goal:** every irreversible choice is made and written down.
 - [x] Choose the stack (§3) and record it in an ADR (Architecture Decision Record)
 - [x] Decide the player engine and the primary streaming approach (A/B/C above)
-- [ ] Wireframe the 6 core screens: Library, Now Playing, Queue, Search, Downloads, Settings — five are built; Downloads
-      arrives with M4
+- [ ] Wireframe the 6 core screens: Library, Now Playing, Queue, Search, Downloads, Settings — all but Downloads are
+      built; a compact Saves dock covers the download case until the full screen arrives with M12
 - [x] Write the `IMediaResolver` interface and the IPC event schema (as a spec, not code) — built, not just specified:
       `src/engine/resolver.ts` and `src/shared/ipc.ts`
 - [ ] Verify yt-dlp + ffmpeg work as sidecars on a clean Windows machine; measure resolve latency and success rate on 20
-      representative videos — presence is checked by `npm run smoke`; the 20-video sample is done (**20/20**, median
-      8.8 s) in [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-dlp-sample.md); the clean-machine pass is still open
+      representative videos — presence is checked by `npm run smoke`; the 20-video sample (**20/20**, median 8.8 s) and
+      the 50-video M3 sample (**50/50**, median 8.3 s) are done, in [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-dlp-sample.md)
+      and [`docs/notes/yt-dlp-50.md`](./docs/notes/yt-dlp-50.md); the clean-machine pass is still open
 - [x] Legal/ToS note drafted (§10) — in the README under **Scope and legal**
 **Exit:** a one-page architecture doc + stack ADR + working sidecar smoke test.
 
@@ -309,8 +312,8 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
 **Goal:** **the core differentiator.** Paste a YouTube link, hear audio in seconds, nothing kept.
 - [x] Sidecar manager: locate/verify/launch/kill yt-dlp & ffmpeg, capture stderr into logs
 - [x] Resolver: URL → metadata + playable source
-- [ ] Search-by-text (only if the backend allows it) — deferred to M5; the app is deliberately paste-only, with no
-      catalogue browser
+- [x] Search-by-text — **landed in M5**, as an explicit search rather than a catalogue browser; paste remains the
+      shortest path and nothing browses recommendations on its own
 - [x] Local HTTP stream proxy with range-request support and a stable per-track URL — implemented as the
       `player-stream://` custom protocol instead of a localhost server, with header replay, stable tokens and range
       forwarding
@@ -340,33 +343,49 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
       without a sleeve uses its first entry's still; and the link field has a right-click **Paste** menu beside the
       paste button.
 **Exit:** 50 hand-picked YouTube links play directly, ≥ 90% on first attempt, < 3 s to first audio, and seeking works.
-*Status: the 20-link sample resolves 20/20, and playback with seeking works end-to-end in the app through the Streaming
-view. The median resolve is 8.8 s and only 20 of the 50 links have been run. A queued mix no longer pays that cost
-between tracks — the next entry is resolved while the current one plays — so a transition only waits for the CDN's
-first bytes; the first play of a session still pays the sidecar run. The `< 3 s` number needs a resident sidecar or a
-prefetch-based definition; see [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-dlp-sample.md).*
+*Status: **exit measured and met on the agreed definition.** A fresh 50-link sample resolved **50/50 (100%)**, and
+playback with seeking works end-to-end through the Streaming view. The median cold resolve was **8.3 s** (6.8–11.5 s)
+and the CDN's first 2 KB arrived in a median **0.46 s** (176–1263 ms), so the sidecar is the cost, not the stream. The
+`< 3 s` target is therefore adopted for **warm playback**: pressing play on a track whose URL is already in the session
+cache, or moving to a prefetched next track, starts audio in well under a second. A **cold paste** has a display target
+of **≤ 10 s median** and shows *Resolving…* while it waits; making cold start `< 3 s` would require a resident sidecar
+(and a larger install), which is deliberately not this milestone. The remaining M3 buffering state is open. Evidence:
+[`docs/notes/yt-dlp-50.md`](./docs/notes/yt-dlp-50.md).*
 
-### M4 — Retention: Cache & Download  *(~3 weeks)*
-**Goal:** the "keep it or not" requirement, fully realised.
-- [ ] Cache manager: write-while-playing, LRU eviction, size/age budgets, janitor task, manual "empty cache"
-- [~] Download manager: a per-track queue with a concurrency cap, progress parsed from yt-dlp, a temporary working
-      folder that is always cleaned up, and `.part`-safe final moves. Still to come: pause/resume/cancel, speed + ETA,
-      retries and a disk-space pre-flight check.
+### M4 — Save to Library (lite)  *(done; full cache moved to M12)*
+**Goal:** keep the "save it explicitly" half of §2.2; **offline caching is switched off for now**, because it is not
+needed for the current use and was making Settings promise behaviour that did not exist.
 - [x] **Keep** action: download → tag → embed cover → move into the library → scanned row appears (default Opus, or
-      MP3/M4A; folder and format are settings). Verified live: 12 s for a 4.9 MB Opus, tags and JPEG cover intact.
+      MP3/M4A; folder, quality and format are settings). Verified live: 12 s for a 4.9 MB Opus, tags and JPEG cover intact.
 - [x] **Keep an imported entry**: the same path from the imported playlist pane — a per-entry *Save to library* button and
       a *Save all* that queues every entry not already in the library. The library row keeps the video id in
       `origin_kind`/`origin_id`, so *sourceId* is preserved without pretending the file is a stream.
-- [ ] **Remove download**: delete file, keep the track in playlists/queue, fall back to streaming (availability model from §4)
-- [ ] **Pin in cache** (never evict) and "keep after this play" quick action
-- [ ] Downloads screen: active/completed/failed tabs, retry, reveal in Explorer, per-item retention toggle
-- [~] Settings: download folder, quality tier, concurrency and saved format (Opus/MP3/M4A) are in place; default
-      retention mode and a naming template are still to come.
-- [ ] Offline detection: when offline, stream-only tracks show as unavailable; cached/downloaded ones still play
-**Exit:** disk usage never exceeds budget; killing the app mid-download leaves no corruption; "keep" → "remove" round-trips cleanly.
+- [x] Download manager: per-track queue, concurrency cap, progress parsed from yt-dlp, a per-save temporary folder,
+      `.part`-safe final moves, and **cancel** (queued or running). Cancelling is reported as a decision, not an error.
+- [x] Startup sweep: a crash or force-quit never runs the per-save cleanup, so the next start removes its own UUID temp
+      folders and orphaned `.part` files. Unrelated folders in `downloads/` are left alone.
+- [x] **Saves dock**: one compact panel mounted by the app, visible from every view, with cancel while running, retry
+      after a failure or cancel, and reveal-in-Explorer once the row is indexed. No permanent Downloads screen yet.
+- [x] Settings honest: *stream only* is pinned on load (an older config saying `cache` is rewritten to `stream`), the
+      cache-budget/age controls are gone, and the page says plainly that offline replay is a later phase.
+- [ ] **Remove download**, **pin in cache**, per-item retention, pause/resume, speed + ETA, disk pre-flight and a
+      full Downloads history — all deferred with the cache to **M12**.
+**Exit:** saving a history row or imported entry round-trips into an ordinary tagged library track; a killed process
+leaves no temp folder; cancel and retry work from the dock. The disk-budget/offline half of the old exit moves to M12.
 
-### M5 — Discovery & YouTube Library Surface  *(~2–3 weeks)*
-- [ ] Unified search: local results **and** YouTube results in one list, clearly badged
+### M5 — Discovery & YouTube Library Surface  *(in progress)*
+- [x] Unified search: local results **and** YouTube results in one list, clearly badged. The new **Search** view queries
+      both in parallel; every row carries a **Local** or **Streaming** badge. A local row plays a file at once. A
+      YouTube row goes through the same add-link path as a pasted URL, so it is remembered in the Streaming history and
+      uses the same resolve cache. Rows offer Play, Add to queue and Save to library; a YouTube search returns metadata
+      only, so no result is resolved or written until it is chosen.
+- [x] Channel/artist pages (basic), **more from this channel**. A search result's channel id or handle opens a page of
+      its recent videos in place, with the same row actions. Search results that carry only a display name fall back to
+      a name search; the page says what it is instead of inventing a channel URL.
+- [x] Auto-attach YouTube metadata: `Artist - Title (Official Music Video)` becomes artist **Artist** and title
+      **Title**. Bracketed marketing tags (`Official Audio`, `Lyrics`, `4K`, `Remastered 2011`, …) are removed; `(Live)`
+      is deliberately kept because it is a different recording. Applied to pasted links, imports, search results and
+      channel rows. MusicBrainz matching is not started.
 - [x] Playlist import from a YouTube playlist URL — **landed early, during M3/M4**. A `--flat-playlist` fetch (one
       process, capped by a setting, default 200) stores a snapshot in `online_playlists` + `online_playlist_items`; a
       `music.youtube.com/playlist?list=OLAK5uy…` link is an album (list title = album, common entry uploader = album
@@ -380,13 +399,30 @@ prefetch-based definition; see [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-d
       on play, and each entry (or the whole snapshot) can now be saved to the library through the M4 download path.
 - [x] Show which imported entries are already in the library — a `savedOrigins` query per page turns the save button
       into a tick, and the same information prevents a second download of the same video.
-- [ ] Channel/artist pages (basic), "more from this channel"
-- [ ] Auto-attach YouTube metadata: upgrade titles from `Title (Official Video)` → canonical tags, and optionally match against MusicBrainz
 - [ ] Smart playlists / filters (recently added, most played, never played, stream-only tracks)
 - [ ] Fold "YouTube-only" tracks into the normal library views so it feels like one library
 **Exit:** a user can go from "no music" to "a 40-track playlist playing" without touching a folder.
+*Status: the search half of this milestone is in. Search finds local and YouTube rows together, channels open in
+place, and imported lists plus the link history already cover the "start from nothing" path. Still open: smart
+playlists, and folding stream-only rows into the Library view instead of keeping them under Streaming. The channel
+page is a flat recent-videos list on purpose — no subscriptions, no channel import, no "download all".*
 
-### M6 — Playlists, Sync & Data Care  *(~2 weeks)*
+### M6 — Settings Revamp  *(scope to be decided, ~1–2 weeks)*
+**Goal:** one deliberate pass over Settings after M5, instead of growing it card by card. The page currently mixes
+library folders, engine paths, playback choices, artwork, saving, import caps and about text in one long scroll; it
+works, but it has no hierarchy and no way to find a single option.
+
+- [ ] Decide the structure with the user before building: grouped navigation (Library / Playback / Artwork / Saving /
+      Engine / Advanced), one scrollable page with clear sections, or a searchable list
+- [ ] Make every control state what it changes and whether it applies now or on restart; no dead or duplicate controls
+- [ ] Move diagnostics (engine status, paths, logs, database location) behind an **Advanced** area rather than the main flow
+- [ ] Give saving one honest home: folder, quality, format and concurrency, plus the deferred offline-cache note in one place
+- [ ] Review defaults, reset-to-default, and which settings are worth exporting with a backup
+- [ ] Accessibility and keyboard pass on the whole page; every field needs a real label, not a placeholder
+**Exit:** a new user can find and change any setting without scrolling past unrelated cards, and every control has a
+visible effect. **Design is intentionally open; do not start this milestone until its scope is agreed.**
+
+### M7 — Playlists, Sync & Data Care  *(~2 weeks)*
 - [ ] M3U / M3U8 and JSON import-export of playlists; CSV export of the library
 - [ ] Backup/restore of `library.db` + config; automatic rotating DB backups
 - [ ] DB migrations framework (needed before any real users)
@@ -395,7 +431,7 @@ prefetch-based definition; see [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-d
 - [ ] Bulk operations: multi-select edit, tag editing, bulk keep/remove-download
 **Exit:** data survives a crash, a reinstall and a folder move.
 
-### M7 — Windows Release Engineering  *(~2 weeks)*
+### M8 — Windows Release Engineering  *(~2 weeks)*
 - [ ] Installer (per-user, no admin): MSIX or NSIS; clean uninstall; opt-in "also delete cache/library DB"
 - [ ] Code signing (or at least a documented SmartScreen workaround plan)
 - [ ] Auto-update channel (stable/beta) + engine auto-update with rollback
@@ -405,7 +441,7 @@ prefetch-based definition; see [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-d
 - [ ] Accessibility pass: keyboard-only navigation, screen-reader labels, contrast
 **Exit:** a stranger can install, use and uninstall it without instructions.
 
-### M8 — Android Port  *(~4–6 weeks)*
+### M9 — Android Port  *(~4–6 weeks)*
 **Goal:** reuse the core, replace the platform-specific layers.
 - [ ] Confirm the shared/reused surface (data model, DB, settings, playlists, retention policy) vs. what must be rewritten (engine, player, UI, storage permissions)
 - [ ] Embed the resolver: NewPipeExtractor-based engine (or an embedded-Python yt-dlp via Chaquopy — evaluate size and stability), behind the same `IMediaResolver`
@@ -416,13 +452,13 @@ prefetch-based definition; see [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-d
 - [ ] Play Store requirements: target API level, data-safety form, privacy policy, and a serious decision about whether an app whose purpose is downloading from YouTube can be distributed there at all (alternative: direct APK / F-Droid)
 **Exit:** feature parity on the core loop (library + search + stream + keep), signed APK released.
 
-### M9 — Two-Device Continuity *(optional, ~2–4 weeks)*
+### M10 — Two-Device Continuity *(optional, ~2–4 weeks)*
 - [ ] Optional **companion server mode**: one device (usually the PC) exposes its resolved stream + library over LAN so the other device can play/download from it
 - [ ] Playlist/play-state sync between devices (local network, no cloud account)
 - [ ] "Send to device" (Cast-like) for the same-network case
 **Exit:** start a song on the PC, continue on the phone.
 
-### M10 — Long-Term / Nice-to-Have  *(continuous)*
+### M11 — Long-Term / Nice-to-Have  *(continuous)*
 - [ ] Last.fm scrobbling · Discord Rich Presence
 - [ ] Lyrics: local `.lrc` + fetched with offset editor
 - [ ] Audio visualiser, spectrum analyser
@@ -430,6 +466,19 @@ prefetch-based definition; see [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-d
 - [ ] Advanced: WASAPI exclusive output, ASIO, bit-perfect/hi-res path, device selection
 - [ ] Plugin/extension API for community resolvers
 - [ ] Optional CLI companion for scripting
+
+### M12 — Offline Cache & Downloads *(deferred to the end, ~2–3 weeks)*
+**Goal:** the other half of the original M4, deliberately postponed until the library, discovery and Settings work is
+settled. Nothing here is needed for the current use of the app.
+
+- [ ] Cache manager: write-while-playing, LRU eviction, size/age budgets, janitor task, manual "empty cache"
+- [ ] Pin in cache (never evict) and "keep after this play" quick action
+- [ ] Remove download: delete the file, keep the track in playlists/queue, fall back to streaming
+- [ ] Offline detection: stream-only rows show as unavailable; cached/downloaded ones still play
+- [ ] Full Downloads history: active/completed/failed, pause/resume, speed + ETA, disk pre-flight
+- [ ] Re-enable the cache controls in Settings only when the manager behind them exists
+**Exit:** disk usage never exceeds a budget; killing the app mid-cache leaves no corruption; offline replay works for
+cached tracks; "keep" → "remove" round-trips cleanly.
 
 ---
 
@@ -441,15 +490,19 @@ prefetch-based definition; see [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-d
 | M1 | Local Library MVP | Scan, index, play, queue | 2–3 w | M0 |
 | M2 | Player Quality & System Integration | Gapless, EQ, SMTC, tray | 2 w | M1 |
 | M3 | Engine Skeleton | Resolve + **stream** | 2–3 w | M0, M1 |
-| M4 | Retention: Cache & Download | Stream-only / cache / keep | 3 w | M3 |
-| M5 | Discovery & YouTube Surface | Unified search, playlist import | 2–3 w | M4 |
-| M6 | Playlists, Sync & Data Care | Import/export, migrations, dedupe | 2 w | M5 |
-| M7 | Windows Release Engineering | Installer, update, telemetry, a11y | 2 w | M6 |
-| M8 | Android Port | New engine + player + UI | 4–6 w | M7 |
-| M9 | Two-Device Continuity *(optional)* | LAN companion server | 2–4 w | M8 |
-| M10 | Long-term extras | Scrobbling, lyrics, hi-res | continuous | — |
+| M4 | Save to Library (lite) | Stream-only / explicit keep / saves dock | 1–2 w | M3 |
+| M5 | Discovery & YouTube Surface | Unified search, channels, metadata | 2–3 w | M4 |
+| M6 | Settings Revamp | Hierarchy, grouping, honest controls | 1–2 w | M5 |
+| M7 | Playlists, Sync & Data Care | Import/export, migrations, dedupe | 2 w | M6 |
+| M8 | Windows Release Engineering | Installer, update, telemetry, a11y | 2 w | M7 |
+| M9 | Android Port | New engine + player + UI | 4–6 w | M8 |
+| M10 | Two-Device Continuity *(optional)* | LAN companion server | 2–4 w | M9 |
+| M11 | Long-term extras | Scrobbling, lyrics, hi-res | continuous | — |
+| M12 | Offline Cache & Downloads *(deferred)* | Cache, pin, remove, offline replay | 2–3 w | M4, M6 |
 
-**Critical path:** M0 → M1 → M3 → M4 → M7 → M8. M2, M5 and M6 can be reordered or interleaved; M2 is the best "make it feel good" buffer if you need a morale win early.
+**Critical path:** M0 → M1 → M3 → M4 → M5 → M6 → M8 → M9. M2 can be interleaved, M7 is data-care hygiene, and M12
+stays at the end until offline listening is actually wanted; it touches M4 and M6, so it should follow them rather than
+run beside them.
 
 ---
 
@@ -464,7 +517,7 @@ prefetch-based definition; see [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-d
 | Disk bloat from cache/downloads | User frustration, data loss trust | Medium | Hard budgets, visible manager, sane defaults (stream-only), pin/evict rules |
 | Player engine limitations (seeking, gapless, formats) | Core UX feels amateur | Medium | Pick the engine with a known escape hatch to a native path; validate gapless in M2 |
 | Sidecar packaging/licensing (ffmpeg) | Ship blocker | Low–Medium | LGPL build or fetch-on-first-use with checksum verification |
-| Scope creep in the UI | Delayed delivery | High | Freeze the 6 core screens in M0; everything else goes to M10 |
+| Scope creep in the UI | Delayed delivery | High | Freeze the 6 core screens in M0; everything else goes to M11 |
 | Android engine gap (no yt-dlp) | Rewrite instead of port | Medium | `IMediaResolver` from day one + capability negotiation in the UI |
 
 ---
@@ -494,7 +547,7 @@ player/
 ├─ ui/                       # screens, components, design tokens
 ├─ platform/
 │   ├─ windows/              # SMTC, tray, installer, autostart
-│   └─ android/              # (M8) MediaSession, SAF, foreground service
+│   └─ android/              # (M9) MediaSession, SAF, foreground service
 ├─ engine-bin/               # yt-dlp/ffmpeg acquisition & verification scripts
 ├─ tests/                    # unit, integration, engine-contract tests
 └─ tools/                    # dev scripts, fixtures, benchmark harness
@@ -518,19 +571,25 @@ player/
 
 ## 13. Immediate Next Steps (do these first)
 
-1. **Run the sidecar spike** — do this before choosing the stack (§3 is deferred, and this spike is portable across all three options): on a clean Windows machine, script yt-dlp + ffmpeg to (a) resolve a video to a direct audio URL, (b) verify seeking against that URL, (c) download + transcode + tag one file. Measure latency and failure modes. This single spike de-risks M3 and M4 more than any amount of planning, and it will inform the stack choice. **Still open — this is the next thing to do.**
+1. ~~**Run the sidecar spike**~~ Done: `docs/notes/yt-dlp-spike.md`, followed by the 20-link sample and the 50-link M3
+   measurement in `docs/notes/yt-dlp-50.md`. yt-dlp + ffmpeg resolve, seek, download and tag on this machine.
 2. ~~**Decide the stack** (§3) once the spike has told you what the engine actually needs. Write it down as an ADR.~~ Done: `docs/adr/0001-stack-and-storage.md` (Electron + TypeScript + React, `node:sqlite`, no native build tools).
-3. ~~**Wireframe the 6 core screens**~~ Done, and built: Library, Queue, Settings and Now Playing all exist; Search is the library search field; Downloads arrives with M4.
+3. ~~**Wireframe the 6 core screens**~~ Done, and built: Library, Streaming, Search, Playlists, Queue, Settings and Now
+   Playing all exist; the full Downloads screen is deferred to M12.
 4. ~~**Write the two specs**~~ Done: `IMediaResolver` is `src/engine/resolver.ts`; the IPC event schema is `src/shared/ipc.ts`.
-5. ~~**Pick the retention defaults**~~ Done: stream-only default, 5 GB / 30-day cache budget, keep only on request.
+5. ~~**Pick the retention defaults**~~ Done: stream-only is the default and is currently the only accepted mode; the
+   5 GB / 30-day cache fields remain dormant for M12, and saving is always explicit.
 
-Where things stand: the sidecar spike is done (`docs/notes/yt-dlp-spike.md`), the stack and storage decisions are recorded
-(ADR 0001), streaming has a real surface — the **Streaming** view with a persistent link history and a separate
-**Imported playlists** box, one card per list — and playlist, album and mix import stores a snapshot that the Playlists
-view can play, queue, re-import, rename and trim, with a per-import track count for mixes and radios. **Saving to the
-library works**: a history row or an imported entry downloads once, is tagged with embedded artwork, moves into the music
-folder and is indexed as an ordinary local track that remembers its video id. Every track list now shares the
-**# / Title / Artist / Album / Duration / Action** grid, with Format in a row's **Details** sheet, and the Queue has a
-header aligned with its rows. What is left in M3 is the exit measurement (50 links, and a decision on the `< 3 s` target);
-what is left in M4 is the streaming cache, the Downloads screen and cancel/retry. The remaining M0 leftover is verifying
-yt-dlp/ffmpeg discovery on a clean machine.
+Where things stand: the stack and storage decisions are recorded (ADR 0001). Streaming has a real surface — the
+**Streaming** view with a persistent link history and a separate **Imported** box, one card per list — and playlist,
+album and mix import stores a snapshot that the Playlists view can play, queue, re-import, rename and trim, with a
+per-import track count for mixes and radios. **Saving to the library works**: a history row, a search result or an
+imported entry downloads once, is tagged with embedded artwork, moves into the music folder and is indexed as an
+ordinary local track that remembers its video id. A compact **Saves** dock shows running, failed and finished saves
+from every view, with cancel, retry and reveal. **M3 is measured** at 50/50 links, a 8.3 s median cold resolve and a
+0.46 s median to the CDN's first bytes, so `< 3 s` is adopted for warm/prefetched playback and cold paste has a 10 s
+display target. **M5's core is in**: a unified **Search** view over the local library and YouTube, channel pages, and
+title/artist cleanup. Every track list shares the **# / Title / Artist / Album / Duration / Action** grid, with Format
+in a row's **Details** sheet, and the Queue has a header aligned with its rows. Next is the **Settings revamp (M6)**,
+whose design is still to be agreed, then data care (M7). Offline caching and the full Downloads screen stay deferred to
+M12.

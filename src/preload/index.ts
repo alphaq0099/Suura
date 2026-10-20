@@ -89,6 +89,12 @@ const api: PlayerApi = {
 
   importOnlineList: (url: string, limit?: number) => ipcRenderer.invoke(IPC.onlineImport, url, limit),
 
+  searchYouTube: (query: string, limit?: number) =>
+    ipcRenderer.invoke(IPC.onlineSearch, query, limit),
+
+  getYouTubeChannel: (target: string, limit?: number) =>
+    ipcRenderer.invoke(IPC.onlineChannel, target, limit),
+
   listOnlinePlaylists: () => ipcRenderer.invoke(IPC.onlinePlaylists),
 
   getOnlinePlaylist: (playlistId: number) => ipcRenderer.invoke(IPC.onlinePlaylist, playlistId),
@@ -103,6 +109,9 @@ const api: PlayerApi = {
     ipcRenderer.invoke(IPC.onlinePlaylistRemoveItem, itemId) as Promise<number | null>,
 
   saveToLibrary: (request) => ipcRenderer.invoke(IPC.downloadSave, request) as Promise<number>,
+
+  cancelSave: (videoId: string) =>
+    ipcRenderer.invoke(IPC.downloadCancel, videoId) as Promise<void>,
 
   savedVideoIds: (videoIds: string[]) =>
     ipcRenderer.invoke(IPC.downloadSavedIds, videoIds) as Promise<string[]>,

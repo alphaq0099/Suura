@@ -127,7 +127,10 @@ function sanitizeSnapshot(value: unknown): PlaybackSnapshot | null {
   return { trackIds: candidate.trackIds, index, positionMs }
 }
 
-const RETENTION_MODES: RetentionMode[] = ['stream', 'cache', 'keep']
+// Offline caching is deferred to its own phase. Only `stream` is accepted from
+// the renderer, so a stale config or a hand-crafted patch cannot switch on a
+// mode that has no implementation behind it.
+const RETENTION_MODES: RetentionMode[] = ['stream']
 const QUALITY_TIERS: QualityTier[] = ['best', 'high', 'balanced', 'data-saver']
 const DOWNLOAD_FORMATS: DownloadFormat[] = ['opus', 'mp3', 'm4a']
 const REPEAT_MODES: RepeatMode[] = ['off', 'all', 'one']
@@ -417,6 +420,18 @@ export function registerIpcHandlers(container: AppContainer): void {
     return container.online.importList(link, count)
   })
 
+  ipcMain.handle(IPC.onlineSearch, (_event, query: unknown, limit: unknown) => {
+    if (typeof query !== 'string') throw new Error('Type something to search for.')
+    const count = typeof limit === 'number' && Number.isFinite(limit) ? limit : undefined
+    return container.online.search(query, count)
+  })
+
+  ipcMain.handle(IPC.onlineChannel, (_event, target: unknown, limit: unknown) => {
+    if (typeof target !== 'string') throw new Error('That does not look like a channel link or id.')
+    const count = typeof limit === 'number' && Number.isFinite(limit) ? limit : undefined
+    return container.online.channel(target, count)
+  })
+
   ipcMain.handle(IPC.onlinePlaylists, () => container.online.playlists())
 
   ipcMain.handle(IPC.onlinePlaylist, (_event, id: unknown) =>
@@ -442,6 +457,11 @@ export function registerIpcHandlers(container: AppContainer): void {
   ipcMain.handle(IPC.downloadSave, (_event, input: unknown) =>
     container.downloads.save(toSaveRequest(input))
   )
+
+  ipcMain.handle(IPC.downloadCancel, (_event, videoId: unknown) => {
+    if (typeof videoId !== 'string' || !isYouTubeVideoId(videoId)) return
+    container.downloads.cancel(videoId)
+  })
 
   ipcMain.handle(IPC.downloadSavedIds, (_event, input: unknown) =>
     [...container.repo.savedOrigins('youtube', toVideoIdList(input))]

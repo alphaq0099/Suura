@@ -794,7 +794,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       window.setSize(width, height)
       await delay(250)
 
-      const showView = async (label: 'Library' | 'Streaming' | 'Settings' | 'Queue'): Promise<void> => {
+      const showView = async (label: 'Library' | 'Search' | 'Streaming' | 'Settings' | 'Queue'): Promise<void> => {
         await evaluate(
           window,
           `(async () => {
@@ -812,6 +812,14 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         library.hasTable && library.main === 0 && library.table === 0 && library.bar === 0 && library.page === 0,
         `library view fits with no horizontal overflow at ${width}x${height}`,
         library
+      )
+
+      await showView('Search')
+      const searchLayout = await evaluate<LayoutProbe>(window, LAYOUT_PROBE)
+      record(
+        searchLayout.hasDiscover && searchLayout.main === 0 && searchLayout.discover === 0 && searchLayout.bar === 0 && searchLayout.page === 0,
+        `search view fits with no horizontal overflow at ${width}x${height}`,
+        searchLayout
       )
 
       await showView('Settings')
@@ -2613,6 +2621,8 @@ interface LayoutProbe {
   hasQueue: boolean
   online: number
   hasOnline: boolean
+  discover: number
+  hasDiscover: boolean
   hasNowPlaying: boolean
 }
 
@@ -2638,6 +2648,8 @@ const LAYOUT_PROBE = `(() => {
     hasQueue: Boolean(document.querySelector('.queue-list')),
     online: overflow('.online-list'),
     hasOnline: Boolean(document.querySelector('.online-list')),
+    discover: overflow('.discover-list') + overflow('.discover-bar'),
+    hasDiscover: Boolean(document.querySelector('.discover-bar') || document.querySelector('.discover-list')),
     hasNowPlaying: Boolean(document.querySelector('.now-playing')),
     offenders: (() => {
       // Elements whose right edge sits past the view's content box. This is what

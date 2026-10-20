@@ -2,11 +2,12 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Logger } from '@core/logging/logger'
-import type { EngineSettings, QualityTier } from '@shared/types'
+import type { EngineSettings, QualityTier, YouTubeSearchResult } from '@shared/types'
 import {
   describeYouTubeFailure,
   isYouTubeVideoId,
   normalizeArtistName,
+  youtubeChannelUrl,
   youtubeFormatSelector,
   youtubeWatchUrl
 } from '@shared/youtube'
@@ -92,6 +93,26 @@ export interface YtPlaylistProvider {
   fetchPlaylist(url: string, limit: number, signal?: AbortSignal): Promise<YtPlaylistInfo>
 }
 
+/** One channel as the discovery view needs it. */
+export interface YtChannelInfo {
+  channelId: string | null
+  name: string
+  url: string
+  entries: YouTubeSearchResult[]
+}
+
+/**
+ * Search and channel listings.
+ *
+ * Both are flat reads: ids and metadata, never a stream URL. That keeps discovery
+ * cheap and means a result cannot start playing until it is deliberately opened,
+ * which is the same rule pasted links follow.
+ */
+export interface YtSearchProvider {
+  search(query: string, limit: number, signal?: AbortSignal): Promise<YouTubeSearchResult[]>
+  channel(target: string, limit: number, signal?: AbortSignal): Promise<YtChannelInfo>
+}
+
 /** An expected failure with a message that is safe to show. */
 export class YtDlpError extends Error {
   constructor(
@@ -142,6 +163,51 @@ export function buildPlaylistArgs(url: string, limit: number): string[] {
     '--flat-playlist',
     '--playlist-end',
     String(Math.max(1, Math.floor(limit))),
+    '-J',
+    url
+  ]
+}
+
+/**
+ * The arguments for one text search.
+ *
+ * `ytsearchN:` is a search *list* with N entries, and `--flat-playlist` keeps it
+ * to ids and metadata. The cap is applied by the extractor, so asking for 20
+ * results does not fetch a page of recommendations. The query goes in as one
+ * argv element, so quotes and spaces are not shell syntax here.
+ */
+export function buildSearchArgs(query: string, limit: number): string[] {
+  const count = Math.max(1, Math.min(50, Math.floor(limit)))
+  return [
+    '--ignore-config',
+    '--no-progress',
+    '--socket-timeout',
+    '15',
+    '--flat-playlist',
+    '--playlist-end',
+    String(count),
+    '-J',
+    `ytsearch${count}:${query.trim()}`
+  ]
+}
+
+/**
+ * The arguments for one channel page.
+ *
+ * A channel's `/videos` tab is a flat list, which is why it uses the same shape
+ * as a playlist import. The URL must already be normalised by
+ * `youtubeChannelUrl`, so an arbitrary page cannot be handed to yt-dlp here.
+ */
+export function buildChannelArgs(url: string, limit: number): string[] {
+  const count = Math.max(1, Math.min(50, Math.floor(limit)))
+  return [
+    '--ignore-config',
+    '--no-progress',
+    '--socket-timeout',
+    '15',
+    '--flat-playlist',
+    '--playlist-end',
+    String(count),
     '-J',
     url
   ]
@@ -234,7 +300,7 @@ export function buildDownloadArgs(
  * cancellation, timeouts and error handling honest; the session cache in
  * `YouTubeResolver` is what keeps the *second* play fast.
  */
-export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider {
+export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearchProvider {
   private binary: string | null = null
 
   constructor(
@@ -269,6 +335,33 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider {
         url,
         error: error instanceof Error ? error.message : String(error)
       })
+      throw error
+    }
+  }
+
+  async search(query: string, limit: number, signal?: AbortSignal): Promise<YouTubeSearchResult[]> {
+    const text = query.trim()
+    if (text.length === 0) throw new YtDlpError('Type something to search for.', 'empty-query')
+    const args = buildSearchArgs(text, limit)
+    const { stdout } = await this.run(args, signal, PLAYLIST_TIMEOUT_MS)
+    try {
+      return parseSearchResults(stdout, limit)
+    } catch (error) {
+      this.deps.log.warn('could not parse yt-dlp search output', { error })
+      throw error
+    }
+  }
+
+  async channel(target: string, limit: number, signal?: AbortSignal): Promise<YtChannelInfo> {
+    const url = youtubeChannelUrl(target)
+    if (!url) {
+      throw new YtDlpError('That does not look like a channel link or id.', 'bad-channel')
+    }
+    const { stdout } = await this.run(buildChannelArgs(url, limit), signal, PLAYLIST_TIMEOUT_MS)
+    try {
+      return parseChannel(stdout, limit, url)
+    } catch (error) {
+      this.deps.log.warn('could not parse yt-dlp channel output', { error })
       throw error
     }
   }
@@ -646,6 +739,91 @@ export function parsePlaylist(stdout: string, limit: number): YtPlaylistInfo {
     coverUrls: coverUrlsOf(info),
     entries
   }
+}
+
+/**
+ * Turns a flat search or channel document into the rows a discovery list shows.
+ *
+ * The same rules as a playlist import apply: only real video ids, no private or
+ * live entries, no duplicates. A result is metadata, so an unplayable one would
+ * be a row that fails the moment it is clicked.
+ */
+export function parseSearchResults(stdout: string, limit: number): YouTubeSearchResult[] {
+  return parseFlatEntries(parseJson(stdout), limit)
+}
+
+export function parseChannel(stdout: string, limit: number, fallbackUrl: string): YtChannelInfo {
+  const info = parseJson(stdout)
+  const channelId = asString(info.channel_id) ?? asString(info.id)
+  const name = asString(info.channel) ?? asString(info.uploader) ?? asString(info.title) ?? 'Channel'
+  // A channel listing's entries omit the channel fields (they are implied by the
+  // page), unlike search entries. Filling them in here means a row opened from a
+  // channel still knows the artist and can open the same channel again.
+  const entries = parseFlatEntries(info, limit).map((entry) => ({
+    ...entry,
+    artist: entry.artist ?? name,
+    channelId: entry.channelId ?? channelId,
+    channelName: entry.channelName ?? name
+  }))
+  return {
+    channelId,
+    name,
+    url: asString(info.webpage_url) ?? fallbackUrl,
+    entries
+  }
+}
+
+function parseJson(stdout: string): Record<string, unknown> {
+  let raw: unknown
+  try {
+    raw = JSON.parse(stdout)
+  } catch {
+    throw new YtDlpError('YouTube returned something unreadable. Try again.', 'invalid-json')
+  }
+  if (!raw || typeof raw !== 'object') {
+    throw new YtDlpError('YouTube returned something unreadable. Try again.', 'empty-json')
+  }
+  return raw as Record<string, unknown>
+}
+
+function parseFlatEntries(info: Record<string, unknown>, limit: number): YouTubeSearchResult[] {
+  const cap = Math.max(1, Math.floor(limit))
+  const seen = new Set<string>()
+  const entries: YouTubeSearchResult[] = []
+  const rawEntries = Array.isArray(info.entries) ? info.entries : []
+
+  for (const candidate of rawEntries) {
+    if (entries.length >= cap) break
+    if (!candidate || typeof candidate !== 'object') continue
+
+    const entry = candidate as Record<string, unknown>
+    const videoId = asString(entry.id) ?? ''
+    if (!isYouTubeVideoId(videoId) || seen.has(videoId)) continue
+
+    const availability = asString(entry.availability)
+    if (availability && UNAVAILABLE.has(availability)) continue
+    const liveStatus = asString(entry.live_status)
+    if (liveStatus === 'is_live' || liveStatus === 'is_upcoming') continue
+
+    const title = asString(entry.title)
+    if (!title) continue
+
+    const duration = asNumber(entry.duration)
+    const channelId = asString(entry.channel_id) ?? asString(entry.uploader_id)
+    const channelName = normalizeArtistName(
+      asString(entry.channel) ?? asString(entry.uploader) ?? asString(entry.channel_name)
+    )
+    seen.add(videoId)
+    entries.push({
+      videoId,
+      title,
+      artist: normalizeArtistName(asString(entry.artist) ?? asString(entry.uploader) ?? asString(entry.channel)),
+      durationMs: duration !== null && duration > 0 ? Math.round(duration * 1000) : null,
+      channelId,
+      channelName
+    })
+  }
+  return entries
 }
 
 /**

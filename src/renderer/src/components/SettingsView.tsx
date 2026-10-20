@@ -9,8 +9,7 @@ import type {
   EngineStatus,
   ExecutableStatus,
   LibraryClickAction,
-  QualityTier,
-  RetentionMode
+  QualityTier
 } from '@shared/types'
 import { FolderIcon, RefreshIcon, SpinnerIcon, TrashIcon } from './Icons'
 
@@ -29,24 +28,6 @@ export interface SettingsViewProps {
   onRefreshEngine: () => void
   onOpenPath: (target: string) => void
 }
-
-const RETENTION_CHOICES: Array<{ value: RetentionMode; label: string; detail: string }> = [
-  {
-    value: 'stream',
-    label: 'Stream only',
-    detail: 'Nothing is written to disk. The default, and the only mode available until M4.'
-  },
-  {
-    value: 'cache',
-    label: 'Cache while playing',
-    detail: 'Keeps bytes on disk temporarily so a track can replay offline, then evicts them under the budgets below.'
-  },
-  {
-    value: 'keep',
-    label: 'Keep / download',
-    detail: 'Downloads permanently into your library with tags and artwork, until you remove it.'
-  }
-]
 
 const QUALITY_CHOICES: Array<{ value: QualityTier; label: string }> = [
   { value: 'best', label: 'Best available' },
@@ -281,53 +262,20 @@ export function SettingsView(props: SettingsViewProps) {
           <article className="card">
             <header className="card-header">
               <h2>
-                Retention <span className="badge">saving now · cache next</span>
+                Saving to your library <span className="badge">stream only</span>
               </h2>
             </header>
             <p className="card-hint">
-              Saving to the library always writes a file to the download folder. The modes below decide whether streams
-              are also cached while you listen.
+              Streams are played straight from YouTube and nothing is written to disk while you listen. Press{' '}
+              <strong>Save to library</strong> on a link or an imported entry when you want to keep a copy: it downloads
+              once, writes its tags and cover, and moves into your music folder as an ordinary local track.
             </p>
-            <div className="choice-list">
-              {RETENTION_CHOICES.map((choice) => (
-                <label key={choice.value} className={settings.retention.mode === choice.value ? 'choice selected' : 'choice'}>
-                  <input
-                    type="radio"
-                    name="retention-mode"
-                    value={choice.value}
-                    checked={settings.retention.mode === choice.value}
-                    onChange={() => onUpdate({ retention: { mode: choice.value } })}
-                  />
-                  <span>
-                    <strong>{choice.label}</strong>
-                    <em>{choice.detail}</em>
-                  </span>
-                </label>
-              ))}
-            </div>
+            <p className="card-hint">
+              Offline caching — replaying a streamed track without a connection — is deliberately switched off for now.
+              It is planned as a separate phase, once the everyday library and discovery work is settled.
+            </p>
 
             <div className="field-grid">
-              <label className="field">
-                <span>Cache budget (MB)</span>
-                <input
-                  type="number"
-                  min={128}
-                  max={1000000}
-                  step={128}
-                  value={settings.retention.cacheBudgetMb}
-                  onChange={(event) => onUpdate({ retention: { cacheBudgetMb: Number(event.target.value) } })}
-                />
-              </label>
-              <label className="field">
-                <span>Cache max age (days)</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={3650}
-                  value={settings.retention.cacheMaxAgeDays}
-                  onChange={(event) => onUpdate({ retention: { cacheMaxAgeDays: Number(event.target.value) } })}
-                />
-              </label>
               <label className="field">
                 <span>Download quality</span>
                 <select
@@ -479,7 +427,7 @@ export function SettingsView(props: SettingsViewProps) {
                     ['Database', paths.database],
                     ['Config', paths.config],
                     ['Logs', paths.logs],
-                    ['Cache', paths.cache],
+                    ['Artwork cache', paths.cache],
                     ['Downloads', paths.downloads]
                   ] as const
                 ).map(([label, target]) => (
@@ -503,12 +451,13 @@ export function SettingsView(props: SettingsViewProps) {
         <article className="card about-card">
           <header className="card-header">
             <h2>About</h2>
-            <span className="badge">M0.5 · local library slice</span>
+            <span className="badge">M4-lite · streaming and saving</span>
           </header>
           <p className="card-hint">
-            Local library playback is the working slice. Scanning, tag reading, artwork, the queue, repeat and shuffle,
-            folder watching, the keyboard shortcuts and the media keys are in. Playlists, resuming the last session,
-            gapless playback, the yt-dlp resolver and packaging are still ahead — see ROADMAP.md for the sequence.
+            The local library, playlists, the queue and pasted-link streaming all work, and a stream can be saved into
+            the library with its tags and cover. Offline caching and the full Downloads screen are deferred; search,
+            channel pages and metadata cleanup are next. This Settings page is due a full revamp of its own after that —
+            see ROADMAP.md for the sequence.
           </p>
         </article>
       </div>

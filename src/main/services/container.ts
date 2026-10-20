@@ -20,7 +20,7 @@ import { IPC_EVENTS } from '@shared/ipc'
 import type { AppPaths, AppSettings } from '@shared/types'
 import { createArtworkService, type ArtworkService } from '../artwork-service'
 import { broadcast } from '../broadcast'
-import { DownloadService } from '../download-service'
+import { cleanupAbandonedDownloads, DownloadService } from '../download-service'
 import { createOnlineService, type OnlineService } from '../online-service'
 import { createYoutubeService, type YoutubeService } from '../youtube-service'
 
@@ -101,6 +101,7 @@ export function createContainer(): AppContainer {
     repo: onlineRepo,
     playlists: onlinePlaylists,
     listProvider: ytDlp,
+    discoverProvider: ytDlp,
     engine: () => settings.get().engine,
     artwork,
     log: log.child('online'),
@@ -111,6 +112,10 @@ export function createContainer(): AppContainer {
     onScanProgress: (progress) => broadcast(IPC_EVENTS.scanProgress, progress),
     onLibraryChanged: () => broadcast(IPC_EVENTS.libraryChanged, null)
   })
+
+  // A crash or a force-quit never runs the download's `finally`, so sweep the
+  // temp folders before anything can start writing a new one.
+  cleanupAbandonedDownloads(paths.downloads, log.child('downloads'))
 
   const downloads = new DownloadService({
     settings,

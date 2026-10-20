@@ -1,8 +1,8 @@
 import type { LibraryStats } from '@shared/types'
 import { formatCount } from '@shared/format'
-import { CogIcon, LinkIcon, MusicIcon, PlaylistIcon, QueueIcon } from './Icons'
+import { CogIcon, LinkIcon, MusicIcon, PlaylistIcon, QueueIcon, SearchIcon } from './Icons'
 
-export type ViewName = 'library' | 'online' | 'playlists' | 'queue' | 'settings'
+export type ViewName = 'library' | 'search' | 'online' | 'playlists' | 'queue' | 'settings'
 
 export interface SidebarProps {
   view: ViewName
@@ -42,6 +42,16 @@ export function Sidebar({ view, stats, queueLength, playlistCount, onlineCount, 
         <LinkIcon />
         <span>Streaming</span>
         {onlineCount > 0 ? <span className="nav-count">{formatCount(onlineCount)}</span> : null}
+      </button>
+
+      <button
+        type="button"
+        className={view === 'search' ? 'nav-item active' : 'nav-item'}
+        onClick={() => onSelect('search')}
+        title="Search your library and YouTube together"
+      >
+        <SearchIcon />
+        <span>Search</span>
       </button>
 
       <button

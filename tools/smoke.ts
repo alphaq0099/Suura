@@ -7,7 +7,7 @@
  * test could never give you: that the core is correct on real files.
  */
 import { execFile } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { copyFile, mkdir, mkdtemp, rm, unlink, utimes, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -34,7 +34,16 @@ import { artworkKeyFor, extractArtwork, extensionForMime } from '@core/library/a
 import { LocalFileResolver } from '@engine/local-file-resolver'
 import { getEngineStatus } from '@engine/sidecar/engine-status'
 import type { YtInfoProvider, YtMediaInfo } from '@engine/sidecar/yt-dlp'
-import { buildInfoArgs, buildPlaylistArgs, buildDownloadArgs, parsePlaylist } from '@engine/sidecar/yt-dlp'
+import {
+  buildChannelArgs,
+  buildDownloadArgs,
+  buildInfoArgs,
+  buildPlaylistArgs,
+  buildSearchArgs,
+  parseChannel,
+  parsePlaylist,
+  parseSearchResults
+} from '@engine/sidecar/yt-dlp'
 import { RemoteStreamProxy, type UpstreamMedia } from '@engine/stream-proxy'
 import { ResolverRegistry } from '@engine/resolver'
 import { YouTubeResolver } from '@engine/youtube-resolver'
@@ -42,10 +51,12 @@ import { PLAYLIST_INDEX_MAX, PLAYLIST_INDEX_MIN, clampPlaylistIndexWidth } from 
 import { parseMediaUrl } from '@shared/media-url'
 import { buildStreamUrl, parseStreamUrl } from '@shared/stream-url'
 import {
+  cleanYouTubeMetadata,
   describeYouTubeFailure,
   extractYouTubeVideoId,
   normalizeArtistName,
   parseYouTubeLink,
+  youtubeChannelUrl,
   youtubeListTitle,
   youtubeListUrl,
   youtubeThumbnailCandidates,
@@ -57,6 +68,7 @@ import { nextDecision, shuffleFrom, shuffled } from '@shared/queue'
 import { parseRangeHeader } from '@shared/range'
 import { isImportedPlaylistTrackId, onlineEntryToTrack, onlinePlaylistItemToTrack } from '@shared/online'
 import { sanitizeFilePart, savePathParts } from '@shared/files'
+import { cleanupAbandonedDownloads, DownloadService } from '../src/main/download-service'
 
 const execFileAsync = promisify(execFile)
 
@@ -757,6 +769,76 @@ async function main(): Promise<void> {
       null
     )
 
+    // Offline caching is deferred, so a config written by an older build (or a
+    // hand edit) cannot leave the app claiming a cache that is not implemented.
+    settings.update({ retention: { mode: 'cache' } })
+    const rereadMode = new SettingsService(paths.config, silentLogger)
+    checkEqual('offline cache is pinned off on load', rereadMode.get().retention.mode, 'stream')
+    settings.update({ retention: { mode: 'stream' } })
+
+    // A killed process never runs the download's cleanup. The next start sweeps
+    // only this service's own UUID folders and partial files, never a folder the
+    // user happened to put in downloads/.
+    const sweepRoot = join(root, 'sweep-downloads')
+    await mkdir(join(sweepRoot, '11111111-1111-1111-1111-111111111111'), { recursive: true })
+    await writeFile(join(sweepRoot, '11111111-1111-1111-1111-111111111111', 'leftover.part'), 'x')
+    await mkdir(join(sweepRoot, 'keep-me'), { recursive: true })
+    await writeFile(join(sweepRoot, 'keep-me', 'notes.txt'), 'x')
+    await writeFile(join(sweepRoot, 'orphan.part'), 'x')
+    const swept = cleanupAbandonedDownloads(sweepRoot, silentLogger)
+    checkEqual('startup sweep removes one temp folder and one partial file', swept, 2)
+    check('startup sweep removes the UUID folder', !existsSync(join(sweepRoot, '11111111-1111-1111-1111-111111111111')))
+    check('startup sweep keeps an unrelated folder', existsSync(join(sweepRoot, 'keep-me', 'notes.txt')))
+    check('startup sweep removes the orphaned partial file', !existsSync(join(sweepRoot, 'orphan.part')))
+
+    // --- cancelling a save ------------------------------------------------
+    // The fake sidecar never finishes on its own, so the only way out is the
+    // controller. That is what Cancel does after a real download has started.
+    const seen: Array<{ status: string }> = []
+    const cancellable = new DownloadService({
+      settings,
+      paths,
+      repo,
+      library,
+      musicDir,
+      log: silentLogger,
+      ytDlp: {
+        download: (_videoId, options) =>
+          new Promise<string>((_resolve, reject) => {
+            options.signal?.addEventListener(
+              'abort',
+              () => reject(new Error('Saving the track was cancelled.')),
+              { once: true }
+            )
+          })
+      },
+      onChange: (progress) => seen.push(progress)
+    })
+    const pendingSave = cancellable.save({
+      videoId: 'dQw4w9WgXcQ',
+      title: 'Cancel this save',
+      artist: null,
+      album: null
+    })
+    await delay(30)
+    cancellable.cancel('dQw4w9WgXcQ')
+    let rejected = false
+    try {
+      await pendingSave
+    } catch {
+      rejected = true
+    }
+    check('download: cancelling rejects the save\'s promise', rejected)
+    check(
+      'download: cancel is reported as cancelled, not failed',
+      seen.some((progress) => progress.status === 'cancelled') && !seen.some((progress) => progress.status === 'failed')
+    )
+    check(
+      'download: a cancelled save leaves no temp folder',
+      readdirSync(paths.downloads).filter((name) => name.length === 36).length === 0
+    )
+    cancellable.dispose()
+
     const originDir = join(root, 'saved')
     await mkdir(originDir, { recursive: true })
     await generateFlac(
@@ -915,6 +997,86 @@ async function main(): Promise<void> {
     )
     checkEqual('youtube: a Topic channel becomes the artist', normalizeArtistName('Christina Perri - Topic'), 'Christina Perri')
     checkEqual('youtube: an ordinary artist is untouched', normalizeArtistName('The Chainsmokers'), 'The Chainsmokers')
+
+    // --- M5 metadata cleanup and discovery -------------------------------
+    const cleaned = cleanYouTubeMetadata('Bella Poarch - Build a B*tch (Official Music Video)', 'Bella Poarch')
+    checkEqual('youtube: an official-video suffix is removed', cleaned.title, 'Build a B*tch')
+    checkEqual('youtube: the repeated artist prefix becomes the artist field', cleaned.artist, 'Bella Poarch')
+    checkEqual(
+      'youtube: a live take keeps the label that makes it a different recording',
+      cleanYouTubeMetadata('Song (Live)', null).title,
+      'Song (Live)'
+    )
+    checkEqual('youtube: a 4K tag is decoration, not a title', cleanYouTubeMetadata('Track [4K]', null).title, 'Track')
+    checkEqual(
+      'youtube: an artist prefix is not stripped when it belongs to the title',
+      cleanYouTubeMetadata('Simon & Garfunkel - The Boxer', 'Simon & Garfunkel').title,
+      'The Boxer'
+    )
+
+    checkEqual(
+      'youtube: a channel id becomes its videos page',
+      youtubeChannelUrl('UCCY_8y1FjtOegxKB4s2bWqw'),
+      'https://www.youtube.com/channel/UCCY_8y1FjtOegxKB4s2bWqw/videos'
+    )
+    checkEqual(
+      'youtube: an @handle becomes its videos page',
+      youtubeChannelUrl('https://www.youtube.com/@bellapoarch'),
+      'https://www.youtube.com/@bellapoarch/videos'
+    )
+    check('youtube: a non-YouTube channel URL is refused', youtubeChannelUrl('https://example.com/@nope') === null)
+
+    checkEqual('youtube: search asks for a capped flat list', buildSearchArgs('lofi beats', 20).at(-1), 'ytsearch20:lofi beats')
+    checkEqual(
+      'youtube: a channel listing asks for the videos tab',
+      buildChannelArgs('https://www.youtube.com/channel/UCCY_8y1FjtOegxKB4s2bWqw/videos', 5).at(-1),
+      'https://www.youtube.com/channel/UCCY_8y1FjtOegxKB4s2bWqw/videos'
+    )
+
+    const searchFixture = JSON.stringify({
+      entries: [
+        {
+          id: 'FLGCGc7sAUw',
+          title: 'Bella Poarch - Build a B*tch (Official Music Video)',
+          duration: 170,
+          channel_id: 'UCCY_8y1FjtOegxKB4s2bWqw',
+          channel: 'Bella Poarch'
+        },
+        // A search result can be a channel itself; it is not a playable row.
+        { id: 'UCCY_8y1FjtOegxKB4s2bWqw', title: 'Bella Poarch', _type: 'url' },
+        { id: 'too-short', title: 'Not a video' }
+      ]
+    })
+    const searchResults = parseSearchResults(searchFixture, 10)
+    checkEqual('youtube: search keeps only real videos', searchResults.length, 1)
+    checkEqual('youtube: a search result carries its channel id', searchResults[0]?.channelId, 'UCCY_8y1FjtOegxKB4s2bWqw')
+    checkEqual('youtube: a search result carries its duration', searchResults[0]?.durationMs, 170_000)
+
+    const channelFixture = JSON.stringify({
+      id: 'UCCY_8y1FjtOegxKB4s2bWqw',
+      channel: 'Bella Poarch',
+      channel_id: 'UCCY_8y1FjtOegxKB4s2bWqw',
+      webpage_url: 'https://www.youtube.com/channel/UCCY_8y1FjtOegxKB4s2bWqw/videos',
+      entries: [
+        {
+          id: 'Nm6vnRBVCds',
+          title: 'Bella Poarch - Garden (Official Lyric Video)',
+          duration: 171
+        }
+      ]
+    })
+    const channelInfo = parseChannel(
+      channelFixture,
+      10,
+      'https://www.youtube.com/channel/UCCY_8y1FjtOegxKB4s2bWqw/videos'
+    )
+    checkEqual('youtube: a channel listing keeps its name', channelInfo.name, 'Bella Poarch')
+    checkEqual(
+      'youtube: a channel entry inherits the channel it was listed from',
+      channelInfo.entries[0]?.channelName,
+      'Bella Poarch'
+    )
+    checkEqual('youtube: a channel entry keeps its duration', channelInfo.entries[0]?.durationMs, 171_000)
     checkEqual(
       'youtube: a mix is fetched in the shape that returns a queue',
       youtubeListUrl('RDjqRjvIbJ2ZM'),
