@@ -405,6 +405,9 @@ export function App() {
       ) : view === 'search' ? (
         <SearchView
           downloads={downloads}
+          currentTrackId={player.current?.id ?? null}
+          currentVideoId={player.current?.sourceKind === 'youtube' ? (player.current.sourceId ?? null) : null}
+          isPlaying={player.isPlaying}
           onPlayLocal={(queue) => player.playQueue(queue, 0)}
           onQueueLocal={player.enqueue}
           onPlayYouTube={playYouTubeResult}

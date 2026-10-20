@@ -1039,6 +1039,12 @@ async function main(): Promise<void> {
       buildChannelArgs('https://www.youtube.com/channel/UCCY_8y1FjtOegxKB4s2bWqw/videos', 5).at(-1),
       'https://www.youtube.com/channel/UCCY_8y1FjtOegxKB4s2bWqw/videos'
     )
+    const channelPageTwo = buildChannelArgs('https://www.youtube.com/@SFVMusic/videos', 10, 10)
+    check(
+      'youtube: channel page two skips the first ten videos',
+      channelPageTwo[channelPageTwo.indexOf('--playlist-start') + 1] === '11' &&
+        channelPageTwo[channelPageTwo.indexOf('--playlist-end') + 1] === '20'
+    )
 
     const searchFixture = JSON.stringify({
       entries: [

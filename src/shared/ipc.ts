@@ -223,8 +223,11 @@ export interface PlayerApi {
    * at a time without asking for a twenty-result list on the first page.
    */
   searchYouTube(query: string, limit?: number, offset?: number): Promise<YouTubeSearchResult[]>
-  /** Lists a channel's recent videos by channel id, handle or URL. */
-  getYouTubeChannel(target: string, limit?: number): Promise<YouTubeChannel>
+  /**
+   * Lists a channel's recent videos by channel id, handle or URL. `offset` is
+   * the number of videos to skip, so the channel page can page ten at a time.
+   */
+  getYouTubeChannel(target: string, limit?: number, offset?: number): Promise<YouTubeChannel>
   /** Every imported playlist, most recently imported first. */
   listOnlinePlaylists(): Promise<OnlinePlaylist[]>
   getOnlinePlaylist(playlistId: number): Promise<OnlinePlaylistDetail | null>

@@ -3568,7 +3568,7 @@ button.online-jump:hover {
   justify-content: center;
   border-radius: 6px;
   background: transparent;
-  color: var(--text-dim);
+  color: var(--text);
   font-size: 16px;
   line-height: 1;
 }
@@ -3622,6 +3622,27 @@ button.online-jump:hover {
 
 .discover-item:hover {
   background: rgb(255 255 255 / 4%);
+}
+
+/* The playing row follows the same rule as the library and YouTube history:
+   it stays marked while paused, with a quieter dot. */
+.discover-item.current {
+  background: rgb(108 140 255 / 12%);
+}
+
+.discover-item.current:hover {
+  background: rgb(108 140 255 / 16%);
+}
+
+.discover-item.current .discover-title {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.discover-title .playing-dot {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 7px;
 }
 
 .discover-jump {

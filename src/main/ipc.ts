@@ -427,10 +427,11 @@ export function registerIpcHandlers(container: AppContainer): void {
     return container.online.search(query, count, skip)
   })
 
-  ipcMain.handle(IPC.onlineChannel, (_event, target: unknown, limit: unknown) => {
+  ipcMain.handle(IPC.onlineChannel, (_event, target: unknown, limit: unknown, offset: unknown) => {
     if (typeof target !== 'string') throw new Error('That does not look like a channel link or id.')
     const count = typeof limit === 'number' && Number.isFinite(limit) ? limit : undefined
-    return container.online.channel(target, count)
+    const skip = typeof offset === 'number' && Number.isFinite(offset) ? offset : undefined
+    return container.online.channel(target, count, skip)
   })
 
   ipcMain.handle(IPC.onlinePlaylists, () => container.online.playlists())

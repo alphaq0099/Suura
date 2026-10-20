@@ -105,7 +105,7 @@ export interface OnlineService {
    * A channel link is accepted by id, handle or URL; a display name is not an
    * identity, so the view falls back to a search when it has only that.
    */
-  channel(target: string, limit?: number): Promise<YouTubeChannel>
+  channel(target: string, limit?: number, offset?: number): Promise<YouTubeChannel>
 }
 
 /** A thumbnail is decoration: cap each attempt so a hung CDN cannot stall a cover indefinitely. */
@@ -414,8 +414,9 @@ export function createOnlineService(deps: {
       })
     },
 
-    async channel(target, requestedLimit) {
-      const limit = Math.max(1, Math.min(50, Math.round(requestedLimit ?? 30)))
+    async channel(target, requestedLimit, requestedOffset) {
+      const limit = Math.max(1, Math.min(50, Math.round(requestedLimit ?? 10)))
+      const offset = Math.max(0, Math.min(490, Math.round(requestedOffset ?? 0)))
       const clean = (entries: YouTubeSearchResult[]): YouTubeSearchResult[] =>
         entries.map((entry) => {
           const metadata = cleanYouTubeMetadata(entry.title, entry.artist)
@@ -428,15 +429,15 @@ export function createOnlineService(deps: {
         // sometimes only reports a display name. There is no page to point at in
         // that case, so the honest fallback is a search for the name; the view
         // says it is a channel and still lets every row play.
-        const entries = clean(await deps.discoverProvider.search(target, limit))
-        if (entries.length === 0) {
+        const entries = clean(await deps.discoverProvider.search(target, limit, offset))
+        if (entries.length === 0 && offset === 0) {
           throw new Error('No videos were found for that channel.')
         }
         return { channelId: null, name: target, url: '', entries }
       }
 
-      const info = await deps.discoverProvider.channel(target, limit)
-      if (info.entries.length === 0) {
+      const info = await deps.discoverProvider.channel(target, limit, offset)
+      if (info.entries.length === 0 && offset === 0) {
         throw new Error('This channel has no public videos that this app can list.')
       }
       return { ...info, entries: clean(info.entries) }

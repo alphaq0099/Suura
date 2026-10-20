@@ -18,6 +18,11 @@ import {
 
 export interface SearchViewProps {
   downloads: UseDownloadsResult
+  /** The local track that is on the player, if any. */
+  currentTrackId: number | null
+  /** The YouTube video that is on the player, if any. */
+  currentVideoId: string | null
+  isPlaying: boolean
   onPlayLocal: (tracks: Track[]) => void
   onQueueLocal: (tracks: Track[]) => void
   /** Adds the result to the history, resolves it, and starts it. */
@@ -27,6 +32,7 @@ export interface SearchViewProps {
 
 /** Ten results per page: one screenful, and a smaller first request to YouTube. */
 const YOUTUBE_PAGE_SIZE = 10
+const CHANNEL_PAGE_SIZE = 10
 
 /** A track-shaped stub, only so the row can borrow the shared artwork lookup. */
 function artworkTrack(result: YouTubeSearchResult): Track {
@@ -71,7 +77,16 @@ function artworkTrack(result: YouTubeSearchResult): Track {
  * this channel" does not need a second window or an import.
  */
 export function SearchView(props: SearchViewProps) {
-  const { downloads, onPlayLocal, onQueueLocal, onPlayYouTube, onQueueYouTube } = props
+  const {
+    downloads,
+    currentTrackId,
+    currentVideoId,
+    isPlaying,
+    onPlayLocal,
+    onQueueLocal,
+    onPlayYouTube,
+    onQueueYouTube
+  } = props
   const { saved, states, save } = downloads
 
   const [query, setQuery] = useState('')
@@ -86,19 +101,70 @@ export function SearchView(props: SearchViewProps) {
   const [youtubeHasMore, setYoutubeHasMore] = useState(false)
   const [youtubePageLoading, setYoutubePageLoading] = useState(false)
   const [channel, setChannel] = useState<YouTubeChannel | null>(null)
+  const [channelTarget, setChannelTarget] = useState<string | null>(null)
+  const [channelPage, setChannelPage] = useState(1)
+  const [channelHasMore, setChannelHasMore] = useState(false)
   const [channelLoading, setChannelLoading] = useState(false)
+  const [channelPageLoading, setChannelPageLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
-  const openChannel = useCallback(async (target: string, name: string): Promise<void> => {
-    setChannelLoading(true)
+  const loadChannel = useCallback(
+    async (target: string, name: string, page: number, opening: boolean): Promise<void> => {
+      if (opening) setChannelLoading(true)
+      else setChannelPageLoading(true)
+      setError(null)
+      try {
+        const info = await api.getYouTubeChannel(
+          target,
+          CHANNEL_PAGE_SIZE,
+          (page - 1) * CHANNEL_PAGE_SIZE
+        )
+        if (info.entries.length === 0) {
+          // End of the channel, not a failure: stay on the page that is shown.
+          setChannelHasMore(false)
+          return
+        }
+        setChannel(info)
+        setChannelPage(page)
+        setChannelHasMore(info.entries.length === CHANNEL_PAGE_SIZE)
+      } catch (cause) {
+        setError(
+          opening
+            ? `Could not open ${name}: ${messageOf(cause)}`
+            : `Could not load more from ${name}: ${messageOf(cause)}`
+        )
+      } finally {
+        if (opening) setChannelLoading(false)
+        else setChannelPageLoading(false)
+      }
+    },
+    []
+  )
+
+  const openChannel = useCallback(
+    async (target: string, name: string): Promise<void> => {
+      setChannelTarget(target)
+      setChannelPage(1)
+      setChannelHasMore(false)
+      await loadChannel(target, name, 1, true)
+    },
+    [loadChannel]
+  )
+
+  const goToChannelPage = useCallback(
+    async (page: number): Promise<void> => {
+      if (!channelTarget || page < 1 || page === channelPage) return
+      await loadChannel(channelTarget, channel?.name ?? 'this channel', page, false)
+    },
+    [channel?.name, channelPage, channelTarget, loadChannel]
+  )
+
+  const closeChannel = useCallback((): void => {
+    setChannel(null)
+    setChannelTarget(null)
+    setChannelPage(1)
+    setChannelHasMore(false)
     setError(null)
-    try {
-      setChannel(await api.getYouTubeChannel(target, 30))
-    } catch (cause) {
-      setError(`Could not open ${name}: ${messageOf(cause)}`)
-    } finally {
-      setChannelLoading(false)
-    }
   }, [])
 
   const run = useCallback(async (): Promise<void> => {
@@ -108,6 +174,9 @@ export function SearchView(props: SearchViewProps) {
     setError(null)
     setYoutubeError(null)
     setChannel(null)
+    setChannelTarget(null)
+    setChannelPage(1)
+    setChannelHasMore(false)
     setSubmitted(text)
     setYoutubePage(1)
     setYoutubeHasMore(false)
@@ -234,14 +303,7 @@ export function SearchView(props: SearchViewProps) {
         </div>
         {channel ? (
           <div className="header-actions">
-            <button
-              type="button"
-              className="link-button"
-              onClick={() => {
-                setChannel(null)
-                setError(null)
-              }}
-            >
+            <button type="button" className="link-button" onClick={closeChannel}>
               <CloseIcon />
               <span>Back to results</span>
             </button>
@@ -269,6 +331,8 @@ export function SearchView(props: SearchViewProps) {
                     busy={busyVideoId === result.videoId}
                     isSaved={saved.has(result.videoId)}
                     savingState={states[result.videoId]}
+                    isCurrent={result.videoId === currentVideoId}
+                    isPlaying={isPlaying}
                     onPlay={() => void playYouTube(result)}
                     onQueue={() => void queueYouTube(result)}
                     onSave={() => void saveYouTube(result)}
@@ -276,6 +340,15 @@ export function SearchView(props: SearchViewProps) {
                   />
                 ))}
               </ul>
+              {channelPage > 1 || channelHasMore ? (
+                <ResultPager
+                  page={channelPage}
+                  hasMore={channelHasMore}
+                  loading={channelPageLoading}
+                  noun="channel videos"
+                  onPage={(page) => void goToChannelPage(page)}
+                />
+              ) : null}
             </div>
           )}
         </>
@@ -293,13 +366,13 @@ export function SearchView(props: SearchViewProps) {
                 aria-label="Search your library and YouTube"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                disabled={loading || youtubePageLoading}
+                disabled={loading || youtubePageLoading || channelLoading}
               />
             </div>
             <button
               type="submit"
               className="primary"
-              disabled={loading || youtubePageLoading || query.trim().length === 0}
+              disabled={loading || youtubePageLoading || channelLoading || query.trim().length === 0}
             >
               {loading ? <SpinnerIcon /> : <SearchIcon />}
               <span>{loading ? 'Searching…' : 'Search'}</span>
@@ -344,43 +417,55 @@ export function SearchView(props: SearchViewProps) {
                       <span className="discover-count">{local.length}</span>
                     </li>
                   ) : null}
-                  {local.map((track) => (
-                    <li key={`local-${track.id}`} className="discover-item">
-                      <button
-                        type="button"
-                        className="discover-jump"
-                        title={`Play ${track.title}`}
-                        onClick={() => onPlayLocal([track])}
+                  {local.map((track) => {
+                    const isCurrent = track.id === currentTrackId
+                    return (
+                      <li
+                        key={`local-${track.id}`}
+                        className={isCurrent ? 'discover-item current' : 'discover-item'}
+                        aria-current={isCurrent ? 'true' : undefined}
                       >
-                        <ArtworkImage track={track} size={34} className="discover-art" />
-                        <span className="discover-title">{track.title}</span>
-                        <span className="discover-artist">{track.artist ?? 'Unknown artist'}</span>
-                        <span className="discover-album">{track.album ?? '—'}</span>
-                        <span className="discover-time">{formatDuration(track.durationMs)}</span>
-                      </button>
-                      <div className="discover-actions">
-                        <span className="source-badge local">Local</span>
                         <button
                           type="button"
-                          className="icon-button subtle"
-                          title="Add to queue"
-                          aria-label={`Add ${track.title} to the queue`}
-                          onClick={() => onQueueLocal([track])}
-                        >
-                          <QueueIcon size={15} />
-                        </button>
-                        <button
-                          type="button"
-                          className="icon-button subtle"
-                          title="Play"
-                          aria-label={`Play ${track.title}`}
+                          className="discover-jump"
+                          title={`Play ${track.title}`}
                           onClick={() => onPlayLocal([track])}
                         >
-                          <PlayIcon size={15} />
+                          <ArtworkImage track={track} size={34} className="discover-art" />
+                          <span className="discover-title">
+                            {isCurrent ? (
+                              <span className={isPlaying ? 'playing-dot' : 'playing-dot paused'} />
+                            ) : null}
+                            {track.title}
+                          </span>
+                          <span className="discover-artist">{track.artist ?? 'Unknown artist'}</span>
+                          <span className="discover-album">{track.album ?? '—'}</span>
+                          <span className="discover-time">{formatDuration(track.durationMs)}</span>
                         </button>
-                      </div>
-                    </li>
-                  ))}
+                        <div className="discover-actions">
+                          <span className="source-badge local">Local</span>
+                          <button
+                            type="button"
+                            className="icon-button subtle"
+                            title="Add to queue"
+                            aria-label={`Add ${track.title} to the queue`}
+                            onClick={() => onQueueLocal([track])}
+                          >
+                            <QueueIcon size={15} />
+                          </button>
+                          <button
+                            type="button"
+                            className="icon-button subtle"
+                            title="Play"
+                            aria-label={`Play ${track.title}`}
+                            onClick={() => onPlayLocal([track])}
+                          >
+                            <PlayIcon size={15} />
+                          </button>
+                        </div>
+                      </li>
+                    )
+                  })}
 
                   {youtube.length > 0 ? (
                     <li className="discover-divider">
@@ -396,6 +481,8 @@ export function SearchView(props: SearchViewProps) {
                       busy={busyVideoId === result.videoId}
                       isSaved={saved.has(result.videoId)}
                       savingState={states[result.videoId]}
+                      isCurrent={result.videoId === currentVideoId}
+                      isPlaying={isPlaying}
                       onPlay={() => void playYouTube(result)}
                       onQueue={() => void queueYouTube(result)}
                       onSave={() => void saveYouTube(result)}
@@ -412,32 +499,13 @@ export function SearchView(props: SearchViewProps) {
                   ))}
                 </ul>
                 {youtube.length > 0 || youtubePage > 1 ? (
-                  <div className="discover-pager" aria-label="YouTube result pages">
-                    <button
-                      type="button"
-                      className="pager-button"
-                      title="Previous YouTube results"
-                      aria-label="Previous YouTube results"
-                      disabled={youtubePage <= 1 || youtubePageLoading}
-                      onClick={() => void goToYoutubePage(youtubePage - 1)}
-                    >
-                      ‹
-                    </button>
-                    <span className="discover-page" aria-label={`Page ${youtubePage}`}>
-                      {youtubePage}
-                    </span>
-                    <button
-                      type="button"
-                      className="pager-button"
-                      title="More YouTube results"
-                      aria-label="More YouTube results"
-                      disabled={!youtubeHasMore || youtubePageLoading}
-                      onClick={() => void goToYoutubePage(youtubePage + 1)}
-                    >
-                      ›
-                    </button>
-                    {youtubePageLoading ? <SpinnerIcon /> : null}
-                  </div>
+                  <ResultPager
+                    page={youtubePage}
+                    hasMore={youtubeHasMore}
+                    loading={youtubePageLoading}
+                    noun="YouTube results"
+                    onPage={(page) => void goToYoutubePage(page)}
+                  />
                 ) : null}
               </div>
             </>
@@ -448,17 +516,58 @@ export function SearchView(props: SearchViewProps) {
   )
 }
 
+function ResultPager(props: {
+  page: number
+  hasMore: boolean
+  loading: boolean
+  noun: string
+  onPage: (page: number) => void
+}) {
+  const { page, hasMore, loading, noun, onPage } = props
+  return (
+    <div className="discover-pager" aria-label={`${noun} pages`}>
+      <button
+        type="button"
+        className="pager-button"
+        title={`Previous ${noun}`}
+        aria-label={`Previous ${noun}`}
+        disabled={page <= 1 || loading}
+        onClick={() => onPage(page - 1)}
+      >
+        ‹
+      </button>
+      <span className="discover-page" aria-label={`Page ${page}`}>
+        {page}
+      </span>
+      <button
+        type="button"
+        className="pager-button"
+        title={`More ${noun}`}
+        aria-label={`More ${noun}`}
+        disabled={!hasMore || loading}
+        onClick={() => onPage(page + 1)}
+      >
+        ›
+      </button>
+      {loading ? <SpinnerIcon /> : null}
+    </div>
+  )
+}
+
 function YouTubeRow(props: {
   result: YouTubeSearchResult
   busy: boolean
   isSaved: boolean
   savingState: { status: string; percent: number | null; error: string | null } | undefined
+  isCurrent: boolean
+  isPlaying: boolean
   onPlay: () => void
   onQueue: () => void
   onSave: () => void
   onChannel: (() => void) | null
 }) {
-  const { result, busy, isSaved, savingState, onPlay, onQueue, onSave, onChannel } = props
+  const { result, busy, isSaved, savingState, isCurrent, isPlaying, onPlay, onQueue, onSave, onChannel } =
+    props
   const savingActive =
     savingState !== undefined &&
     savingState.status !== 'saved' &&
@@ -466,7 +575,10 @@ function YouTubeRow(props: {
     savingState.status !== 'cancelled'
 
   return (
-    <li className="discover-item">
+    <li
+      className={isCurrent ? 'discover-item current' : 'discover-item'}
+      aria-current={isCurrent ? 'true' : undefined}
+    >
       <button
         type="button"
         className="discover-jump"
@@ -475,7 +587,10 @@ function YouTubeRow(props: {
         disabled={busy}
       >
         <ArtworkImage track={artworkTrack(result)} size={34} className="discover-art" />
-        <span className="discover-title">{result.title}</span>
+        <span className="discover-title">
+          {isCurrent ? <span className={isPlaying ? 'playing-dot' : 'playing-dot paused'} /> : null}
+          {result.title}
+        </span>
         <span className="discover-artist">
           {result.channelName ?? result.artist ?? 'Unknown channel'}
         </span>

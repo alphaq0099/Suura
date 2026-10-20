@@ -110,7 +110,7 @@ export interface YtChannelInfo {
  */
 export interface YtSearchProvider {
   search(query: string, limit: number, offset?: number, signal?: AbortSignal): Promise<YouTubeSearchResult[]>
-  channel(target: string, limit: number, signal?: AbortSignal): Promise<YtChannelInfo>
+  channel(target: string, limit: number, offset?: number, signal?: AbortSignal): Promise<YtChannelInfo>
 }
 
 /** An expected failure with a message that is safe to show. */
@@ -209,16 +209,20 @@ export function buildSearchArgs(query: string, limit: number, offset = 0): strin
  * as a playlist import. The URL must already be normalised by
  * `youtubeChannelUrl`, so an arbitrary page cannot be handed to yt-dlp here.
  */
-export function buildChannelArgs(url: string, limit: number): string[] {
+export function buildChannelArgs(url: string, limit: number, offset = 0): string[] {
   const count = Math.max(1, Math.min(50, Math.floor(limit)))
+  const start = Math.max(1, Math.floor(offset) + 1)
+  const end = start + count - 1
   return [
     '--ignore-config',
     '--no-progress',
     '--socket-timeout',
     '15',
     '--flat-playlist',
+    '--playlist-start',
+    String(start),
     '--playlist-end',
-    String(count),
+    String(end),
     '-J',
     url
   ]
@@ -368,12 +372,17 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
     }
   }
 
-  async channel(target: string, limit: number, signal?: AbortSignal): Promise<YtChannelInfo> {
+  async channel(
+    target: string,
+    limit: number,
+    offset = 0,
+    signal?: AbortSignal
+  ): Promise<YtChannelInfo> {
     const url = youtubeChannelUrl(target)
     if (!url) {
       throw new YtDlpError('That does not look like a channel link or id.', 'bad-channel')
     }
-    const { stdout } = await this.run(buildChannelArgs(url, limit), signal, PLAYLIST_TIMEOUT_MS)
+    const { stdout } = await this.run(buildChannelArgs(url, limit, offset), signal, PLAYLIST_TIMEOUT_MS)
     try {
       return parseChannel(stdout, limit, url)
     } catch (error) {
