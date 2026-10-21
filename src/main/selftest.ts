@@ -1306,7 +1306,10 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            if (button) button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
          }
          const watchInput = () => {
-           const label = [...document.querySelectorAll('.field.checkbox')].find((el) => (el.textContent || '').includes('Watch the folders'))
+           const label = [...document.querySelectorAll('.field.checkbox')].find((el) => {
+             const text = el.textContent || ''
+             return text.includes('Watch') && text.toLowerCase().includes('folder')
+           })
            return label ? label.querySelector('input') : null
          }
          const selectField = (label) => {
@@ -1375,7 +1378,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          await sleep(700)
          out.resetStatusShown = Boolean(document.querySelector('.settings-reset [role=\"status\"]'))
          const backupHeading = [...document.querySelectorAll('.card h2')].find(
-           (el) => (el.textContent || '').trim() === 'Backup & restore'
+           (el) => (el.textContent || '').trim().startsWith('Backup & restore')
          )
          out.backupCard = Boolean(
            backupHeading &&
@@ -1393,7 +1396,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            (el) => (el.textContent || '').trim() === 'Backups'
          )
          const healthHeading = [...document.querySelectorAll('.card h2')].find(
-           (el) => (el.textContent || '').trim() === 'Library health'
+           (el) => (el.textContent || '').trim().startsWith('Library health')
          )
          out.healthCard = Boolean(healthHeading)
          out.healthActions =

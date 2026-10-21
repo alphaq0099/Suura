@@ -1205,6 +1205,10 @@ input[type='radio'] {
 .settings-panel {
   flex: 1 1 auto;
   min-height: 0;
+  /* Tooltips are absolutely positioned and can sit a few pixels past the
+     panel edge; without this, the auto vertical scrollbar also turns into a
+     horizontal one. */
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 14px;
   scrollbar-width: thin;
@@ -1255,7 +1259,25 @@ input[type='radio'] {
   min-width: 0;
 }
 
-/* A card that is a direct child (About) spans both columns. */
+/* Streaming's cards have very different heights (a short engine check next to
+   a long reliability card), so two fixed columns left a large void. A single
+   column lets the inner two-column field grids use the width instead. */
+.cards.cards-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.cards-single .field-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 720px) {
+  .cards-single .field-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* A card that is a direct child (General, Behaviour, Misc, About) spans both
+   columns; only panels that wrap cards in `.cards-col` use two columns. */
 .cards > .card {
   grid-column: 1 / -1;
 }

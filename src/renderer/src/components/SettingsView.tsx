@@ -454,15 +454,17 @@ export function SettingsView(props: SettingsViewProps) {
                     checked={settings.library.watchForChanges}
                     onChange={(event) => onUpdate({ library: { watchForChanges: event.target.checked } })}
                   />
-                  <span>Watch the folders and rescan when files change</span>
+                  <span>
+                    Watch folders for changes
+                    <InfoHint label="About folder watching">
+                      A change starts an incremental scan; only files whose size or timestamp moved are reopened. Turn
+                      it off for a library on a network or removable drive, where watching can cost more than a manual
+                      scan.
+                    </InfoHint>
+                  </span>
                 </label>
               </div>
-              <p className="card-hint">
-                Watching is what makes an album you copy in show up without pressing Rescan: a change starts a scan, and
-                a scan only opens files whose size or timestamp moved, so it stays cheap in a large library. Turn it off
-                for a library on a network or removable drive, where watching can cost more than the occasional manual
-                scan.
-              </p>
+              <p className="card-hint">New, changed and removed files update the library without pressing Rescan.</p>
             </article>
           </div>
         </section>
@@ -715,13 +717,18 @@ export function SettingsView(props: SettingsViewProps) {
           <div className="cards">
             <article className="card">
               <header className="card-header">
-                <h2>Click behaviour</h2>
+                <h2>
+                  Click behaviour
+                  <InfoHint label="About click behaviour">
+                    Two conventions are in wide use — select on click, or play on click — and whichever one you are
+                    used to, the other feels broken. A double click always arrives as two single clicks first, so
+                    choosing &quot;play&quot; for both starts the track on the first click and does not restart it on
+                    the second.
+                  </InfoHint>
+                </h2>
               </header>
               <p className="card-hint">
-                What a click on a track in the library does. Two conventions are in wide use — select on click, or play
-                on click — and whichever one you are used to, the other feels broken. A double click always arrives as
-                two single clicks first, so choosing &quot;play&quot; for both starts the track on the first click and
-                does not restart it on the second.
+                Choose what one click does; double-click always receives two single clicks first.
               </p>
               <div className="field-grid">
                 <label className="field">
@@ -767,22 +774,23 @@ export function SettingsView(props: SettingsViewProps) {
           tabIndex={0}
           hidden={tab !== 'streaming'}
         >
-          <div className="cards">
+          <div className="cards cards-single">
             <div className="cards-col">
               <article className="card">
                 <header className="card-header">
                   <h2>
                     YouTube engine <span className="badge">yt-dlp</span>
+                    <InfoHint label="About the YouTube engine">
+                      Playback, importing lists and saving tracks all shell out to yt-dlp. ffmpeg handles transcoding,
+                      tags and covers.
+                    </InfoHint>
                   </h2>
                   <button type="button" onClick={onRefreshEngine} disabled={engineLoading}>
                     {engineLoading ? <SpinnerIcon /> : <RefreshIcon />}
                     <span>Check</span>
                   </button>
                 </header>
-                <p className="card-hint">
-                  Playback, importing lists and saving tracks all shell out to yt-dlp; ffmpeg handles transcoding,
-                  tags and covers. This reports whether both are ready.
-                </p>
+                <p className="card-hint">Checks the two binaries playback and saving need.</p>
 
                 {engineStatus ? (
                   <ul className="status-list">
@@ -839,27 +847,31 @@ export function SettingsView(props: SettingsViewProps) {
 
               <article className="card">
                 <header className="card-header">
-                  <h2>YouTube reliability</h2>
+                  <h2>
+                    PO Token provider
+                    <InfoHint label="About the PO Token provider">
+                      YouTube sometimes asks for proof that a request comes from a real browser. This optional
+                      external server and its yt-dlp plugin are third-party pieces; neither is bundled or required for
+                      normal playback.
+                    </InfoHint>
+                  </h2>
                   <button type="button" onClick={onRefreshEngine} disabled={engineLoading}>
                     {engineLoading ? <SpinnerIcon /> : <RefreshIcon />}
                     <span>Check status</span>
                   </button>
                 </header>
                 <p className="card-hint">
-                  YouTube sometimes asks for proof that a request comes from a real browser. A PO Token provider and
-                  the cookie fallback are the two opt-in ways to answer that. Neither is required for normal playback.
-                  The provider and its yt-dlp plugin are third-party; install{' '}
+                  Optional external server. Install the third-party{' '}
                   <a
                     href="https://github.com/Brainicism/bgutil-ytdlp-pot-provider"
                     target="_blank"
                     rel="noreferrer"
                   >
-                    bgutil-ytdlp-pot-provider
+                    provider and plugin
                   </a>{' '}
                   separately.
                 </p>
 
-                <h3 className="card-subtitle">PO Token provider</h3>
                 <div className="field-grid">
                   <label className="field checkbox">
                     <input
@@ -985,18 +997,22 @@ export function SettingsView(props: SettingsViewProps) {
                 ) : null}
                 {providerError ? <p className="card-hint status-error">{providerError}</p> : null}
                 {providerNote ? <p className="card-hint">{providerNote}</p> : null}
+              </article>
 
-                <h3 className="card-subtitle">Cookie fallback</h3>
+              <article className="card">
+                <header className="card-header">
+                  <h2>
+                    Cookie fallback
+                    <InfoHint label="About cookie fallback">
+                      Off never reads cookies. Only after a bot check tries once with cookies when YouTube challenges
+                      the request, before pausing new requests. Always sends cookies on every yt-dlp call.
+                    </InfoHint>
+                  </h2>
+                </header>
+                <p className="card-hint">Off by default. A targeted retry, not an account login.</p>
                 <div className="field-grid">
                   <label className="field">
-                    <span>
-                      When to use cookies
-                      <InfoHint label="About cookie fallback">
-                        Off never reads cookies. Only after a bot check tries once with cookies when YouTube
-                        challenges the request, before pausing new requests. Always sends cookies on every yt-dlp
-                        call.
-                      </InfoHint>
-                    </span>
+                    <span>When to use cookies</span>
                     <select
                       value={settings.engine.cookieFallback}
                       onChange={(event) =>
@@ -1056,20 +1072,21 @@ export function SettingsView(props: SettingsViewProps) {
                     Choose a browser, or the fallback will be skipped.
                   </p>
                 ) : null}
-                <p className="card-hint">
-                  The app itself never signs in, and account playlists remain unsupported. A cookie fallback is a
-                  targeted retry, not a way to browse an account.
-                </p>
+                <p className="card-hint">The app never signs in; account playlists are unsupported.</p>
               </article>
 
               <article className="card">
                 <header className="card-header">
-                  <h2>Playback &amp; imports</h2>
+                  <h2>
+                    Playback &amp; imports
+                    <InfoHint label="About playback and imports">
+                      Both caps are applied while listing, so the rest of the list is never fetched or queued.
+                      Download concurrency is separate from resolver concurrency, which stays low so playback remains
+                      responsive.
+                    </InfoHint>
+                  </h2>
                 </header>
-                <p className="card-hint">
-                  These limits keep a large playlist from becoming a large queue. Both caps are applied while
-                  listing, so the rest of the list is never fetched.
-                </p>
+                <p className="card-hint">Caps keep a large playlist from becoming a large queue.</p>
                 <div className="field-grid">
                   <label className="field">
                     <span>
@@ -1141,18 +1158,14 @@ export function SettingsView(props: SettingsViewProps) {
                 <header className="card-header">
                   <h2>
                     Saving to your library <span className="badge">stream only</span>
+                    <InfoHint label="About saving streams">
+                      Streams play straight from YouTube and nothing is written while you listen. Save to library
+                      downloads once, writes its tags and cover, and moves the file into your music folder. Offline
+                      caching is deliberately deferred to a later phase.
+                    </InfoHint>
                   </h2>
                 </header>
-                <p className="card-hint">
-                  Streams are played straight from YouTube and nothing is written to disk while you listen. Press{' '}
-                  <strong>Save to library</strong> on a link or an imported entry when you want to keep a copy: it
-                  downloads once, writes its tags and cover, and moves into your music folder as an ordinary local
-                  track.
-                </p>
-                <p className="card-hint">
-                  Offline caching — replaying a streamed track without a connection — is deliberately switched off for
-                  now. It is planned as a separate phase, once the everyday library and discovery work is settled.
-                </p>
+                <p className="card-hint">Streams stay on YouTube until you press Save to library.</p>
 
                 <div className="field-grid">
                   <label className="field">
@@ -1218,11 +1231,15 @@ export function SettingsView(props: SettingsViewProps) {
           <div className="cards">
             <article className="card">
               <header className="card-header">
-                <h2>Storage &amp; diagnostics</h2>
+                <h2>
+                  Storage &amp; diagnostics
+                  <InfoHint label="About app data">
+                    Everything the app writes lives here. The log file is the first place to look when something goes
+                    wrong; the database and config are the two files not to edit while Player is running.
+                  </InfoHint>
+                </h2>
               </header>
-              <p className="card-hint">
-                Everything the app writes lives here. The log file is the first place to look when something goes wrong.
-              </p>
+              <p className="card-hint">App data, logs and caches. Open a folder to inspect it.</p>
               {paths ? (
                 <ul className="path-list">
                   {(
@@ -1253,15 +1270,16 @@ export function SettingsView(props: SettingsViewProps) {
 
             <article className="card">
               <header className="card-header">
-                <h2>Backup &amp; restore</h2>
+                <h2>
+                  Backup &amp; restore
+                  <InfoHint label="About backups">
+                    Automatic copies are taken at startup and before a library upgrade; the ten newest stay in the
+                    backups folder. Restore validates the chosen folder, moves current data aside, then restarts.
+                    Export includes paths and play counts.
+                  </InfoHint>
+                </h2>
               </header>
-              <p className="card-hint">
-                Player keeps a consistent copy of the database when it starts, and a separate copy before any library
-                upgrade. The ten newest automatic copies live in the backups folder. Back up now adds a folder the user
-                chooses, with the database, settings and a manifest; restoring validates that folder, copies the current
-                data aside, then restarts. Export writes a spreadsheet-friendly CSV of every track, including paths and
-                play counts.
-              </p>
+              <p className="card-hint">Automatic copies at startup and before upgrades; export a CSV for spreadsheets.</p>
               <div className="field-row">
                 <button type="button" onClick={() => void runBackup()} disabled={dataBusy !== null}>
                   {dataBusy === 'backup' ? <SpinnerIcon /> : null}
@@ -1295,13 +1313,17 @@ export function SettingsView(props: SettingsViewProps) {
 
             <article className="card">
               <header className="card-header">
-                <h2>Library health</h2>
+                <h2>
+                  Library health
+                  <InfoHint label="About library health">
+                    Duplicate detection compares whole files, not tags, so only byte-identical copies are grouped.
+                    Merging keeps the oldest entry, combines playlists and play counts, and deletes the redundant
+                    file. Missing tracks keep their history until they are matched again.
+                  </InfoHint>
+                </h2>
               </header>
               <p className="card-hint">
-                Duplicate detection compares whole files, not tags, so only byte-identical copies are
-                grouped. Merging keeps the oldest entry, combines its playlists and play counts, and
-                deletes the redundant file. Missing tracks keep their history while the file is away,
-                and can be matched again after a folder move.
+                Find byte-identical duplicates, merge them, or reconnect files after a folder move.
               </p>
               <div className="field-row">
                 <button
@@ -1348,13 +1370,16 @@ export function SettingsView(props: SettingsViewProps) {
 
             <article className="card">
               <header className="card-header">
-                <h2>Reset preferences</h2>
+                <h2>
+                  Reset preferences
+                  <InfoHint label="About resetting preferences">
+                    Resets playback, appearance, click behaviour, import limits, saving quality and request budgets.
+                    Library folders and the engine and download folders you chose are kept: forgetting a folder is not
+                    a preference change. A preference reset is not a data reset.
+                  </InfoHint>
+                </h2>
               </header>
-              <p className="card-hint">
-                Puts playback, appearance, click behaviour, import limits, saving quality and the request-budget choices
-                back to their defaults. It keeps your library folders and the engine and download folders you chose:
-                forgetting a folder is not a preference change.
-              </p>
+              <p className="card-hint">Puts preferences back to defaults; library folders and data stay.</p>
               <div className="settings-reset">
                 {confirmReset ? (
                   <div className="reset-confirm" role="alert">
@@ -1393,9 +1418,6 @@ export function SettingsView(props: SettingsViewProps) {
                   </div>
                 )}
               </div>
-              <p className="card-hint">
-                A preference reset is not a data reset: the library, playlists and backups stay where they are.
-              </p>
             </article>
           </div>
         </section>
@@ -1411,15 +1433,18 @@ export function SettingsView(props: SettingsViewProps) {
           <div className="cards">
             <article className="card about-card">
               <header className="card-header">
-                <h2>About</h2>
+                <h2>
+                  About
+                  <InfoHint label="About this build">
+                    Unified search, channel pages, metadata cleanup and the six-tab Settings page are in, including the
+                    bounded Appearance choices and a preference reset. Offline caching and the full Downloads screen
+                    are deferred to M12. The roadmap in ROADMAP.md is the source of truth for what comes next.
+                  </InfoHint>
+                </h2>
                 <span className="badge">M6 · settings</span>
               </header>
               <p className="card-hint">
-                The local library, playlists, the queue and YouTube playback all work, and a stream can be saved into
-                the library with its tags and cover. Unified search, channel pages, metadata cleanup and the six-tab
-                Settings page are in, including the bounded Appearance choices and a preference reset. Offline caching
-                and the full Downloads screen are deferred to M12. The roadmap in ROADMAP.md is the source of truth for
-                what comes next.
+                Local library, playlists, queue and YouTube playback. Streams can be saved with tags and cover.
               </p>
             </article>
           </div>

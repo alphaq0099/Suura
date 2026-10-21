@@ -132,7 +132,9 @@ Working today:
   switched off**: the mode is pinned to *stream only* on every load (an older config that said `cache` is rewritten),
   the cache-budget and max-age controls are gone, and the page says plainly that offline replay is a later phase.
   Settings is now six tabs (**General, Appearance, Behaviour, Streaming, Misc, About**) with one scrollable panel at a
-  time. Appearance is deliberately bounded: three themes (Midnight, the deep blue-black default; Cream, a warm off-white;
+  time. Streaming uses one column of cards with two-column fields, so short cards and tall provider/cookie cards no
+  longer leave a dead half-page; longer explanations sit behind the info tooltips instead of filling every card.
+  Appearance is deliberately bounded: three themes (Midnight, the deep blue-black default; Cream, a warm off-white;
   Follow Windows tracks live OS changes), five accents, three densities, solid or accented panels, a motion preference,
   cover-art shape, and independent switches for the player's large cover and its cover-colour ambience. Accented adds an
   accent wash and a CSS blur over the app's own background rather than native acrylic/Mica, so it behaves the same on

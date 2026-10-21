@@ -445,6 +445,9 @@ works, but it has no hierarchy and no way to find a single option.
       limits, saving quality and request-budget choices from the same defaults a first launch uses, while keeping the
       library, engine and download folders and the last engine-update timestamp. Settings export/restore is deliberately
       left to the backup work in M7
+- [x] Density pass after first use: Streaming is one column with two-column fields (no dead half-page under short
+      cards), PO Token and cookie fallback are separate cards, and long explanations moved from General, Behaviour,
+      Misc and About into info tooltips behind one-line hints
 - [x] Accessibility and keyboard pass: tablist arrow/Home/End movement with roving focus, focusable scrollable panels,
       real `<label>` elements around every field, `aria-pressed` on the choice buttons, a live error banner and a
       two-step reset confirmation with a status message
