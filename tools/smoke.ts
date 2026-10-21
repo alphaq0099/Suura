@@ -73,6 +73,7 @@ import {
   parseSearchPage
 } from '@engine/innertube'
 import { YouTubeGate } from '@engine/sidecar/youtube-gate'
+import { PoTokenProvider, splitCommandLine } from '@engine/sidecar/po-token'
 import type { YtInfoProvider, YtMediaInfo } from '@engine/sidecar/yt-dlp'
 import {
   buildChannelArgs,
@@ -91,14 +92,19 @@ import { PLAYLIST_INDEX_MAX, PLAYLIST_INDEX_MIN, clampPlaylistIndexWidth } from 
 import { parseMediaUrl } from '@shared/media-url'
 import { buildStreamUrl, parseStreamUrl } from '@shared/stream-url'
 import {
+  DEFAULT_PO_TOKEN_PROVIDER_URL,
   cleanYouTubeMetadata,
   describeYouTubeFailure,
   extractYouTubeVideoId,
+  isCookieFallbackMode,
   isRetryableYouTubeFailure,
   isYouTubeBotCheck,
   normalizeArtistName,
+  normalizeCookieBrowserProfile,
+  normalizePoTokenProviderUrl,
   parseYouTubeLink,
   withBrowserCookies,
+  withPoTokenProvider,
   youtubeChannelUrl,
   youtubeListTitle,
   youtubeListUrl,
@@ -202,6 +208,12 @@ async function main(): Promise<void> {
     lastUpdateCheckAt: null,
     downloadConcurrency: 1,
     cookiesFromBrowser: null,
+    cookieBrowserProfile: null,
+    cookieFallback: 'off',
+    poTokenEnabled: false,
+    poTokenProviderUrl: 'http://127.0.0.1:4416',
+    poTokenProviderCommand: null,
+    poTokenAutoStart: false,
     prefetchNext: true,
     importLimit: 200,
     mixLimit: 50
@@ -2013,9 +2025,190 @@ async function main(): Promise<void> {
       withBrowserCookies(['--ignore-config'], null).join(' '),
       '--ignore-config'
     )
+    checkEqual(
+      'youtube: a browser profile is appended to the cookie source',
+      withBrowserCookies(['--ignore-config'], 'chrome', 'Profile 1')[2],
+      'chrome:Profile 1'
+    )
+    check(
+      'youtube: a newline in a browser profile is rejected',
+      normalizeCookieBrowserProfile('Profile 1\n--exec bad') === null
+    )
+    checkEqual(
+      'youtube: a provider URL loses its trailing slash',
+      normalizePoTokenProviderUrl('http://127.0.0.1:4416/'),
+      'http://127.0.0.1:4416'
+    )
+    check(
+      'youtube: a non-http provider URL is rejected',
+      normalizePoTokenProviderUrl('ftp://127.0.0.1/provider') === null
+    )
+    checkEqual(
+      'youtube: the provider argument is absent while the switch is off',
+      withPoTokenProvider(['--ignore-config'], DEFAULT_SETTINGS.engine).join(' '),
+      '--ignore-config'
+    )
+    const providerArgs = withPoTokenProvider(
+      ['--ignore-config', '-J', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'],
+      {
+        ...DEFAULT_SETTINGS.engine,
+        poTokenEnabled: true,
+        poTokenProviderUrl: 'http://127.0.0.1:4416/'
+      }
+    )
+    checkEqual(
+      'youtube: the provider argument is explicit and follows ignore-config',
+      providerArgs.slice(0, 3).join(' '),
+      '--ignore-config --extractor-args youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416'
+    )
+    check(
+      'youtube: the provider argument keeps the request at the end',
+      providerArgs[providerArgs.length - 1] === 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+    )
+    const providerCommand = splitCommandLine('node "C:\\Program Files\\provider\\main.js" --port 4416')
+    checkEqual('provider: a quoted Windows path survives command splitting', providerCommand[1], 'C:\\Program Files\\provider\\main.js')
+    checkEqual('provider: arguments after a quoted path are kept', providerCommand[3], '4416')
+    check(
+      'provider: an unclosed quote is a readable error',
+      (() => {
+        try {
+          splitCommandLine('node "C:\\provider\\main.js')
+          return false
+        } catch (error) {
+          return error instanceof Error && error.message.includes('unclosed')
+        }
+      })()
+    )
 
     check('settings: prefetch is on by default', DEFAULT_SETTINGS.engine.prefetchNext)
     check('settings: browser cookies are off by default', DEFAULT_SETTINGS.engine.cookiesFromBrowser === null)
+    checkEqual('settings: cookie fallback is off by default', DEFAULT_SETTINGS.engine.cookieFallback, 'off')
+    check('settings: the cookie fallback accepts its three modes', isCookieFallbackMode('off') && isCookieFallbackMode('on-bot-check') && isCookieFallbackMode('always'))
+    check('settings: the PO Token provider is off by default', !DEFAULT_SETTINGS.engine.poTokenEnabled)
+    checkEqual(
+      'settings: the PO Token provider points at its standard local port',
+      DEFAULT_SETTINGS.engine.poTokenProviderUrl,
+      DEFAULT_PO_TOKEN_PROVIDER_URL
+    )
+
+    const settingsRoot = await mkdtemp(join(tmpdir(), 'player-settings-'))
+    const legacySettingsFile = join(settingsRoot, 'legacy-cookie-settings.json')
+    await writeFile(legacySettingsFile, JSON.stringify({ engine: { cookiesFromBrowser: 'chrome' } }), 'utf8')
+    const migrated = new SettingsService(legacySettingsFile, silentLogger).get()
+    checkEqual(
+      'settings: a legacy browser selection keeps the old always-on cookie behaviour',
+      migrated.engine.cookieFallback,
+      'always'
+    )
+    const freshSettingsFile = join(settingsRoot, 'fresh-cookie-settings.json')
+    await writeFile(freshSettingsFile, JSON.stringify({ engine: { cookiesFromBrowser: 'chrome', cookieFallback: 'off' } }), 'utf8')
+    const explicitOff = new SettingsService(freshSettingsFile, silentLogger).get()
+    checkEqual(
+      'settings: an explicit off cookie fallback is not overwritten by migration',
+      explicitOff.engine.cookieFallback,
+      'off'
+    )
+    // The provider manager is worth exercising for real: a command is split
+    // without a shell, the child is started, `/ping` is read, and stopping kills
+    // only the process this app owns. The temporary server speaks the two
+    // endpoints the manager cares about.
+    const portProbe = createServer()
+    await new Promise<void>((resolve, reject) => {
+      portProbe.once('error', reject)
+      portProbe.listen(0, '127.0.0.1', () => resolve())
+    })
+    const portAddress = portProbe.address()
+    const providerPort = portAddress && typeof portAddress === 'object' ? portAddress.port : 0
+    await new Promise<void>((resolve) => portProbe.close(() => resolve()))
+
+    const providerScript = join(settingsRoot, 'provider.mjs')
+    await writeFile(
+      providerScript,
+      [
+        "import { createServer } from 'node:http'",
+        'const port = Number(process.argv[2])',
+        'const server = createServer((request, response) => {',
+        "  if (request.url === '/ping') {",
+        "    response.setHeader('content-type', 'application/json')",
+        "    response.end(JSON.stringify({ version: 'test-1', server_uptime: 1 }))",
+        '    return',
+        '  }',
+        '  response.statusCode = 404',
+        '  response.end()',
+        '})',
+        "server.listen(port, '127.0.0.1')"
+      ].join('\n'),
+      'utf8'
+    )
+    const providerEngine = {
+      ...DEFAULT_SETTINGS.engine,
+      poTokenEnabled: true,
+      poTokenProviderUrl: `http://127.0.0.1:${providerPort}`,
+      poTokenProviderCommand: `"${process.execPath}" "${providerScript}" ${providerPort}`
+    }
+    const provider = new PoTokenProvider({ engine: () => providerEngine, log: silentLogger })
+    try {
+      const started = await provider.start()
+      check(
+        'provider: a configured command starts and answers /ping',
+        started.serverReachable && started.managedRunning,
+        JSON.stringify(started)
+      )
+      checkEqual('provider: the server version is reported', started.serverVersion, 'test-1')
+      const stopped = await provider.stop()
+      check(
+        'provider: stopping ends the process this app started',
+        !stopped.serverReachable && !stopped.managedRunning,
+        JSON.stringify(stopped)
+      )
+    } catch (error) {
+      check(
+        'provider: the manager can start and stop a real local server',
+        false,
+        error instanceof Error ? error.message : String(error)
+      )
+    } finally {
+      provider.dispose()
+    }
+
+    // The other half of the ownership rule: a server the user already runs is
+    // never killed just because the app is asked to stop "its" provider.
+    const externalServer = createServer((request, response) => {
+      if (request.url === '/ping') {
+        response.setHeader('content-type', 'application/json')
+        response.end(JSON.stringify({ version: 'external', server_uptime: 1 }))
+        return
+      }
+      response.statusCode = 404
+      response.end()
+    })
+    await new Promise<void>((resolve, reject) => {
+      externalServer.once('error', reject)
+      externalServer.listen(0, '127.0.0.1', () => resolve())
+    })
+    const externalAddress = externalServer.address()
+    const externalPort = externalAddress && typeof externalAddress === 'object' ? externalAddress.port : 0
+    const externalProvider = new PoTokenProvider({
+      engine: () => ({
+        ...DEFAULT_SETTINGS.engine,
+        poTokenEnabled: true,
+        poTokenProviderUrl: `http://127.0.0.1:${externalPort}`
+      }),
+      log: silentLogger
+    })
+    try {
+      externalProvider.stopIfManaged()
+      const externalStatus = await externalProvider.status()
+      check(
+        'provider: stopping never touches a server the app did not start',
+        externalStatus.serverReachable
+      )
+    } finally {
+      externalProvider.dispose()
+      externalServer.closeAllConnections()
+      await new Promise<void>((resolve) => externalServer.close(() => resolve()))
+    }
+    await rm(settingsRoot, { recursive: true, force: true })
 
     // Appearance is deliberately bounded: the UI offers a fixed set, so these
     // checks guard against a choice being added to the renderer without a

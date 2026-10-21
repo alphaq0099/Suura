@@ -448,6 +448,34 @@ export interface RetentionSettings {
   qualityTier: QualityTier
 }
 
+/**
+ * When yt-dlp may read browser cookies.
+ *
+ * Cookies are deliberately not a global default. `on-bot-check` keeps normal
+ * requests cookie-free and spends one retry only when YouTube challenges the
+ * request; `always` is the old "use cookies for every call" behaviour and is
+ * kept for people who need it.
+ */
+export type CookieFallbackMode = 'off' | 'on-bot-check' | 'always'
+
+/** The PO Token provider, as the main process sees it right now. */
+export interface PoTokenStatus {
+  /** The user switch, not whether a provider is actually reachable. */
+  enabled: boolean
+  /** Normalised base URL yt-dlp is told to use. */
+  providerUrl: string
+  /** A process this app started and is supervising. */
+  managedRunning: boolean
+  /** `/ping` answered at `providerUrl`. */
+  serverReachable: boolean
+  /** Version reported by the provider's `/ping` endpoint, when it gives one. */
+  serverVersion: string | null
+  /** A command is configured, even if it has not been started. */
+  commandConfigured: boolean
+  /** Last start/stop failure worth showing. Cleared after a successful start. */
+  error: string | null
+}
+
 export interface EngineSettings {
   /** Folder holding yt-dlp(.exe) and ffmpeg(.exe). Null means "search PATH". */
   binDir: string | null
@@ -458,10 +486,28 @@ export interface EngineSettings {
   /** Max concurrent downloads. Resolver concurrency is capped separately. */
   downloadConcurrency: number
   /**
-   * Opt-in browser cookie source for yt-dlp. Null is the default and means no
-   * cookies are read. Account lists remain unsupported either way.
+   * Opt-in browser cookie source for yt-dlp. Null means no browser is
+   * selected. `cookieFallback` decides when this source is actually read.
    */
   cookiesFromBrowser: string | null
+  /** Optional Chrome/Edge/Firefox profile name or path. */
+  cookieBrowserProfile: string | null
+  /** Off, only after a bot check, or on every yt-dlp request. */
+  cookieFallback: CookieFallbackMode
+  /**
+   * Ask yt-dlp's bgutil plugin to fetch PO Tokens from an external HTTP
+   * provider. The app never bundles the provider or the plugin.
+   */
+  poTokenEnabled: boolean
+  /** Base URL of the external provider. Empty means the default local URL. */
+  poTokenProviderUrl: string
+  /**
+   * Optional command the app may run to start the provider. It is split into
+   * arguments without a shell, so quoted paths work and no shell syntax does.
+   */
+  poTokenProviderCommand: string | null
+  /** Start the configured command on launch and when the switch is enabled. */
+  poTokenAutoStart: boolean
   /**
    * Resolve the next queued YouTube track while the current one plays. On by
    * default because it removes the 8 s gap between songs; off means one fewer
@@ -609,6 +655,11 @@ export interface ExecutableStatus {
 export interface EngineStatus {
   ytDlp: ExecutableStatus
   ffmpeg: ExecutableStatus
+  /**
+   * Present when the main process could ask the provider manager. Optional so
+   * the binary probe can be tested on its own without starting a provider.
+   */
+  poToken?: PoTokenStatus
   /** True when every binary the engine needs was located. */
   ready: boolean
 }

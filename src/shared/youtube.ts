@@ -1,4 +1,4 @@
-import type { QualityTier } from './types'
+import type { CookieFallbackMode, EngineSettings, QualityTier } from './types'
 
 /**
  * YouTube link handling and yt-dlp argument policy.
@@ -26,19 +26,91 @@ export function isSupportedCookieBrowser(value: unknown): value is CookieBrowser
 }
 
 /**
+ * The cookie fallback policy, kept next to the argument builders so the main
+ * process, the settings UI and the smoke tests all agree on the allowed values.
+ */
+export const COOKIE_FALLBACKS = ['off', 'on-bot-check', 'always'] as const
+
+export function isCookieFallbackMode(value: unknown): value is CookieFallbackMode {
+  return typeof value === 'string' && (COOKIE_FALLBACKS as readonly string[]).includes(value)
+}
+
+/**
+ * Cleans a browser profile name without destroying spaces or Windows path
+ * separators. yt-dlp accepts `browser:profile`, so newlines and NUL are the
+ * only characters that must never reach the argument.
+ */
+export function normalizeCookieBrowserProfile(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (trimmed.length === 0 || trimmed.length > 200 || /[\r\n\0]/.test(trimmed)) return null
+  return trimmed
+}
+
+/**
  * Adds the opt-in cookie argument to a yt-dlp call.
  *
  * The argument never appears unless the user chose a browser in Settings. It is
  * kept here rather than in each builder so search, resolve, imports and saves
- * all use exactly the same policy.
+ * all use exactly the same policy. The profile is optional; without it yt-dlp
+ * reads the browser's default profile.
  */
-export function withBrowserCookies(args: readonly string[], browser: string | null | undefined): string[] {
+export function withBrowserCookies(
+  args: readonly string[],
+  browser: string | null | undefined,
+  profile?: string | null
+): string[] {
   if (!isSupportedCookieBrowser(browser)) return [...args]
-  const cookieArgs = ['--cookies-from-browser', browser]
+  const cleanedProfile = normalizeCookieBrowserProfile(profile)
+  const source = cleanedProfile ? `${browser}:${cleanedProfile}` : browser
+  const cookieArgs = ['--cookies-from-browser', source]
   // Keep `--ignore-config` first: it is the promise that a local yt-dlp config
   // cannot change what this app does. The cookie switch is still explicit.
   if (args[0] === '--ignore-config') return [args[0], ...cookieArgs, ...args.slice(1)]
   return [...cookieArgs, ...args]
+}
+
+/** The provider plugin's default local endpoint. */
+export const DEFAULT_PO_TOKEN_PROVIDER_URL = 'http://127.0.0.1:4416'
+
+/** The extractor-args namespace used by bgutil's HTTP provider plugin. */
+export const PO_TOKEN_EXTRACTOR_ARGS = 'youtubepot-bgutilhttp'
+
+/**
+ * Validates and normalises a provider base URL.
+ *
+ * Query strings, fragments and credentials are rejected because the plugin
+ * appends its own paths to this value. An empty or invalid value becomes null,
+ * and callers fall back to the documented local default.
+ */
+export function normalizePoTokenProviderUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (trimmed.length === 0 || trimmed.length > 2048) return null
+  try {
+    const url = new URL(trimmed)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
+    if (url.username || url.password || url.search || url.hash) return null
+    return url.toString().replace(/\/+$/, '')
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Points yt-dlp's bgutil HTTP plugin at the configured provider.
+ *
+ * The app deliberately does not ship the plugin or the provider: this only adds
+ * the extractor argument when the user has enabled the feature. If the plugin
+ * is absent yt-dlp reports its own warning, which is visible in the log.
+ */
+export function withPoTokenProvider(args: readonly string[], engine: EngineSettings): string[] {
+  if (!engine.poTokenEnabled) return [...args]
+  const url = normalizePoTokenProviderUrl(engine.poTokenProviderUrl) ?? DEFAULT_PO_TOKEN_PROVIDER_URL
+  const providerArgs = ['--extractor-args', `${PO_TOKEN_EXTRACTOR_ARGS}:base_url=${url}`]
+  // Keep `--ignore-config` first for the same reason as the cookie switch.
+  if (args[0] === '--ignore-config') return [args[0], ...providerArgs, ...args.slice(1)]
+  return [...providerArgs, ...args]
 }
 
 export function isYouTubeVideoId(value: string): boolean {
@@ -446,7 +518,7 @@ export function isRetryableYouTubeFailure(stderr: string): boolean {
  */
 export function describeYouTubeFailure(stderr: string): string {
   if (isYouTubeBotCheck(stderr)) {
-    return 'YouTube is checking this request for automated traffic. New YouTube requests pause for a few minutes after this. The app does not sign in; browser cookies are an opt-in last resort in Settings.'
+    return 'YouTube is checking this request for automated traffic. New YouTube requests pause for a few minutes after this. The app does not sign in; a PO Token provider or the opt-in cookie fallback in Streaming settings may help.'
   }
   const text = stderr.toLowerCase()
   if (/age.?restricted|confirm your age/.test(text)) {

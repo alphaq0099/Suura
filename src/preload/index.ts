@@ -144,6 +144,12 @@ const api: PlayerApi = {
 
   getEngineStatus: () => ipcRenderer.invoke(IPC.engineStatus),
 
+  getPoTokenStatus: () => ipcRenderer.invoke(IPC.poTokenStatus),
+
+  startPoTokenProvider: () => ipcRenderer.invoke(IPC.poTokenStart),
+
+  stopPoTokenProvider: () => ipcRenderer.invoke(IPC.poTokenStop),
+
   on<E extends PlayerEventName>(event: E, callback: (payload: PlayerEvents[E]) => void): number {
     const token = nextToken++
     const channel = EVENT_CHANNELS[event]

@@ -15,6 +15,7 @@ import type {
   ArtworkFit,
   ArtworkShape,
   ArtworkSize,
+  CookieFallbackMode,
   DeepPartial,
   Density,
   DownloadFormat,
@@ -24,12 +25,13 @@ import type {
   ExecutableStatus,
   LibraryClickAction,
   MotionPreference,
+  PoTokenStatus,
   QualityTier,
   RelocateReport,
   SurfaceStyle,
   ThemeMode
 } from '@shared/types'
-import { COOKIE_BROWSERS } from '@shared/youtube'
+import { COOKIE_BROWSERS, normalizePoTokenProviderUrl } from '@shared/youtube'
 import { FolderIcon, InfoIcon, RefreshIcon, SpinnerIcon, TrashIcon } from './Icons'
 
 export interface SettingsViewProps {
@@ -45,6 +47,8 @@ export interface SettingsViewProps {
   onPickEngineDir: () => void
   onPickDownloadFolder: () => void
   onRefreshEngine: () => void
+  onStartPoToken: () => Promise<PoTokenStatus>
+  onStopPoToken: () => Promise<PoTokenStatus>
   onOpenPath: (target: string) => void
   onBackupData: () => Promise<string | null>
   onRestoreData: () => Promise<boolean>
@@ -68,8 +72,14 @@ const FORMAT_CHOICES: Array<{ value: DownloadFormat; label: string }> = [
   { value: 'm4a', label: 'M4A / AAC (Apple devices)' }
 ]
 
-const COOKIE_CHOICES: Array<{ value: string; label: string }> = [
-  { value: '', label: 'Off (recommended)' },
+const COOKIE_FALLBACK_CHOICES: Array<{ value: CookieFallbackMode; label: string }> = [
+  { value: 'off', label: 'Off (recommended)' },
+  { value: 'on-bot-check', label: 'Only after a bot check' },
+  { value: 'always', label: 'Always' }
+]
+
+const COOKIE_BROWSER_CHOICES: Array<{ value: string; label: string }> = [
+  { value: '', label: 'Choose a browser' },
   ...COOKIE_BROWSERS.map((browser) => ({
     value: browser,
     label: browser.charAt(0).toUpperCase() + browser.slice(1)
@@ -128,6 +138,12 @@ function InfoHint(props: { label: string; children: ReactNode }) {
         role="img"
         aria-label={props.label}
         aria-describedby={id}
+        onClick={(event) => {
+          // A hint often sits inside a <label>; without this, reading it would
+          // toggle the checkbox or open the select it explains.
+          event.preventDefault()
+          event.stopPropagation()
+        }}
       >
         <InfoIcon size={13} />
       </span>
@@ -166,6 +182,8 @@ export function SettingsView(props: SettingsViewProps) {
     onPickEngineDir,
     onPickDownloadFolder,
     onRefreshEngine,
+    onStartPoToken,
+    onStopPoToken,
     onOpenPath,
     onBackupData,
     onRestoreData,
@@ -185,6 +203,9 @@ export function SettingsView(props: SettingsViewProps) {
   const [careNote, setCareNote] = useState<string | null>(null)
   const [careError, setCareError] = useState<string | null>(null)
   const [duplicates, setDuplicates] = useState<DuplicateReport | null>(null)
+  const [providerBusy, setProviderBusy] = useState<'start' | 'stop' | null>(null)
+  const [providerNote, setProviderNote] = useState<string | null>(null)
+  const [providerError, setProviderError] = useState<string | null>(null)
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
   const resetButtonRef = useRef<HTMLButtonElement | null>(null)
 
@@ -302,6 +323,38 @@ export function SettingsView(props: SettingsViewProps) {
       setCareBusy(null)
     }
   }
+
+  const runProvider = async (action: 'start' | 'stop'): Promise<void> => {
+    setProviderBusy(action)
+    setProviderError(null)
+    setProviderNote(null)
+    try {
+      const status = action === 'start' ? await onStartPoToken() : await onStopPoToken()
+      if (action === 'stop') {
+        setProviderNote(
+          status.serverReachable
+            ? 'Stopped the provider this app started; another provider is still answering at that URL.'
+            : 'Provider stopped.'
+        )
+      } else if (status.serverReachable) {
+        setProviderNote(
+          status.managedRunning
+            ? `Provider is ready${status.serverVersion ? ` (v${status.serverVersion})` : ''}.`
+            : `A provider was already answering${status.serverVersion ? ` (v${status.serverVersion})` : ''}.`
+        )
+      } else {
+        setProviderNote('The command started, but the provider is not answering yet. Check its log.')
+      }
+    } catch (cause) {
+      setProviderError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setProviderBusy(null)
+    }
+  }
+
+  const providerUrlInvalid =
+    settings.engine.poTokenProviderUrl.trim().length > 0 &&
+    !normalizePoTokenProviderUrl(settings.engine.poTokenProviderUrl)
 
   const runRestore = async (): Promise<void> => {
     setDataBusy('restore')
@@ -719,7 +772,7 @@ export function SettingsView(props: SettingsViewProps) {
               <article className="card">
                 <header className="card-header">
                   <h2>
-                    YouTube engine <span className="badge">used from M3</span>
+                    YouTube engine <span className="badge">yt-dlp</span>
                   </h2>
                   <button type="button" onClick={onRefreshEngine} disabled={engineLoading}>
                     {engineLoading ? <SpinnerIcon /> : <RefreshIcon />}
@@ -727,9 +780,8 @@ export function SettingsView(props: SettingsViewProps) {
                   </button>
                 </header>
                 <p className="card-hint">
-                  The app shells out to yt-dlp for YouTube audio and ffmpeg for transcoding, tagging and covers.
-                  Playback, importing lists and saving tracks all need these two binaries; this reports whether they are
-                  ready.
+                  Playback, importing lists and saving tracks all shell out to yt-dlp; ffmpeg handles transcoding,
+                  tags and covers. This reports whether both are ready.
                 </p>
 
                 {engineStatus ? (
@@ -749,7 +801,13 @@ export function SettingsView(props: SettingsViewProps) {
 
                 <div className="field-grid">
                   <label className="field wide">
-                    <span>Engine folder (optional)</span>
+                    <span>
+                      Engine folder (optional)
+                      <InfoHint label="About the engine folder">
+                        A folder containing yt-dlp.exe and ffmpeg.exe. Leave it empty to search PATH and the usual
+                        install locations.
+                      </InfoHint>
+                    </span>
                     <div className="field-row">
                       <input type="text" readOnly value={settings.engine.binDir ?? '(search PATH)'} />
                       <button type="button" onClick={onPickEngineDir}>
@@ -762,8 +820,265 @@ export function SettingsView(props: SettingsViewProps) {
                       ) : null}
                     </div>
                   </label>
+                  <label className="field checkbox">
+                    <input
+                      type="checkbox"
+                      checked={settings.engine.autoUpdate}
+                      onChange={(event) => onUpdate({ engine: { autoUpdate: event.target.checked } })}
+                    />
+                    <span>
+                      Keep yt-dlp up to date automatically
+                      <InfoHint label="About automatic updates">
+                        Checks at most once a day, after the window settles. A failed update is only logged, because
+                        installs managed by winget or pip may not allow self-updates.
+                      </InfoHint>
+                    </span>
+                  </label>
+                </div>
+              </article>
+
+              <article className="card">
+                <header className="card-header">
+                  <h2>YouTube reliability</h2>
+                  <button type="button" onClick={onRefreshEngine} disabled={engineLoading}>
+                    {engineLoading ? <SpinnerIcon /> : <RefreshIcon />}
+                    <span>Check status</span>
+                  </button>
+                </header>
+                <p className="card-hint">
+                  YouTube sometimes asks for proof that a request comes from a real browser. A PO Token provider and
+                  the cookie fallback are the two opt-in ways to answer that. Neither is required for normal playback.
+                  The provider and its yt-dlp plugin are third-party; install{' '}
+                  <a
+                    href="https://github.com/Brainicism/bgutil-ytdlp-pot-provider"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    bgutil-ytdlp-pot-provider
+                  </a>{' '}
+                  separately.
+                </p>
+
+                <h3 className="card-subtitle">PO Token provider</h3>
+                <div className="field-grid">
+                  <label className="field checkbox">
+                    <input
+                      type="checkbox"
+                      checked={settings.engine.poTokenEnabled}
+                      onChange={(event) => onUpdate({ engine: { poTokenEnabled: event.target.checked } })}
+                    />
+                    <span>
+                      Use a PO Token provider
+                      <InfoHint label="About PO Tokens">
+                        PO Tokens are short-lived proofs attached to a YouTube request. This app does not bundle a
+                        provider or the yt-dlp plugin; point this at the HTTP server you installed separately.
+                      </InfoHint>
+                    </span>
+                  </label>
                   <label className="field">
-                    <span>Concurrent downloads</span>
+                    <span>
+                      Provider URL
+                      <InfoHint label="About the provider URL">
+                        The base URL yt-dlp's bgutil plugin calls. The standard local server listens on
+                        127.0.0.1:4416. A remote provider sees every token request, so keep this on your machine
+                        unless you trust the network.
+                      </InfoHint>
+                    </span>
+                    <input
+                      type="url"
+                      value={settings.engine.poTokenProviderUrl}
+                      placeholder="http://127.0.0.1:4416"
+                      onChange={(event) => onUpdate({ engine: { poTokenProviderUrl: event.target.value } })}
+                    />
+                  </label>
+                  <label className="field wide">
+                    <span>
+                      Provider command (optional)
+                      <InfoHint label="About the provider command">
+                        A command this app can start and stop for you. It is split into arguments without a shell, so
+                        quoted paths work but pipes and variables do not. Leave it blank if you run the server yourself.
+                      </InfoHint>
+                    </span>
+                    <input
+                      type="text"
+                      value={settings.engine.poTokenProviderCommand ?? ''}
+                      placeholder='node "C:\path\to\bgutil\server\build\main.js"'
+                      onChange={(event) =>
+                        onUpdate({ engine: { poTokenProviderCommand: event.target.value || null } })
+                      }
+                    />
+                  </label>
+                  <label className="field checkbox">
+                    <input
+                      type="checkbox"
+                      checked={settings.engine.poTokenAutoStart}
+                      onChange={(event) => onUpdate({ engine: { poTokenAutoStart: event.target.checked } })}
+                    />
+                    <span>
+                      Start the provider automatically
+                      <InfoHint label="About automatic provider start">
+                        Runs the command above on launch and when the switch is turned on. The app stops only the
+                        process it started, never a server you launched yourself.
+                      </InfoHint>
+                    </span>
+                  </label>
+                </div>
+
+                {providerUrlInvalid ? (
+                  <p className="card-hint status-error">
+                    That provider URL is not a plain http(s) URL. The default local address will be used until it is
+                    fixed.
+                  </p>
+                ) : null}
+
+                <div className="field-row provider-actions">
+                  <button
+                    type="button"
+                    onClick={() => void runProvider('start')}
+                    disabled={
+                      !settings.engine.poTokenEnabled ||
+                      !settings.engine.poTokenProviderCommand?.trim() ||
+                      providerBusy !== null
+                    }
+                  >
+                    {providerBusy === 'start' ? <SpinnerIcon /> : null}
+                    <span>Start provider</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void runProvider('stop')}
+                    disabled={!engineStatus?.poToken?.managedRunning || providerBusy !== null}
+                  >
+                    {providerBusy === 'stop' ? <SpinnerIcon /> : null}
+                    <span>Stop provider</span>
+                  </button>
+                </div>
+
+                {engineStatus?.poToken ? (
+                  <ul className="status-list">
+                    <li className={engineStatus.poToken.enabled ? 'ok' : ''}>
+                      <span className="status-name">Switch</span>
+                      <span className="status-value">
+                        {engineStatus.poToken.enabled ? 'enabled' : 'off'}
+                      </span>
+                    </li>
+                    <li className={engineStatus.poToken.serverReachable ? 'ok' : 'bad'}>
+                      <span className="status-name">Provider</span>
+                      <span className="status-value">
+                        {engineStatus.poToken.serverReachable
+                          ? `reachable${engineStatus.poToken.serverVersion ? ` · v${engineStatus.poToken.serverVersion}` : ''}`
+                          : 'not reachable'}
+                      </span>
+                    </li>
+                    <li className={engineStatus.poToken.managedRunning ? 'ok' : ''}>
+                      <span className="status-name">Process</span>
+                      <span className="status-value">
+                        {engineStatus.poToken.managedRunning ? 'started by Player' : 'not started by Player'}
+                      </span>
+                    </li>
+                  </ul>
+                ) : (
+                  <p className="card-hint">Provider status is checked with the engine.</p>
+                )}
+                {engineStatus?.poToken?.error ? (
+                  <p className="card-hint status-error">{engineStatus.poToken.error}</p>
+                ) : null}
+                {providerError ? <p className="card-hint status-error">{providerError}</p> : null}
+                {providerNote ? <p className="card-hint">{providerNote}</p> : null}
+
+                <h3 className="card-subtitle">Cookie fallback</h3>
+                <div className="field-grid">
+                  <label className="field">
+                    <span>
+                      When to use cookies
+                      <InfoHint label="About cookie fallback">
+                        Off never reads cookies. Only after a bot check tries once with cookies when YouTube
+                        challenges the request, before pausing new requests. Always sends cookies on every yt-dlp
+                        call.
+                      </InfoHint>
+                    </span>
+                    <select
+                      value={settings.engine.cookieFallback}
+                      onChange={(event) =>
+                        onUpdate({ engine: { cookieFallback: event.target.value as CookieFallbackMode } })
+                      }
+                    >
+                      {COOKIE_FALLBACK_CHOICES.map((choice) => (
+                        <option key={choice.value} value={choice.value}>
+                          {choice.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>
+                      Browser
+                      <InfoHint label="About browser cookies">
+                        yt-dlp reads YouTube cookies from this browser on this PC. The app never signs in. Cookies can
+                        grant access to the account, so this stays off unless you choose it.
+                      </InfoHint>
+                    </span>
+                    <select
+                      value={settings.engine.cookiesFromBrowser ?? ''}
+                      disabled={settings.engine.cookieFallback === 'off'}
+                      onChange={(event) =>
+                        onUpdate({ engine: { cookiesFromBrowser: event.target.value || null } })
+                      }
+                    >
+                      {COOKIE_BROWSER_CHOICES.map((choice) => (
+                        <option key={choice.value} value={choice.value}>
+                          {choice.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field wide">
+                    <span>
+                      Browser profile (optional)
+                      <InfoHint label="About the browser profile">
+                        A Chrome, Edge or Firefox profile name or path. Leave it blank for the browser's default
+                        profile. Profiles with a separate sign-in keep their own cookies.
+                      </InfoHint>
+                    </span>
+                    <input
+                      type="text"
+                      value={settings.engine.cookieBrowserProfile ?? ''}
+                      disabled={settings.engine.cookieFallback === 'off'}
+                      placeholder="Default profile"
+                      onChange={(event) =>
+                        onUpdate({ engine: { cookieBrowserProfile: event.target.value || null } })
+                      }
+                    />
+                  </label>
+                </div>
+                {settings.engine.cookieFallback !== 'off' && !settings.engine.cookiesFromBrowser ? (
+                  <p className="card-hint status-error">
+                    Choose a browser, or the fallback will be skipped.
+                  </p>
+                ) : null}
+                <p className="card-hint">
+                  The app itself never signs in, and account playlists remain unsupported. A cookie fallback is a
+                  targeted retry, not a way to browse an account.
+                </p>
+              </article>
+
+              <article className="card">
+                <header className="card-header">
+                  <h2>Playback &amp; imports</h2>
+                </header>
+                <p className="card-hint">
+                  These limits keep a large playlist from becoming a large queue. Both caps are applied while
+                  listing, so the rest of the list is never fetched.
+                </p>
+                <div className="field-grid">
+                  <label className="field">
+                    <span>
+                      Concurrent downloads
+                      <InfoHint label="About concurrent downloads">
+                        How many saved tracks may download at once. Resolver concurrency is capped separately so
+                        playback stays responsive.
+                      </InfoHint>
+                    </span>
                     <input
                       type="number"
                       min={1}
@@ -773,7 +1088,13 @@ export function SettingsView(props: SettingsViewProps) {
                     />
                   </label>
                   <label className="field">
-                    <span>Playlist / album import limit</span>
+                    <span>
+                      Playlist / album import limit
+                      <InfoHint label="About the import limit">
+                        How many tracks an imported playlist or album keeps. The view says “first N of M” when the
+                        cap bites.
+                      </InfoHint>
+                    </span>
                     <input
                       type="number"
                       min={1}
@@ -783,7 +1104,12 @@ export function SettingsView(props: SettingsViewProps) {
                     />
                   </label>
                   <label className="field">
-                    <span>Mix length</span>
+                    <span>
+                      Mix length
+                      <InfoHint label="About mix length">
+                        A mix never ends, so this is its whole definition: the number of tracks a mix import keeps.
+                      </InfoHint>
+                    </span>
                     <input
                       type="number"
                       min={1}
@@ -795,46 +1121,18 @@ export function SettingsView(props: SettingsViewProps) {
                   <label className="field checkbox">
                     <input
                       type="checkbox"
-                      checked={settings.engine.autoUpdate}
-                      onChange={(event) => onUpdate({ engine: { autoUpdate: event.target.checked } })}
-                    />
-                    <span>Keep yt-dlp up to date automatically</span>
-                  </label>
-                  <label className="field checkbox">
-                    <input
-                      type="checkbox"
                       checked={settings.engine.prefetchNext}
                       onChange={(event) => onUpdate({ engine: { prefetchNext: event.target.checked } })}
                     />
-                    <span>Prefetch the next track</span>
-                  </label>
-                  <label className="field">
-                    <span>Browser cookies (last resort)</span>
-                    <select
-                      value={settings.engine.cookiesFromBrowser ?? ''}
-                      onChange={(event) =>
-                        onUpdate({ engine: { cookiesFromBrowser: event.target.value || null } })
-                      }
-                    >
-                      {COOKIE_CHOICES.map((choice) => (
-                        <option key={choice.value} value={choice.value}>
-                          {choice.label}
-                        </option>
-                      ))}
-                    </select>
+                    <span>
+                      Prefetch the next track
+                      <InfoHint label="About prefetching">
+                        Resolves the next queued YouTube track while the current one plays. It removes the gap
+                        between songs at the cost of one extra request per track.
+                      </InfoHint>
+                    </span>
                   </label>
                 </div>
-                <p className="card-hint">
-                  The automatic update checks at most once a day and never runs during a test. Prefetch resolves the
-                  next queued YouTube track while the current one plays; turn it off to send one fewer request per
-                  track. Browser cookies stay off unless you choose one: when enabled, yt-dlp reads that browser&apos;s
-                  YouTube cookies on this PC, which can help a sign-in challenge but also grants access to that
-                  account. The app itself never signs in, and account playlists remain unsupported.
-                </p>
-                <p className="card-hint">
-                  A playlist or album import keeps the first N tracks; a mix never ends, so N is its whole definition.
-                  Both caps are applied while listing, so the rest of the list is never fetched or queued.
-                </p>
               </article>
             </div>
 

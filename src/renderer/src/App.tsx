@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { APPEARANCE_CACHE_KEY, DENSITY_ROW_HEIGHT } from '@shared/appearance'
-import type { AppPaths, AppSettings, DeepPartial, EngineStatus, Track, YouTubeSearchResult } from '@shared/types'
+import type {
+  AppPaths,
+  AppSettings,
+  DeepPartial,
+  EngineStatus,
+  PoTokenStatus,
+  Track,
+  YouTubeSearchResult
+} from '@shared/types'
 import { onlineEntryToTrack, type PlayingList } from '@shared/online'
 import { youtubeWatchUrl } from '@shared/youtube'
 import { api, messageOf } from './api'
@@ -285,6 +293,30 @@ export function App() {
       setActionError(messageOf(cause))
     } finally {
       setEngineLoading(false)
+    }
+  }, [])
+
+  const startPoToken = useCallback(async (): Promise<PoTokenStatus> => {
+    setActionError(null)
+    try {
+      const status = await api.startPoTokenProvider()
+      setEngineStatus((previous) => (previous ? { ...previous, poToken: status } : previous))
+      return status
+    } catch (cause) {
+      setActionError(messageOf(cause))
+      throw cause
+    }
+  }, [])
+
+  const stopPoToken = useCallback(async (): Promise<PoTokenStatus> => {
+    setActionError(null)
+    try {
+      const status = await api.stopPoTokenProvider()
+      setEngineStatus((previous) => (previous ? { ...previous, poToken: status } : previous))
+      return status
+    } catch (cause) {
+      setActionError(messageOf(cause))
+      throw cause
     }
   }, [])
 
@@ -658,6 +690,8 @@ export function App() {
           onPickEngineDir={() => void pickEngineDir()}
           onPickDownloadFolder={() => void pickDownloadFolder()}
           onRefreshEngine={() => void refreshEngine()}
+          onStartPoToken={startPoToken}
+          onStopPoToken={stopPoToken}
           onOpenPath={(target) => void openPath(target)}
           onBackupData={backupData}
           onRestoreData={restoreData}

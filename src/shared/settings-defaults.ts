@@ -1,6 +1,7 @@
 import { DEFAULT_APPEARANCE } from './appearance'
 import { DEFAULT_PLAYLIST_INDEX_WIDTH } from './playlists'
 import type { AppSettings, DeepPartial } from './types'
+import { DEFAULT_PO_TOKEN_PROVIDER_URL } from './youtube'
 
 /**
  * Defaults matter more than they look: `retention.mode: 'stream'` and a bounded
@@ -56,6 +57,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
     // Off by default: reading a browser's cookies is a deliberate last resort,
     // never something the app does quietly.
     cookiesFromBrowser: null,
+    cookieBrowserProfile: null,
+    cookieFallback: 'off',
+    // The provider is external by design. These defaults point at its standard
+    // local port but leave both the switch and the command empty.
+    poTokenEnabled: false,
+    poTokenProviderUrl: DEFAULT_PO_TOKEN_PROVIDER_URL,
+    poTokenProviderCommand: null,
+    poTokenAutoStart: false,
     // One resolve ahead is what makes Next feel instant; the cost is one extra
     // sidecar start per track, which can be turned off on a metered connection.
     prefetchNext: true,
@@ -71,8 +80,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
  *
  * Deliberately not `DEFAULT_SETTINGS`: resetting a preference should never
  * forget the folders someone chose. Library folders are the media allowlist,
- * and the engine/download folders are locations, not tastes. The last engine
- * update timestamp is operational state too, so it stays put.
+ * and the engine/download folders plus the provider command are locations, not
+ * tastes. The last engine update timestamp is operational state too, so it
+ * stays put.
  */
 export const DEFAULT_PREFERENCE_PATCH: DeepPartial<AppSettings> = {
   volume: DEFAULT_SETTINGS.volume,
@@ -98,6 +108,11 @@ export const DEFAULT_PREFERENCE_PATCH: DeepPartial<AppSettings> = {
     autoUpdate: DEFAULT_SETTINGS.engine.autoUpdate,
     downloadConcurrency: DEFAULT_SETTINGS.engine.downloadConcurrency,
     cookiesFromBrowser: DEFAULT_SETTINGS.engine.cookiesFromBrowser,
+    cookieBrowserProfile: DEFAULT_SETTINGS.engine.cookieBrowserProfile,
+    cookieFallback: DEFAULT_SETTINGS.engine.cookieFallback,
+    poTokenEnabled: DEFAULT_SETTINGS.engine.poTokenEnabled,
+    poTokenProviderUrl: DEFAULT_SETTINGS.engine.poTokenProviderUrl,
+    poTokenAutoStart: DEFAULT_SETTINGS.engine.poTokenAutoStart,
     prefetchNext: DEFAULT_SETTINGS.engine.prefetchNext,
     importLimit: DEFAULT_SETTINGS.engine.importLimit,
     mixLimit: DEFAULT_SETTINGS.engine.mixLimit

@@ -18,6 +18,7 @@ import { PlaybackService } from '@core/library/playback-service'
 import { InnerTubeMetadataClient } from '@engine/innertube'
 import { LocalFileResolver } from '@engine/local-file-resolver'
 import { ResolverRegistry } from '@engine/resolver'
+import { PoTokenProvider } from '@engine/sidecar/po-token'
 import { YtDlpClient } from '@engine/sidecar/yt-dlp'
 import { YouTubeResolver } from '@engine/youtube-resolver'
 import { IPC_EVENTS } from '@shared/ipc'
@@ -59,6 +60,8 @@ export interface AppContainer {
   onlineRepo: OnlineRepository
   /** Imported playlists, exposed so the self-test can seed one. */
   onlinePlaylists: OnlinePlaylistRepository
+  /** Starts/stops an external PO Token provider when the user asks. */
+  poToken: PoTokenProvider
   dispose(): void
 }
 
@@ -79,6 +82,10 @@ export function createContainer(): AppContainer {
   const restored = applyPendingRestore(paths, log.child('restore'))
 
   const settings = new SettingsService(paths.config, log.child('settings'))
+  const poToken = new PoTokenProvider({
+    engine: () => settings.get().engine,
+    log: log.child('po-token')
+  })
   const database = openLibraryDatabase(paths.database, log.child('db'), { backupsDir: paths.backups })
   if (hadDatabase || restored) {
     try {
@@ -190,6 +197,17 @@ export function createContainer(): AppContainer {
   applyTheme(settings.get())
   const unwatchTheme = settings.onChange(applyTheme)
 
+  // Turning the feature off must not leave a process the app started running.
+  // Turning it on with auto-start set can start the provider without a restart.
+  const unwatchPoToken = settings.onChange((next) => {
+    if (!next.engine.poTokenEnabled) {
+      poToken.stopIfManaged()
+      return
+    }
+    if (next.engine.poTokenAutoStart) poToken.maybeAutoStart()
+  })
+  poToken.maybeAutoStart()
+
   return {
     paths,
     log,
@@ -208,9 +226,12 @@ export function createContainer(): AppContainer {
     online,
     onlineRepo,
     onlinePlaylists,
+    poToken,
     dispose: () => {
       unwatchSettings()
       unwatchTheme()
+      unwatchPoToken()
+      poToken.dispose()
       downloads.dispose()
       watcher.stop()
       database.close()

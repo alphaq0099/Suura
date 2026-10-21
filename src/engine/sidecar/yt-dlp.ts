@@ -6,14 +6,18 @@ import type { EngineSettings, QualityTier, YouTubeSearchResult } from '@shared/t
 import {
   describeYouTubeFailure,
   isRetryableYouTubeFailure,
+  isSupportedCookieBrowser,
+  isYouTubeBotCheck,
   isYouTubeVideoId,
   normalizeArtistName,
   withBrowserCookies,
+  withPoTokenProvider,
   youtubeChannelUrl,
   youtubeFormatSelector,
   youtubeWatchUrl
 } from '@shared/youtube'
 import { locateExecutable, wellKnownDirectories } from './locate'
+import { killTree } from './process-tree'
 import { RequestScheduler } from './request-scheduler'
 import { YouTubeGate } from './youtube-gate'
 
@@ -451,25 +455,43 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
   download(videoId: string, options: YtDownloadOptions): Promise<string> {
     try {
       this.gate.assertReady()
-      const args = withBrowserCookies(
+      const engine = this.deps.engine()
+      const browser = this.cookieBrowser()
+      const fallback = engine.cookieFallback
+      const useCookiesFirst = fallback === 'always' && browser !== null
+      const baseArgs = withPoTokenProvider(
         buildDownloadArgs(videoId, options.quality, options.format, options.outputTemplate),
-        this.deps.engine().cookiesFromBrowser
+        engine
       )
       const binary = this.resolveBinary()
       const timeoutMs = options.timeoutMs ?? DOWNLOAD_TIMEOUT_MS
 
-      return this.downloadScheduler
-        .schedule(
+      const attempt = (useCookies: boolean): Promise<string> =>
+        this.downloadScheduler.schedule(
           () => {
             this.gate.assertReady()
-            return this.spawnDownload(binary, args, videoId, options, timeoutMs)
+            return this.spawnDownload(binary, this.withCookies(baseArgs, useCookies), videoId, options, timeoutMs)
           },
           { signal: options.signal, onAbort: () => new Error('Saving the track was cancelled.') }
         )
-        .catch((error) => {
+
+      return (async () => {
+        try {
+          try {
+            return await attempt(useCookiesFirst)
+          } catch (error) {
+            if (options.signal?.aborted) throw error
+            if (browser && fallback === 'on-bot-check' && isBotCheckError(error)) {
+              this.deps.log.info('retrying download with browser cookies after a bot check', { browser })
+              return await attempt(true)
+            }
+            throw error
+          }
+        } catch (error) {
           this.gate.recordFailure(error)
           throw error
-        })
+        }
+      })()
     } catch (error) {
       return Promise.reject(error)
     }
@@ -643,32 +665,86 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
   }
 
   /**
-   * One retry for a transient network failure.
+   * One retry for a transient network failure, plus the conditional cookie
+   * fallback for a bot check.
    *
-   * A bot check is explicitly not retryable. The second attempt goes through
-   * the scheduler again, so it still respects the start gap and the breaker.
+   * The order matters: a cookie retry happens before the breaker records the
+   * final failure, so a fallback that works does not pause playback. A bot
+   * check is still never retried without cookies.
    */
   private async runWithRetry(
     args: string[],
     signal?: AbortSignal,
     timeoutOverrideMs?: number
   ): Promise<{ stdout: string; stderr: string }> {
+    const browser = this.cookieBrowser()
+    const fallback = this.deps.engine().cookieFallback
+    const useCookiesFirst = fallback === 'always' && browser !== null
+    let cookiesTried = useCookiesFirst
+
+    const attempt = (useCookies: boolean): Promise<{ stdout: string; stderr: string }> =>
+      this.run(args, signal, timeoutOverrideMs, useCookies)
+
+    const retryWithCookies = async (): Promise<{ stdout: string; stderr: string } | null> => {
+      if (!browser || fallback !== 'on-bot-check' || cookiesTried) return null
+      cookiesTried = true
+      this.deps.log.info('retrying yt-dlp with browser cookies after a bot check', { browser })
+      return attempt(true)
+    }
+
     try {
-      return await this.run(args, signal, timeoutOverrideMs)
+      return await attempt(useCookiesFirst)
     } catch (error) {
-      if (signal?.aborted || !isRetryableError(error)) throw error
+      if (signal?.aborted) {
+        this.gate.recordFailure(error)
+        throw error
+      }
+
+      if (isBotCheckError(error)) {
+        try {
+          const retried = await retryWithCookies()
+          if (retried) return retried
+        } catch (cookieError) {
+          this.gate.recordFailure(cookieError)
+          throw cookieError
+        }
+        this.gate.recordFailure(error)
+        throw error
+      }
+
+      if (!isRetryableError(error)) {
+        this.gate.recordFailure(error)
+        throw error
+      }
+
       const base = this.deps.transientRetryDelayMs ?? TRANSIENT_RETRY_DELAY_MS
       const delay = base + Math.floor(Math.random() * TRANSIENT_RETRY_JITTER_MS)
       this.deps.log.info('retrying yt-dlp after a transient network failure', { delay })
       await delayWithSignal(delay, signal, 'Resolving the link was cancelled.')
-      return this.run(args, signal, timeoutOverrideMs)
+
+      try {
+        return await attempt(useCookiesFirst)
+      } catch (retryError) {
+        if (isBotCheckError(retryError)) {
+          try {
+            const retried = await retryWithCookies()
+            if (retried) return retried
+          } catch (cookieError) {
+            this.gate.recordFailure(cookieError)
+            throw cookieError
+          }
+        }
+        this.gate.recordFailure(retryError)
+        throw retryError
+      }
     }
   }
 
   private run(
     args: string[],
-    signal?: AbortSignal,
-    timeoutOverrideMs?: number
+    signal: AbortSignal | undefined,
+    timeoutOverrideMs: number | undefined,
+    useCookies: boolean
   ): Promise<{ stdout: string; stderr: string }> {
     let binary: string
     try {
@@ -679,23 +755,34 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
     }
 
     const timeoutMs = timeoutOverrideMs ?? this.deps.timeoutMs ?? DEFAULT_TIMEOUT_MS
-    // Read the cookie setting at call time; changing it in Settings must affect
-    // the next request, not only the next launch.
-    const commandArgs = withBrowserCookies(args, this.deps.engine().cookiesFromBrowser)
+    // Read the settings at call time; changing them in Settings must affect the
+    // next request, not only the next launch.
+    const commandArgs = this.withCookies(
+      withPoTokenProvider(args, this.deps.engine()),
+      useCookies
+    )
 
-    return this.metadataScheduler
-      .schedule(
-        () => {
-          // The breaker may have tripped while this job waited for a slot.
-          this.gate.assertReady()
-          return this.spawnBuffered(binary, commandArgs, signal, timeoutMs)
-        },
-        { signal, onAbort: () => new Error('Resolving the link was cancelled.') }
-      )
-      .catch((error) => {
-        this.gate.recordFailure(error)
-        throw error
-      })
+    return this.metadataScheduler.schedule(
+      () => {
+        // The breaker may have tripped while this job waited for a slot.
+        this.gate.assertReady()
+        return this.spawnBuffered(binary, commandArgs, signal, timeoutMs)
+      },
+      { signal, onAbort: () => new Error('Resolving the link was cancelled.') }
+    )
+  }
+
+  /** A usable browser only when the user has actually enabled a fallback. */
+  private cookieBrowser(): string | null {
+    const engine = this.deps.engine()
+    if (engine.cookieFallback === 'off') return null
+    return isSupportedCookieBrowser(engine.cookiesFromBrowser) ? engine.cookiesFromBrowser : null
+  }
+
+  private withCookies(args: string[], useCookies: boolean): string[] {
+    if (!useCookies) return args
+    const engine = this.deps.engine()
+    return withBrowserCookies(args, engine.cookiesFromBrowser, engine.cookieBrowserProfile)
   }
 
   private spawnBuffered(
@@ -786,6 +873,12 @@ function isRetryableError(error: unknown): boolean {
   return isRetryableYouTubeFailure(`${error.message}\n${error.detail}`)
 }
 
+function isBotCheckError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  const detail = (error as Error & { detail?: unknown }).detail
+  return isYouTubeBotCheck(`${error.message}\n${typeof detail === 'string' ? detail : ''}`)
+}
+
 function delayWithSignal(ms: number, signal: AbortSignal | undefined, message: string): Promise<void> {
   if (signal?.aborted) return Promise.reject(new Error(message))
   return new Promise((resolve, reject) => {
@@ -800,22 +893,6 @@ function delayWithSignal(ms: number, signal: AbortSignal | undefined, message: s
     }, ms)
     signal?.addEventListener('abort', onAbort, { once: true })
   })
-}
-
-/** yt-dlp can leave a deno/ffmpeg child behind; killing the tree is the only clean stop. */
-function killTree(child: ChildProcess): void {
-  if (!child.pid) return
-  if (process.platform === 'win32') {
-    const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
-    killer.on('error', () => undefined)
-    killer.unref()
-    return
-  }
-  try {
-    child.kill('SIGKILL')
-  } catch {
-    // It exited between the check and the kill.
-  }
 }
 
 const MIME_BY_EXTENSION: Readonly<Record<string, string>> = {

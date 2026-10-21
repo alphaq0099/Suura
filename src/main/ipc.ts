@@ -44,7 +44,12 @@ import { normalizePath } from '@core/library/content-key'
 import { libraryCsv } from '@core/library/library-csv'
 import { DEFAULT_SETTINGS, mergeSettings } from '@core/settings/settings-service'
 import { getEngineStatus } from '@engine/sidecar/engine-status'
-import { isSupportedCookieBrowser, isYouTubeVideoId } from '@shared/youtube'
+import {
+  isCookieFallbackMode,
+  isSupportedCookieBrowser,
+  isYouTubeVideoId,
+  normalizeCookieBrowserProfile
+} from '@shared/youtube'
 import type { AppContainer } from './services/container'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -299,6 +304,32 @@ export function sanitizeSettingsPatch(input: unknown): DeepPartial<AppSettings> 
       engine.cookiesFromBrowser = null
     } else if (isSupportedCookieBrowser(source.cookiesFromBrowser)) {
       engine.cookiesFromBrowser = source.cookiesFromBrowser
+    }
+    if (source.cookieBrowserProfile === null) {
+      engine.cookieBrowserProfile = null
+    } else if (typeof source.cookieBrowserProfile === 'string') {
+      engine.cookieBrowserProfile = normalizeCookieBrowserProfile(source.cookieBrowserProfile)
+    }
+    if (isCookieFallbackMode(source.cookieFallback)) {
+      engine.cookieFallback = source.cookieFallback
+    }
+    if (typeof source.poTokenEnabled === 'boolean') {
+      engine.poTokenEnabled = source.poTokenEnabled
+    }
+    if (typeof source.poTokenProviderUrl === 'string') {
+      engine.poTokenProviderUrl = source.poTokenProviderUrl.trim().slice(0, 2048)
+    }
+    if (source.poTokenProviderCommand === null) {
+      engine.poTokenProviderCommand = null
+    } else if (typeof source.poTokenProviderCommand === 'string') {
+      // Do not trim a non-empty command: a trailing space is how a user types
+      // the separator before the next argument. Only an all-space value means
+      // "no command".
+      const text = source.poTokenProviderCommand.slice(0, 4096)
+      engine.poTokenProviderCommand = text.trim().length === 0 ? null : text
+    }
+    if (typeof source.poTokenAutoStart === 'boolean') {
+      engine.poTokenAutoStart = source.poTokenAutoStart
     }
     if (typeof source.importLimit === 'number' && Number.isFinite(source.importLimit)) {
       engine.importLimit = Math.round(clamp(source.importLimit, 1, 1000))
@@ -650,10 +681,17 @@ export function registerIpcHandlers(container: AppContainer): void {
   })
 
   ipcMain.handle(IPC.engineStatus, async () => {
-    const status = await getEngineStatus(settings.get().engine)
-    log.debug('engine status probed', { ready: status.ready })
-    return status
+    const [status, poToken] = await Promise.all([
+      getEngineStatus(settings.get().engine),
+      container.poToken.status()
+    ])
+    log.debug('engine status probed', { ready: status.ready, poToken: poToken.serverReachable })
+    return { ...status, poToken }
   })
+
+  ipcMain.handle(IPC.poTokenStatus, () => container.poToken.status())
+  ipcMain.handle(IPC.poTokenStart, () => container.poToken.start())
+  ipcMain.handle(IPC.poTokenStop, () => container.poToken.stop())
 
   // ---- playlists --------------------------------------------------------
   // Every mutation answers with the playlist as it now stands. A hand-ordered

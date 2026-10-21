@@ -1572,21 +1572,37 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          setField('When a cover is not square', 'contain')
          await sleep(400)
 
-         // Play the fixture that has a cover before opening the window, and stop it,
-         // so the three-second tone cannot roll on to the one that has not.
+         // Always start the covered fixture from the beginning. If it happens
+         // to be current but paused near its end, merely checking the title
+         // would let the three-second tone roll over to the uncovered track
+         // while the player window opens. Restarting it is deterministic.
+         const pauseBar = () => {
+           const play = pick('.player-controls .icon-button.primary')
+           if (play && play.getAttribute('title') === 'Pause') press(play)
+         }
          nav('Library')
          await sleep(300)
-         const barTitle = () => ((pick('.player-title') || {}).textContent || '')
-         if (barTitle() !== 'Selftest Tone') {
-           for (const row of document.querySelectorAll('.track-row')) {
-             const text = row.querySelector('.row-title-text')
-             if (text && text.textContent === 'Selftest Tone') {
-               row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
-               break
-             }
-           }
+         // Stop whatever is playing before searching, so a tone that is already
+         // near its end cannot advance while the row is being found.
+         pauseBar()
+         let toneRow = null
+         for (let attempt = 0; attempt < 20 && !toneRow; attempt += 1) {
+           toneRow =
+             [...document.querySelectorAll('.track-row')].find((row) => {
+               const text = row.querySelector('.row-title-text')
+               return text && text.textContent === 'Selftest Tone'
+             }) || null
+           if (!toneRow) await sleep(100)
+         }
+         if (toneRow) {
+           toneRow.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
            await sleep(500)
          }
+         // Stop the restarted tone before opening the window as well: it is only
+         // three seconds long, and a slow window animation must not turn this
+         // artwork check into a check of the next track.
+         pauseBar()
+         await sleep(100)
          press(pick('.player-track'))
          await sleep(500)
          pause()

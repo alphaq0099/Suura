@@ -3,6 +3,12 @@ import { dirname } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { DEFAULT_SETTINGS } from '@shared/settings-defaults'
 import type { AppSettings, DeepPartial } from '@shared/types'
+import {
+  DEFAULT_PO_TOKEN_PROVIDER_URL,
+  isCookieFallbackMode,
+  isSupportedCookieBrowser,
+  normalizeCookieBrowserProfile
+} from '@shared/youtube'
 import type { Logger } from '../logging/logger'
 
 export { DEFAULT_SETTINGS } from '@shared/settings-defaults'
@@ -66,9 +72,11 @@ export class SettingsService {
 
   private read(): AppSettings {
     let settings: AppSettings
+    let storedEngine: Record<string, unknown> | null = null
     try {
       const raw = readFileSync(this.file, 'utf8')
       const parsed = JSON.parse(raw) as DeepPartial<AppSettings>
+      storedEngine = isPlainObject(parsed.engine) ? parsed.engine : null
       settings = mergeSettings(DEFAULT_SETTINGS, parsed)
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code
@@ -76,6 +84,18 @@ export class SettingsService {
         this.log.warn('config unreadable, falling back to defaults', error)
       }
       return structuredClone(DEFAULT_SETTINGS)
+    }
+
+    // Older builds had one cookie switch and applied it to every request. The
+    // new model separates the browser from the trigger, so a stored browser
+    // with no trigger means the old "always" behaviour. A browser chosen after
+    // this migration keeps whatever trigger the new UI wrote.
+    if (
+      storedEngine &&
+      isSupportedCookieBrowser(storedEngine.cookiesFromBrowser) &&
+      storedEngine.cookieFallback === undefined
+    ) {
+      settings = { ...settings, engine: { ...settings.engine, cookieFallback: 'always' } }
     }
 
     // Offline caching is deliberately disabled until its own phase. A config
@@ -93,6 +113,29 @@ export class SettingsService {
     const storedSurface = (settings.visuals as { surface?: unknown }).surface
     if (storedSurface === 'frosted') {
       settings = { ...settings, visuals: { ...settings.visuals, surface: 'accented' } }
+    }
+
+    // A hand-edited config is still input from outside the type system. Keep the
+    // reliability controls in a shape the UI and argument builders can trust.
+    const engine = settings.engine
+    settings = {
+      ...settings,
+      engine: {
+        ...engine,
+        cookiesFromBrowser: isSupportedCookieBrowser(engine.cookiesFromBrowser)
+          ? engine.cookiesFromBrowser
+          : null,
+        cookieBrowserProfile: normalizeCookieBrowserProfile(engine.cookieBrowserProfile),
+        cookieFallback: isCookieFallbackMode(engine.cookieFallback) ? engine.cookieFallback : 'off',
+        poTokenEnabled: engine.poTokenEnabled === true,
+        poTokenProviderUrl:
+          typeof engine.poTokenProviderUrl === 'string'
+            ? engine.poTokenProviderUrl
+            : DEFAULT_PO_TOKEN_PROVIDER_URL,
+        poTokenProviderCommand:
+          typeof engine.poTokenProviderCommand === 'string' ? engine.poTokenProviderCommand : null,
+        poTokenAutoStart: engine.poTokenAutoStart === true
+      }
     }
     return settings
   }

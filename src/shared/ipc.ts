@@ -23,6 +23,7 @@ import type {
   Playlist,
   PlaylistDetail,
   PlaylistImportOutcome,
+  PoTokenStatus,
   ResolvedSource,
   ResolvableTrack,
   SavedPlayback,
@@ -98,7 +99,10 @@ export const IPC = {
   clipboardRead: 'clipboard:read-text',
   clipboardWrite: 'clipboard:write-text',
   mediaReportPlay: 'media:report-play',
-  engineStatus: 'engine:status'
+  engineStatus: 'engine:status',
+  poTokenStatus: 'engine:po-token-status',
+  poTokenStart: 'engine:po-token-start',
+  poTokenStop: 'engine:po-token-stop'
 } as const
 
 /** Main -> renderer push channels. */
@@ -325,6 +329,12 @@ export interface PlayerApi {
   writeClipboardText(text: string): Promise<void>
   reportPlayback(trackId: number, playedMs: number, completed: boolean): Promise<void>
   getEngineStatus(): Promise<EngineStatus>
+  /** The provider switch, URL and whether its `/ping` endpoint answers. */
+  getPoTokenStatus(): Promise<PoTokenStatus>
+  /** Starts the configured provider command and waits until it answers. */
+  startPoTokenProvider(): Promise<PoTokenStatus>
+  /** Stops only a provider this app started; external servers are untouched. */
+  stopPoTokenProvider(): Promise<PoTokenStatus>
   on<E extends PlayerEventName>(event: E, callback: (payload: PlayerEvents[E]) => void): number
   off(token: number): void
 }
