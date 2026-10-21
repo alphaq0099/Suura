@@ -323,10 +323,10 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
 - [x] Error taxonomy & user-facing messages (expired URL, bot check, geo-block, unavailable, network)
 - [x] Re-resolve on failure/expiry, transparent to the player
 - [x] Resolve-result metadata cache (avoid re-resolving the same video within a session)
-- [x] Request governor: two metadata sidecars at most, jittered start gap, five-minute search/channel cache with
-      single-flight, one transient-failure retry, and a bot-check breaker (5 min / 15 min on a repeat) that leaves
-      already-resolved streams playing. Prefetch is a setting, and browser cookies are an explicit off-by-default
-      last resort.
+- [x] Request governor: at most two yt-dlp metadata processes (playlist imports), jittered start gap, a five-minute
+      search/channel cache with single-flight, one transient-failure retry, and a bot-check breaker (5 min / 15 min on
+      a repeat) that leaves already-resolved streams playing. Search/channel now use InnerTube, so they do not start a
+      sidecar at all. Prefetch is a setting, and browser cookies are an explicit off-by-default last resort.
 - [x] Next-track prefetch: four seconds into a stream the player asks the main process to resolve the entry it will
       play next (`media:prefetch` → `ResolverRegistry.prefetch` → `YouTubeResolver.prefetch`), filling the cache the
       play will read without registering a token, recording history or failing the caller. A video id is asked for once
@@ -387,6 +387,11 @@ leaves no temp folder; cancel and retry work from the dock. The disk-budget/offl
 - [x] Channel/artist pages (basic), **more from this channel**. A search result's channel id or handle opens a page of
       its recent videos in place, with the same row actions. Search results that carry only a display name fall back to
       a name search; the page says what it is instead of inventing a channel URL.
+- [x] Discovery separated from playback. Search and channel pages now use YouTube's InnerTube web API
+      (`src/engine/innertube.ts`), while yt-dlp remains the only playback, playlist-import and download path. A search
+      no longer spends the anonymous request budget a resolve needs, so discovery keeps working while playback is in a
+      bot-check cooldown. The provider follows continuations, resolves an `@handle` to its `UC…` id and caches it for
+      five minutes, and skips live/upcoming rows that cannot be queued.
 - [x] Auto-attach YouTube metadata: `Artist - Title (Official Music Video)` becomes artist **Artist** and title
       **Title**. Bracketed marketing tags (`Official Audio`, `Lyrics`, `4K`, `Remastered 2011`, …) are removed; `(Live)`
       is deliberately kept because it is a different recording. Applied to pasted links, imports, search results and
@@ -551,7 +556,7 @@ run beside them.
 | Risk | Impact | Likelihood | Mitigation |
 |---|---|---|---|
 | yt-dlp extractor breaks after a YouTube change | Streaming stops working | **High** — recur periodically | Auto-update + last-known-good rollback; abstraction layer so a broken resolver degrades to "local library still works" |
-| YouTube bot checks / `403`s | Feature unreliable for some users | High | Opt-in browser cookies, a circuit breaker, re-resolve and clear messaging; PO-token/JS-runtime support is still future work |
+| YouTube bot checks / `403`s | Feature unreliable for some users | High | Opt-in browser cookies, a circuit breaker, re-resolve and clear messaging; discovery now uses InnerTube separately, so search/channel stay usable during a playback cooldown; PO-token/JS-runtime support for playback is still future work |
 | Signed-URL expiry mid-listening | Playback stalls | Medium | Re-resolve on 403, buffer-ahead, local proxy that hides expiry |
 | Legal / ToS exposure | Distribution blocked, takedown | Medium | Personal-use framing, no bundled catalogue, no redistribution features, documented disclaimer; keep Android distribution decision (Play Store vs APK) explicit |
 | Disk bloat from cache/downloads | User frustration, data loss trust | Medium | Hard budgets, visible manager, sane defaults (stream-only), pin/evict rules |

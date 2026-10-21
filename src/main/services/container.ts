@@ -15,6 +15,7 @@ import { OnlineRepository } from '@core/library/online-repository'
 import { OnlinePlaylistRepository } from '@core/library/online-playlist-repository'
 import { PlayStateRepository } from '@core/library/play-state-repository'
 import { PlaybackService } from '@core/library/playback-service'
+import { InnerTubeMetadataClient } from '@engine/innertube'
 import { LocalFileResolver } from '@engine/local-file-resolver'
 import { ResolverRegistry } from '@engine/resolver'
 import { YtDlpClient } from '@engine/sidecar/yt-dlp'
@@ -118,12 +119,15 @@ export function createContainer(): AppContainer {
 
   const onlineRepo = new OnlineRepository(database.db)
   const onlinePlaylists = new OnlinePlaylistRepository(database.db)
+  // Search and channel metadata use YouTube's web API; playback keeps yt-dlp.
+  // Separating them means a discovery request cannot spend the playback budget.
+  const metadata = new InnerTubeMetadataClient({ log: log.child('innertube') })
   const online = createOnlineService({
     resolver: youtube.resolver,
     repo: onlineRepo,
     playlists: onlinePlaylists,
     listProvider: ytDlp,
-    discoverProvider: ytDlp,
+    discoverProvider: metadata,
     engine: () => settings.get().engine,
     artwork,
     log: log.child('online'),

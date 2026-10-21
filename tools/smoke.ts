@@ -65,6 +65,13 @@ import { artworkKeyFor, extractArtwork, extensionForMime } from '@core/library/a
 import { LocalFileResolver } from '@engine/local-file-resolver'
 import { getEngineStatus } from '@engine/sidecar/engine-status'
 import { RequestScheduler } from '@engine/sidecar/request-scheduler'
+import {
+  parseChannelInfo,
+  parseChannelPage,
+  parseDurationText,
+  parseResolvedChannelId,
+  parseSearchPage
+} from '@engine/innertube'
 import { YouTubeGate } from '@engine/sidecar/youtube-gate'
 import type { YtInfoProvider, YtMediaInfo } from '@engine/sidecar/yt-dlp'
 import {
@@ -1561,6 +1568,264 @@ async function main(): Promise<void> {
       'Bella Poarch'
     )
     checkEqual('youtube: a channel entry keeps its duration', channelInfo.entries[0]?.durationMs, 171_000)
+
+    checkEqual('innertube: duration parses hours', parseDurationText('1:01:14'), 3_674_000)
+    checkEqual('innertube: duration parses minutes', parseDurationText('4:05'), 245_000)
+    checkEqual(
+      'innertube: duration parses accessible words',
+      parseDurationText('1 hour, 2 minutes, 3 seconds'),
+      3_723_000
+    )
+    checkEqual('innertube: a live label is not a duration', parseDurationText('LIVE'), null)
+
+    const innertubeSearch = {
+      contents: {
+        twoColumnSearchResultsRenderer: {
+          primaryContents: {
+            sectionListRenderer: {
+              contents: [
+                {
+                  itemSectionRenderer: {
+                    contents: [
+                      {
+                        videoRenderer: {
+                          videoId: 'lTRiuFIWV54',
+                          title: { runs: [{ text: 'A lofi mix' }] },
+                          ownerText: {
+                            runs: [
+                              {
+                                text: 'Lofi Girl',
+                                navigationEndpoint: {
+                                  browseEndpoint: { browseId: 'UCSJ4gkVC6NrvII8umztf0Ow' }
+                                }
+                              }
+                            ]
+                          },
+                          lengthText: { simpleText: '1:01:14' }
+                        }
+                      },
+                      {
+                        // A live radio row has no duration and must not become a track.
+                        videoRenderer: {
+                          videoId: 'rFZHOHl-L8A',
+                          title: { runs: [{ text: 'lofi hip hop radio' }] },
+                          ownerText: { runs: [{ text: 'Lofi Girl' }] }
+                        }
+                      },
+                      {
+                        continuationItemRenderer: {
+                          continuationEndpoint: { continuationCommand: { token: 'search-token' } }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+    const innertubeSearchPage = parseSearchPage(innertubeSearch)
+    checkEqual('innertube: search keeps one real video', innertubeSearchPage.items.length, 1)
+    checkEqual('innertube: search keeps the channel id', innertubeSearchPage.items[0]?.channelId, 'UCSJ4gkVC6NrvII8umztf0Ow')
+    checkEqual('innertube: search keeps the duration', innertubeSearchPage.items[0]?.durationMs, 3_674_000)
+    checkEqual('innertube: search exposes its continuation', innertubeSearchPage.continuation, 'search-token')
+
+    const innertubeSearchContinuation = parseSearchPage({
+      onResponseReceivedCommands: [
+        {
+          appendContinuationItemsAction: {
+            continuationItems: [
+              {
+                itemSectionRenderer: {
+                  contents: [
+                    {
+                      videoRenderer: {
+                        videoId: 'goxmvGJkoi0',
+                        title: { runs: [{ text: 'Kami' }] },
+                        ownerText: {
+                          runs: [
+                            {
+                              text: 'LO-FI SENPAI',
+                              navigationEndpoint: {
+                                browseEndpoint: { browseId: 'UCxONCRXEhzv0cRbWCKybOsw' }
+                              }
+                            }
+                          ]
+                        },
+                        lengthText: { simpleText: '3:06:35' }
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    })
+    checkEqual('innertube: a search continuation adds its video', innertubeSearchContinuation.items.length, 1)
+    checkEqual(
+      'innertube: a search continuation keeps the duration',
+      innertubeSearchContinuation.items[0]?.durationMs,
+      11_195_000
+    )
+    checkEqual('innertube: the last search page has no continuation', innertubeSearchContinuation.continuation, null)
+
+    const innertubeChannel = {
+      metadata: {
+        channelMetadataRenderer: {
+          externalId: 'UCSJ4gkVC6NrvII8umztf0Ow',
+          title: 'Lofi Girl'
+        }
+      },
+      contents: {
+        twoColumnBrowseResultsRenderer: {
+          tabs: [
+            {
+              tabRenderer: {
+                selected: true,
+                content: {
+                  richGridRenderer: {
+                    contents: [
+                      {
+                        richItemRenderer: {
+                          content: {
+                            lockupViewModel: {
+                              contentId: 'PVSOJyG5WKU',
+                              contentType: 'LOCKUP_CONTENT_TYPE_VIDEO',
+                              metadata: {
+                                lockupMetadataViewModel: {
+                                  title: { content: 'LOFI PRO Headphones' }
+                                }
+                              },
+                              contentImage: {
+                                thumbnailViewModel: {
+                                  overlays: [
+                                    {
+                                      thumbnailBottomOverlayViewModel: {
+                                        badges: [{ thumbnailBadgeViewModel: { text: '0:39' } }]
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        richItemRenderer: {
+                          content: {
+                            lockupViewModel: {
+                              contentId: 'rFZHOHl-L8A',
+                              contentType: 'LOCKUP_CONTENT_TYPE_VIDEO',
+                              metadata: {
+                                lockupMetadataViewModel: {
+                                  title: { content: 'Live radio' }
+                                }
+                              },
+                              contentImage: {
+                                thumbnailViewModel: {
+                                  overlays: [
+                                    {
+                                      thumbnailBottomOverlayViewModel: {
+                                        badges: [{ thumbnailBadgeViewModel: { text: 'LIVE' } }]
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        continuationItemRenderer: {
+                          continuationEndpoint: { continuationCommand: { token: 'channel-token' } }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+    const innertubeChannelInfo = parseChannelInfo(
+      innertubeChannel,
+      'https://www.youtube.com/channel/UCSJ4gkVC6NrvII8umztf0Ow/videos'
+    )
+    checkEqual('innertube: a channel page names the channel', innertubeChannelInfo.name, 'Lofi Girl')
+    checkEqual(
+      'innertube: a channel page carries its id',
+      innertubeChannelInfo.channelId,
+      'UCSJ4gkVC6NrvII8umztf0Ow'
+    )
+    const innertubeChannelPage = parseChannelPage(innertubeChannel, innertubeChannelInfo)
+    checkEqual('innertube: a channel skips a live lockup', innertubeChannelPage.items.length, 1)
+    checkEqual('innertube: a channel entry keeps its duration', innertubeChannelPage.items[0]?.durationMs, 39_000)
+    checkEqual(
+      'innertube: a channel entry inherits its channel',
+      innertubeChannelPage.items[0]?.channelName,
+      'Lofi Girl'
+    )
+    checkEqual('innertube: a channel exposes its continuation', innertubeChannelPage.continuation, 'channel-token')
+
+    const innertubeChannelContinuation = parseChannelPage(
+      {
+        onResponseReceivedActions: [
+          {
+            appendContinuationItemsAction: {
+              continuationItems: [
+                {
+                  richItemRenderer: {
+                    content: {
+                      lockupViewModel: {
+                        contentId: 'goxmvGJkoi0',
+                        contentType: 'LOCKUP_CONTENT_TYPE_VIDEO',
+                        metadata: {
+                          lockupMetadataViewModel: {
+                            title: { content: 'Kami' }
+                          }
+                        },
+                        contentImage: {
+                          thumbnailViewModel: {
+                            overlays: [
+                              {
+                                thumbnailBottomOverlayViewModel: {
+                                  badges: [{ thumbnailBadgeViewModel: { text: '3:06:35' } }]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      innertubeChannelInfo
+    )
+    checkEqual('innertube: a channel continuation adds its video', innertubeChannelContinuation.items.length, 1)
+    checkEqual(
+      'innertube: a channel continuation keeps the duration',
+      innertubeChannelContinuation.items[0]?.durationMs,
+      11_195_000
+    )
+    checkEqual(
+      'innertube: a channel handle resolves to its id',
+      parseResolvedChannelId({ endpoint: { browseEndpoint: { browseId: 'UCSJ4gkVC6NrvII8umztf0Ow' } } }),
+      'UCSJ4gkVC6NrvII8umztf0Ow'
+    )
+
     checkEqual(
       'youtube: a mix is fetched in the shape that returns a queue',
       youtubeListUrl('RDjqRjvIbJ2ZM'),
