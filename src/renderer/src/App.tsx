@@ -6,6 +6,7 @@ import type {
   DeepPartial,
   EngineStatus,
   PoTokenStatus,
+  RuntimeInfo,
   Track,
   YouTubeSearchResult
 } from '@shared/types'
@@ -37,6 +38,14 @@ const VOLUME_PERSIST_DELAY_MS = 400
 /** Long enough for the player window's exit animation to be seen. */
 const NOW_PLAYING_EXIT_MS = 180
 
+/** Settings is deliberately not a restorable "last view". */
+const LAST_VIEW_KEY = 'player:last-view'
+const SAVED_VIEWS: ViewName[] = ['library', 'search', 'online', 'playlists', 'queue']
+
+function isSavedView(value: string | null): value is ViewName {
+  return value !== null && SAVED_VIEWS.includes(value as ViewName)
+}
+
 export function App() {
   const [view, setView] = useState<ViewName>('library')
   /** Whether the full-window player is covering the app. */
@@ -44,6 +53,7 @@ export function App() {
   /** Set while the player window's exit animation plays, before it unmounts. */
   const [nowPlayingClosing, setNowPlayingClosing] = useState(false)
   const [paths, setPaths] = useState<AppPaths | null>(null)
+  const [runtimeInfo, setRuntimeInfo] = useState<RuntimeInfo | null>(null)
   const [engineStatus, setEngineStatus] = useState<EngineStatus | null>(null)
   const [engineLoading, setEngineLoading] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -57,6 +67,37 @@ export function App() {
   const [playingList, setPlayingList] = useState<PlayingList | null>(null)
 
   const { settings, error: settingsError, update, reload } = useSettings()
+
+  // Apply the saved startup view once settings arrive. `last` reads the view
+  // stored on the previous visit; Settings itself is never a startup target.
+  const startupAppliedRef = useRef(false)
+  useEffect(() => {
+    if (startupAppliedRef.current || !settings) return
+    startupAppliedRef.current = true
+    if (settings.startup.view === 'last') {
+      try {
+        const saved = localStorage.getItem(LAST_VIEW_KEY)
+        if (isSavedView(saved)) setView(saved)
+      } catch {
+        // A disabled localStorage simply means no remembered view.
+      }
+      return
+    }
+    setView(settings.startup.view)
+  }, [settings])
+
+  // Remember the view for the next launch. Until settings have arrived the
+  // effect sees the pre-settings 'library' frame, not a choice the user made;
+  // it must not overwrite the remembered view with that frame.
+  useEffect(() => {
+    if (!startupAppliedRef.current) return
+    if (view === 'settings') return
+    try {
+      localStorage.setItem(LAST_VIEW_KEY, view)
+    } catch {
+      // A full or disabled localStorage must not break navigation.
+    }
+  }, [view])
 
   // Theme is applied as data attributes on <html> rather than on `.app` so the
   // page background, native scrollbars and `color-scheme` change with it. The
@@ -237,12 +278,16 @@ export function App() {
 
   // Carries the queue across restarts. Bound to the player rather than to the
   // view, so it keeps working from any screen.
-  usePlaybackPersistence(player)
+  usePlaybackPersistence(player, settings?.startup.resumePlayback)
 
   useEffect(() => {
     void api
       .getPaths()
       .then(setPaths)
+      .catch(() => undefined)
+    void api
+      .getRuntimeInfo()
+      .then(setRuntimeInfo)
       .catch(() => undefined)
   }, [])
 
@@ -329,11 +374,18 @@ export function App() {
   }, [view, engineStatus, engineLoading, refreshEngine])
 
   // First run (or after a config file reset) should not require clicking Rescan.
+  // Later launches follow the General preference; the scan is incremental, so
+  // unchanged files are not opened again.
   const autoScanDoneRef = useRef(false)
   useEffect(() => {
     if (autoScanDoneRef.current || !settings || scanning) return
     if (settings.libraryFolders.length === 0) return
-    if (stats === null || stats.tracks > 0) return
+    // Wait for the stats call before calling this a first run. Settings often
+    // arrive first, and treating the missing stats as "empty library" would
+    // scan on every launch even when scan-on-launch is switched off.
+    if (!stats) return
+    const firstRun = stats.tracks === 0
+    if (!firstRun && !settings.startup.scanOnLaunch) return
     autoScanDoneRef.current = true
     void scan()
   }, [settings, scanning, stats, scan])
@@ -487,6 +539,30 @@ export function App() {
       setActionError(messageOf(cause))
     }
   }, [])
+
+  // A support-friendly snapshot: versions and locations, never cookies,
+  // history, account details or file paths inside the library.
+  const copyDiagnostics = useCallback(async (): Promise<void> => {
+    const lines = [
+      `Player ${runtimeInfo?.appVersion ?? 'unknown'}`,
+      `Electron ${runtimeInfo?.electron ?? 'unknown'}`,
+      `Chromium ${runtimeInfo?.chromium ?? 'unknown'}`,
+      `Node ${runtimeInfo?.node ?? 'unknown'}`,
+      `yt-dlp ${engineStatus?.ytDlp.version ?? 'not checked'}`,
+      `ffmpeg ${engineStatus?.ffmpeg.version ?? 'not checked'}`,
+      `Database ${paths?.database ?? 'unknown'}`,
+      `Config ${paths?.config ?? 'unknown'}`,
+      `Logs ${paths?.logs ?? 'unknown'}`,
+      `Library folders ${settings?.libraryFolders.length ?? 0}`,
+      `User agent ${navigator.userAgent}`
+    ]
+    try {
+      await api.writeClipboardText(lines.join('\n'))
+    } catch (cause) {
+      setActionError(messageOf(cause))
+      throw cause
+    }
+  }, [runtimeInfo, engineStatus, paths, settings?.libraryFolders.length])
 
   // The data-care dialogs own their own error presentation. Letting the rejected
   // IPC promise reach Settings is what puts the message next to the buttons that
@@ -680,6 +756,7 @@ export function App() {
         <SettingsView
           settings={settings}
           paths={paths}
+          runtimeInfo={runtimeInfo}
           engineStatus={engineStatus}
           engineLoading={engineLoading}
           scanning={scanning}
@@ -693,6 +770,7 @@ export function App() {
           onStartPoToken={startPoToken}
           onStopPoToken={stopPoToken}
           onOpenPath={(target) => void openPath(target)}
+          onCopyDiagnostics={copyDiagnostics}
           onBackupData={backupData}
           onRestoreData={restoreData}
           onExportLibrary={exportLibrary}
@@ -726,6 +804,7 @@ export function App() {
         positionMs={player.positionMs}
         durationMs={player.durationMs}
         volume={player.volume}
+        volumeWheelStep={settings.interaction.volumeWheelStep}
         error={player.error}
         queueIndex={player.index}
         queueLength={player.queue.length}
@@ -757,6 +836,7 @@ export function App() {
           positionMs={player.positionMs}
           durationMs={player.durationMs}
           volume={player.volume}
+          volumeWheelStep={settings.interaction.volumeWheelStep}
           queueIndex={player.index}
           queue={player.queue}
           repeat={settings.repeat}

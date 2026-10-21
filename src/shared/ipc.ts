@@ -26,6 +26,7 @@ import type {
   PoTokenStatus,
   ResolvedSource,
   ResolvableTrack,
+  RuntimeInfo,
   SavedPlayback,
   SaveToLibraryRequest,
   ScanProgress,
@@ -49,6 +50,7 @@ export const IPC = {
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',
   pathsGet: 'app:paths',
+  runtimeInfo: 'app:runtime-info',
   pickFolder: 'dialogs:pick-folder',
   openPath: 'shell:open-path',
   dataBackup: 'data:backup',
@@ -161,6 +163,8 @@ export interface PlayerApi {
   getSettings(): Promise<AppSettings>
   updateSettings(patch: DeepPartial<AppSettings>): Promise<AppSettings>
   getPaths(): Promise<AppPaths>
+  /** App and runtime versions for About; no machine or account details. */
+  getRuntimeInfo(): Promise<RuntimeInfo>
   /** Opens the native folder picker. Resolves to null if the user cancels. */
   pickFolder(): Promise<string | null>
   openPath(target: string): Promise<void>

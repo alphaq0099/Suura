@@ -3,7 +3,7 @@ import { app, nativeTheme } from 'electron'
 import { ensureAppDirectories, resolveAppPaths } from '@core/paths'
 import { createLogger, type Logger } from '@core/logging/logger'
 import { SettingsService } from '@core/settings/settings-service'
-import { applyPendingRestore, ensureDailyBackup } from '@core/db/backups'
+import { applyPendingRestore, ensureDailyBackup, pruneDatabaseBackups } from '@core/db/backups'
 import { openLibraryDatabase, type DatabaseHandle } from '@core/db/database'
 import { TrackRepository } from '@core/library/track-repository'
 import { LibraryService } from '@core/library/library-service'
@@ -86,10 +86,15 @@ export function createContainer(): AppContainer {
     engine: () => settings.get().engine,
     log: log.child('po-token')
   })
-  const database = openLibraryDatabase(paths.database, log.child('db'), { backupsDir: paths.backups })
+  const database = openLibraryDatabase(paths.database, log.child('db'), {
+    backupsDir: paths.backups,
+    backupKeep: settings.get().backups.retentionCount
+  })
   if (hadDatabase || restored) {
     try {
-      const backup = ensureDailyBackup(database.db, paths.backups)
+      const backup = ensureDailyBackup(database.db, paths.backups, {
+        keep: settings.get().backups.retentionCount
+      })
       if (backup) log.info('daily database backup created', { backup })
     } catch (error) {
       // A full disk is not a reason to refuse to play music.
@@ -197,6 +202,20 @@ export function createContainer(): AppContainer {
   applyTheme(settings.get())
   const unwatchTheme = settings.onChange(applyTheme)
 
+  // Lowering the retention count should take effect now, not only after the
+  // next daily backup happens to rotate the folder.
+  let backupKeep = settings.get().backups.retentionCount
+  const unwatchBackupRetention = settings.onChange((next) => {
+    if (next.backups.retentionCount === backupKeep) return
+    backupKeep = next.backups.retentionCount
+    try {
+      const removed = pruneDatabaseBackups(paths.backups, backupKeep)
+      if (removed > 0) log.info('pruned automatic backups', { removed, keep: backupKeep })
+    } catch (error) {
+      log.warn('could not prune automatic backups', error)
+    }
+  })
+
   // Turning the feature off must not leave a process the app started running.
   // Turning it on with auto-start set can start the provider without a restart.
   const unwatchPoToken = settings.onChange((next) => {
@@ -230,6 +249,7 @@ export function createContainer(): AppContainer {
     dispose: () => {
       unwatchSettings()
       unwatchTheme()
+      unwatchBackupRetention()
       unwatchPoToken()
       poToken.dispose()
       downloads.dispose()

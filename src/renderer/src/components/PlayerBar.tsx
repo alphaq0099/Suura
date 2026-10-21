@@ -26,6 +26,8 @@ export interface PlayerBarProps {
   positionMs: number
   durationMs: number
   volume: number
+  /** Percent per wheel notch. Shift still uses one percent. */
+  volumeWheelStep: number
   error: string | null
   queueIndex: number
   queueLength: number
@@ -50,6 +52,7 @@ export function PlayerBar(props: PlayerBarProps) {
     positionMs,
     durationMs,
     volume,
+    volumeWheelStep,
     error,
     queueIndex,
     queueLength,
@@ -69,7 +72,7 @@ export function PlayerBar(props: PlayerBarProps) {
   const hasQueue = queueLength > 0 && queueIndex >= 0
   const artworkKey = useArtwork(current)
   // The volume cluster answers the wheel as well as the slider's own drag.
-  const volumeBoxRef = useWheelVolume(volume, onVolume)
+  const volumeBoxRef = useWheelVolume(volume, onVolume, volumeWheelStep)
 
   // Mute is not a stored setting: it is only "the volume is zero, remember what
   // it was", so unmuting restores the level the user actually chose. The icon is

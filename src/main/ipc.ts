@@ -13,11 +13,14 @@ import type {
   ArtworkFit,
   ArtworkShape,
   ArtworkSize,
+  BackupSettings,
   DeepPartial,
   Density,
   DownloadFormat,
   EngineSettings,
   InteractionSettings,
+  StartupSettings,
+  StartupView,
   LibraryClickAction,
   LibrarySettings,
   ListTracksQuery,
@@ -34,6 +37,7 @@ import type {
   TrackSortField,
   VisualSettings
 } from '@shared/types'
+import { STARTUP_VIEWS } from '@shared/types'
 import {
   createBackupBundle,
   inspectBackupBundle,
@@ -262,7 +266,34 @@ export function sanitizeSettingsPatch(input: unknown): DeepPartial<AppSettings> 
     ) {
       interaction.libraryDoubleClick = source.libraryDoubleClick as LibraryClickAction
     }
+    if (typeof source.volumeWheelStep === 'number' && Number.isFinite(source.volumeWheelStep)) {
+      interaction.volumeWheelStep = Math.round(clamp(source.volumeWheelStep, 1, 25))
+    }
     patch.interaction = interaction
+  }
+
+  if (isPlainObject(input.startup)) {
+    const startup: DeepPartial<StartupSettings> = {}
+    const source = input.startup
+    if (typeof source.view === 'string' && STARTUP_VIEWS.includes(source.view as StartupView)) {
+      startup.view = source.view as StartupView
+    }
+    if (typeof source.scanOnLaunch === 'boolean') {
+      startup.scanOnLaunch = source.scanOnLaunch
+    }
+    if (typeof source.resumePlayback === 'boolean') {
+      startup.resumePlayback = source.resumePlayback
+    }
+    patch.startup = startup
+  }
+
+  if (isPlainObject(input.backups)) {
+    const backups: DeepPartial<BackupSettings> = {}
+    const source = input.backups
+    if (typeof source.retentionCount === 'number' && Number.isFinite(source.retentionCount)) {
+      backups.retentionCount = Math.round(clamp(source.retentionCount, 3, 50))
+    }
+    patch.backups = backups
   }
 
   if (isPlainObject(input.retention)) {
@@ -385,6 +416,13 @@ export function registerIpcHandlers(container: AppContainer): void {
   ipcMain.handle(IPC.settingsUpdate, (_event, patch: unknown) => settings.update(sanitizeSettingsPatch(patch)))
 
   ipcMain.handle(IPC.pathsGet, () => container.paths)
+
+  ipcMain.handle(IPC.runtimeInfo, () => ({
+    appVersion: app.getVersion(),
+    electron: process.versions.electron ?? 'unknown',
+    chromium: process.versions.chrome ?? 'unknown',
+    node: process.versions.node
+  }))
 
   ipcMain.handle(IPC.pickFolder, async () => {
     const parent = BrowserWindow.getFocusedWindow()

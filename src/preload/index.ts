@@ -27,6 +27,8 @@ const api: PlayerApi = {
 
   getPaths: () => ipcRenderer.invoke(IPC.pathsGet),
 
+  getRuntimeInfo: () => ipcRenderer.invoke(IPC.runtimeInfo),
+
   pickFolder: () => ipcRenderer.invoke(IPC.pickFolder) as Promise<string | null>,
 
   openPath: (target: string) => ipcRenderer.invoke(IPC.openPath, target) as Promise<void>,

@@ -552,6 +552,32 @@ export interface VisualSettings {
 export interface InteractionSettings {
   librarySingleClick: LibraryClickAction
   libraryDoubleClick: LibraryClickAction
+  /** How much one wheel notch changes the volume, in percent. Shift still uses 1%. */
+  volumeWheelStep: number
+}
+
+/** A view the app can open at launch. `last` restores the last non-settings view. */
+export const STARTUP_VIEWS = ['last', 'library', 'search', 'online', 'playlists', 'queue'] as const
+export type StartupView = (typeof STARTUP_VIEWS)[number]
+
+export function isStartupView(value: unknown): value is StartupView {
+  return typeof value === 'string' && (STARTUP_VIEWS as readonly string[]).includes(value)
+}
+
+export interface StartupSettings {
+  view: StartupView
+  /** Scan the library once per launch, in addition to the first-run scan. */
+  scanOnLaunch: boolean
+  /**
+   * Start playing the restored queue instead of leaving it paused. Off by
+   * default: opening the app is not a request to make noise.
+   */
+  resumePlayback: boolean
+}
+
+/** How many automatic database copies stay on disk. */
+export interface BackupSettings {
+  retentionCount: number
 }
 
 /**
@@ -587,6 +613,8 @@ export interface AppSettings {
   playlists: PlaylistSettings
   visuals: VisualSettings
   interaction: InteractionSettings
+  startup: StartupSettings
+  backups: BackupSettings
   retention: RetentionSettings
   engine: EngineSettings
 }
@@ -650,6 +678,14 @@ export interface ExecutableStatus {
   version: string | null
   source: 'configured' | 'path' | 'well-known' | null
   error: string | null
+}
+
+/** The app and runtime versions shown in About. */
+export interface RuntimeInfo {
+  appVersion: string
+  electron: string
+  chromium: string
+  node: string
 }
 
 export interface EngineStatus {

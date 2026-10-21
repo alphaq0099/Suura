@@ -41,9 +41,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     // The suite covers the whole app now, and a cold Windows launch plus the
     // media checks can sit well past the old two-minute guard. A timeout here
     // still fails the run; it just no longer cuts off a healthy one.
-    console.log('SELFTEST FAIL  test harness timed out after 180s')
+    console.log('SELFTEST FAIL  test harness timed out after 300s')
     app.exit(1)
-  }, 180_000)
+  }, 300_000)
 
   try {
     // Let the first render and the initial IPC round-trips settle.
@@ -991,7 +991,10 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            }
            box.appendChild(list)
            if (view) view.appendChild(box)
-           await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+           // A timeout, not two animation frames: a hidden or occluded Electron
+           // window can stop rAF indefinitely, and this probe is about layout,
+           // not about frames actually being painted.
+           await new Promise((resolve) => setTimeout(resolve, 80))
            const before = list.scrollTop
            list.scrollTop = 240
            const out = {
@@ -1270,16 +1273,41 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     // The tab strip is one tab stop with arrow-key movement, and the reset in
     // Misc must put a changed preference back without forgetting the folder that
     // makes the library a library.
+    const runtimeProbe = await evaluate<Record<string, string>>(
+      window,
+      `window.player.getRuntimeInfo().catch((cause) => ({ error: String(cause) }))`
+    )
+    record(
+      typeof runtimeProbe.appVersion === 'string' &&
+        typeof runtimeProbe.electron === 'string' &&
+        typeof runtimeProbe.chromium === 'string' &&
+        typeof runtimeProbe.node === 'string',
+      'preload exposes the app and runtime versions',
+      runtimeProbe
+    )
+
     const settingsSafety = await evaluate<{
       keyboardEnd: boolean
       keyboardHome: boolean
       watchTurnedOff: boolean
       behaviourChanged: boolean
+      startupChanged: boolean
+      wheelChanged: boolean
+      resumeChanged: boolean
+      retentionChanged: boolean
       resetConfirmShown: boolean
       resetStatusShown: boolean
       watchRestored: boolean
       behaviourRestored: boolean
+      startupRestored: boolean
+      wheelRestored: boolean
+      resumeRestored: boolean
+      retentionRestored: boolean
       foldersKept: boolean
+      sectionKeptOther: boolean
+      sectionResetRestored: boolean
+      aboutRuntime: boolean
+      diagnosticsCopied: boolean
       backupCard: boolean
       exportButton: boolean
       backupsPath: boolean
@@ -1290,8 +1318,12 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       `(async () => {
          const out = {
            keyboardEnd: false, keyboardHome: false, watchTurnedOff: false,
-           behaviourChanged: false, resetConfirmShown: false, resetStatusShown: false,
-           watchRestored: false, behaviourRestored: false, foldersKept: false,
+           behaviourChanged: false, startupChanged: false, wheelChanged: false,
+           resumeChanged: false, retentionChanged: false, resetConfirmShown: false,
+           resetStatusShown: false, watchRestored: false, behaviourRestored: false,
+           startupRestored: false, wheelRestored: false, resumeRestored: false,
+           retentionRestored: false, foldersKept: false, sectionKeptOther: false,
+           sectionResetRestored: false, aboutRuntime: false, diagnosticsCopied: false,
            backupCard: false, exportButton: false, backupsPath: false,
            healthCard: false, healthActions: false
          }
@@ -1326,6 +1358,31 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            select.dispatchEvent(new Event('change', { bubbles: true }))
            return true
          }
+         const resumeInput = () => {
+           const label = [...document.querySelectorAll('.field.checkbox')].find((el) =>
+             (el.textContent || '').includes('Resume playback')
+           )
+           return label ? label.querySelector('input') : null
+         }
+         const numberField = (label) => {
+           for (const field of document.querySelectorAll('.field')) {
+             const title = field.querySelector('span')
+             if (title && (title.textContent || '').includes(label)) {
+               return field.querySelector('input[type="number"]')
+             }
+           }
+           return null
+         }
+         const setNumber = (label, value) => {
+           const input = numberField(label)
+           if (!input) return false
+           // Same React value-tracker trick as the volume slider: update the
+           // prototype value, then dispatch the event a real edit would.
+           const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value')
+           if (descriptor && descriptor.set) descriptor.set.call(input, String(value))
+           input.dispatchEvent(new Event('input', { bubbles: true }))
+           return true
+         }
          const key = (element, key) => {
            if (element) element.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
          }
@@ -1356,17 +1413,28 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            await sleep(500)
          }
          out.watchTurnedOff = watchInput()?.checked === false
+         setSelect('Open at launch', 'search')
+         await sleep(500)
 
          tab('Behaviour')
          await sleep(250)
          setSelect('Single click', 'play')
-         await sleep(500)
+         setSelect('Volume wheel step', '10')
+         const resume = resumeInput()
+         if (resume && !resume.checked) resume.click()
+         await sleep(700)
 
          // Switching tabs re-renders the controlled select. If the write never
          // reached settings, React would put it straight back to 'select' here.
          tab('Misc')
          await sleep(300)
          out.behaviourChanged = selectField('Single click')?.value === 'play'
+         out.startupChanged = selectField('Open at launch')?.value === 'search'
+         out.wheelChanged = selectField('Volume wheel step')?.value === '10'
+         out.resumeChanged = resumeInput()?.checked === true
+         setNumber('Automatic backups to keep', 7)
+         await sleep(600)
+         out.retentionChanged = numberField('Automatic backups to keep')?.value === '7'
 
          const resetTrigger = [...document.querySelectorAll('.settings-reset button')].find((el) =>
            (el.textContent || '').trim().startsWith('Reset preferences')
@@ -1407,13 +1475,72 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
              )
            )
 
+         out.retentionRestored = numberField('Automatic backups to keep')?.value === '10'
+
          tab('General')
          await sleep(300)
          out.watchRestored = watchInput()?.checked === true
+         out.startupRestored = selectField('Open at launch')?.value === 'last'
          out.foldersKept = document.querySelectorAll('.folder-list li').length === foldersBefore
          tab('Behaviour')
          await sleep(300)
          out.behaviourRestored = selectField('Single click')?.value === 'select'
+         out.wheelRestored = selectField('Volume wheel step')?.value === '5'
+         out.resumeRestored = resumeInput()?.checked === false
+
+         // Per-tab reset: change General and Behaviour, then reset only Behaviour.
+         // The startup view must survive a Behaviour reset, and the wheel step must
+         // go back to its default without touching the other tab.
+         tab('General')
+         await sleep(250)
+         setSelect('Open at launch', 'online')
+         await sleep(500)
+         tab('Behaviour')
+         await sleep(250)
+         setSelect('Volume wheel step', '10')
+         await sleep(500)
+         tab('Misc')
+         await sleep(300)
+         const resetBehaviour = [...document.querySelectorAll('button')].find(
+           (el) => (el.textContent || '').trim() === 'Reset Behaviour'
+         )
+         press(resetBehaviour)
+         await sleep(700)
+         out.sectionKeptOther =
+           selectField('Open at launch')?.value === 'online' &&
+           selectField('Volume wheel step')?.value === '5'
+         const resetGeneral = [...document.querySelectorAll('button')].find(
+           (el) => (el.textContent || '').trim() === 'Reset General'
+         )
+         press(resetGeneral)
+         await sleep(700)
+         out.sectionResetRestored = selectField('Open at launch')?.value === 'last'
+
+         tab('About')
+         await sleep(700)
+         const aboutCard = [...document.querySelectorAll('.card')].find((card) => {
+           const heading = card.querySelector('h2')
+           return heading && (heading.textContent || '').trim().startsWith('About')
+         })
+         const statusNames = aboutCard
+           ? [...aboutCard.querySelectorAll('.status-name')].map((el) => (el.textContent || '').trim())
+           : []
+         const statusValues = aboutCard
+           ? [...aboutCard.querySelectorAll('.status-value')].map((el) => (el.textContent || '').trim())
+           : []
+         out.aboutRuntime =
+           ['Player', 'Electron', 'Chromium', 'Node'].every((name) => statusNames.includes(name)) &&
+           statusValues.some((value) => Number.isFinite(Number.parseFloat(value)))
+         const copyButton = aboutCard
+           ? [...aboutCard.querySelectorAll('button')].find((el) =>
+               (el.textContent || '').trim().startsWith('Copy diagnostics')
+             )
+           : null
+         if (copyButton) {
+           press(copyButton)
+           await sleep(800)
+           out.diagnosticsCopied = Boolean(aboutCard.querySelector('[role="status"]'))
+         }
          return out
        })()`
     )
@@ -1451,6 +1578,43 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       settingsSafety.healthCard && settingsSafety.healthActions,
       'settings: Misc offers duplicate and missing-file care',
       settingsSafety
+    )
+    record(
+      settingsSafety.startupChanged && settingsSafety.startupRestored,
+      'settings: startup view reaches settings and reset restores it',
+      settingsSafety
+    )
+    record(
+      settingsSafety.wheelChanged &&
+        settingsSafety.wheelRestored &&
+        settingsSafety.resumeChanged &&
+        settingsSafety.resumeRestored,
+      'settings: wheel step and automatic resume are wired and reset together',
+      settingsSafety
+    )
+    record(
+      settingsSafety.retentionChanged && settingsSafety.retentionRestored,
+      'settings: backup retention is editable and reset restores ten',
+      settingsSafety
+    )
+    record(
+      settingsSafety.sectionKeptOther && settingsSafety.sectionResetRestored,
+      'settings: a per-tab reset leaves the other tabs alone',
+      settingsSafety
+    )
+    record(
+      settingsSafety.aboutRuntime,
+      'settings: About shows the app and runtime versions',
+      settingsSafety
+    )
+    const diagnosticsText = await clipboard.readText()
+    record(
+      settingsSafety.diagnosticsCopied &&
+        diagnosticsText.includes('Player ') &&
+        diagnosticsText.includes('Library folders') &&
+        !/cookie/i.test(diagnosticsText),
+      'settings: Copy diagnostics puts versions and paths on the clipboard without cookies',
+      diagnosticsText.slice(0, 160)
     )
 
     // ---- 12. artwork preferences, bar ambience, volume -----------------
@@ -3181,6 +3345,70 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       afterReload?.queue === 2,
       'and the whole queue is back, not just the track',
       `${afterReload?.queue ?? -1} tracks in the queue`
+    )
+
+    // The default is quiet, but the Behaviour opt-in must actually start the
+    // restored queue. Turn it on through the UI, reload, and watch the primary
+    // button become Pause while the saved track is still there.
+    const autoplayArmed = await evaluate<boolean>(
+      window,
+      `(async () => {
+         const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+         const press = (el) => { if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
+         const resume = () => {
+           const label = [...document.querySelectorAll('.field.checkbox')].find((el) =>
+             (el.textContent || '').includes('Resume playback')
+           )
+           return label ? label.querySelector('input') : null
+         }
+         const settingsNav = [...document.querySelectorAll('.nav-item')].find(
+           (el) => ((el.textContent || '').trim().indexOf('Settings') === 0)
+         )
+         press(settingsNav)
+         await sleep(400)
+         const behaviourTab = [...document.querySelectorAll('.settings-tab')].find(
+           (el) => (el.textContent || '').trim() === 'Behaviour'
+         )
+         press(behaviourTab)
+         await sleep(300)
+         if (resume() && !resume().checked) resume().click()
+         await sleep(900)
+         return resume()?.checked === true
+       })()`
+    )
+
+    let autoplayRestored: { title: string; paused: boolean } | null = null
+    if (autoplayArmed) {
+      window.webContents.reload()
+      const autoplayDeadline = Date.now() + 15_000
+      while (Date.now() < autoplayDeadline) {
+        try {
+          autoplayRestored = await evaluate<{ title: string; paused: boolean }>(
+            window,
+            `(() => {
+               const pick = (s) => document.querySelector(s)
+               const text = (el) => ((el || {}).textContent || '')
+               const play = pick('.player-bar .icon-button.primary')
+               return {
+                 title: text(pick('.player-title')).trim(),
+                 paused: (play ? play.getAttribute('title') : '') !== 'Pause'
+               }
+             })()`
+          )
+        } catch {
+          autoplayRestored = null
+        }
+        if (autoplayRestored && autoplayRestored.title.length > 0 && !autoplayRestored.paused) break
+        await delay(200)
+      }
+    }
+
+    record(
+      autoplayArmed && autoplayRestored?.paused === false,
+      'automatic resume plays the restored queue when the Behaviour option is on',
+      autoplayArmed
+        ? `${autoplayRestored?.title || 'nothing'} / ${autoplayRestored?.paused ? 'paused' : 'playing'}`
+        : 'resume switch did not turn on'
     )
   } catch (error) {
     failures += 1

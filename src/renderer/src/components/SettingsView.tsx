@@ -7,7 +7,7 @@ import {
   SURFACE_CHOICES,
   THEME_CHOICES
 } from '@shared/appearance'
-import { DEFAULT_PREFERENCE_PATCH } from '@shared/settings-defaults'
+import { DEFAULT_PREFERENCE_PATCH, SECTION_PREFERENCE_PATCHES } from '@shared/settings-defaults'
 import type {
   AccentName,
   AppPaths,
@@ -28,6 +28,8 @@ import type {
   PoTokenStatus,
   QualityTier,
   RelocateReport,
+  RuntimeInfo,
+  StartupView,
   SurfaceStyle,
   ThemeMode
 } from '@shared/types'
@@ -37,6 +39,7 @@ import { FolderIcon, InfoIcon, RefreshIcon, SpinnerIcon, TrashIcon } from './Ico
 export interface SettingsViewProps {
   settings: AppSettings
   paths: AppPaths | null
+  runtimeInfo: RuntimeInfo | null
   engineStatus: EngineStatus | null
   engineLoading: boolean
   scanning: boolean
@@ -50,6 +53,7 @@ export interface SettingsViewProps {
   onStartPoToken: () => Promise<PoTokenStatus>
   onStopPoToken: () => Promise<PoTokenStatus>
   onOpenPath: (target: string) => void
+  onCopyDiagnostics: () => Promise<void>
   onBackupData: () => Promise<string | null>
   onRestoreData: () => Promise<boolean>
   onExportLibrary: () => Promise<string | null>
@@ -109,6 +113,30 @@ const CLICK_CHOICES: Array<{ value: LibraryClickAction; label: string }> = [
   { value: 'select-play', label: 'Select and play' },
   { value: 'nothing', label: 'Nothing' }
 ]
+
+const STARTUP_VIEW_CHOICES: Array<{ value: StartupView; label: string }> = [
+  { value: 'last', label: 'Last used' },
+  { value: 'library', label: 'Library' },
+  { value: 'online', label: 'YouTube' },
+  { value: 'search', label: 'Search' },
+  { value: 'playlists', label: 'Playlists' },
+  { value: 'queue', label: 'Queue' }
+]
+
+const VOLUME_WHEEL_CHOICES: Array<{ value: number; label: string }> = [
+  { value: 1, label: '1% (fine)' },
+  { value: 2, label: '2%' },
+  { value: 5, label: '5% (default)' },
+  { value: 10, label: '10%' },
+  { value: 15, label: '15% (coarse)' }
+]
+
+const SECTION_RESET_CHOICES = [
+  { id: 'general', label: 'General' },
+  { id: 'behaviour', label: 'Behaviour' },
+  { id: 'streaming', label: 'Streaming' },
+  { id: 'appearance', label: 'Appearance' }
+] as const
 
 const TABS = [
   { id: 'general', label: 'General' },
@@ -172,6 +200,7 @@ export function SettingsView(props: SettingsViewProps) {
   const {
     settings,
     paths,
+    runtimeInfo,
     engineStatus,
     engineLoading,
     scanning,
@@ -185,6 +214,7 @@ export function SettingsView(props: SettingsViewProps) {
     onStartPoToken,
     onStopPoToken,
     onOpenPath,
+    onCopyDiagnostics,
     onBackupData,
     onRestoreData,
     onExportLibrary,
@@ -206,6 +236,8 @@ export function SettingsView(props: SettingsViewProps) {
   const [providerBusy, setProviderBusy] = useState<'start' | 'stop' | null>(null)
   const [providerNote, setProviderNote] = useState<string | null>(null)
   const [providerError, setProviderError] = useState<string | null>(null)
+  const [diagnosticsBusy, setDiagnosticsBusy] = useState(false)
+  const [diagnosticsNote, setDiagnosticsNote] = useState<string | null>(null)
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
   const resetButtonRef = useRef<HTMLButtonElement | null>(null)
 
@@ -356,6 +388,19 @@ export function SettingsView(props: SettingsViewProps) {
     settings.engine.poTokenProviderUrl.trim().length > 0 &&
     !normalizePoTokenProviderUrl(settings.engine.poTokenProviderUrl)
 
+  const copyDiagnostics = async (): Promise<void> => {
+    setDiagnosticsBusy(true)
+    setDiagnosticsNote(null)
+    try {
+      await onCopyDiagnostics()
+      setDiagnosticsNote('Diagnostics copied to the clipboard.')
+    } catch (cause) {
+      setDiagnosticsNote(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setDiagnosticsBusy(false)
+    }
+  }
+
   const runRestore = async (): Promise<void> => {
     setDataBusy('restore')
     setDataError(null)
@@ -465,6 +510,50 @@ export function SettingsView(props: SettingsViewProps) {
                 </label>
               </div>
               <p className="card-hint">New, changed and removed files update the library without pressing Rescan.</p>
+            </article>
+
+            <article className="card">
+              <header className="card-header">
+                <h2>
+                  Startup
+                  <InfoHint label="About startup">
+                    Last used returns to the view you left open; Settings is never restored. The first launch after
+                    adding a folder always scans, even when the launch scan is off.
+                  </InfoHint>
+                </h2>
+              </header>
+              <p className="card-hint">
+                Where Player opens, and whether it checks the folders for changes made while it was closed.
+              </p>
+              <div className="field-grid">
+                <label className="field">
+                  <span>Open at launch</span>
+                  <select
+                    value={settings.startup.view}
+                    onChange={(event) => onUpdate({ startup: { view: event.target.value as StartupView } })}
+                  >
+                    {STARTUP_VIEW_CHOICES.map((choice) => (
+                      <option key={choice.value} value={choice.value}>
+                        {choice.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field checkbox">
+                  <input
+                    type="checkbox"
+                    checked={settings.startup.scanOnLaunch}
+                    onChange={(event) => onUpdate({ startup: { scanOnLaunch: event.target.checked } })}
+                  />
+                  <span>
+                    Scan library on launch
+                    <InfoHint label="About scanning on launch">
+                      An incremental scan compares size and timestamp, so unchanged files are not reopened. Turn it off
+                      for a large library on a slow or network drive and scan manually instead.
+                    </InfoHint>
+                  </span>
+                </label>
+              </div>
             </article>
           </div>
         </section>
@@ -760,6 +849,50 @@ export function SettingsView(props: SettingsViewProps) {
                       </option>
                     ))}
                   </select>
+                </label>
+              </div>
+            </article>
+
+            <article className="card">
+              <header className="card-header">
+                <h2>
+                  Volume &amp; startup
+                  <InfoHint label="About volume and startup">
+                    The wheel step applies to the volume control in the player bar and the full-window player. Holding
+                    Shift always uses one percent. Resuming a saved queue can start playback, so it is off by default.
+                  </InfoHint>
+                </h2>
+              </header>
+              <p className="card-hint">How much one wheel notch changes, and what happens to the last queue.</p>
+              <div className="field-grid">
+                <label className="field">
+                  <span>Volume wheel step</span>
+                  <select
+                    value={settings.interaction.volumeWheelStep}
+                    onChange={(event) =>
+                      onUpdate({ interaction: { volumeWheelStep: Number(event.target.value) } })
+                    }
+                  >
+                    {VOLUME_WHEEL_CHOICES.map((choice) => (
+                      <option key={choice.value} value={choice.value}>
+                        {choice.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field checkbox">
+                  <input
+                    type="checkbox"
+                    checked={settings.startup.resumePlayback}
+                    onChange={(event) => onUpdate({ startup: { resumePlayback: event.target.checked } })}
+                  />
+                  <span>
+                    Resume playback automatically
+                    <InfoHint label="About automatic resume">
+                      Restores the last local queue, seeks to the saved position and starts playing. With this off the
+                      queue still returns, but paused, so opening the app is quiet.
+                    </InfoHint>
+                  </span>
                 </label>
               </div>
             </article>
@@ -1273,13 +1406,33 @@ export function SettingsView(props: SettingsViewProps) {
                 <h2>
                   Backup &amp; restore
                   <InfoHint label="About backups">
-                    Automatic copies are taken at startup and before a library upgrade; the ten newest stay in the
-                    backups folder. Restore validates the chosen folder, moves current data aside, then restarts.
-                    Export includes paths and play counts.
+                    Automatic copies are taken at startup and before a library upgrade; only the newest count you
+                    choose stay in the backups folder. Restore validates the chosen folder, moves current data aside,
+                    then restarts. Export includes paths and play counts.
                   </InfoHint>
                 </h2>
               </header>
               <p className="card-hint">Automatic copies at startup and before upgrades; export a CSV for spreadsheets.</p>
+              <div className="field-grid">
+                <label className="field">
+                  <span>
+                    Automatic backups to keep
+                    <InfoHint label="About backup retention">
+                      The newest automatic and pre-upgrade copies are kept; older ones are deleted. Manual backups you
+                      created are never touched. Lowering this prunes the folder immediately.
+                    </InfoHint>
+                  </span>
+                  <input
+                    type="number"
+                    min={3}
+                    max={50}
+                    value={settings.backups.retentionCount}
+                    onChange={(event) =>
+                      onUpdate({ backups: { retentionCount: Number(event.target.value) } })
+                    }
+                  />
+                </label>
+              </div>
               <div className="field-row">
                 <button type="button" onClick={() => void runBackup()} disabled={dataBusy !== null}>
                   {dataBusy === 'backup' ? <SpinnerIcon /> : null}
@@ -1380,6 +1533,22 @@ export function SettingsView(props: SettingsViewProps) {
                 </h2>
               </header>
               <p className="card-hint">Puts preferences back to defaults; library folders and data stay.</p>
+              <div className="field-row">
+                {SECTION_RESET_CHOICES.map((choice) => (
+                  <button
+                    key={choice.id}
+                    type="button"
+                    onClick={() => {
+                      onUpdate(SECTION_PREFERENCE_PATCHES[choice.id])
+                      setConfirmReset(false)
+                      setResetDone(true)
+                    }}
+                  >
+                    Reset {choice.label}
+                  </button>
+                ))}
+              </div>
+              <p className="card-hint">Reset one tab at a time; the others and your folders stay as they are.</p>
               <div className="settings-reset">
                 {confirmReset ? (
                   <div className="reset-confirm" role="alert">
@@ -1446,6 +1615,52 @@ export function SettingsView(props: SettingsViewProps) {
               <p className="card-hint">
                 Local library, playlists, queue and YouTube playback. Streams can be saved with tags and cover.
               </p>
+              <ul className="status-list">
+                <li>
+                  <span className="status-name">Player</span>
+                  <span className="status-value">{runtimeInfo?.appVersion ?? 'loading…'}</span>
+                </li>
+                <li>
+                  <span className="status-name">Electron</span>
+                  <span className="status-value">{runtimeInfo?.electron ?? 'loading…'}</span>
+                </li>
+                <li>
+                  <span className="status-name">Chromium</span>
+                  <span className="status-value">{runtimeInfo?.chromium ?? 'loading…'}</span>
+                </li>
+                <li>
+                  <span className="status-name">Node</span>
+                  <span className="status-value">{runtimeInfo?.node ?? 'loading…'}</span>
+                </li>
+                <li className={engineStatus?.ytDlp.found ? 'ok' : ''}>
+                  <span className="status-name">yt-dlp</span>
+                  <span className="status-value">
+                    {engineStatus ? (engineStatus.ytDlp.version ?? 'not found') : 'not checked'}
+                  </span>
+                </li>
+                <li className={engineStatus?.ffmpeg.found ? 'ok' : ''}>
+                  <span className="status-name">ffmpeg</span>
+                  <span className="status-value">
+                    {engineStatus ? (engineStatus.ffmpeg.version ?? 'not found') : 'not checked'}
+                  </span>
+                </li>
+              </ul>
+              <div className="field-row">
+                <button type="button" onClick={() => void copyDiagnostics()} disabled={diagnosticsBusy}>
+                  {diagnosticsBusy ? <SpinnerIcon /> : null}
+                  <span>Copy diagnostics</span>
+                </button>
+                {paths ? (
+                  <button type="button" onClick={() => onOpenPath(paths.logs)}>
+                    Open logs
+                  </button>
+                ) : null}
+              </div>
+              {diagnosticsNote ? (
+                <p className="card-hint" role="status">
+                  {diagnosticsNote}
+                </p>
+              ) : null}
             </article>
           </div>
         </section>

@@ -37,6 +37,8 @@ export interface NowPlayingViewProps {
   positionMs: number
   durationMs: number
   volume: number
+  /** Percent per wheel notch. Shift still uses one percent. */
+  volumeWheelStep: number
   queueIndex: number
   /** The real queue, in the order it will play. Drives the panel below. */
   queue: Track[]
@@ -89,6 +91,7 @@ export function NowPlayingView(props: NowPlayingViewProps) {
     positionMs,
     durationMs,
     volume,
+    volumeWheelStep,
     queueIndex,
     queue,
     repeat,
@@ -129,7 +132,7 @@ export function NowPlayingView(props: NowPlayingViewProps) {
   // The wheel works anywhere on the volume control, not only over the button:
   // the fold-out slider lives inside the same box, so the whole control answers
   // to it.
-  const volumeBoxRef = useWheelVolume(volume, onVolume)
+  const volumeBoxRef = useWheelVolume(volume, onVolume, volumeWheelStep)
 
   // Focus moves into the dialog so the window it covers cannot be activated by
   // a stray Space, and so Escape has somewhere to land.

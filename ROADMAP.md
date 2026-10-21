@@ -283,8 +283,8 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
       as a panel inside the window, slid in by the button that opened it and dismissed by a press anywhere outside it
 - [x] Visuals settings: artwork square or circular, cropped to a square or given the cover's own shape, and sized from
       small to extra large; ambient player-bar background masked to no hard edge; volume as mute-on-click with the
-      slider revealed on hover, and a wheel over the control nudging it by five percent; the player bar's own speaker
-      icon is the same kind of toggle
+      slider revealed on hover, and a wheel over the control nudging it by 5% by default (configurable 1–25%, with
+      Shift still 1%); the player bar's own speaker icon is the same kind of toggle
 - [x] Click behaviour setting: single click and double click each choose select / play / select-and-play / nothing
 - [x] Playback: play/pause/next/prev/seek, volume, shuffle, repeat (off/all/one)
 - [x] Queue management (add to queue, jump, remove, clear)
@@ -448,6 +448,12 @@ works, but it has no hierarchy and no way to find a single option.
 - [x] Density pass after first use: Streaming is one column with two-column fields (no dead half-page under short
       cards), PO Token and cookie fallback are separate cards, and long explanations moved from General, Behaviour,
       Misc and About into info tooltips behind one-line hints
+- [x] Second pass on the controls themselves: General opens the last non-settings view by default (or a fixed Library,
+      YouTube, Search, Playlists or Queue) and can scan on launch; Behaviour sets the wheel step (5% default, 1–25,
+      Shift 1%) and can play the restored queue instead of leaving it paused; Misc sets automatic-backup retention
+      (10 default, 3–50) and prunes immediately; General, Behaviour, Streaming and Appearance each reset without
+      touching folders or the other tabs; About shows the app, Electron, Chromium and Node versions plus Copy diagnostics
+      (versions, paths, folder count and user agent, never cookies or library files)
 - [x] Accessibility and keyboard pass: tablist arrow/Home/End movement with roving focus, focusable scrollable panels,
       real `<label>` elements around every field, `aria-pressed` on the choice buttons, a live error banner and a
       two-step reset confirmation with a status message
@@ -464,7 +470,7 @@ visible effect. **Met.**
 - [x] Backup/restore of `library.db` + config; automatic rotating DB backups. Manual backups are a folder with the
       database, normalized settings and a manifest; restore validates integrity and schema before staging the swap for
       the next start. Automatic copies use `VACUUM INTO` when the newest copy is more than 24 hours old and before a
-      migration, and the ten newest managed copies rotate.
+      migration, and the configured number of managed copies rotates (10 by default, 3–50 in Misc).
 - [x] DB migrations framework: append-only versioned migrations, a `user_version` guard that refuses a newer schema, and
       a pre-migration backup whose path is named in a migration failure.
 - [x] Duplicate detection with safe merge: present local files are fingerprinted lazily with SHA-256, grouped, and

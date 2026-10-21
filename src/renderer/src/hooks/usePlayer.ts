@@ -43,10 +43,11 @@ export interface UsePlayerResult {
   /**
    * Put a saved queue back without starting it.
    *
-   * The track loads and seeks to `positionMs`, then stays paused: resuming means
-   * "carry on from where I was", not "make noise the moment the window opens".
+   * The track loads and seeks to `positionMs`, then stays paused unless
+   * `autoPlay` is true: resuming means "carry on from where I was", not "make
+   * noise the moment the window opens".
    */
-  restore: (tracks: Track[], startIndex: number, positionMs: number) => void
+  restore: (tracks: Track[], startIndex: number, positionMs: number, autoPlay?: boolean) => void
   /** Append to the queue without disturbing playback. */
   enqueue: (tracks: Track[]) => void
   removeAt: (position: number) => void
@@ -140,6 +141,8 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
    * render in between needs to see it.
    */
   const resumeRef = useRef<number | null>(null)
+  /** Whether the next load is a restore that should start playing. */
+  const resumePlayRef = useRef(false)
   /** Video ids already warmed this session, so a re-render never re-asks. */
   const prefetchedRef = useRef(new Set<string>())
 
@@ -204,6 +207,8 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     setIsLoading(true)
     const resumeAt = resumeRef.current
     resumeRef.current = null
+    const shouldPlay = resumePlayRef.current
+    resumePlayRef.current = false
     setPositionMs(resumeAt ?? 0)
     setDurationMs(current.durationMs ?? 0)
 
@@ -229,6 +234,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
           element.currentTime = target / 1000
           setPositionMs(target)
           setDurationMs(end ?? current.durationMs ?? 0)
+          if (shouldPlay) await element.play()
           return
         }
         await element.play()
@@ -405,17 +411,23 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     setPlayRequestId((value) => value + 1)
   }, [])
 
-  const restore = useCallback((tracks: Track[], startIndex: number, positionMs: number): void => {
-    if (tracks.length === 0) return
-    const safeIndex = startIndex >= 0 && startIndex < tracks.length ? startIndex : 0
-    originRef.current = null
-    resumeRef.current = positionMs > 0 ? Math.round(positionMs) : null
-    setEntries(tracks)
-    setIndex(safeIndex)
-    // The load effect keys off `current`, so an unchanged index would not reload;
-    // the request id makes "restore over the same track" work too.
-    setPlayRequestId((value) => value + 1)
-  }, [])
+  const restore = useCallback(
+    (tracks: Track[], startIndex: number, positionMs: number, autoPlay = false): void => {
+      if (tracks.length === 0) return
+      const safeIndex = startIndex >= 0 && startIndex < tracks.length ? startIndex : 0
+      originRef.current = null
+      // Keep a restore at position 0 on the seek path too. A null here means
+      // "normal load", which starts playback; a paused restore must not.
+      resumeRef.current = Number.isFinite(positionMs) ? Math.max(0, Math.round(positionMs)) : 0
+      resumePlayRef.current = autoPlay
+      setEntries(tracks)
+      setIndex(safeIndex)
+      // The load effect keys off `current`, so an unchanged index would not reload;
+      // the request id makes "restore over the same track" work too.
+      setPlayRequestId((value) => value + 1)
+    },
+    []
+  )
 
   const enqueue = useCallback((tracks: Track[]): void => {
     if (tracks.length === 0) return

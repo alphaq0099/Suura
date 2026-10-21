@@ -2,7 +2,7 @@ import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { DEFAULT_SETTINGS } from '@shared/settings-defaults'
-import type { AppSettings, DeepPartial } from '@shared/types'
+import { isStartupView, type AppSettings, type DeepPartial } from '@shared/types'
 import {
   DEFAULT_PO_TOKEN_PROVIDER_URL,
   isCookieFallbackMode,
@@ -33,6 +33,10 @@ export function mergeSettings(base: AppSettings, patch: DeepPartial<AppSettings>
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function clampInt(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, Math.round(value)))
 }
 
 export class SettingsService {
@@ -118,8 +122,32 @@ export class SettingsService {
     // A hand-edited config is still input from outside the type system. Keep the
     // reliability controls in a shape the UI and argument builders can trust.
     const engine = settings.engine
+    const interaction = isPlainObject(settings.interaction)
+      ? (settings.interaction as Partial<AppSettings['interaction']>)
+      : DEFAULT_SETTINGS.interaction
+    const startup = isPlainObject(settings.startup) ? settings.startup : DEFAULT_SETTINGS.startup
+    const backups = isPlainObject(settings.backups) ? settings.backups : DEFAULT_SETTINGS.backups
     settings = {
       ...settings,
+      interaction: {
+        ...DEFAULT_SETTINGS.interaction,
+        ...interaction,
+        volumeWheelStep:
+          typeof interaction.volumeWheelStep === 'number' && Number.isFinite(interaction.volumeWheelStep)
+            ? clampInt(interaction.volumeWheelStep, 1, 25)
+            : DEFAULT_SETTINGS.interaction.volumeWheelStep
+      },
+      startup: {
+        view: isStartupView(startup.view) ? startup.view : DEFAULT_SETTINGS.startup.view,
+        scanOnLaunch: startup.scanOnLaunch !== false,
+        resumePlayback: startup.resumePlayback === true
+      },
+      backups: {
+        retentionCount:
+          typeof backups.retentionCount === 'number' && Number.isFinite(backups.retentionCount)
+            ? clampInt(backups.retentionCount, 3, 50)
+            : DEFAULT_SETTINGS.backups.retentionCount
+      },
       engine: {
         ...engine,
         cookiesFromBrowser: isSupportedCookieBrowser(engine.cookiesFromBrowser)

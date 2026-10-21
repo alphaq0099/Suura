@@ -37,7 +37,23 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // a double click plays. Any other pairing is one dropdown away.
   interaction: {
     librarySingleClick: 'select',
-    libraryDoubleClick: 'play'
+    libraryDoubleClick: 'play',
+    // Five percent per wheel notch is fine-grained enough to tune and large
+    // enough that crossing the bar does not take a dozen gestures.
+    volumeWheelStep: 5
+  },
+  // `last` keeps the app where the user left it. The first-run scan still
+  // happens even when scanOnLaunch is off, so a new library is never empty by
+  // accident. Resume is off: restoring the queue should not start playback.
+  startup: {
+    view: 'last',
+    scanOnLaunch: true,
+    resumePlayback: false
+  },
+  // Ten automatic copies is roughly a month of daily launches without letting
+  // the backups folder grow without bound.
+  backups: {
+    retentionCount: 10
   },
   retention: {
     mode: 'stream',
@@ -97,6 +113,8 @@ export const DEFAULT_PREFERENCE_PATCH: DeepPartial<AppSettings> = {
   },
   visuals: { ...DEFAULT_SETTINGS.visuals },
   interaction: { ...DEFAULT_SETTINGS.interaction },
+  startup: { ...DEFAULT_SETTINGS.startup },
+  backups: { ...DEFAULT_SETTINGS.backups },
   retention: {
     mode: DEFAULT_SETTINGS.retention.mode,
     cacheBudgetMb: DEFAULT_SETTINGS.retention.cacheBudgetMb,
@@ -117,4 +135,55 @@ export const DEFAULT_PREFERENCE_PATCH: DeepPartial<AppSettings> = {
     importLimit: DEFAULT_SETTINGS.engine.importLimit,
     mixLimit: DEFAULT_SETTINGS.engine.mixLimit
   }
+}
+
+export type PreferenceSection = 'general' | 'behaviour' | 'streaming' | 'appearance'
+
+/**
+ * Per-tab reset patches. These deliberately mirror the preferences in each tab
+ * rather than everything the full reset touches: resetting General must not
+ * silently change the player volume or the saved-file format.
+ */
+export const SECTION_PREFERENCE_PATCHES: Record<PreferenceSection, DeepPartial<AppSettings>> = {
+  general: {
+    startup: {
+      view: DEFAULT_SETTINGS.startup.view,
+      scanOnLaunch: DEFAULT_SETTINGS.startup.scanOnLaunch
+    },
+    library: {
+      watchForChanges: DEFAULT_SETTINGS.library.watchForChanges
+    },
+    playlists: {
+      indexWidth: DEFAULT_SETTINGS.playlists.indexWidth
+    }
+  },
+  behaviour: {
+    interaction: { ...DEFAULT_SETTINGS.interaction },
+    startup: {
+      resumePlayback: DEFAULT_SETTINGS.startup.resumePlayback
+    }
+  },
+  streaming: {
+    retention: {
+      mode: DEFAULT_SETTINGS.retention.mode,
+      cacheBudgetMb: DEFAULT_SETTINGS.retention.cacheBudgetMb,
+      cacheMaxAgeDays: DEFAULT_SETTINGS.retention.cacheMaxAgeDays,
+      downloadFormat: DEFAULT_SETTINGS.retention.downloadFormat,
+      qualityTier: DEFAULT_SETTINGS.retention.qualityTier
+    },
+    engine: {
+      autoUpdate: DEFAULT_SETTINGS.engine.autoUpdate,
+      downloadConcurrency: DEFAULT_SETTINGS.engine.downloadConcurrency,
+      cookiesFromBrowser: DEFAULT_SETTINGS.engine.cookiesFromBrowser,
+      cookieBrowserProfile: DEFAULT_SETTINGS.engine.cookieBrowserProfile,
+      cookieFallback: DEFAULT_SETTINGS.engine.cookieFallback,
+      poTokenEnabled: DEFAULT_SETTINGS.engine.poTokenEnabled,
+      poTokenProviderUrl: DEFAULT_SETTINGS.engine.poTokenProviderUrl,
+      poTokenAutoStart: DEFAULT_SETTINGS.engine.poTokenAutoStart,
+      prefetchNext: DEFAULT_SETTINGS.engine.prefetchNext,
+      importLimit: DEFAULT_SETTINGS.engine.importLimit,
+      mixLimit: DEFAULT_SETTINGS.engine.mixLimit
+    }
+  },
+  appearance: { ...DEFAULT_APPEARANCE }
 }
