@@ -24,7 +24,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   playlists: {
     indexWidth: DEFAULT_PLAYLIST_INDEX_WIDTH
   },
-  // Dark is the default because it is the lowest-glare choice for a player that
+  // Midnight is the default because it is the lowest-glare choice for a player that
   // is often left open behind other work. Cream and Follow Windows are one click
   // away. Square + cropped is still what the library rows and the bar look like;
   // `contain` is there for anyone who would rather never see a cover cut off.

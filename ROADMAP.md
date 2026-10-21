@@ -382,7 +382,8 @@ leaves no temp folder; cancel and retry work from the dock. The disk-budget/offl
       both in parallel; every row carries a **Local** or **YouTube** badge. A local row plays a file at once. A
       YouTube row goes through the same add-link path as a pasted URL, so it is remembered in the YouTube history and
       uses the same resolve cache. Rows offer Play, Add to queue and Save to library; a YouTube search returns metadata
-      only, so no result is resolved or written until it is chosen.
+      only, so no result is resolved or written until it is chosen. The view stays mounted for the session, so leaving
+      Search and returning keeps the query, results and open channel; a restart clears them.
 - [x] Channel/artist pages (basic), **more from this channel**. A search result's channel id or handle opens a page of
       its recent videos in place, with the same row actions. Search results that carry only a display name fall back to
       a name search; the page says what it is instead of inventing a channel URL.
@@ -430,9 +431,10 @@ works, but it has no hierarchy and no way to find a single option.
       place under **Streaming**
 - [x] Streaming controls for the request budget: next-track prefetch, daily yt-dlp self-update, and an off-by-default
       browser-cookie selector with its privacy caveat
-- [x] Bounded Appearance: Dark/Cream/Follow Windows, five contrast-checked accents, Compact/Comfortable/Spacious
-      density, Solid/Frosted surfaces (CSS blur, not native acrylic), motion preference, cover-art options and reset.
-      No arbitrary CSS, icon packs, custom fonts, layout builder, custom accent or Material theme in v1
+- [x] Bounded Appearance: Midnight/Cream/Follow Windows, five contrast-checked accents, Compact/Comfortable/Spacious
+      density, Solid/Accented surfaces (accent wash and CSS blur, not native acrylic or album-art frost), motion
+      preference with a live preview, info-icon explanations, cover-art options and reset. No arbitrary CSS, icon packs,
+      custom fonts, layout builder, custom accent or Material theme in v1
 - [x] Review defaults and reset-to-default. **Misc → Reset preferences** restores playback, appearance, behaviour, import
       limits, saving quality and request-budget choices from the same defaults a first launch uses, while keeping the
       library, engine and download folders and the last engine-update timestamp. Settings export/restore is deliberately

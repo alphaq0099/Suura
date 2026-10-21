@@ -17,6 +17,12 @@ import {
 } from './Icons'
 
 export interface SearchViewProps {
+  /**
+   * Keeps the view mounted while another view is active. The search state is
+   * deliberately session-only: navigating away and back must not lose results,
+   * but a restart should start clean.
+   */
+  active: boolean
   downloads: UseDownloadsResult
   /** The local track that is on the player, if any. */
   currentTrackId: number | null
@@ -79,6 +85,7 @@ function artworkTrack(result: YouTubeSearchResult): Track {
  */
 export function SearchView(props: SearchViewProps) {
   const {
+    active,
     downloads,
     currentTrackId,
     currentVideoId,
@@ -292,7 +299,7 @@ export function SearchView(props: SearchViewProps) {
   const hasResults = submitted.length > 0 && (local.length > 0 || youtube.length > 0)
 
   return (
-    <section className="main-view discover-view">
+    <section className="main-view discover-view" hidden={!active}>
       <header className="view-header">
         <div className="view-heading">
           <h1>{channel ? channel.name : 'Search'}</h1>

@@ -20,7 +20,7 @@ export const APPEARANCE_CACHE_KEY = 'player.appearance.v1'
 export const THEME_MODES: readonly ThemeMode[] = ['dark', 'light', 'system']
 export const ACCENTS: readonly AccentName[] = ['blue', 'teal', 'violet', 'rose', 'amber']
 export const DENSITIES: readonly Density[] = ['compact', 'comfortable', 'spacious']
-export const SURFACES: readonly SurfaceStyle[] = ['solid', 'frosted']
+export const SURFACES: readonly SurfaceStyle[] = ['solid', 'accented']
 export const MOTION_PREFERENCES: readonly MotionPreference[] = ['system', 'reduced', 'full']
 
 export interface ThemeChoice {
@@ -36,7 +36,7 @@ export interface AppearanceChoice<T extends string> {
 }
 
 export const THEME_CHOICES: readonly ThemeChoice[] = [
-  { value: 'dark', label: 'Dark', hint: 'Dim and low-glare' },
+  { value: 'dark', label: 'Midnight', hint: 'Deep blue-black' },
   { value: 'light', label: 'Cream', hint: 'Warm off-white' },
   { value: 'system', label: 'Follow Windows', hint: 'Match Windows' }
 ]
@@ -61,7 +61,7 @@ export const DENSITY_CHOICES: readonly AppearanceChoice<Density>[] = [
 
 export const SURFACE_CHOICES: readonly AppearanceChoice<SurfaceStyle>[] = [
   { value: 'solid', label: 'Solid', hint: 'Flat, predictable panels' },
-  { value: 'frosted', label: 'Frosted', hint: 'Translucent panels with blur' }
+  { value: 'accented', label: 'Accented', hint: 'Accent-tinted translucent panels' }
 ]
 
 export const MOTION_CHOICES: readonly AppearanceChoice<MotionPreference>[] = [

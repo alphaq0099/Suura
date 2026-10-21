@@ -1755,9 +1755,19 @@ async function main(): Promise<void> {
     // Appearance is deliberately bounded: the UI offers a fixed set, so these
     // checks guard against a choice being added to the renderer without a
     // matching default, label or validation value.
-    checkEqual('appearance: Dark is the default theme', DEFAULT_SETTINGS.theme, 'dark')
+    checkEqual('appearance: Midnight is the default theme', DEFAULT_SETTINGS.theme, 'dark')
     checkEqual('appearance: the five accents are offered', ACCENT_CHOICES.length, 5)
     check('appearance: every theme has a label and a hint', THEME_CHOICES.every((choice) => choice.label.length > 0 && choice.hint.length > 0))
+    checkEqual(
+      'appearance: the blue-black theme is named Midnight',
+      THEME_CHOICES.find((choice) => choice.value === 'dark')?.label,
+      'Midnight'
+    )
+    checkEqual(
+      'appearance: the accent-tinted surface is named Accented',
+      SURFACE_CHOICES.find((choice) => choice.value === 'accented')?.label,
+      'Accented'
+    )
     check('appearance: every density has a label', DENSITY_CHOICES.every((choice) => choice.label.length > 0))
     check('appearance: every surface has a label', SURFACE_CHOICES.every((choice) => choice.label.length > 0))
     check('appearance: every motion choice has a label', MOTION_CHOICES.every((choice) => choice.label.length > 0))
@@ -1776,7 +1786,7 @@ async function main(): Promise<void> {
       visuals: {
         accent: 'rose',
         density: 'compact',
-        surface: 'frosted',
+        surface: 'accented',
         motion: 'reduced',
         artworkShape: 'circle',
         artworkFit: 'contain',
@@ -1788,7 +1798,7 @@ async function main(): Promise<void> {
     checkEqual('appearance: a theme patch deep-merges', appearanceSettings.theme, 'light')
     checkEqual('appearance: an accent patch deep-merges', appearanceSettings.visuals.accent, 'rose')
     checkEqual('appearance: a density patch deep-merges', appearanceSettings.visuals.density, 'compact')
-    checkEqual('appearance: a surface patch deep-merges', appearanceSettings.visuals.surface, 'frosted')
+    checkEqual('appearance: a surface patch deep-merges', appearanceSettings.visuals.surface, 'accented')
     checkEqual('appearance: a motion patch deep-merges', appearanceSettings.visuals.motion, 'reduced')
     checkEqual('appearance: an artwork patch deep-merges', appearanceSettings.visuals.artworkShape, 'circle')
     checkEqual('appearance: a player-artwork patch deep-merges', appearanceSettings.visuals.playerArtwork, false)

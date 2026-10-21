@@ -1121,9 +1121,10 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       compactRowHeight: number
       compactCssHeight: string
       surfaceReachedRoot: boolean
-      frostedBlur: string
+      accentedBlur: string
       motionReachedRoot: boolean
       reducedTransitionMs: number
+      motionPreviewAnimation: string
       resetTheme: string
       resetAccent: string
       resetDensity: string
@@ -1137,8 +1138,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            themeReachedRoot: false, themeButtonPressed: '', creamBackground: '',
            accentReachedRoot: false, accentVariable: '',
            densityReachedRoot: false, compactRowHeight: -1, compactCssHeight: '',
-           surfaceReachedRoot: false, frostedBlur: '',
-           motionReachedRoot: false, reducedTransitionMs: -1,
+           surfaceReachedRoot: false, accentedBlur: '',
+           motionReachedRoot: false, reducedTransitionMs: -1, motionPreviewAnimation: '',
            resetTheme: '', resetAccent: '', resetDensity: '', resetSurface: '', resetMotion: '',
            comfortableRowHeight: -1
          }
@@ -1189,16 +1190,18 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          await sleep(300)
          tab('Appearance')
          await sleep(200)
-         press(choice('data-surface-choice', 'frosted'))
+         press(choice('data-surface-choice', 'accented'))
          await sleep(450)
-         out.surfaceReachedRoot = root.dataset.surface === 'frosted'
+         out.surfaceReachedRoot = root.dataset.surface === 'accented'
          const sidebar = document.querySelector('.sidebar')
-         out.frostedBlur = sidebar ? getComputedStyle(sidebar).backdropFilter : ''
+         out.accentedBlur = sidebar ? getComputedStyle(sidebar).backdropFilter : ''
 
          press(choice('data-motion-choice', 'reduced'))
          await sleep(450)
          out.motionReachedRoot = root.dataset.motion === 'reduced'
          out.reducedTransitionMs = transitionMs(choice('data-theme-choice', 'light'))
+         const previewBar = document.querySelector('.motion-preview-bars span')
+         out.motionPreviewAnimation = previewBar ? getComputedStyle(previewBar).animationName : ''
 
          press(document.querySelector('.appearance-reset button'))
          await sleep(700)
@@ -1237,13 +1240,15 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       appearance
     )
     record(
-      appearance.surfaceReachedRoot && appearance.frostedBlur.includes('blur'),
-      'appearance: Frosted uses a CSS blur rather than native acrylic',
+      appearance.surfaceReachedRoot && appearance.accentedBlur.includes('blur'),
+      'appearance: Accented uses a CSS blur rather than native acrylic',
       appearance
     )
     record(
-      appearance.motionReachedRoot && appearance.reducedTransitionMs <= 0.01,
-      'appearance: Reduced motion folds transitions',
+      appearance.motionReachedRoot &&
+        appearance.reducedTransitionMs <= 0.01 &&
+        appearance.motionPreviewAnimation === 'none',
+      'appearance: Reduced motion folds transitions and freezes the preview',
       appearance
     )
     record(

@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent } from 'react'
+import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import {
   ACCENT_CHOICES,
   DEFAULT_APPEARANCE,
@@ -30,7 +30,7 @@ import type {
   ThemeMode
 } from '@shared/types'
 import { COOKIE_BROWSERS } from '@shared/youtube'
-import { FolderIcon, RefreshIcon, SpinnerIcon, TrashIcon } from './Icons'
+import { FolderIcon, InfoIcon, RefreshIcon, SpinnerIcon, TrashIcon } from './Icons'
 
 export interface SettingsViewProps {
   settings: AppSettings
@@ -110,6 +110,33 @@ const TABS = [
 ] as const
 
 type TabId = (typeof TABS)[number]['id']
+
+/**
+ * A compact explanation that stays out of the way until it is needed.
+ *
+ * The trigger is focusable as well as hoverable, so the text is reachable
+ * without a mouse. `aria-describedby` ties the visible bubble to the icon
+ * instead of leaving it as decoration.
+ */
+function InfoHint(props: { label: string; children: ReactNode }) {
+  const id = useId()
+  return (
+    <span className="info-hint">
+      <span
+        className="info-hint-trigger"
+        tabIndex={0}
+        role="img"
+        aria-label={props.label}
+        aria-describedby={id}
+      >
+        <InfoIcon size={13} />
+      </span>
+      <span id={id} className="info-hint-bubble" role="tooltip">
+        {props.children}
+      </span>
+    </span>
+  )
+}
 
 function describeExecutable(status: ExecutableStatus): string {
   if (!status.found) return status.error ?? 'Not found.'
@@ -399,12 +426,14 @@ export function SettingsView(props: SettingsViewProps) {
             <div className="cards-col">
               <article className="card">
                 <header className="card-header">
-                  <h2>Theme</h2>
+                  <h2>
+                    Theme
+                    <InfoHint label="About themes">
+                      Midnight is the deep blue-black default. Cream is a warm off-white. Follow Windows switches live
+                      with the operating system.
+                    </InfoHint>
+                  </h2>
                 </header>
-                <p className="card-hint">
-                  Dark is the default. Cream is a warm off-white rather than a pure white, and Follow Windows changes
-                  with the operating system while the app is open.
-                </p>
                 <div className="theme-choices" role="group" aria-label="Theme">
                   {THEME_CHOICES.map((choice) => (
                     <button
@@ -453,7 +482,13 @@ export function SettingsView(props: SettingsViewProps) {
                   <h2>Layout &amp; motion</h2>
                 </header>
                 <div className="field">
-                  <span>Density</span>
+                  <span>
+                    Density
+                    <InfoHint label="About density">
+                      Compact fits more rows on screen, Comfortable is the default balance, and Spacious gives titles
+                      and artwork more air.
+                    </InfoHint>
+                  </span>
                   <div className="segmented" role="group" aria-label="Density">
                     {DENSITY_CHOICES.map((choice) => (
                       <button
@@ -471,7 +506,13 @@ export function SettingsView(props: SettingsViewProps) {
                   </div>
                 </div>
                 <div className="field">
-                  <span>Surface</span>
+                  <span>
+                    Surface
+                    <InfoHint label="About surfaces">
+                      Solid uses flat panels. Accented adds an accent-coloured wash and a translucent blur. It is not
+                      Windows acrylic, and it does not sample the current cover art.
+                    </InfoHint>
+                  </span>
                   <div className="segmented" role="group" aria-label="Surface">
                     {SURFACE_CHOICES.map((choice) => (
                       <button
@@ -489,7 +530,13 @@ export function SettingsView(props: SettingsViewProps) {
                   </div>
                 </div>
                 <div className="field">
-                  <span>Motion</span>
+                  <span>
+                    Motion
+                    <InfoHint label="About motion">
+                      Follow Windows uses the system animation setting. Reduced removes most transitions but keeps a
+                      slow spinner. Full always animates. The bars below preview the difference.
+                    </InfoHint>
+                  </span>
                   <div className="segmented" role="group" aria-label="Motion">
                     {MOTION_CHOICES.map((choice) => (
                       <button
@@ -506,23 +553,29 @@ export function SettingsView(props: SettingsViewProps) {
                     ))}
                   </div>
                 </div>
-                <p className="card-hint">
-                  Compact fits more rows on screen; Spacious gives titles and artwork more air. Frosted panels use a
-                  controlled CSS blur over the app&apos;s own background — not the native acrylic or Mica effect, so it
-                  looks and behaves the same on every Windows build.
-                </p>
+                <div className="motion-preview" aria-hidden="true">
+                  <span className="motion-preview-label">Preview</span>
+                  <span className="motion-preview-bars">
+                    <span />
+                    <span />
+                    <span />
+                  </span>
+                </div>
               </article>
             </div>
 
             <div className="cards-col">
               <article className="card">
                 <header className="card-header">
-                  <h2>Cover art</h2>
+                  <h2>
+                    Cover art
+                    <InfoHint label="About cover art">
+                      Shape and fit apply to library rows, the player bar and the full-window player. A circle is always
+                      cropped. Size applies only to the full-window player; ambience takes its colour from the current
+                      cover.
+                    </InfoHint>
+                  </h2>
                 </header>
-                <p className="card-hint">
-                  How cover art is drawn. The shape applies everywhere it appears: the library rows, the player bar and
-                  the player window.
-                </p>
                 <div className="field-grid">
                   <label className="field">
                     <span>Artwork shape</span>
@@ -583,15 +636,6 @@ export function SettingsView(props: SettingsViewProps) {
                     <span>Tint the player with the cover&apos;s colour</span>
                   </label>
                 </div>
-                <p className="card-hint">
-                  Cropping keeps every tile the same shape, which is what most players do, and is all that reads at
-                  thumbnail size. Fitting is for the player window&apos;s large artwork, where the box takes the
-                  cover&apos;s own proportions: nothing is cut off and nothing is left blank around it. A circle only
-                  exists on a square, so round artwork is always cropped. Size applies to the player window&apos;s
-                  artwork; it is a proportion of the space the window leaves over, so the cover never overflows it.
-                  Turning the ambience off leaves the bar and the player window on the flat theme colour, which is
-                  cheaper to render and easier on a slow machine.
-                </p>
               </article>
             </div>
           </div>

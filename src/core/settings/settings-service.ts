@@ -86,6 +86,14 @@ export class SettingsService {
     if (settings.retention.mode !== 'stream') {
       settings = { ...settings, retention: { ...settings.retention, mode: 'stream' } }
     }
+
+    // The old surface value described the CSS blur as "frosted", but it is an
+    // accent tint rather than an album-art frost. Accept the old spelling from
+    // config files written by an earlier build and normalise it on read.
+    const storedSurface = (settings.visuals as { surface?: unknown }).surface
+    if (storedSurface === 'frosted') {
+      settings = { ...settings, visuals: { ...settings.visuals, surface: 'accented' } }
+    }
     return settings
   }
 

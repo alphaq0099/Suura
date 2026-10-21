@@ -575,18 +575,7 @@ export function App() {
           onAddTracksToPlaylist={playlists.addTracks}
           onCreatePlaylist={playlists.create}
         />
-      ) : view === 'search' ? (
-        <SearchView
-          downloads={downloads}
-          currentTrackId={player.current?.id ?? null}
-          currentVideoId={player.current?.sourceKind === 'youtube' ? (player.current.sourceId ?? null) : null}
-          isPlaying={player.isPlaying}
-          onPlayLocal={(queue) => player.playQueue(queue, 0)}
-          onQueueLocal={player.enqueue}
-          onPlayYouTube={playYouTubeResult}
-          onQueueYouTube={queueYouTubeResult}
-        />
-      ) : view === 'online' ? (
+      ) : view === 'search' ? null : view === 'online' ? (
         <OnlineView
           entries={online.entries}
           onlinePlaylists={playlists.onlinePlaylists}
@@ -679,6 +668,20 @@ export function App() {
           onRelocateMissing={relocateMissing}
         />
       )}
+
+      {/* Mounted for the whole session so a search survives a trip to another
+          view. It is hidden rather than unmounted; a restart still starts empty. */}
+      <SearchView
+        active={view === 'search'}
+        downloads={downloads}
+        currentTrackId={player.current?.id ?? null}
+        currentVideoId={player.current?.sourceKind === 'youtube' ? (player.current.sourceId ?? null) : null}
+        isPlaying={player.isPlaying}
+        onPlayLocal={(queue) => player.playQueue(queue, 0)}
+        onQueueLocal={player.enqueue}
+        onPlayYouTube={playYouTubeResult}
+        onQueueYouTube={queueYouTubeResult}
+      />
 
       <SavesPanel downloads={downloads} onReveal={(trackId) => void revealTrack(trackId)} />
 
