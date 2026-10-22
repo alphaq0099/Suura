@@ -71,6 +71,15 @@ export type ArtworkFit = 'cover' | 'contain'
  */
 export type ArtworkSize = 'small' | 'medium' | 'large' | 'xlarge'
 
+/** How large interface text is drawn, from the compact scale to the largest. */
+export type TextSize = 'small' | 'medium' | 'large' | 'xlarge'
+
+/**
+ * Which sidebar glyph family the app uses. `modern` is the default set: rounder,
+ * more distinct silhouettes. `classic` keeps the original outline set.
+ */
+export type IconSet = 'modern' | 'classic'
+
 /**
  * What a click on a library row does.
  *
@@ -537,6 +546,14 @@ export interface VisualSettings {
   artworkShape: ArtworkShape
   artworkFit: ArtworkFit
   artworkSize: ArtworkSize
+  /** How large the cover is in the Playlists view header. */
+  playlistArtworkSize: ArtworkSize
+  /** Global text scale, applied through `--text-scale`. */
+  textSize: TextSize
+  /** Sidebar glyph family. */
+  iconSet: IconSet
+  /** Keep the Album column in track lists. */
+  showAlbumColumn: boolean
   /** Whether the full-window player draws the large cover. */
   playerArtwork: boolean
   /** Whether cover art tints the player bar and the full-window background. */

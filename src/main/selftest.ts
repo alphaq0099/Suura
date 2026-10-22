@@ -796,8 +796,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       streamTitles: string
       saveButtons: number
       queueButtons: number
-      removeButtons: number
-      detailsButtons: number
+      menuButtons: number
+      removeFromMenu: boolean
+      detailsInMenu: boolean
       neverActive: string
       neverRows: number
       neverHasStreams: boolean
@@ -837,8 +838,24 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          const streamTitles = titles()
          const saveButtons = buttonsWith('Save to your library')
          const queueButtons = buttonsWith('Add to queue')
-         const removeButtons = buttonsWith('Remove from history')
-         const detailsButtons = buttonsWith('Details')
+         const menuButtons = buttonsWith('More actions')
+
+         // Remove and Details are behind the row menu now. Open one menu to
+         // prove both entries are still there, then close it without acting.
+         const firstMore = streamRows[0]
+           ? [...streamRows[0].querySelectorAll('button')].find(
+               (button) => button.getAttribute('title') === 'More actions'
+             )
+           : null
+         firstMore?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await sleep(200)
+         const menuLabels = [...document.querySelectorAll('.row-menu .context-item')].map((el) =>
+           (el.textContent || '').trim()
+         )
+         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+         await sleep(100)
+         const removeFromMenu = menuLabels.includes('Remove from history')
+         const detailsInMenu = menuLabels.includes('Details')
 
          chip('Never played')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
          await sleep(450)
@@ -863,8 +880,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            streamTitles: streamTitles.join('|'),
            saveButtons,
            queueButtons,
-           removeButtons,
-           detailsButtons,
+           menuButtons,
+           removeFromMenu,
+           detailsInMenu,
            neverActive,
            neverRows,
            neverHasStreams,
@@ -895,14 +913,16 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     record(
       libraryViews.saveButtons === 3 &&
         libraryViews.queueButtons === 3 &&
-        libraryViews.removeButtons === 3 &&
-        libraryViews.detailsButtons === 3,
+        libraryViews.menuButtons === 3 &&
+        libraryViews.removeFromMenu &&
+        libraryViews.detailsInMenu,
       'library: stream rows can be saved, queued, forgotten and inspected',
       {
         save: libraryViews.saveButtons,
         queue: libraryViews.queueButtons,
-        remove: libraryViews.removeButtons,
-        details: libraryViews.detailsButtons
+        menu: libraryViews.menuButtons,
+        remove: libraryViews.removeFromMenu,
+        details: libraryViews.detailsInMenu
       }
     )
     record(
@@ -1128,11 +1148,21 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       motionReachedRoot: boolean
       reducedTransitionMs: number
       motionPreviewAnimation: string
+      textSizeReachedRoot: boolean
+      xlargeBodyPx: number
+      iconSetReachedRoot: boolean
+      classicSidebarIconSet: string
+      albumHidden: boolean
+      albumColumnDisplay: string
       resetTheme: string
       resetAccent: string
       resetDensity: string
       resetSurface: string
       resetMotion: string
+      resetTextSize: string
+      resetIconSet: string
+      resetAlbumColumn: string
+      mediumBodyPx: number
       comfortableRowHeight: number
     }>(
       window,
@@ -1143,7 +1173,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            densityReachedRoot: false, compactRowHeight: -1, compactCssHeight: '',
            surfaceReachedRoot: false, accentedBlur: '',
            motionReachedRoot: false, reducedTransitionMs: -1, motionPreviewAnimation: '',
+           textSizeReachedRoot: false, xlargeBodyPx: -1,
+           iconSetReachedRoot: false, classicSidebarIconSet: '',
+           albumHidden: false, albumColumnDisplay: '',
            resetTheme: '', resetAccent: '', resetDensity: '', resetSurface: '', resetMotion: '',
+           resetTextSize: '', resetIconSet: '', resetAlbumColumn: '', mediumBodyPx: -1,
            comfortableRowHeight: -1
          }
          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -1206,6 +1240,33 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          const previewBar = document.querySelector('.motion-preview-bars span')
          out.motionPreviewAnimation = previewBar ? getComputedStyle(previewBar).animationName : ''
 
+         // Text size and the sidebar glyphs are global choices; the Album column
+         // is a layout choice. Check the DOM that each one actually changes.
+         press(choice('data-text-size-choice', 'xlarge'))
+         await sleep(450)
+         out.textSizeReachedRoot = root.dataset.textSize === 'xlarge'
+         out.xlargeBodyPx = parseFloat(getComputedStyle(document.body).fontSize)
+
+         press(choice('data-icon-set-choice', 'classic'))
+         await sleep(450)
+         out.iconSetReachedRoot = document.querySelector('.app')?.dataset.iconSet === 'classic'
+         out.classicSidebarIconSet = document.querySelector('.sidebar')?.dataset.iconSet || ''
+
+         const albumToggle = document.querySelector('[data-album-column-toggle]')
+         if (albumToggle && albumToggle.checked) {
+           press(albumToggle)
+           await sleep(450)
+         }
+         out.albumHidden = document.querySelector('.app')?.dataset.albumColumn === 'hide'
+         nav('Library')
+         await sleep(400)
+         const albumCell = document.querySelector('.track-row .col-album')
+         out.albumColumnDisplay = albumCell ? getComputedStyle(albumCell).display : ''
+         nav('Settings')
+         await sleep(300)
+         tab('Appearance')
+         await sleep(200)
+
          press(document.querySelector('.appearance-reset button'))
          await sleep(700)
          out.resetTheme = root.dataset.theme || ''
@@ -1213,9 +1274,13 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.resetDensity = root.dataset.density || ''
          out.resetSurface = root.dataset.surface || ''
          out.resetMotion = root.dataset.motion || ''
+         out.resetTextSize = root.dataset.textSize || ''
+         out.resetIconSet = document.querySelector('.app')?.dataset.iconSet || ''
+         out.resetAlbumColumn = document.querySelector('.app')?.dataset.albumColumn || ''
 
          nav('Library')
          await sleep(400)
+         out.mediumBodyPx = parseFloat(getComputedStyle(document.body).fontSize)
          const comfortableRow = document.querySelector('.track-row')
          out.comfortableRowHeight = comfortableRow ? Math.round(comfortableRow.getBoundingClientRect().height) : -1
          nav('Settings')
@@ -1255,11 +1320,25 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       appearance
     )
     record(
+      appearance.textSizeReachedRoot &&
+        appearance.xlargeBodyPx > 17 &&
+        appearance.iconSetReachedRoot &&
+        appearance.classicSidebarIconSet === 'classic' &&
+        appearance.albumHidden &&
+        appearance.albumColumnDisplay === 'none',
+      'appearance: text size, sidebar icons and the Album column reach the app',
+      appearance
+    )
+    record(
       appearance.resetTheme === 'dark' &&
         appearance.resetAccent === 'blue' &&
         appearance.resetDensity === 'comfortable' &&
         appearance.resetSurface === 'solid' &&
-        appearance.resetMotion === 'system',
+        appearance.resetMotion === 'system' &&
+        appearance.resetTextSize === 'medium' &&
+        appearance.resetIconSet === 'modern' &&
+        appearance.resetAlbumColumn === 'show' &&
+        appearance.mediumBodyPx < 16,
       'appearance: Reset puts every choice back',
       appearance
     )
@@ -2556,9 +2635,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            out.actionsInside = lastButton.getBoundingClientRect().right <= listEl.getBoundingClientRect().right + 1
          }
 
-         // --- remove one row with its own button
+         // --- remove one row through its row menu
          const secondRow = pickAll('.track-row')[1]
-         press(secondRow ? secondRow.querySelector('button[title="Remove from playlist"]') : null)
+         press(secondRow ? secondRow.querySelector('button[title="More actions"]') : null)
+         await sleep(250)
+         press(pickAll('.row-menu .context-item').find((el) => text(el).trim() === 'Remove from playlist'))
          await sleep(600)
          out.rowsAfterRemove = titles().length
 
@@ -2567,8 +2648,10 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          await sleep(800)
          out.playedTitle = barTitle()
 
-         // --- rename it
-         press(pick('.playlist-row .icon-button[title="Rename playlist"]'))
+         // --- rename it from the index row's menu
+         press(pick('.playlist-row .playlist-row-menu'))
+         await sleep(250)
+         press(pickAll('.row-menu .context-item').find((el) => text(el).trim() === 'Rename'))
          await sleep(300)
          setInput(pick('.playlist-rename .playlist-input'), 'Selftest Renamed')
          await sleep(150)
@@ -2618,10 +2701,14 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          await sleep(500)
          out.countAfterQueueSave = countInIndex()
 
-         // --- delete it (the bin asks once)
-         press(pick('.playlist-row .icon-button[title="Delete playlist"]'))
+         // --- delete it (the menu asks once, then confirms in place)
+         press(pick('.playlist-row .playlist-row-menu'))
          await sleep(250)
-         press(pick('.playlist-row .icon-button[aria-label^="Confirm deleting"]'))
+         press(pickAll('.row-menu .context-item').find((el) => text(el).trim() === 'Delete playlist'))
+         await sleep(250)
+         press(
+           pickAll('.row-menu .context-item').find((el) => text(el).trim().indexOf('Delete playlist?') === 0)
+         )
          await sleep(700)
          out.deleted = !pick('.playlist-row')
          out.emptyAfterDelete = text(pick('.empty-state h2')) === 'No playlists yet'
@@ -3074,7 +3161,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
 
          // Rename the snapshot from the index. The name is stored apart from the
          // YouTube title, so a later Re-import cannot silently undo it.
-         press(pick('.playlist-row.online button[title="Rename imported playlist"]'))
+         press(pick('.playlist-row.online .playlist-row-menu'))
+         await sleep(250)
+         press(pickAll('.row-menu .context-item').find((el) => text(el).trim() === 'Rename'))
          await sleep(300)
          setInput(pick('.playlist-row.online .playlist-rename input'), 'Selftest Album Renamed')
          await sleep(150)
@@ -3083,7 +3172,13 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.renamedTitle = text(pick('.playlist-pane-head h2')).trim()
          out.renamedIndex = text(pick('.playlist-row.online .playlist-title')).trim()
 
-         press(pick('.track-row button[title="Remove from this playlist"]'))
+         press(pick('.track-row button[title="More actions"]'))
+         await sleep(250)
+         press(
+           pickAll('.row-menu .context-item').find(
+             (el) => text(el).trim() === 'Remove from this playlist'
+           )
+         )
          await sleep(700)
          out.rowsAfterRemove = pickAll('.track-row').length
          const groupAfter = onlineGroup()

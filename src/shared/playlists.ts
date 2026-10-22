@@ -6,7 +6,7 @@
  */
 export const PLAYLIST_INDEX_MIN = 160
 export const PLAYLIST_INDEX_MAX = 520
-export const DEFAULT_PLAYLIST_INDEX_WIDTH = 240
+export const DEFAULT_PLAYLIST_INDEX_WIDTH = 220
 
 /** Clamps a stored or dragged width to the range the layout can honour. */
 export function clampPlaylistIndexWidth(width: number): number {

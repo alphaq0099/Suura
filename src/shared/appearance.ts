@@ -1,10 +1,13 @@
 import type {
   AccentName,
   AppSettings,
+  ArtworkSize,
   DeepPartial,
   Density,
+  IconSet,
   MotionPreference,
   SurfaceStyle,
+  TextSize,
   ThemeMode
 } from './types'
 
@@ -22,6 +25,9 @@ export const ACCENTS: readonly AccentName[] = ['blue', 'teal', 'violet', 'rose',
 export const DENSITIES: readonly Density[] = ['compact', 'comfortable', 'spacious']
 export const SURFACES: readonly SurfaceStyle[] = ['solid', 'accented']
 export const MOTION_PREFERENCES: readonly MotionPreference[] = ['system', 'reduced', 'full']
+export const ARTWORK_SIZES: readonly ArtworkSize[] = ['small', 'medium', 'large', 'xlarge']
+export const TEXT_SIZES: readonly TextSize[] = ['small', 'medium', 'large', 'xlarge']
+export const ICON_SETS: readonly IconSet[] = ['modern', 'classic']
 
 export interface ThemeChoice {
   value: ThemeMode
@@ -70,6 +76,18 @@ export const MOTION_CHOICES: readonly AppearanceChoice<MotionPreference>[] = [
   { value: 'full', label: 'Full', hint: 'Always animate' }
 ]
 
+export const TEXT_SIZE_CHOICES: readonly AppearanceChoice<TextSize>[] = [
+  { value: 'small', label: 'Small', hint: 'The original scale' },
+  { value: 'medium', label: 'Medium', hint: 'A little larger, the default' },
+  { value: 'large', label: 'Large', hint: 'More comfortable at a distance' },
+  { value: 'xlarge', label: 'Extra large', hint: 'Largest text scale' }
+]
+
+export const ICON_SET_CHOICES: readonly AppearanceChoice<IconSet>[] = [
+  { value: 'modern', label: 'Modern', hint: 'Rounder, more distinct glyphs' },
+  { value: 'classic', label: 'Classic', hint: 'The original outline set' }
+]
+
 /**
  * Row heights are shared because the virtualizer computes the visible window by
  * dividing the scroll offset by this number. The stylesheet reads the same
@@ -103,9 +121,13 @@ export const DEFAULT_APPEARANCE = {
     artworkShape: 'square',
     artworkFit: 'cover',
     artworkSize: 'medium',
+    playlistArtworkSize: 'medium',
+    textSize: 'medium',
+    iconSet: 'modern',
+    showAlbumColumn: true,
     playerArtwork: true,
     playerAmbience: true
   }
 } satisfies DeepPartial<AppSettings>
 
-export type { AccentName, Density, MotionPreference, SurfaceStyle, ThemeMode }
+export type { AccentName, Density, IconSet, MotionPreference, SurfaceStyle, TextSize, ThemeMode }

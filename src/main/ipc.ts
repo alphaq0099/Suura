@@ -1,7 +1,15 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import { writeFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
-import { ACCENTS, DENSITIES, MOTION_PREFERENCES, SURFACES, THEME_MODES } from '@shared/appearance'
+import {
+  ACCENTS,
+  DENSITIES,
+  ICON_SETS,
+  MOTION_PREFERENCES,
+  SURFACES,
+  TEXT_SIZES,
+  THEME_MODES
+} from '@shared/appearance'
 import { sanitizeFilePart } from '@shared/files'
 import { IPC } from '@shared/ipc'
 import { isLocalLibraryFilter } from '@shared/library'
@@ -18,6 +26,7 @@ import type {
   Density,
   DownloadFormat,
   EngineSettings,
+  IconSet,
   InteractionSettings,
   StartupSettings,
   StartupView,
@@ -33,6 +42,7 @@ import type {
   RetentionSettings,
   SaveToLibraryRequest,
   SurfaceStyle,
+  TextSize,
   ThemeMode,
   TrackSortField,
   VisualSettings
@@ -229,6 +239,21 @@ export function sanitizeSettingsPatch(input: unknown): DeepPartial<AppSettings> 
     }
     if (typeof source.artworkSize === 'string' && ARTWORK_SIZES.includes(source.artworkSize as ArtworkSize)) {
       visuals.artworkSize = source.artworkSize as ArtworkSize
+    }
+    if (
+      typeof source.playlistArtworkSize === 'string' &&
+      ARTWORK_SIZES.includes(source.playlistArtworkSize as ArtworkSize)
+    ) {
+      visuals.playlistArtworkSize = source.playlistArtworkSize as ArtworkSize
+    }
+    if (typeof source.textSize === 'string' && TEXT_SIZES.includes(source.textSize as TextSize)) {
+      visuals.textSize = source.textSize as TextSize
+    }
+    if (typeof source.iconSet === 'string' && ICON_SETS.includes(source.iconSet as IconSet)) {
+      visuals.iconSet = source.iconSet as IconSet
+    }
+    if (typeof source.showAlbumColumn === 'boolean') {
+      visuals.showAlbumColumn = source.showAlbumColumn
     }
     if (typeof source.accent === 'string' && ACCENTS.includes(source.accent as AccentName)) {
       visuals.accent = source.accent as AccentName

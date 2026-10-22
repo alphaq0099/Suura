@@ -416,8 +416,8 @@ leaves no temp folder; cancel and retry work from the dock. The disk-budget/offl
       natural order. There are no user-defined smart playlists yet: the chips are fixed views, not saved lists.
 - [x] Fold "YouTube-only" tracks into the normal library views so it feels like one library — the **YouTube** chip feeds
       the played-link history through the ordinary track table, with Play, multi-select, Add to queue, Save to library,
-      Remove from history and Details. The rows stay links (they are not local tracks and the local chips do not count
-      them), but the user no longer has to leave the Library to see them.
+      and a row menu holding Remove from history and Details. The rows stay links (they are not local tracks and the
+      local chips do not count them), but the user no longer has to leave the Library to see them.
 **Exit:** a user can go from "no music" to "a 40-track playlist playing" without touching a folder.
 *Status: complete. Search finds local and YouTube rows together, channels open in place, smart chips cover recent,
 played and unplayed views, and the YouTube chip folds stream-only history into the Library. Imported lists plus the link
@@ -438,9 +438,11 @@ works, but it has no hierarchy and no way to find a single option.
 - [x] Streaming controls for the request budget: next-track prefetch, daily yt-dlp self-update, an optional external PO
       Token provider (URL, command, auto-start, status), and a three-mode browser-cookie fallback with its privacy caveat
 - [x] Bounded Appearance: Midnight/Cream/Follow Windows, five contrast-checked accents, Compact/Comfortable/Spacious
-      density, Solid/Accented surfaces (accent wash and CSS blur, not native acrylic or album-art frost), motion
-      preference with a live preview, info-icon explanations, cover-art options and reset. No arbitrary CSS, icon packs,
-      custom fonts, layout builder, custom accent or Material theme in v1
+      density, Small/Medium/Large/Extra Large text presets, Modern/Classic sidebar glyphs, Solid/Accented surfaces (accent
+      wash and CSS blur, not native acrylic or album-art frost), motion preference with a live preview, info-icon
+      explanations, cover-art and playlist-cover sizes, optional Album column, and reset. One bundled typeface (Inter)
+      rather than a font-family picker. No arbitrary CSS, third-party icon packs, layout builder, custom accent or
+      Material theme in v1
 - [x] Review defaults and reset-to-default. **Misc → Reset preferences** restores playback, appearance, behaviour, import
       limits, saving quality and request-budget choices from the same defaults a first launch uses, while keeping the
       library, engine and download folders and the last engine-update timestamp. Settings export/restore is deliberately

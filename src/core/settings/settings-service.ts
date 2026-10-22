@@ -1,8 +1,16 @@
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { mkdirSync } from 'node:fs'
+import { ARTWORK_SIZES, ICON_SETS, TEXT_SIZES } from '@shared/appearance'
 import { DEFAULT_SETTINGS } from '@shared/settings-defaults'
-import { isStartupView, type AppSettings, type DeepPartial } from '@shared/types'
+import {
+  isStartupView,
+  type AppSettings,
+  type ArtworkSize,
+  type DeepPartial,
+  type IconSet,
+  type TextSize
+} from '@shared/types'
 import {
   DEFAULT_PO_TOKEN_PROVIDER_URL,
   isCookieFallbackMode,
@@ -117,6 +125,28 @@ export class SettingsService {
     const storedSurface = (settings.visuals as { surface?: unknown }).surface
     if (storedSurface === 'frosted') {
       settings = { ...settings, visuals: { ...settings.visuals, surface: 'accented' } }
+    }
+
+    // Keep the newer appearance values in their declared ranges even if the
+    // config was edited by hand. Missing keys inherit the defaults, so configs
+    // written before these settings existed keep opening normally.
+    const storedVisuals = (settings.visuals ?? {}) as Partial<AppSettings['visuals']>
+    settings = {
+      ...settings,
+      visuals: {
+        ...DEFAULT_SETTINGS.visuals,
+        ...storedVisuals,
+        playlistArtworkSize: ARTWORK_SIZES.includes(storedVisuals.playlistArtworkSize as ArtworkSize)
+          ? (storedVisuals.playlistArtworkSize as ArtworkSize)
+          : DEFAULT_SETTINGS.visuals.playlistArtworkSize,
+        textSize: TEXT_SIZES.includes(storedVisuals.textSize as TextSize)
+          ? (storedVisuals.textSize as TextSize)
+          : DEFAULT_SETTINGS.visuals.textSize,
+        iconSet: ICON_SETS.includes(storedVisuals.iconSet as IconSet)
+          ? (storedVisuals.iconSet as IconSet)
+          : DEFAULT_SETTINGS.visuals.iconSet,
+        showAlbumColumn: storedVisuals.showAlbumColumn !== false
+      }
     }
 
     // A hand-edited config is still input from outside the type system. Keep the

@@ -15,12 +15,14 @@ import { formatBytes, formatCount, formatTimestamp } from '@shared/format'
 import { LIBRARY_FILTER_OPTIONS, RECENTLY_ADDED_DAYS } from '@shared/library'
 import type { UseDownloadsResult } from '../hooks/useDownloads'
 import { AddToPlaylistMenu } from './AddToPlaylistMenu'
+import { RowMenu } from './RowMenu'
 import { TrackContextMenu } from './TrackContextMenu'
 import { TrackDetails } from './TrackDetails'
 import { TrackList, describeClickAction } from './TrackList'
 import {
   CloseIcon,
   FolderIcon,
+  InfoIcon,
   LinkIcon,
   MusicIcon,
   PlayIcon,
@@ -142,6 +144,7 @@ export function LibraryView(props: LibraryViewProps) {
 
   const [addMenu, setAddMenu] = useState<AddMenuState | null>(null)
   const [contextMenu, setContextMenu] = useState<{ track: Track; x: number; y: number } | null>(null)
+  const [streamMenu, setStreamMenu] = useState<{ track: Track; x: number; y: number } | null>(null)
   const [detailsTrack, setDetailsTrack] = useState<Track | null>(null)
   const [bulkBusy, setBulkBusy] = useState(false)
   const [bulkError, setBulkError] = useState<string | null>(null)
@@ -153,6 +156,7 @@ export function LibraryView(props: LibraryViewProps) {
   useEffect(() => {
     setAddMenu(null)
     setContextMenu(null)
+    setStreamMenu(null)
   }, [filter])
 
   const streamVideoIds = useMemo(() => {
@@ -439,9 +443,7 @@ export function LibraryView(props: LibraryViewProps) {
             isSaved={(track) => (track.sourceId ? saved.has(track.sourceId) : false)}
             saveState={(track) => (track.sourceId ? states[track.sourceId] : undefined)}
             onQueue={onQueueStream}
-            onRemove={onRemoveStream}
-            removeLabel="Remove from history"
-            onDetails={(track) => setDetailsTrack(track)}
+            onRowContextMenu={(track, _index, at) => setStreamMenu({ track, ...at })}
             singleClick={singleClick}
             doubleClick={doubleClick}
           />
@@ -511,7 +513,7 @@ export function LibraryView(props: LibraryViewProps) {
           {showingStreams ? 'YouTube links' : 'tracks'}. Click: {describeClickAction(singleClick)}, double-click:{' '}
           {describeClickAction(doubleClick)}.{' '}
           {showingStreams
-            ? 'Saving downloads a copy into your music folder; the trash button forgets the link.'
+            ? 'Saving downloads a copy into your music folder; the row menu can forget the link.'
             : sort
               ? 'Sorting is applied to the whole library.'
               : ''}
@@ -546,6 +548,29 @@ export function LibraryView(props: LibraryViewProps) {
           onDetails={() => setDetailsTrack(contextMenu.track)}
           onReveal={() => onReveal(contextMenu.track.id)}
           onClose={() => setContextMenu(null)}
+        />
+      ) : null}
+
+      {streamMenu ? (
+        <RowMenu
+          at={{ x: streamMenu.x, y: streamMenu.y }}
+          title={streamMenu.track.title}
+          items={[
+            {
+              id: 'details',
+              label: 'Details',
+              icon: <InfoIcon />,
+              onSelect: () => setDetailsTrack(streamMenu.track)
+            },
+            {
+              id: 'remove',
+              label: 'Remove from history',
+              icon: <TrashIcon />,
+              danger: true,
+              onSelect: () => onRemoveStream(streamMenu.track)
+            }
+          ]}
+          onClose={() => setStreamMenu(null)}
         />
       ) : null}
 

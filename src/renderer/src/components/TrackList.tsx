@@ -366,12 +366,15 @@ export function TrackList(props: TrackListProps) {
 
   const activeId = tracks[activeIndex] ? `track-row-${activeIndex}` : undefined
   const columns = COLUMNS
+  // Remove is a first-class icon only when there is no row menu to hold it.
+  // Otherwise the menu keeps the row quiet and the action column narrow.
+  const directRemove = onRemove !== undefined && onRowContextMenu === undefined
 
   return (
     <div
       className={[
         'track-list',
-        onRemove ? 'has-remove' : '',
+        directRemove ? 'has-remove' : '',
         onSave ? 'has-save' : '',
         onQueue ? 'has-queue' : ''
       ]
@@ -559,7 +562,7 @@ export function TrackList(props: TrackListProps) {
                         <QueueIcon size={15} />
                       </button>
                     ) : null}
-                    {onRemove ? (
+                    {directRemove && onRemove ? (
                       <button
                         type="button"
                         className="icon-button subtle"

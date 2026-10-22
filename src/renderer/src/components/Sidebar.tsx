@@ -1,6 +1,19 @@
-import type { LibraryStats } from '@shared/types'
+import type { IconSet, LibraryStats } from '@shared/types'
 import { formatCount } from '@shared/format'
-import { CogIcon, LinkIcon, MusicIcon, PlaylistIcon, QueueIcon, SearchIcon } from './Icons'
+import {
+  BrandMarkIcon,
+  CogIcon,
+  LibraryIcon,
+  LinkIcon,
+  ListMusicIcon,
+  MusicIcon,
+  PlaylistIcon,
+  QueueIcon,
+  QueueModernIcon,
+  SearchIcon,
+  SlidersIcon,
+  YouTubeIcon
+} from './Icons'
 
 export type ViewName = 'library' | 'search' | 'online' | 'playlists' | 'queue' | 'settings'
 
@@ -12,14 +25,29 @@ export interface SidebarProps {
   playlistCount: number
   /** How many links the YouTube history remembers. */
   onlineCount: number
+  /** Sidebar glyph family. */
+  iconSet: IconSet
   onSelect: (view: ViewName) => void
 }
 
-export function Sidebar({ view, stats, queueLength, playlistCount, onlineCount, onSelect }: SidebarProps) {
+export function Sidebar({
+  view,
+  stats,
+  queueLength,
+  playlistCount,
+  onlineCount,
+  iconSet,
+  onSelect
+}: SidebarProps) {
+  const modern = iconSet === 'modern'
+  const localCount = stats ? formatCount(stats.tracks) : '--'
+  const youtubeCount = formatCount(onlineCount)
+  const totalTracks = stats ? stats.tracks + onlineCount : null
+
   return (
-    <nav className="sidebar">
+    <nav className="sidebar" data-icon-set={iconSet}>
       <div className="brand">
-        <MusicIcon size={18} />
+        {modern ? <BrandMarkIcon size={20} /> : <MusicIcon size={18} />}
         <span>Player</span>
       </div>
 
@@ -28,7 +56,7 @@ export function Sidebar({ view, stats, queueLength, playlistCount, onlineCount, 
         className={view === 'library' ? 'nav-item active' : 'nav-item'}
         onClick={() => onSelect('library')}
       >
-        <MusicIcon />
+        {modern ? <LibraryIcon /> : <MusicIcon />}
         <span>Library</span>
         {stats ? <span className="nav-count">{formatCount(stats.tracks)}</span> : null}
       </button>
@@ -39,7 +67,7 @@ export function Sidebar({ view, stats, queueLength, playlistCount, onlineCount, 
         onClick={() => onSelect('online')}
         title="Links you have pasted, playing from YouTube"
       >
-        <LinkIcon />
+        {modern ? <YouTubeIcon /> : <LinkIcon />}
         <span>YouTube</span>
         {onlineCount > 0 ? <span className="nav-count">{formatCount(onlineCount)}</span> : null}
       </button>
@@ -59,7 +87,7 @@ export function Sidebar({ view, stats, queueLength, playlistCount, onlineCount, 
         className={view === 'playlists' ? 'nav-item active' : 'nav-item'}
         onClick={() => onSelect('playlists')}
       >
-        <PlaylistIcon />
+        {modern ? <ListMusicIcon /> : <PlaylistIcon />}
         <span>Playlists</span>
         {playlistCount > 0 ? <span className="nav-count">{formatCount(playlistCount)}</span> : null}
       </button>
@@ -69,7 +97,7 @@ export function Sidebar({ view, stats, queueLength, playlistCount, onlineCount, 
         className={view === 'queue' ? 'nav-item active' : 'nav-item'}
         onClick={() => onSelect('queue')}
       >
-        <QueueIcon />
+        {modern ? <QueueModernIcon /> : <QueueIcon />}
         <span>Queue</span>
         {queueLength > 0 ? <span className="nav-count">{formatCount(queueLength)}</span> : null}
       </button>
@@ -79,11 +107,28 @@ export function Sidebar({ view, stats, queueLength, playlistCount, onlineCount, 
         className={view === 'settings' ? 'nav-item active' : 'nav-item'}
         onClick={() => onSelect('settings')}
       >
-        <CogIcon />
+        {modern ? <SlidersIcon /> : <CogIcon />}
         <span>Settings</span>
       </button>
 
       <div className="sidebar-footer">
+        <div
+          className="sidebar-source"
+          title="Local files plus links remembered from YouTube. YouTube links stream through yt-dlp."
+        >
+          <span className="sidebar-source-label">
+            Local library <span aria-hidden="true">•</span> YouTube
+          </span>
+          <strong className="sidebar-source-total">{totalTracks === null ? '--' : formatCount(totalTracks)}</strong>
+        </div>
+        <div className="sidebar-source-split">
+          <span>
+            Local <strong>{localCount}</strong>
+          </span>
+          <span>
+            YouTube <strong>{youtubeCount}</strong>
+          </span>
+        </div>
         <div className="sidebar-stat">
           <span>Artists</span>
           <strong>{stats ? formatCount(stats.artists) : '--'}</strong>
@@ -92,7 +137,6 @@ export function Sidebar({ view, stats, queueLength, playlistCount, onlineCount, 
           <span>Albums</span>
           <strong>{stats ? formatCount(stats.albums) : '--'}</strong>
         </div>
-        <p className="sidebar-note">Local library · pasted links stream through yt-dlp</p>
       </div>
     </nav>
   )

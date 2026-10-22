@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type {
+  ArtworkSize,
   LibraryClickAction,
   OnlinePlaylist,
   OnlinePlaylistDetail,
@@ -21,9 +22,22 @@ import {
 import { messageOf } from '../api'
 import type { UseDownloadsResult } from '../hooks/useDownloads'
 import { ArtworkImage } from './ArtworkImage'
+import { RowMenu } from './RowMenu'
 import { TrackDetails } from './TrackDetails'
 import { TrackList, describeClickAction } from './TrackList'
-import { PlayIcon, PlaylistIcon, PlusIcon, PencilIcon, QueueIcon, RefreshIcon, SpinnerIcon, TrashIcon, DownloadIcon } from './Icons'
+import {
+  DownloadIcon,
+  InfoIcon,
+  MoreIcon,
+  PencilIcon,
+  PlayIcon,
+  PlaylistIcon,
+  PlusIcon,
+  QueueIcon,
+  RefreshIcon,
+  SpinnerIcon,
+  TrashIcon
+} from './Icons'
 
 export interface PlaylistsViewProps {
   playlists: Playlist[]
@@ -43,6 +57,8 @@ export interface PlaylistsViewProps {
   rowHeight: number
   /** Width of the list of playlists, in CSS pixels. */
   indexWidth: number
+  /** Cover size in the selected playlist's header. */
+  playlistArtworkSize: ArtworkSize
   onIndexWidthChange: (width: number) => void
   onSelect: (playlistId: number) => void
   onSelectOnline: (playlistId: number) => void
@@ -87,7 +103,14 @@ function totalDuration(tracks: Track[]): string {
 function listKindLabel(playlist: OnlinePlaylist): string {
   if (playlist.kind === 'album') return 'Album'
   if (playlist.kind === 'mix') return 'Mix'
-  return 'Playlist'
+  return 'List'
+}
+
+const PLAYLIST_COVER_PX: Record<ArtworkSize, number> = {
+  small: 48,
+  medium: 64,
+  large: 80,
+  xlarge: 96
 }
 
 /**
@@ -116,6 +139,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
     doubleClick,
     rowHeight,
     indexWidth: storedIndexWidth,
+    playlistArtworkSize,
     onIndexWidthChange,
     onSelect,
     onSelectOnline,
@@ -151,7 +175,14 @@ export function PlaylistsView(props: PlaylistsViewProps) {
   const [detailsTrack, setDetailsTrack] = useState<Track | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<number>>(() => new Set<number>())
-  const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
+  const [rowMenu, setRowMenu] = useState<{
+    kind: 'custom' | 'online'
+    id: number
+    title: string
+    x: number
+    y: number
+  } | null>(null)
+  const [trackMenu, setTrackMenu] = useState<{ track: Track; x: number; y: number } | null>(null)
   const [confirmDeleteOnline, setConfirmDeleteOnline] = useState<number | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const [reimporting, setReimporting] = useState(false)
@@ -303,14 +334,32 @@ export function PlaylistsView(props: PlaylistsViewProps) {
     [onlineDetail, tracks]
   )
 
+  /** Removes one row from whichever kind of playlist is open. */
+  const removeTrack = useCallback(
+    (track: Track): void => {
+      if (showingOnline) {
+        const itemId = onlineEntryIdFor(track.id)
+        if (itemId !== null) void onRemoveOnlineItem(itemId)
+        return
+      }
+      const itemId = entryIdFor(track.id)
+      if (itemId !== null) void onRemoveItems([itemId])
+    },
+    [entryIdFor, onlineEntryIdFor, onRemoveItems, onRemoveOnlineItem, showingOnline]
+  )
+
+  const coverSize = PLAYLIST_COVER_PX[playlistArtworkSize]
+  const coverIconSize = Math.round(coverSize * 0.36)
+
   // A different playlist is a different selection: carrying one over would let
   // "Remove selected" act on tracks that are not on screen any more.
   useEffect(() => {
     setSelectedIds(new Set<number>())
-    setConfirmDelete(null)
     setConfirmDeleteOnline(null)
     setConfirmClear(false)
     setReimporting(false)
+    setRowMenu(null)
+    setTrackMenu(null)
   }, [selectedId, selectedOnlineId])
 
   // The count beside Re-import starts at what the snapshot currently holds. A
@@ -485,6 +534,23 @@ export function PlaylistsView(props: PlaylistsViewProps) {
   // first track's picture, which is the best cover a hand-made list or a mix has.
   const headerTrack = tracks[0] ?? null
 
+  // One footer below both panes, rather than one inside the right pane. The two
+  // columns then finish on the same line at every window height.
+  const footnote =
+    tracks.length === 0
+      ? null
+      : showingOnline
+        ? `Imported playlists keep their source order, so drag-to-reorder is off. Click: ${describeClickAction(
+            singleClick
+          )}, double-click: ${describeClickAction(
+            doubleClick
+          )}. Saving downloads a copy into your music folder; until then every track is streamed.`
+        : detail
+          ? `Drag a row to reorder, or focus it and press Alt+↑/↓. Click: ${describeClickAction(
+              singleClick
+            )}, double-click: ${describeClickAction(doubleClick)}.`
+          : null
+
   const selectionBar =
     selectedIds.size > 0 ? (
       <div className="banner selection-bar">
@@ -495,7 +561,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
           <PlayIcon size={14} />
           <span>Play selected</span>
         </button>
-        <button type="button" onClick={removeSelected}>
+        <button type="button" className="danger-button" onClick={removeSelected}>
           <TrashIcon size={14} />
           <span>{showingOnline ? 'Remove from this playlist' : 'Remove from playlist'}</span>
         </button>
@@ -635,49 +701,30 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                         <span className="playlist-title">{playlist.name}</span>
                       </span>
                       <span className="playlist-count">{formatCount(playlist.trackCount)}</span>
+                      <span className="playlist-kind custom">List</span>
                     </button>
                     <button
                       type="button"
-                      className="icon-button subtle"
-                      title="Rename playlist"
-                      aria-label={`Rename ${playlist.name}`}
-                      onClick={() => {
-                        setRenamingId(playlist.id)
-                        setRenameValue(playlist.name)
-                        setConfirmDelete(null)
+                      className="icon-button subtle playlist-row-menu"
+                      title="Playlist actions"
+                      aria-label={`Actions for ${playlist.name}`}
+                      onClick={(event) => {
+                        const rect = event.currentTarget.getBoundingClientRect()
+                        setRowMenu({
+                          kind: 'custom',
+                          id: playlist.id,
+                          title: playlist.name,
+                          x: rect.right - 8,
+                          y: rect.bottom + 4
+                        })
                       }}
                     >
-                      <PencilIcon />
+                      <MoreIcon />
                     </button>
-                    {confirmDelete === playlist.id ? (
-                      <button
-                        type="button"
-                        className="icon-button subtle danger"
-                        title="Delete this playlist"
-                        aria-label={`Confirm deleting ${playlist.name}`}
-                        onClick={() => void onDelete(playlist.id)}
-                      >
-                        <TrashIcon />
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="icon-button subtle"
-                        title="Delete playlist"
-                        aria-label={`Delete ${playlist.name}`}
-                        onClick={() => setConfirmDelete(playlist.id)}
-                      >
-                        <TrashIcon />
-                      </button>
-                    )}
                   </>
                 )}
               </div>
             ))}
-
-            {confirmDelete !== null ? (
-              <p className="playlist-hint">Click the bin again to delete the playlist. Tracks stay in your library.</p>
-            ) : null}
           </div>
 
           <div className="playlist-group" role="group" aria-label="Imported playlists">
@@ -732,54 +779,32 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                     >
                       <span className="playlist-name">
                         <span className="playlist-title">{playlist.title}</span>
-                        <span className={`playlist-kind ${playlist.kind}`}>{listKindLabel(playlist)}</span>
                       </span>
                       <span className="playlist-count">{formatCount(playlist.trackCount)}</span>
+                      <span className={`playlist-kind ${playlist.kind}`}>{listKindLabel(playlist)}</span>
                     </button>
                     <button
                       type="button"
-                      className="icon-button subtle"
-                      title="Rename imported playlist"
-                      aria-label={`Rename ${playlist.title}`}
-                      onClick={() => {
-                        setRenamingOnlineId(playlist.id)
-                        setRenameOnlineValue(playlist.title)
-                        setConfirmDeleteOnline(null)
+                      className="icon-button subtle playlist-row-menu"
+                      title="Playlist actions"
+                      aria-label={`Actions for ${playlist.title}`}
+                      onClick={(event) => {
+                        const rect = event.currentTarget.getBoundingClientRect()
+                        setRowMenu({
+                          kind: 'online',
+                          id: playlist.id,
+                          title: playlist.title,
+                          x: rect.right - 8,
+                          y: rect.bottom + 4
+                        })
                       }}
                     >
-                      <PencilIcon />
+                      <MoreIcon />
                     </button>
-                    {confirmDeleteOnline === playlist.id ? (
-                      <button
-                        type="button"
-                        className="icon-button subtle danger"
-                        title="Remove this imported playlist"
-                        aria-label={`Confirm removing ${playlist.title}`}
-                        onClick={() => void onDeleteOnline(playlist.id)}
-                      >
-                        <TrashIcon />
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="icon-button subtle"
-                        title="Remove imported playlist"
-                        aria-label={`Remove ${playlist.title}`}
-                        onClick={() => setConfirmDeleteOnline(playlist.id)}
-                      >
-                        <TrashIcon />
-                      </button>
-                    )}
                   </>
                 )}
               </div>
             ))}
-
-            {confirmDeleteOnline !== null ? (
-              <p className="playlist-hint">
-                Click the bin again to remove the imported playlist. Saved files stay in your library.
-              </p>
-            ) : null}
           </div>
         </aside>
 
@@ -816,8 +841,8 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                   <ArtworkImage
                     track={headerTrack}
                     artworkKey={onlineDetail.playlist.coverKey ?? undefined}
-                    size={64}
-                    iconSize={24}
+                    size={coverSize}
+                    iconSize={coverIconSize}
                     className="playlist-cover"
                   />
                   <div className="playlist-pane-titles">
@@ -834,6 +859,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                 <div className="header-actions">
                   <button
                     type="button"
+                    className="playlist-play"
                     onClick={() =>
                       playList(tracks, 0, {
                         title: onlineDetail.playlist.title,
@@ -895,9 +921,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                   </label>
                   <button
                     type="button"
-                    className={
-                      confirmDeleteOnline === onlineDetail.playlist.id ? 'link-button danger' : 'link-button'
-                    }
+                    className="link-button danger"
                     onClick={() => {
                       if (confirmDeleteOnline !== onlineDetail.playlist.id) {
                         setConfirmDeleteOnline(onlineDetail.playlist.id)
@@ -959,29 +983,15 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                   onSelectAll={() => setSelectedIds(new Set(tracks.map((track) => track.id)))}
                   onClearSelection={() => setSelectedIds(new Set<number>())}
                   onReveal={onReveal}
-                  onDetails={setDetailsTrack}
+                  onRowContextMenu={(track, _index, at) => setTrackMenu({ track, ...at })}
                   singleClick={singleClick}
                   doubleClick={doubleClick}
                   sortable={false}
-                  onRemove={(track) => {
-                    const itemId = onlineEntryIdFor(track.id)
-                    if (itemId === null) return
-                    void onRemoveOnlineItem(itemId)
-                  }}
-                  removeLabel="Remove from this playlist"
                   onSave={saveOnlineTrack}
                   isSaved={(track) => (track.sourceId ? saved.has(track.sourceId) : false)}
                   saveState={(track) => (track.sourceId ? states[track.sourceId] : undefined)}
                 />
               )}
-
-              {tracks.length > 0 ? (
-                <p className="table-footnote">
-                  Imported playlists keep their source order, so drag-to-reorder is off. Click:{' '}
-                  {describeClickAction(singleClick)}, double-click: {describeClickAction(doubleClick)}. Saving
-                  downloads a copy into your music folder; until then every track is streamed.
-                </p>
-              ) : null}
             </>
           ) : !detail ? (
             <div className="empty-state">
@@ -1003,14 +1013,24 @@ export function PlaylistsView(props: PlaylistsViewProps) {
             <>
               <div className="playlist-pane-head">
                 <div className="playlist-pane-heading">
-                  <ArtworkImage track={headerTrack} size={64} iconSize={24} className="playlist-cover" />
+                  <ArtworkImage
+                    track={headerTrack}
+                    size={coverSize}
+                    iconSize={coverIconSize}
+                    className="playlist-cover"
+                  />
                   <div className="playlist-pane-titles">
                     <h2>{detail.playlist.name}</h2>
                     <p className="subtitle">{subtitle}</p>
                   </div>
                 </div>
                 <div className="header-actions">
-                  <button type="button" onClick={() => playList(tracks, 0, null)} disabled={tracks.length === 0}>
+                  <button
+                    type="button"
+                    className="playlist-play"
+                    onClick={() => playList(tracks, 0, null)}
+                    disabled={tracks.length === 0}
+                  >
                     <PlayIcon size={14} />
                     <span>Play</span>
                   </button>
@@ -1078,7 +1098,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                   onSelectAll={() => setSelectedIds(new Set(tracks.map((track) => track.id)))}
                   onClearSelection={() => setSelectedIds(new Set<number>())}
                   onReveal={onReveal}
-                  onDetails={setDetailsTrack}
+                  onRowContextMenu={(track, _index, at) => setTrackMenu({ track, ...at })}
                   singleClick={singleClick}
                   doubleClick={doubleClick}
                   sortable={false}
@@ -1089,25 +1109,86 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                       void onMoveItem(item.id, toIndex)
                     }
                   }}
-                  onRemove={(track) => {
-                    const itemId = entryIdFor(track.id)
-                    if (itemId === null) return
-                    void onRemoveItems([itemId])
-                  }}
-                  removeLabel="Remove from playlist"
                 />
               )}
-
-              {tracks.length > 0 ? (
-                <p className="table-footnote">
-                  Drag a row to reorder, or focus it and press Alt+↑/↓. Click: {describeClickAction(singleClick)},
-                  double-click: {describeClickAction(doubleClick)}.
-                </p>
-              ) : null}
             </>
           )}
         </div>
+
+        {footnote ? <p className="table-footnote playlists-footnote">{footnote}</p> : null}
       </div>
+
+      {rowMenu ? (
+        <RowMenu
+          at={{ x: rowMenu.x, y: rowMenu.y }}
+          title={rowMenu.title}
+          items={
+            rowMenu.kind === 'custom'
+              ? [
+                  {
+                    id: 'rename',
+                    label: 'Rename',
+                    icon: <PencilIcon />,
+                    onSelect: () => {
+                      setRenamingId(rowMenu.id)
+                      setRenameValue(rowMenu.title)
+                    }
+                  },
+                  {
+                    id: 'delete',
+                    label: 'Delete playlist',
+                    icon: <TrashIcon />,
+                    danger: true,
+                    confirmLabel: 'Delete playlist?',
+                    onSelect: () => void onDelete(rowMenu.id)
+                  }
+                ]
+              : [
+                  {
+                    id: 'rename',
+                    label: 'Rename',
+                    icon: <PencilIcon />,
+                    onSelect: () => {
+                      setRenamingOnlineId(rowMenu.id)
+                      setRenameOnlineValue(rowMenu.title)
+                    }
+                  },
+                  {
+                    id: 'remove',
+                    label: 'Remove imported playlist',
+                    icon: <TrashIcon />,
+                    danger: true,
+                    confirmLabel: 'Remove imported playlist?',
+                    onSelect: () => void onDeleteOnline(rowMenu.id)
+                  }
+                ]
+          }
+          onClose={() => setRowMenu(null)}
+        />
+      ) : null}
+
+      {trackMenu ? (
+        <RowMenu
+          at={{ x: trackMenu.x, y: trackMenu.y }}
+          title={trackMenu.track.title}
+          items={[
+            {
+              id: 'details',
+              label: 'Details',
+              icon: <InfoIcon />,
+              onSelect: () => setDetailsTrack(trackMenu.track)
+            },
+            {
+              id: 'remove',
+              label: showingOnline ? 'Remove from this playlist' : 'Remove from playlist',
+              icon: <TrashIcon />,
+              danger: true,
+              onSelect: () => removeTrack(trackMenu.track)
+            }
+          ]}
+          onClose={() => setTrackMenu(null)}
+        />
+      ) : null}
 
       {detailsTrack ? (
         <TrackDetails

@@ -127,6 +127,7 @@ export function App() {
     root.dataset.density = settings.visuals.density
     root.dataset.surface = settings.visuals.surface
     root.dataset.motion = settings.visuals.motion
+    root.dataset.textSize = settings.visuals.textSize
     // The settings live in the main process and arrive one IPC round-trip after
     // the first paint. Caching the resolved palette here lets main.tsx paint the
     // right background immediately next launch instead of flashing dark.
@@ -139,7 +140,8 @@ export function App() {
           accent: settings.visuals.accent,
           density: settings.visuals.density,
           surface: settings.visuals.surface,
-          motion: settings.visuals.motion
+          motion: settings.visuals.motion,
+          textSize: settings.visuals.textSize
         })
       )
     } catch {
@@ -150,7 +152,8 @@ export function App() {
     settings?.visuals.accent,
     settings?.visuals.density,
     settings?.visuals.surface,
-    settings?.visuals.motion
+    settings?.visuals.motion,
+    settings?.visuals.textSize
   ])
 
   const library = useLibrary()
@@ -624,6 +627,9 @@ export function App() {
       className="app"
       data-artwork-shape={settings.visuals.artworkShape}
       data-artwork-size={settings.visuals.artworkSize}
+      data-album-column={settings.visuals.showAlbumColumn ? 'show' : 'hide'}
+      data-text-size={settings.visuals.textSize}
+      data-icon-set={settings.visuals.iconSet}
       data-player-artwork={settings.visuals.playerArtwork ? 'true' : 'false'}
       data-player-ambience={settings.visuals.playerAmbience ? 'true' : 'false'}
     >
@@ -633,6 +639,7 @@ export function App() {
         queueLength={player.queue.length}
         playlistCount={playlists.playlists.length + playlists.onlinePlaylists.length}
         onlineCount={online.entries.length}
+        iconSet={settings.visuals.iconSet}
         onSelect={setView}
       />
 
@@ -720,6 +727,7 @@ export function App() {
           singleClick={settings.interaction.librarySingleClick}
           doubleClick={settings.interaction.libraryDoubleClick}
           rowHeight={DENSITY_ROW_HEIGHT[settings.visuals.density]}
+          playlistArtworkSize={settings.visuals.playlistArtworkSize}
           indexWidth={settings.playlists.indexWidth}
           onIndexWidthChange={setPlaylistIndexWidth}
           onSelect={playlists.select}

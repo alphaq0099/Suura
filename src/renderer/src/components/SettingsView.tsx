@@ -3,8 +3,10 @@ import {
   ACCENT_CHOICES,
   DEFAULT_APPEARANCE,
   DENSITY_CHOICES,
+  ICON_SET_CHOICES,
   MOTION_CHOICES,
   SURFACE_CHOICES,
+  TEXT_SIZE_CHOICES,
   THEME_CHOICES
 } from '@shared/appearance'
 import { DEFAULT_PREFERENCE_PATCH, SECTION_PREFERENCE_PATCHES } from '@shared/settings-defaults'
@@ -23,6 +25,7 @@ import type {
   DuplicateReport,
   EngineStatus,
   ExecutableStatus,
+  IconSet,
   LibraryClickAction,
   MotionPreference,
   PoTokenStatus,
@@ -31,6 +34,7 @@ import type {
   RuntimeInfo,
   StartupView,
   SurfaceStyle,
+  TextSize,
   ThemeMode
 } from '@shared/types'
 import { COOKIE_BROWSERS, normalizePoTokenProviderUrl } from '@shared/youtube'
@@ -706,6 +710,70 @@ export function SettingsView(props: SettingsViewProps) {
                   </span>
                 </div>
               </article>
+
+              <article className="card">
+                <header className="card-header">
+                  <h2>
+                    Text, icons &amp; columns
+                    <InfoHint label="About text, icons and columns">
+                      Text size scales every label, heading and hint together. The icon choice applies to the sidebar.
+                      The Album column can be hidden when you would rather give that width to track titles; the choice
+                      stays consistent across the Library and playlists.
+                    </InfoHint>
+                  </h2>
+                </header>
+                <div className="field">
+                  <span>Text size</span>
+                  <div className="segmented" role="group" aria-label="Text size">
+                    {TEXT_SIZE_CHOICES.map((choice) => (
+                      <button
+                        key={choice.value}
+                        type="button"
+                        className={settings.visuals.textSize === choice.value ? 'active' : undefined}
+                        data-text-size-choice={choice.value}
+                        aria-pressed={settings.visuals.textSize === choice.value}
+                        title={choice.hint}
+                        onClick={() => onUpdate({ visuals: { textSize: choice.value as TextSize } })}
+                      >
+                        {choice.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="field">
+                  <span>
+                    Sidebar icons
+                    <InfoHint label="About sidebar icons">
+                      Modern uses rounder, more distinct silhouettes for Library, YouTube, Playlists, Queue and Settings.
+                      Classic keeps the original outline set.
+                    </InfoHint>
+                  </span>
+                  <div className="segmented" role="group" aria-label="Sidebar icons">
+                    {ICON_SET_CHOICES.map((choice) => (
+                      <button
+                        key={choice.value}
+                        type="button"
+                        className={settings.visuals.iconSet === choice.value ? 'active' : undefined}
+                        data-icon-set-choice={choice.value}
+                        aria-pressed={settings.visuals.iconSet === choice.value}
+                        title={choice.hint}
+                        onClick={() => onUpdate({ visuals: { iconSet: choice.value as IconSet } })}
+                      >
+                        {choice.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <label className="field checkbox">
+                  <input
+                    type="checkbox"
+                    data-album-column-toggle
+                    checked={settings.visuals.showAlbumColumn}
+                    onChange={(event) => onUpdate({ visuals: { showAlbumColumn: event.target.checked } })}
+                  />
+                  <span>Show the Album column in the Library and playlists</span>
+                </label>
+              </article>
             </div>
 
             <div className="cards-col">
@@ -715,8 +783,8 @@ export function SettingsView(props: SettingsViewProps) {
                     Cover art
                     <InfoHint label="About cover art">
                       Shape and fit apply to library rows, the player bar and the full-window player. A circle is always
-                      cropped. Size applies only to the full-window player; ambience takes its colour from the current
-                      cover.
+                      cropped. Artwork size applies to the full-window player; playlist cover size applies to the
+                      selected playlist&apos;s header. Ambience takes its colour from the current cover.
                     </InfoHint>
                   </h2>
                 </header>
@@ -761,6 +829,22 @@ export function SettingsView(props: SettingsViewProps) {
                       ))}
                     </select>
                   </label>
+                  <label className="field">
+                    <span>Playlist cover size</span>
+                    <select
+                      data-playlist-artwork-size
+                      value={settings.visuals.playlistArtworkSize}
+                      onChange={(event) =>
+                        onUpdate({ visuals: { playlistArtworkSize: event.target.value as ArtworkSize } })
+                      }
+                    >
+                      {SIZE_CHOICES.map((choice) => (
+                        <option key={choice.value} value={choice.value}>
+                          {choice.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
                 <div className="field-grid">
                   <label className="field checkbox">
@@ -787,7 +871,10 @@ export function SettingsView(props: SettingsViewProps) {
           <div className="appearance-reset">
             <div>
               <strong>Reset appearance</strong>
-              <p>Puts the theme, accent, density, surface, motion and cover-art choices back to their defaults.</p>
+              <p>
+                Puts the theme, accent, density, surface, motion, text, icon, column and cover-art choices back to their
+                defaults.
+              </p>
             </div>
             <button type="button" onClick={() => onUpdate(DEFAULT_APPEARANCE)}>
               Reset appearance

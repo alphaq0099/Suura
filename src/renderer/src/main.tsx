@@ -5,9 +5,11 @@ import {
   APPEARANCE_CACHE_KEY,
   DENSITIES,
   MOTION_PREFERENCES,
-  SURFACES
+  SURFACES,
+  TEXT_SIZES
 } from '@shared/appearance'
-import type { AccentName, Density, MotionPreference, SurfaceStyle } from '@shared/types'
+import type { AccentName, Density, MotionPreference, SurfaceStyle, TextSize } from '@shared/types'
+import '@fontsource-variable/inter'
 import { App } from './App'
 import './styles.css'
 
@@ -38,6 +40,9 @@ try {
     }
     if (typeof cached.motion === 'string' && MOTION_PREFERENCES.includes(cached.motion as MotionPreference)) {
       root.dataset.motion = cached.motion
+    }
+    if (typeof cached.textSize === 'string' && TEXT_SIZES.includes(cached.textSize as TextSize)) {
+      root.dataset.textSize = cached.textSize
     }
   }
 } catch {

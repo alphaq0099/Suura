@@ -332,6 +332,73 @@ export function CheckIcon({ size = 14 }: IconProps) {
   )
 }
 
+/** A compact waveform: the brand mark in the Modern sidebar set. */
+export function BrandMarkIcon({ size = 18 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <path d="M4 14v-4M8 17V7M12 20V4M16 17V7M20 14v-4" />
+    </svg>
+  )
+}
+
+/** A shelf of books: Library in the Modern sidebar set. */
+export function LibraryIcon({ size = 18 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <path d="M4 19.5h16" />
+      <path d="M6 16.5V7.5A1.5 1.5 0 0 1 7.5 6H9v10.5" />
+      <path d="M10.5 16.5v-11h3A1.5 1.5 0 0 1 15 7v9.5" />
+      <path d="m17.2 6.2 2.4-.6 2 9.8-2.4.6z" />
+    </svg>
+  )
+}
+
+/** A play badge: YouTube in the Modern sidebar set. */
+export function YouTubeIcon({ size = 18 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="3" y="5.5" width="18" height="13" rx="4" {...STROKE} />
+      <path d="m10 9.2 5.2 2.8-5.2 2.8z" fill="currentColor" />
+    </svg>
+  )
+}
+
+/** Lines plus a note: Playlists in the Modern sidebar set. */
+export function ListMusicIcon({ size = 18 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <path d="M4 6h9M4 12h7M4 18h7" />
+      <path d="M18 6v9.2" />
+      <path d="m18 6 3 .8" />
+      <circle cx="16.2" cy="17" r="2.3" />
+    </svg>
+  )
+}
+
+/** Lines plus a play mark: Queue in the Modern sidebar set. */
+export function QueueModernIcon({ size = 18 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 7h10M4 12h10M4 17h6" {...STROKE} />
+      <path d="m16 9.8 5 2.7-5 2.7z" fill="currentColor" />
+    </svg>
+  )
+}
+
+/** Three sliders: Settings in the Modern sidebar set. */
+export function SlidersIcon({ size = 18 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <path d="M4 7h4M12 7h8" />
+      <circle cx="10" cy="7" r="2" />
+      <path d="M4 12h10M18 12h2" />
+      <circle cx="16" cy="12" r="2" />
+      <path d="M4 17h2M10 17h10" />
+      <circle cx="8" cy="17" r="2" />
+    </svg>
+  )
+}
+
 /** The overflow menu on a row. */
 export function MoreIcon({ size = 16 }: IconProps) {
   return (
