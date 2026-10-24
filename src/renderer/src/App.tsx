@@ -22,7 +22,9 @@ import {
 } from '@shared/queue'
 import { youtubeWatchUrl } from '@shared/youtube'
 import { api, messageOf } from './api'
+import { FolderIcon } from './components/Icons'
 import { LibraryView } from './components/LibraryView'
+import { MiniPlayer } from './components/MiniPlayer'
 import { NowPlayingView } from './components/NowPlayingView'
 import { OnlineView } from './components/OnlineView'
 import { PlayerBar } from './components/PlayerBar'
@@ -32,10 +34,11 @@ import { SavesPanel } from './components/SavesPanel'
 import { SearchView, type SearchSelectionItem } from './components/SearchView'
 import { SettingsView } from './components/SettingsView'
 import { Sidebar, type ViewName } from './components/Sidebar'
+import { useDownloads } from './hooks/useDownloads'
+import { useFileDrop } from './hooks/useFileDrop'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useLibrary } from './hooks/useLibrary'
 import { useOnline } from './hooks/useOnline'
-import { useDownloads } from './hooks/useDownloads'
 import { usePlaybackPersistence } from './hooks/usePlaybackPersistence'
 import { usePlayer } from './hooks/usePlayer'
 import { usePlaylists } from './hooks/usePlaylists'
@@ -61,6 +64,9 @@ export function App() {
   const [nowPlaying, setNowPlaying] = useState(false)
   /** Set while the player window's exit animation plays, before it unmounts. */
   const [nowPlayingClosing, setNowPlayingClosing] = useState(false)
+  /** Compact layout. The window bounds are owned by the main process. */
+  const [miniPlayer, setMiniPlayer] = useState(false)
+  const miniPlayerRef = useRef(false)
   const [paths, setPaths] = useState<AppPaths | null>(null)
   const [runtimeInfo, setRuntimeInfo] = useState<RuntimeInfo | null>(null)
   const [engineStatus, setEngineStatus] = useState<EngineStatus | null>(null)
@@ -267,6 +273,50 @@ export function App() {
     }, NOW_PLAYING_EXIT_MS)
   }, [nowPlaying, nowPlayingClosing])
 
+  /**
+   * Switches between the full UI and the compact one.
+   *
+   * The renderer changes immediately and asks main to resize. The native path is
+   * intentionally separate: the window has to get a smaller minimum size before
+   * it can shrink, and only main can do that.
+   */
+  const setMiniMode = useCallback(
+    (enabled: boolean): void => {
+      if (miniPlayerRef.current === enabled) return
+      miniPlayerRef.current = enabled
+      setMiniPlayer(enabled)
+      if (enabled) closeNowPlaying()
+      void api.setMiniPlayer(enabled).catch((cause: unknown) => {
+        setActionError(messageOf(cause))
+        miniPlayerRef.current = !enabled
+        setMiniPlayer(!enabled)
+      })
+    },
+    [closeNowPlaying]
+  )
+
+  const toggleMini = useCallback((): void => {
+    setMiniMode(!miniPlayerRef.current)
+  }, [setMiniMode])
+
+  // A renderer reload (development, or a crash recovery) starts with false, but
+  // the native window may still be compact. Only a true answer is applied: a
+  // false request racing a user click must not undo it.
+  useEffect(() => {
+    let cancelled = false
+    void api
+      .isMiniPlayer()
+      .then((active) => {
+        if (cancelled || !active || miniPlayerRef.current) return
+        miniPlayerRef.current = true
+        setMiniPlayer(true)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const volumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const handleVolumeChange = useCallback((volume: number): void => {
     if (volumeTimerRef.current) clearTimeout(volumeTimerRef.current)
@@ -314,9 +364,10 @@ export function App() {
       else if (command.type === 'next') next()
       else if (command.type === 'prev') previous()
       else if (command.type === 'stop') stop()
+      else if (command.type === 'mini-player') toggleMini()
     })
     return () => api.off(token)
-  }, [toggle, next, previous, stop])
+  }, [toggle, next, previous, stop, toggleMini])
 
   useKeyboardShortcuts({
     toggle,
@@ -325,7 +376,13 @@ export function App() {
     seekBy: (deltaMs) => player.seek(player.positionMs + deltaMs),
     setVolume: player.setVolume,
     volume: () => player.volume,
-    onEscape: closeNowPlaying,
+    onEscape: () => {
+      if (miniPlayerRef.current) {
+        setMiniMode(false)
+        return
+      }
+      closeNowPlaying()
+    },
     focusSearch: () => {
       setView('library')
       // The library view has to be mounted before its input can take focus.
@@ -449,6 +506,28 @@ export function App() {
       setActionError(messageOf(cause))
     }
   }, [scan])
+
+  /**
+   * Handles paths from an OS drop. Switching to Library first means the scan
+   * progress the main process is already broadcasting has somewhere to show;
+   * waiting for the full scan before changing view would leave the window
+   * looking inert for as long as the import takes.
+   */
+  const importDroppedPaths = useCallback(
+    async (paths: string[]): Promise<void> => {
+      setActionError(null)
+      setView('library')
+      try {
+        await api.addDroppedPaths(paths)
+        await Promise.all([reload(), refresh()])
+      } catch (cause) {
+        setActionError(messageOf(cause))
+      }
+    },
+    [reload, refresh]
+  )
+
+  const { dragging: fileDragActive } = useFileDrop(importDroppedPaths)
 
   const removeFolder = useCallback(
     async (folder: string): Promise<void> => {
@@ -736,7 +815,7 @@ export function App() {
     // threaded through every component. The rule is "all cover art", and this is
     // the one place that can say so in a couple of lines of CSS.
     <div
-      className="app"
+      className={miniPlayer ? 'app mini-player-mode' : 'app'}
       data-artwork-shape={settings.visuals.artworkShape}
       data-artwork-size={settings.visuals.artworkSize}
       data-album-column={settings.visuals.showAlbumColumn ? 'show' : 'hide'}
@@ -965,7 +1044,29 @@ export function App() {
         onToggleShuffle={toggleShuffle}
         onOpenQueue={() => setView('queue')}
         onOpenNowPlaying={openNowPlaying}
+        onEnterMiniPlayer={() => setMiniMode(true)}
       />
+
+      {miniPlayer ? (
+        <MiniPlayer
+          current={player.current}
+          isPlaying={player.isPlaying}
+          isLoading={player.isLoading}
+          reconnecting={player.reconnecting}
+          positionMs={player.positionMs}
+          durationMs={player.durationMs}
+          volume={player.volume}
+          error={player.error}
+          queueIndex={player.index}
+          queueLength={player.queue.length}
+          onToggle={toggle}
+          onNext={next}
+          onPrevious={previous}
+          onSeek={player.seek}
+          onVolume={player.setVolume}
+          onExpand={() => setMiniMode(false)}
+        />
+      ) : null}
 
       {/* Streamed links live in the YouTube view now, not in a dialog: a resolve
           takes seconds, and a modal is the wrong place to put a collection. */}
@@ -973,7 +1074,7 @@ export function App() {
       {/* Rendered last so it stacks over the bar it was opened from. The views
           behind it stay mounted, which is what keeps the list scroll position
           and the audio element untouched while it is open. */}
-      {nowPlaying ? (
+      {nowPlaying && !miniPlayer ? (
         <NowPlayingView
           closing={nowPlayingClosing}
           current={player.current}
@@ -1009,6 +1110,18 @@ export function App() {
           onAddTracksToPlaylist={playlists.addTracks}
           onCreatePlaylist={playlists.create}
         />
+      ) : null}
+
+      {fileDragActive ? (
+        <div className="drop-overlay" role="status" aria-live="polite">
+          <div className="drop-card">
+            <span className="drop-icon" aria-hidden="true">
+              <FolderIcon size={34} />
+            </span>
+            <strong>Add to your library</strong>
+            <span>Drop folders or audio files here. A single file is added with its folder.</span>
+          </div>
+        </div>
       ) : null}
     </div>
   )

@@ -1149,7 +1149,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         `(async () => {
            const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
            const card = [...document.querySelectorAll('#settings-panel-general .card')].find((el) =>
-             (el.textContent || '').includes('Startup & resume')
+             (el.textContent || '').includes('Startup, window & resume')
            )
            const trigger = card ? card.querySelector('.info-hint-trigger') : null
            trigger?.focus()
@@ -4537,6 +4537,66 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       container.online.search = realSearch
       container.online.channel = realChannel
     }
+
+    // ---- mini player ----------------------------------------------------
+    // One window, two layouts. The renderer swaps the UI and asks main for the
+    // native bounds; this check exercises that whole round trip, including the
+    // smaller minimum size that has to be applied before the window can shrink.
+    const mini = await evaluate<{
+      button: boolean
+      entered: boolean
+      width: number
+      title: string
+      controls: number
+      barHidden: boolean
+      expanded: boolean
+      fullWidth: number
+      barVisible: boolean
+    }>(
+      window,
+      `(async () => {
+         const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const button = document.querySelector('.mini-player-button')
+         if (!button) return { button: false, entered: false, width: 0, title: '', controls: 0, barHidden: false, expanded: false, fullWidth: 0, barVisible: false }
+         button.click()
+         await wait(600)
+         const app = document.querySelector('.app')
+         const miniPanel = document.querySelector('.mini-player')
+         const bar = document.querySelector('.player-bar')
+         const entered = Boolean(app && app.classList.contains('mini-player-mode') && miniPanel)
+         const title = miniPanel ? (miniPanel.querySelector('.mini-player-title')?.textContent || '').trim() : ''
+         const controls = miniPanel ? miniPanel.querySelectorAll('.icon-button').length : 0
+         const barHidden = Boolean(bar && getComputedStyle(bar).display === 'none')
+         const width = window.innerWidth
+         const expand = document.querySelector('.mini-player-expand')
+         if (expand) expand.click()
+         await wait(600)
+         const appAfter = document.querySelector('.app')
+         const barAfter = document.querySelector('.player-bar')
+         return {
+           button: true,
+           entered,
+           width,
+           title,
+           controls,
+           barHidden,
+           expanded: Boolean(appAfter && !appAfter.classList.contains('mini-player-mode') && !document.querySelector('.mini-player')),
+           fullWidth: window.innerWidth,
+           barVisible: Boolean(barAfter && getComputedStyle(barAfter).display !== 'none')
+         }
+       })()`
+    )
+    record(mini.button, 'the player bar offers a mini-player button')
+    record(
+      mini.entered && mini.width <= 470 && mini.title.length > 0 && mini.controls >= 4,
+      'mini player shrinks the window and renders its own controls',
+      { entered: mini.entered, width: mini.width, title: mini.title, controls: mini.controls }
+    )
+    record(
+      mini.barHidden && mini.expanded && mini.fullWidth >= 900 && mini.barVisible,
+      'leaving mini player restores the full window and player bar',
+      { hidden: mini.barHidden, expanded: mini.expanded, width: mini.fullWidth, bar: mini.barVisible }
+    )
   } catch (error) {
     failures += 1
     console.log(`SELFTEST FAIL  harness threw: ${describe(error)}`)

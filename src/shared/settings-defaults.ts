@@ -61,6 +61,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
     scanOnLaunch: true,
     resumePlayback: false
   },
+  // Closing the window quits unless the user asks otherwise. Hiding to the tray
+  // is convenient while music plays, but a process that survives a close is a
+  // surprise if it was not chosen.
+  desktop: {
+    closeToTray: false
+  },
   // Ten automatic copies is roughly a month of daily launches without letting
   // the backups folder grow without bound.
   backups: {
@@ -132,6 +138,7 @@ export const DEFAULT_PREFERENCE_PATCH: DeepPartial<AppSettings> = {
   visuals: { ...DEFAULT_SETTINGS.visuals },
   interaction: { ...DEFAULT_SETTINGS.interaction },
   startup: { ...DEFAULT_SETTINGS.startup },
+  desktop: { ...DEFAULT_SETTINGS.desktop },
   backups: { ...DEFAULT_SETTINGS.backups },
   retention: {
     mode: DEFAULT_SETTINGS.retention.mode,
@@ -169,6 +176,7 @@ export const SECTION_PREFERENCE_PATCHES: Record<PreferenceSection, DeepPartial<A
       view: DEFAULT_SETTINGS.startup.view,
       scanOnLaunch: DEFAULT_SETTINGS.startup.scanOnLaunch
     },
+    desktop: { ...DEFAULT_SETTINGS.desktop },
     library: {
       watchForChanges: DEFAULT_SETTINGS.library.watchForChanges
     },

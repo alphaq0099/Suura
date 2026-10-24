@@ -11,6 +11,7 @@ import { installStreamProtocolHandler } from './stream-protocol'
 import { runScaleCheck, seedScaleLibrary } from './scale-check'
 import { runSelfTest } from './selftest'
 import { createContainer, type AppContainer } from './services/container'
+import { installTray, type TrayController } from './tray'
 import { createMainWindow } from './window'
 
 // `npm run selftest` drives an end-to-end check and exits with a status code.
@@ -41,6 +42,20 @@ app.setAppUserModelId('com.player.desktop')
 
 let container: AppContainer | null = null
 let releaseMediaKeys: (() => void) | null = null
+let tray: TrayController | null = null
+/** True once the app is really leaving, so close-to-tray stops intercepting. */
+let quitting = false
+
+/**
+ * Brings the one window back from the tray, the taskbar, or another launch.
+ * Hidden and minimised are different states and both need undoing.
+ */
+function focusWindow(window: BrowserWindow): void {
+  if (window.isDestroyed()) return
+  if (window.isMinimized()) window.restore()
+  if (!window.isVisible()) window.show()
+  window.focus()
+}
 
 async function shutdownHeadlessDirectory(): Promise<void> {
   if (!headlessDataDir) return
@@ -77,6 +92,16 @@ function start(): void {
       const windowStartedAt = Date.now()
       const window = createMainWindow(appContainer.log.child('window'))
 
+      if (!HEADLESS) {
+        tray = installTray({ window, log: appContainer.log.child('tray') })
+        window.on('close', (event) => {
+          if (quitting || !tray) return
+          if (!appContainer.settings.get().desktop.closeToTray) return
+          event.preventDefault()
+          window.hide()
+        })
+      }
+
       if (SELFTEST) {
         window.webContents.once('did-finish-load', () => {
           void runSelfTest(window, appContainer).then(async (failures) => {
@@ -108,7 +133,9 @@ function start(): void {
       releaseMediaKeys = registerMediaKeys(appContainer.log.child('media-keys'))
 
       app.on('activate', () => {
-        if (BrowserWindow.getAllWindows().length === 0) createMainWindow(appContainer.log.child('window'))
+        const [existing] = BrowserWindow.getAllWindows()
+        if (existing) focusWindow(existing)
+        else createMainWindow(appContainer.log.child('window'))
       })
     })
     .catch((error: unknown) => {
@@ -137,9 +164,7 @@ if (HEADLESS) {
 } else {
   app.on('second-instance', () => {
     const [existing] = BrowserWindow.getAllWindows()
-    if (!existing) return
-    if (existing.isMinimized()) existing.restore()
-    existing.focus()
+    if (existing) focusWindow(existing)
   })
 
   app.on('window-all-closed', () => {
@@ -149,9 +174,15 @@ if (HEADLESS) {
   start()
 }
 
+app.on('before-quit', () => {
+  quitting = true
+})
+
 app.on('will-quit', () => {
   releaseMediaKeys?.()
   releaseMediaKeys = null
+  tray?.destroy()
+  tray = null
   container?.dispose()
   container = null
 })

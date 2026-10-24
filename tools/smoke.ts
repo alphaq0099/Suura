@@ -1074,6 +1074,38 @@ async function main(): Promise<void> {
       checkEqual('a corrupted save is ignored rather than thrown', playback.load(), null)
     }
 
+    // --- dropped paths ----------------------------------------------------
+    // The library is folder-based, so a dropped file has to become its parent
+    // folder. The cases worth pinning down are the common slip (a text file in
+    // the selection), the parent-directory rule, and dropping the same folder
+    // twice, which happens whenever a user drags an album and then its files.
+    const dropFolder = join(root, 'Dropped Album')
+    await mkdir(dropFolder, { recursive: true })
+    const dropFile = join(dropFolder, '01 - Dropped Tune.flac')
+    await copyFile(fixtures[1]?.path ?? '', dropFile)
+    await writeFile(join(dropFolder, 'notes.txt'), 'not audio\n', 'utf8')
+
+    let rejectedNonAudio = false
+    try {
+      await library.addDroppedPaths([join(dropFolder, 'notes.txt')])
+    } catch {
+      rejectedNonAudio = true
+    }
+    check('a dropped non-audio file is rejected', rejectedNonAudio)
+
+    const droppedFile = await library.addDroppedPaths([dropFile])
+    checkEqual('dropping a file adds its parent folder', droppedFile.folders.join('|'), normalizePath(dropFolder))
+    checkEqual('and indexes the track inside it', droppedFile.stats.tracks, 4)
+    checkEqual('the parent becomes a library folder', library.folders().length, 2)
+
+    const droppedAgain = await library.addDroppedPaths([dropFolder])
+    checkEqual('dropping the same folder again is idempotent', droppedAgain.stats.tracks, 4)
+    checkEqual('and does not duplicate the library folder', library.folders().length, 2)
+
+    library.removeFolder(dropFolder)
+    checkEqual('removing the dropped folder returns the original library', library.list().tracks.length, 3)
+    checkEqual('and leaves only the original folder', library.folders().length, 1)
+
     // --- removal of a whole folder ---------------------------------------
     library.removeFolder(musicDir)
     checkEqual('removing a folder forgets its tracks', library.list().tracks.length, 0)
@@ -2162,6 +2194,7 @@ async function main(): Promise<void> {
     )
 
     check('settings: prefetch is on by default', DEFAULT_SETTINGS.engine.prefetchNext)
+    check('settings: closing the window quits by default', !DEFAULT_SETTINGS.desktop.closeToTray)
     check('settings: browser cookies are off by default', DEFAULT_SETTINGS.engine.cookiesFromBrowser === null)
     checkEqual('settings: cookie fallback is off by default', DEFAULT_SETTINGS.engine.cookieFallback, 'off')
     check('settings: the cookie fallback accepts its three modes', isCookieFallbackMode('off') && isCookieFallbackMode('on-bot-check') && isCookieFallbackMode('always'))
@@ -2435,6 +2468,7 @@ async function main(): Promise<void> {
       theme: 'light',
       visuals: { accent: 'rose', density: 'compact' },
       interaction: { librarySingleClick: 'play' },
+      desktop: { closeToTray: true },
       engine: { binDir: 'D:\\Tools', lastUpdateCheckAt: 123_456, importLimit: 42 },
       retention: { downloadFolder: 'D:\\Downloads', qualityTier: 'data-saver' }
     })
@@ -2447,6 +2481,7 @@ async function main(): Promise<void> {
     checkEqual('reset: restores the theme', afterReset.theme, 'dark')
     checkEqual('reset: restores the accent', afterReset.visuals.accent, 'blue')
     checkEqual('reset: restores click behaviour', afterReset.interaction.librarySingleClick, 'select')
+    checkEqual('reset: restores closing to tray', afterReset.desktop.closeToTray, false)
     checkEqual('reset: restores import limits', afterReset.engine.importLimit, DEFAULT_SETTINGS.engine.importLimit)
     checkEqual('reset: restores saving quality', afterReset.retention.qualityTier, 'high')
     check(

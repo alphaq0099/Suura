@@ -9,6 +9,7 @@ import {
   NextIcon,
   PauseIcon,
   PlayIcon,
+  MiniPlayerIcon,
   PreviousIcon,
   QueueIcon,
   RepeatIcon,
@@ -44,6 +45,7 @@ export interface PlayerBarProps {
   onToggleShuffle: () => void
   onOpenQueue: () => void
   onOpenNowPlaying: () => void
+  onEnterMiniPlayer: () => void
 }
 
 export function PlayerBar(props: PlayerBarProps) {
@@ -69,7 +71,8 @@ export function PlayerBar(props: PlayerBarProps) {
     onCycleRepeat,
     onToggleShuffle,
     onOpenQueue,
-    onOpenNowPlaying
+    onOpenNowPlaying,
+    onEnterMiniPlayer
   } = props
 
   const hasQueue = queueLength > 0 && queueIndex >= 0
@@ -190,6 +193,15 @@ export function PlayerBar(props: PlayerBarProps) {
       </div>
 
       <div className="player-volume" ref={volumeBoxRef}>
+        <button
+          type="button"
+          className="icon-button mini-player-button"
+          onClick={onEnterMiniPlayer}
+          title="Mini player"
+          aria-label="Open the mini player"
+        >
+          <MiniPlayerIcon />
+        </button>
         <button
           type="button"
           className={queueLength > 0 ? 'icon-button queue-button' : 'icon-button queue-button muted'}

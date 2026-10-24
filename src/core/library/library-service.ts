@@ -1,4 +1,14 @@
-import type { LibraryStats, ListTracksQuery, ScanProgress, Track, TrackPage } from '@shared/types'
+import { stat } from 'node:fs/promises'
+import { dirname } from 'node:path'
+import type {
+  DroppedPathsResult,
+  LibraryStats,
+  ListTracksQuery,
+  ScanProgress,
+  Track,
+  TrackPage
+} from '@shared/types'
+import { isAudioFile } from '@shared/mime'
 import { isPathInside, normalizePath } from './content-key'
 import { scanLibraryFolders } from './scanner'
 import type { TrackRepository } from './track-repository'
@@ -163,6 +173,60 @@ export class LibraryService {
     // has to drop it too: otherwise the scan the user just stopped starts again.
     this.rescanQueued = false
     this.activeScan.abort()
+  }
+
+  /**
+   * Adds what the user dropped on the window.
+   *
+   * The library is folder-based, so a dropped audio file is added by scanning
+   * its directory. That is a deliberate simplification: indexing one file from
+   * an otherwise ignored album would produce a library that changes shape again
+   * the moment the folder is scanned, and the drop overlay says so. A dropped
+   * non-audio file is rejected instead of quietly adding its parent.
+   *
+   * Folders already covered by a library root reuse that root rather than
+   * creating a nested library entry, and one scan of a parent is enough even if
+   * a child folder was dropped alongside it.
+   */
+  async addDroppedPaths(paths: string[]): Promise<DroppedPathsResult> {
+    if (this.activeScan) throw new Error('A library scan is already running.')
+
+    const targets = new Set<string>()
+    for (const input of paths) {
+      if (typeof input !== 'string' || input.trim().length === 0) continue
+      let info: Awaited<ReturnType<typeof stat>>
+      try {
+        info = await stat(input)
+      } catch {
+        // A path can vanish between the drop and this call. It is not worth an
+        // error when the rest of the drop is still usable.
+        continue
+      }
+      if (info.isDirectory()) targets.add(normalizePath(input))
+      else if (info.isFile() && isAudioFile(input)) targets.add(normalizePath(dirname(input)))
+    }
+
+    if (targets.size === 0) {
+      throw new Error('Drop audio files or folders to add them to the library.')
+    }
+
+    // Keep only the outermost dropped folders: scanning an album also covers a
+    // disc folder dropped next to it.
+    const outermost = [...targets].filter(
+      (candidate) =>
+        ![...targets].some((other) => other !== candidate && isPathInside(other, candidate))
+    )
+
+    const existing = this.folders()
+    const folders = [
+      ...new Set(
+        outermost.map((folder) => existing.find((root) => isPathInside(root, folder)) ?? folder)
+      )
+    ].sort()
+
+    let stats = this.stats()
+    for (const folder of folders) stats = await this.scan(folder)
+    return { folders, stats }
   }
 
   /**

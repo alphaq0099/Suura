@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import {
   EVENT_CHANNELS,
   IPC,
@@ -40,6 +40,12 @@ const api: PlayerApi = {
   scanLibrary: (folder?: string) => ipcRenderer.invoke(IPC.libraryScan, folder),
 
   cancelScan: () => ipcRenderer.invoke(IPC.libraryScanCancel) as Promise<void>,
+
+  addDroppedPaths: (paths: string[]) => ipcRenderer.invoke(IPC.libraryAddPaths, paths),
+
+  // Not IPC: the File object only exists in the renderer world, and `webUtils`
+  // is one of the few Electron helpers that must be reached from preload.
+  getPathForFile: (file: File) => webUtils.getPathForFile(file),
 
   listTracks: (query?: ListTracksQuery) => ipcRenderer.invoke(IPC.libraryListTracks, query),
 
@@ -157,6 +163,11 @@ const api: PlayerApi = {
   startPoTokenProvider: () => ipcRenderer.invoke(IPC.poTokenStart),
 
   stopPoTokenProvider: () => ipcRenderer.invoke(IPC.poTokenStop),
+
+  isMiniPlayer: () => ipcRenderer.invoke(IPC.windowGetMini) as Promise<boolean>,
+
+  setMiniPlayer: (enabled: boolean) =>
+    ipcRenderer.invoke(IPC.windowSetMini, enabled) as Promise<boolean>,
 
   on<E extends PlayerEventName>(event: E, callback: (payload: PlayerEvents[E]) => void): number {
     const token = nextToken++

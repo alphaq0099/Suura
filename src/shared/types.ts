@@ -182,6 +182,13 @@ export interface LibraryStats {
   missingTracks: number
 }
 
+/** What one OS drop added and the library state after its scans. */
+export interface DroppedPathsResult {
+  /** The folders that were added or reused, in scan order. */
+  folders: string[]
+  stats: LibraryStats
+}
+
 /**
  * What a duplicate scan found.
  *
@@ -676,6 +683,25 @@ export interface StartupSettings {
   resumePlayback: boolean
 }
 
+/**
+ * How the desktop window behaves outside the page.
+ *
+ * This is deliberately separate from `startup`: whether the close button quits
+ * or hides is a window convention, not a launch preference, and putting it here
+ * keeps the meaning clear if window options later grow (remembered bounds,
+ * minimise to tray, and so on).
+ */
+export interface DesktopSettings {
+  /**
+   * Hide to the tray instead of quitting when the window is closed.
+   *
+   * Off by default. A hidden player that keeps running is the right behaviour
+   * for a music app, but it is also surprising the first time, so it is an
+   * explicit choice rather than something that happens on a normal close.
+   */
+  closeToTray: boolean
+}
+
 /** How many automatic database copies stay on disk. */
 export interface BackupSettings {
   retentionCount: number
@@ -716,6 +742,7 @@ export interface AppSettings {
   visuals: VisualSettings
   interaction: InteractionSettings
   startup: StartupSettings
+  desktop: DesktopSettings
   backups: BackupSettings
   retention: RetentionSettings
   engine: EngineSettings

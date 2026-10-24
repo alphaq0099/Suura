@@ -10,6 +10,7 @@ import type {
   AppSettings,
   DeepPartial,
   DownloadProgress,
+  DroppedPathsResult,
   DuplicateMergeOutcome,
   DuplicateReport,
   EngineStatus,
@@ -58,6 +59,7 @@ export const IPC = {
   dataRestore: 'data:restore',
   libraryScan: 'library:scan',
   libraryScanCancel: 'library:scan-cancel',
+  libraryAddPaths: 'library:add-paths',
   libraryListTracks: 'library:list-tracks',
   libraryStats: 'library:stats',
   libraryRemoveFolder: 'library:remove-folder',
@@ -108,7 +110,9 @@ export const IPC = {
   engineStatus: 'engine:status',
   poTokenStatus: 'engine:po-token-status',
   poTokenStart: 'engine:po-token-start',
-  poTokenStop: 'engine:po-token-stop'
+  poTokenStop: 'engine:po-token-stop',
+  windowGetMini: 'window:get-mini',
+  windowSetMini: 'window:set-mini'
 } as const
 
 /** Main -> renderer push channels. */
@@ -133,6 +137,8 @@ export type PlayerCommand =
   | { type: 'next' }
   | { type: 'prev' }
   | { type: 'stop' }
+  /** Toggle the compact layout; the renderer asks main to resize the window. */
+  | { type: 'mini-player' }
 
 /** Payload type for each push event, so `on()` can be strongly typed. */
 export interface PlayerEvents {
@@ -191,6 +197,19 @@ export interface PlayerApi {
   restoreData(): Promise<boolean>
   scanLibrary(folder?: string): Promise<LibraryStats>
   cancelScan(): Promise<void>
+  /**
+   * Adds folders, or the folders containing dropped audio files, to the library
+   * and scans them. Rejects when nothing droppable was supplied or a scan is
+   * already running.
+   */
+  addDroppedPaths(paths: string[]): Promise<DroppedPathsResult>
+  /**
+   * The absolute path behind a `File` from an OS drag-and-drop.
+   *
+   * Modern Electron no longer exposes `File.path`; this is the supported lookup
+   * and it has to live in preload, where `webUtils` is available.
+   */
+  getPathForFile(file: File): string
   listTracks(query?: ListTracksQuery): Promise<TrackPage>
   getStats(): Promise<LibraryStats>
   removeLibraryFolder(folder: string): Promise<AppSettings>
@@ -358,6 +377,13 @@ export interface PlayerApi {
   startPoTokenProvider(): Promise<PoTokenStatus>
   /** Stops only a provider this app started; external servers are untouched. */
   stopPoTokenProvider(): Promise<PoTokenStatus>
+  /** True when the window is currently in its compact layout. */
+  isMiniPlayer(): Promise<boolean>
+  /**
+   * Resizes the one window between the full UI and mini. The renderer changes
+   * its own layout; this call only owns the native bounds and minimum size.
+   */
+  setMiniPlayer(enabled: boolean): Promise<boolean>
   on<E extends PlayerEventName>(event: E, callback: (payload: PlayerEvents[E]) => void): number
   off(token: number): void
 }

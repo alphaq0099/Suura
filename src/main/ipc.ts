@@ -25,6 +25,7 @@ import type {
   BackupSettings,
   DeepPartial,
   Density,
+  DesktopSettings,
   DownloadFormat,
   EngineSettings,
   IconSet,
@@ -66,6 +67,7 @@ import {
   normalizeCookieBrowserProfile
 } from '@shared/youtube'
 import type { AppContainer } from './services/container'
+import { isMiniPlayer, setMiniPlayer } from './window-mode'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -318,6 +320,14 @@ export function sanitizeSettingsPatch(input: unknown): DeepPartial<AppSettings> 
       startup.resumePlayback = source.resumePlayback
     }
     patch.startup = startup
+  }
+
+  if (isPlainObject(input.desktop)) {
+    const desktop: DeepPartial<DesktopSettings> = {}
+    if (typeof input.desktop.closeToTray === 'boolean') {
+      desktop.closeToTray = input.desktop.closeToTray
+    }
+    patch.desktop = desktop
   }
 
   if (isPlainObject(input.backups)) {
@@ -583,6 +593,16 @@ export function registerIpcHandlers(container: AppContainer): void {
 
   ipcMain.handle(IPC.libraryScanCancel, () => {
     library.cancelScan()
+  })
+
+  ipcMain.handle(IPC.libraryAddPaths, async (_event, paths: unknown) => {
+    if (!Array.isArray(paths)) throw new Error('Drop paths must be a list.')
+    const safe = paths
+      .filter((path): path is string => typeof path === 'string' && path.trim().length > 0)
+      // A file manager can drop thousands of selected files; a bound keeps a
+      // single accidental drop from freezing the scan queue for minutes.
+      .slice(0, 500)
+    return library.addDroppedPaths(safe)
   })
 
   ipcMain.handle(IPC.libraryListTracks, (_event, query: unknown) => library.list(sanitizeListQuery(query)))
@@ -955,5 +975,20 @@ export function registerIpcHandlers(container: AppContainer): void {
     } catch (error) {
       log.warn('could not clear play state', error)
     }
+  })
+
+  // ---- window mode ------------------------------------------------------
+  // The renderer owns whether the compact UI is shown; main owns the native
+  // bounds. Keeping those separate is what lets a renderer reload recover: it
+  // asks for the remembered state instead of assuming full size.
+  ipcMain.handle(IPC.windowGetMini, (event) => {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    return window ? isMiniPlayer(window) : false
+  })
+
+  ipcMain.handle(IPC.windowSetMini, (event, enabled: unknown) => {
+    if (typeof enabled !== 'boolean') throw new Error('Window mode must be a boolean.')
+    const window = BrowserWindow.fromWebContents(event.sender)
+    return window ? setMiniPlayer(window, enabled) : false
   })
 }

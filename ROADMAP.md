@@ -303,12 +303,12 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
 - [ ] Gapless playback between consecutive tracks (album continuity)
 - [x] Media keys (global shortcuts for play/pause, next, previous, stop)
 - [ ] Windows SMTC (now-playing overlay), taskbar thumbnail controls
-- [ ] Mini player, tray icon, close-to-tray behaviour
+- [x] Mini player, tray icon, close-to-tray behaviour
 - [x] 10-band EQ + presets, preamp
 - [ ] Optional crossfade
 - [x] Volume normalization for local files (ReplayGain scan)
 - [x] Keyboard shortcuts (space, arrows, N/P, M, Ctrl+F, Escape)
-- [ ] Drag & drop of files/folders
+- [x] Drag & drop of files/folders
 **Exit:** feels like a real desktop music app, not a tech demo.
 
 ### M3 — Engine Skeleton (resolve + stream, no downloads)  *(~2–3 weeks)*

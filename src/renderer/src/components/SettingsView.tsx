@@ -602,17 +602,18 @@ export function SettingsView(props: SettingsViewProps) {
             <article className="card">
               <header className="card-header">
                 <h2>
-                  Startup &amp; resume
-                  <InfoHint label="About startup and resume">
+                  Startup, window &amp; resume
+                  <InfoHint label="About startup and window behaviour">
                     Last used returns to the view you left open; Settings is never restored. The first launch after
                     adding a folder always scans, even when the launch scan is off. Resuming brings back the last
-                    local queue; with the option off the queue still returns, but paused.
+                    local queue; with the option off the queue still returns, but paused. Closing to the tray keeps
+                    playback alive and leaves the tray icon as the way back.
                   </InfoHint>
                 </h2>
               </header>
               <p className="card-hint">
-                Where Player opens, whether it checks for changes made while it was closed, and what happens to the
-                last queue.
+                Where Player opens, whether it checks for changes made while it was closed, what happens to the last
+                queue, and whether closing the window quits or hides it.
               </p>
               <div className="field-grid">
                 <label className="field">
@@ -653,6 +654,20 @@ export function SettingsView(props: SettingsViewProps) {
                     <InfoHint label="About automatic resume">
                       Restores the last local queue, seeks to the saved position and starts playing. With this off the
                       queue still returns, but paused, so opening the app is quiet.
+                    </InfoHint>
+                  </span>
+                </label>
+                <label className="field checkbox">
+                  <input
+                    type="checkbox"
+                    checked={settings.desktop.closeToTray}
+                    onChange={(event) => onUpdate({ desktop: { closeToTray: event.target.checked } })}
+                  />
+                  <span>
+                    Close to tray
+                    <InfoHint label="About closing to the tray">
+                      Closing the window hides it and keeps playback running. Use the tray icon to show Player again or
+                      to quit. With this off, closing the last window exits the app.
                     </InfoHint>
                   </span>
                 </label>
