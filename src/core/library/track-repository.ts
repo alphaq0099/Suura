@@ -33,6 +33,23 @@ export interface TrackRow {
   updated_at: number
   play_count: number
   last_played_at: number | null
+  replay_gain_db: number | null
+  replay_gain_peak: number | null
+}
+
+/** A local file waiting for loudness analysis. */
+export interface ReplayGainCandidate {
+  id: number
+  filePath: string
+  title: string
+  artist: string | null
+}
+
+export interface ReplayGainStats {
+  /** Playable local rows. */
+  total: number
+  /** Rows that already have a measured gain. */
+  analyzed: number
 }
 
 export interface TrackWriteInput {
@@ -122,7 +139,9 @@ const TRACK_COLUMN_NAMES = [
   'added_at',
   'updated_at',
   'play_count',
-  'last_played_at'
+  'last_played_at',
+  'replay_gain_db',
+  'replay_gain_peak'
 ] as const
 
 /**
@@ -268,7 +287,9 @@ export function mapTrackRow(row: TrackRow): Track {
     artworkKey: row.artwork_key && row.artwork_key.length > 0 ? row.artwork_key : null,
     addedAt: row.added_at,
     playCount: row.play_count,
-    lastPlayedAt: row.last_played_at
+    lastPlayedAt: row.last_played_at,
+    replayGainDb: row.replay_gain_db ?? null,
+    replayGainPeak: row.replay_gain_peak ?? null
   }
 }
 
@@ -440,6 +461,53 @@ export class TrackRepository {
     }
   }
 
+  /**
+   * Playable local files that have no measured gain yet.
+   *
+   * The scan is deliberately incremental: rerunning it after a few new files
+   * arrive only decodes those files, not the whole library. A changed file is
+   * cleared by `update`, so it rejoins this list automatically.
+   */
+  replayGainCandidates(): ReplayGainCandidate[] {
+    return this.db
+      .prepare(
+        `SELECT id, file_path, title, artist
+           FROM tracks
+          WHERE source_kind = 'local'
+            AND missing_at IS NULL
+            AND file_path IS NOT NULL
+            AND replay_gain_db IS NULL
+          ORDER BY id`
+      )
+      .all<{ id: number; file_path: string; title: string; artist: string | null }>()
+      .map((row) => ({
+        id: row.id,
+        filePath: row.file_path,
+        title: row.title,
+        artist: row.artist
+      }))
+  }
+
+  /** How much of the local library has a measured gain. */
+  replayGainStats(): ReplayGainStats {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS total,
+                COALESCE(SUM(CASE WHEN replay_gain_db IS NOT NULL THEN 1 ELSE 0 END), 0) AS analyzed
+           FROM tracks
+          WHERE source_kind = 'local' AND missing_at IS NULL AND file_path IS NOT NULL`
+      )
+      .get<{ total: number; analyzed: number }>()
+    return { total: row?.total ?? 0, analyzed: row?.analyzed ?? 0 }
+  }
+
+  /** Stores one analysis result. Values are already converted from LUFS. */
+  setReplayGain(id: number, gainDb: number, peakDb: number | null): void {
+    this.db
+      .prepare(`UPDATE tracks SET replay_gain_db = ?, replay_gain_peak = ? WHERE id = ?`)
+      .run(gainDb, peakDb, id)
+  }
+
   /** Existing rows for a set of paths, used for the size+mtime fast path. */
   existingFileState(keys: string[]): Map<string, ExistingFileState> {
     const result = new Map<string, ExistingFileState>()
@@ -508,6 +576,7 @@ export class TrackRepository {
            title = ?, artist = ?, album_artist = ?, album = ?, track_no = ?, disc_no = ?,
            year = ?, genre = ?, duration_ms = ?, codec = ?, bitrate_kbps = ?, sample_rate = ?,
            channels = ?, file_size = ?, file_mtime_ms = ?, file_path = ?,
+           replay_gain_db = NULL, replay_gain_peak = NULL,
            missing_at = NULL, file_hash = NULL, updated_at = ?
          WHERE id = ?`
       )

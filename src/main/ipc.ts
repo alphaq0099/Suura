@@ -10,6 +10,7 @@ import {
   TEXT_SIZES,
   THEME_MODES
 } from '@shared/appearance'
+import { sanitizeAudioPatch } from '@shared/audio'
 import { sanitizeFilePart } from '@shared/files'
 import { IPC } from '@shared/ipc'
 import { isLocalLibraryFilter } from '@shared/library'
@@ -277,6 +278,10 @@ export function sanitizeSettingsPatch(input: unknown): DeepPartial<AppSettings> 
       visuals.playerAmbience = source.playerAmbience
     }
     patch.visuals = visuals
+  }
+
+  if (isPlainObject(input.audio)) {
+    patch.audio = sanitizeAudioPatch(input.audio)
   }
 
   if (isPlainObject(input.interaction)) {
@@ -631,7 +636,15 @@ export function registerIpcHandlers(container: AppContainer): void {
     }
     const track = library.trackById(request.id)
     if (!track) throw new Error('Unknown track.')
-    return container.resolvers.resolve(track)
+    const source = await container.resolvers.resolve(track)
+    // ReplayGain belongs to the file, not to the resolver. Attaching it here
+    // keeps LocalFileResolver unaware of audio settings and means a cached
+    // source can never carry a gain from a file that has since changed.
+    return {
+      ...source,
+      replayGainDb: track.replayGainDb,
+      replayGainPeak: track.replayGainPeak
+    }
   })
 
   // The next track's resolve, run while the current one plays. Deliberately not
@@ -641,6 +654,17 @@ export function registerIpcHandlers(container: AppContainer): void {
     const request = toResolvableTrack(input)
     await container.resolvers.prefetch(request)
   })
+
+  // Loudness analysis is a long job with its own progress event. The renderer
+  // never sees a raw file path after the value is stored; it is only used here
+  // to feed ffmpeg.
+  ipcMain.handle(IPC.replayGainScan, () => container.replayGain.scan())
+
+  ipcMain.handle(IPC.replayGainCancel, () => {
+    container.replayGain.cancel()
+  })
+
+  ipcMain.handle(IPC.replayGainStatus, () => container.replayGain.getStatus())
 
   // ---- online history --------------------------------------------------
   // A pasted link becomes a row before it is ever played or saved. Resolving it

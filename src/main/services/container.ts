@@ -27,6 +27,7 @@ import { createArtworkService, type ArtworkService } from '../artwork-service'
 import { broadcast } from '../broadcast'
 import { cleanupAbandonedDownloads, DownloadService } from '../download-service'
 import { createOnlineService, type OnlineService } from '../online-service'
+import { ReplayGainService } from '../replay-gain-service'
 import { createYoutubeService, type YoutubeService } from '../youtube-service'
 
 /**
@@ -62,6 +63,8 @@ export interface AppContainer {
   onlinePlaylists: OnlinePlaylistRepository
   /** Starts/stops an external PO Token provider when the user asks. */
   poToken: PoTokenProvider
+  /** Measures ReplayGain for local files in the background. */
+  replayGain: ReplayGainService
   dispose(): void
 }
 
@@ -227,6 +230,13 @@ export function createContainer(): AppContainer {
   })
   poToken.maybeAutoStart()
 
+  const replayGain = new ReplayGainService({
+    settings,
+    repo,
+    log: log.child('replay-gain'),
+    onProgress: (status) => broadcast(IPC_EVENTS.replayGainProgress, status)
+  })
+
   return {
     paths,
     log,
@@ -246,12 +256,14 @@ export function createContainer(): AppContainer {
     onlineRepo,
     onlinePlaylists,
     poToken,
+    replayGain,
     dispose: () => {
       unwatchSettings()
       unwatchTheme()
       unwatchBackupRetention()
       unwatchPoToken()
       poToken.dispose()
+      replayGain.dispose()
       downloads.dispose()
       watcher.stop()
       database.close()

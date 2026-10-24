@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { APPEARANCE_CACHE_KEY, DENSITY_ROW_HEIGHT } from '@shared/appearance'
+import { DEFAULT_AUDIO_SETTINGS } from '@shared/audio'
 import type {
   AppPaths,
   AppSettings,
   DeepPartial,
   EngineStatus,
   PoTokenStatus,
+  ReplayGainStatus,
   RepeatMode,
   RuntimeInfo,
   Track,
@@ -63,6 +65,7 @@ export function App() {
   const [runtimeInfo, setRuntimeInfo] = useState<RuntimeInfo | null>(null)
   const [engineStatus, setEngineStatus] = useState<EngineStatus | null>(null)
   const [engineLoading, setEngineLoading] = useState(false)
+  const [replayGainStatus, setReplayGainStatus] = useState<ReplayGainStatus | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   /**
    * The imported list whose tracks are playing, if any.
@@ -278,6 +281,7 @@ export function App() {
 
   const player = usePlayer({
     initialVolume: settings?.volume ?? 0.8,
+    audioSettings: settings?.audio ?? DEFAULT_AUDIO_SETTINGS,
     repeat: settings?.repeat ?? 'off',
     shuffle: settings?.shuffle ?? false,
     prefetchNext: settings?.engine.prefetchNext ?? true,
@@ -382,6 +386,41 @@ export function App() {
     if (engineStatus || engineLoading) return
     void refreshEngine()
   }, [view, engineStatus, engineLoading, refreshEngine])
+
+  // A loudness scan outlives the view that started it. Subscribing here, once,
+  // means the progress bar is already current when Settings is reopened.
+  useEffect(() => {
+    const token = api.on('replayGainProgress', setReplayGainStatus)
+    return () => api.off(token)
+  }, [])
+
+  useEffect(() => {
+    if (view !== 'settings') return
+    void api
+      .getReplayGainStatus()
+      .then(setReplayGainStatus)
+      .catch(() => undefined)
+  }, [view])
+
+  const scanReplayGain = useCallback(async (): Promise<void> => {
+    setActionError(null)
+    try {
+      setReplayGainStatus(await api.scanReplayGain())
+    } catch (cause) {
+      setActionError(messageOf(cause))
+      // The service broadcasts a `failed` status, but a scan can fail before its
+      // first event (for example when ffmpeg is missing); re-read so the panel
+      // shows the reason instead of staying on "starting".
+      void api
+        .getReplayGainStatus()
+        .then(setReplayGainStatus)
+        .catch(() => undefined)
+    }
+  }, [])
+
+  const cancelReplayGain = useCallback((): void => {
+    void api.cancelReplayGain().catch(() => undefined)
+  }, [])
 
   // First run (or after a config file reset) should not require clicking Rescan.
   // Later launches follow the General preference; the scan is incremental, so
@@ -860,6 +899,9 @@ export function App() {
           scanning={scanning}
           error={combinedError}
           onUpdate={updateSettings}
+          replayGainStatus={replayGainStatus}
+          onScanReplayGain={scanReplayGain}
+          onCancelReplayGain={cancelReplayGain}
           onAddFolder={() => void addFolder()}
           onRemoveFolder={(folder) => void removeFolder(folder)}
           onPickEngineDir={() => void pickEngineDir()}

@@ -396,6 +396,10 @@ export class RemoteStreamProxy {
       if (value) headers.set(name, value)
     }
     if (!headers.has('content-type')) headers.set('content-type', entry.upstream.mimeType)
+    // The renderer routes remote audio through a MediaElementAudioSourceNode
+    // too. Without this the element would play but the equaliser would receive
+    // silence, because Chromium taints cross-origin media.
+    headers.set('access-control-allow-origin', '*')
     // Signed URLs are per-session; a cached body would outlive its signature.
     headers.set('cache-control', 'no-store')
 

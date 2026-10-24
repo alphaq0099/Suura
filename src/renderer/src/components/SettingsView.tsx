@@ -32,6 +32,7 @@ import type {
   PoTokenStatus,
   QualityTier,
   RelocateReport,
+  ReplayGainStatus,
   RuntimeInfo,
   StartupView,
   SurfaceStyle,
@@ -39,6 +40,7 @@ import type {
   ThemeMode
 } from '@shared/types'
 import { COOKIE_BROWSERS, normalizePoTokenProviderUrl } from '@shared/youtube'
+import { AudioSettingsPanel } from './AudioSettingsPanel'
 import { FolderIcon, InfoIcon, RefreshIcon, SpinnerIcon, TrashIcon } from './Icons'
 
 export interface SettingsViewProps {
@@ -50,6 +52,9 @@ export interface SettingsViewProps {
   scanning: boolean
   error: string | null
   onUpdate: (patch: DeepPartial<AppSettings>) => void
+  replayGainStatus: ReplayGainStatus | null
+  onScanReplayGain: () => Promise<void>
+  onCancelReplayGain: () => void
   onAddFolder: () => void
   onRemoveFolder: (folder: string) => void
   onPickEngineDir: () => void
@@ -284,6 +289,9 @@ export function SettingsView(props: SettingsViewProps) {
     scanning,
     error,
     onUpdate,
+    replayGainStatus,
+    onScanReplayGain,
+    onCancelReplayGain,
     onAddFolder,
     onRemoveFolder,
     onPickEngineDir,
@@ -729,6 +737,14 @@ export function SettingsView(props: SettingsViewProps) {
                 </label>
               </div>
             </article>
+
+            <AudioSettingsPanel
+              audio={settings.audio}
+              replayGainStatus={replayGainStatus}
+              onUpdate={onUpdate}
+              onScanReplayGain={onScanReplayGain}
+              onCancelReplayGain={onCancelReplayGain}
+            />
           </div>
         </section>
 

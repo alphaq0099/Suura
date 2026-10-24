@@ -2,6 +2,7 @@ import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { ARTWORK_SIZES, ICON_SETS, TEXT_SIZES } from '@shared/appearance'
+import { normalizeAudioSettings } from '@shared/audio'
 import { DEFAULT_SETTINGS } from '@shared/settings-defaults'
 import {
   isStartupView,
@@ -149,6 +150,11 @@ export class SettingsService {
         showChannelColumn: storedVisuals.showChannelColumn !== false
       }
     }
+
+    // Equaliser bands are an array, so the deep merge cannot repair a hand-edited
+    // curve with the wrong length. Normalising on read also supplies the audio
+    // section to configs written before it existed.
+    settings = { ...settings, audio: normalizeAudioSettings(settings.audio) }
 
     // A hand-edited config is still input from outside the type system. Keep the
     // reliability controls in a shape the UI and argument builders can trust.

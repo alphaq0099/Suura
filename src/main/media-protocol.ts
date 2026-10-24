@@ -47,6 +47,11 @@ export function installMediaProtocolHandler(deps: MediaProtocolDeps): void {
     const baseHeaders: Record<string, string> = {
       'Content-Type': mimeForExtension(filePath),
       'Accept-Ranges': 'bytes',
+      // Web Audio reads the element's decoded samples. A cross-origin media
+      // element without CORS is deliberately silenced by Chromium when a
+      // MediaElementAudioSourceNode is attached, so the renderer sets
+      // crossOrigin and this protocol answers for it.
+      'Access-Control-Allow-Origin': '*',
       // The renderer must not serve a stale body after the file changes on disk.
       'Cache-Control': 'no-store'
     }

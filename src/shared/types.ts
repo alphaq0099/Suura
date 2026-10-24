@@ -140,6 +140,17 @@ export interface Track {
    * `buildArtworkUrl` to get a URL for an <img>.
    */
   artworkKey: string | null
+  /**
+   * ReplayGain track gain in dB, or null until the file has been analysed.
+   *
+   * This is measured from the file, not read from a tag: tags are inconsistent
+   * and often missing, and a scan that only trusted tags would do nothing for a
+   * library of ordinary downloads. The value is a property of the bytes, so it
+   * is cleared when the file changes.
+   */
+  replayGainDb: number | null
+  /** True peak in dBFS from the same analysis, used to avoid clipping. */
+  replayGainPeak: number | null
   addedAt: number
   playCount: number
   lastPlayedAt: number | null
@@ -545,6 +556,63 @@ export interface EngineSettings {
   mixLimit: number
 }
 
+/**
+ * A named equaliser curve. `custom` means the bands no longer match a preset:
+ * the UI switches to it as soon as a slider is moved.
+ */
+export type EqualizerPreset =
+  | 'flat'
+  | 'acoustic'
+  | 'bass'
+  | 'classical'
+  | 'electronic'
+  | 'hiphop'
+  | 'jazz'
+  | 'pop'
+  | 'rock'
+  | 'vocal'
+  | 'custom'
+
+export interface EqualizerSettings {
+  enabled: boolean
+  preset: EqualizerPreset
+  /** Gain applied before the filters, in dB. */
+  preampDb: number
+  /** Ten gains in dB, one per band from 31 Hz to 16 kHz. */
+  bands: number[]
+}
+
+export interface NormalizationSettings {
+  /** Apply measured ReplayGain values to local tracks. */
+  enabled: boolean
+  /** Never raise a track past its measured true peak. */
+  preventClipping: boolean
+}
+
+export interface AudioSettings {
+  equalizer: EqualizerSettings
+  normalization: NormalizationSettings
+}
+
+/** How far a library-wide ReplayGain analysis has got. */
+export type ReplayGainPhase = 'idle' | 'scanning' | 'done' | 'cancelled' | 'failed'
+
+export interface ReplayGainStatus {
+  phase: ReplayGainPhase
+  /** Tracks queued for this run, not the size of the whole library. */
+  total: number
+  /** Tracks examined, whether they produced a value or failed. */
+  scanned: number
+  failed: number
+  /** Local files in the library, and how many already have a measurement. */
+  libraryTotal: number
+  libraryAnalyzed: number
+  currentFile: string | null
+  startedAt: number | null
+  finishedAt: number | null
+  error: string | null
+}
+
 export interface VisualSettings {
   accent: AccentName
   density: Density
@@ -642,6 +710,7 @@ export interface AppSettings {
   repeat: RepeatMode
   shuffle: boolean
   theme: ThemeMode
+  audio: AudioSettings
   library: LibrarySettings
   playlists: PlaylistSettings
   visuals: VisualSettings
@@ -701,6 +770,15 @@ export interface ResolvedSource {
   mimeType: string | null
   /** Which resolver produced this, for logging and for the future UI source badge. */
   resolverId: string
+  /**
+   * Measured ReplayGain for this source, when it has one.
+   *
+   * The renderer applies it in the Web Audio chain; the resolver does not need
+   * to know about equalisation or loudness. Remote streams leave both null until
+   * they have been cached and analysed, which is a later milestone.
+   */
+  replayGainDb?: number | null
+  replayGainPeak?: number | null
 }
 
 /** Health of an external engine binary (yt-dlp, ffmpeg). Used by Settings in M0.5. */

@@ -97,6 +97,8 @@ function artworkTrack(result: YouTubeSearchResult): Track {
     missingAt: null,
     filePath: null,
     artworkKey: null,
+    replayGainDb: null,
+    replayGainPeak: null,
     addedAt: 0,
     playCount: 0,
     lastPlayedAt: null

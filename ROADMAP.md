@@ -304,8 +304,9 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
 - [x] Media keys (global shortcuts for play/pause, next, previous, stop)
 - [ ] Windows SMTC (now-playing overlay), taskbar thumbnail controls
 - [ ] Mini player, tray icon, close-to-tray behaviour
-- [ ] 10-band EQ + presets, preamp, optional crossfade
-- [ ] Volume normalization for local files (ReplayGain scan)
+- [x] 10-band EQ + presets, preamp
+- [ ] Optional crossfade
+- [x] Volume normalization for local files (ReplayGain scan)
 - [x] Keyboard shortcuts (space, arrows, N/P, M, Ctrl+F, Escape)
 - [ ] Drag & drop of files/folders
 **Exit:** feels like a real desktop music app, not a tech demo.

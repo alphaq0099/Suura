@@ -21,6 +21,10 @@ export function registerPrivilegedSchemes(): void {
         standard: true,
         secure: true,
         supportFetchAPI: true,
+        // Web Audio's MediaElementAudioSourceNode reads the decoded samples as
+        // a cross-origin resource. The handler answers with an allow-origin
+        // header; this makes Chromium honour CORS for the scheme at all.
+        corsEnabled: true,
         stream: true
       }
     },
@@ -40,6 +44,7 @@ export function registerPrivilegedSchemes(): void {
         standard: true,
         secure: true,
         supportFetchAPI: true,
+        corsEnabled: true,
         stream: true
       }
     }

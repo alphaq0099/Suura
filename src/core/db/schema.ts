@@ -352,6 +352,22 @@ export const MIGRATIONS: readonly Migration[] = [
         UPDATE online_tracks SET channel = artist WHERE channel IS NULL;
       `)
     }
+  },
+  {
+    version: 11,
+    name: 'replay gain analysis',
+    up: (db) => {
+      // These are measurements, not tags. Keeping them beside the file state
+      // means the player can apply a gain without opening the audio file again.
+      // A row with no value has either never been analysed or changed since the
+      // last analysis; both mean "scan me".
+      db.exec(`
+        ALTER TABLE tracks ADD COLUMN replay_gain_db REAL;
+        ALTER TABLE tracks ADD COLUMN replay_gain_peak REAL;
+
+        CREATE INDEX idx_tracks_replay_gain ON tracks(source_kind, missing_at, replay_gain_db);
+      `)
+    }
   }
 ]
 

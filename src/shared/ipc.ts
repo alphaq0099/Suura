@@ -24,6 +24,7 @@ import type {
   PlaylistDetail,
   PlaylistImportOutcome,
   PoTokenStatus,
+  ReplayGainStatus,
   ResolvedSource,
   ResolvableTrack,
   RuntimeInfo,
@@ -83,6 +84,9 @@ export const IPC = {
   playbackClear: 'playback:clear',
   mediaResolve: 'media:resolve',
   mediaPrefetch: 'media:prefetch',
+  replayGainScan: 'audio:replay-gain-scan',
+  replayGainCancel: 'audio:replay-gain-cancel',
+  replayGainStatus: 'audio:replay-gain-status',
   onlineList: 'online:list',
   onlineAddLink: 'online:add-link',
   onlineRemove: 'online:remove',
@@ -113,7 +117,8 @@ export const IPC_EVENTS = {
   libraryChanged: 'event:library-changed',
   onlineChanged: 'event:online-changed',
   downloadChanged: 'event:download-changed',
-  playerCommand: 'event:player-command'
+  playerCommand: 'event:player-command',
+  replayGainProgress: 'event:replay-gain-progress'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -138,6 +143,8 @@ export interface PlayerEvents {
   /** A save started, advanced, finished or failed. */
   downloadChanged: DownloadProgress
   playerCommand: PlayerCommand
+  /** A loudness scan started, advanced or finished. */
+  replayGainProgress: ReplayGainStatus
 }
 
 export type PlayerEventName = keyof PlayerEvents
@@ -148,7 +155,8 @@ export const EVENT_CHANNELS: Record<PlayerEventName, IpcEventChannel> = {
   libraryChanged: IPC_EVENTS.libraryChanged,
   onlineChanged: IPC_EVENTS.onlineChanged,
   downloadChanged: IPC_EVENTS.downloadChanged,
-  playerCommand: IPC_EVENTS.playerCommand
+  playerCommand: IPC_EVENTS.playerCommand,
+  replayGainProgress: IPC_EVENTS.replayGainProgress
 }
 
 /**
@@ -267,6 +275,17 @@ export interface PlayerApi {
    * track that starts at once and one that waits for a sidecar run.
    */
   prefetchSource(track: ResolvableTrack): Promise<void>
+  /**
+   * Measures ReplayGain for every local file that has no value yet.
+   *
+   * Long-running and CPU-heavy: progress is pushed on `replayGainProgress`.
+   * Resolves when the run finishes or is cancelled.
+   */
+  scanReplayGain(): Promise<ReplayGainStatus>
+  /** Stops a running loudness scan; ffmpeg is killed, not left to finish. */
+  cancelReplayGain(): Promise<void>
+  /** The current or last run, including how much of the library is analysed. */
+  getReplayGainStatus(): Promise<ReplayGainStatus>
   /** Every remembered link, newest activity first. */
   listOnline(): Promise<OnlineTrack[]>
   /**

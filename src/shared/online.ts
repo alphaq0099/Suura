@@ -33,6 +33,8 @@ export function onlineEntryToTrack(entry: OnlineTrack): Track {
     missingAt: null,
     filePath: null,
     artworkKey: entry.artworkKey,
+    replayGainDb: null,
+    replayGainPeak: null,
     addedAt: entry.addedAt,
     playCount: 0,
     lastPlayedAt: entry.lastPlayedAt
@@ -107,6 +109,8 @@ export function onlinePlaylistItemToTrack(item: OnlinePlaylistItem, playlist: On
     // An album's rows all show the sleeve. A plain playlist's cover is one video's
     // still blown up, so each row keeps its own and asks for it lazily instead.
     artworkKey: album ? playlist.coverKey : null,
+    replayGainDb: null,
+    replayGainPeak: null,
     addedAt: playlist.importedAt,
     playCount: 0,
     lastPlayedAt: null

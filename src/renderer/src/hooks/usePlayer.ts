@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { RepeatMode } from '@shared/types'
+import type { AudioSettings, RepeatMode } from '@shared/types'
 import { nextDecision, shuffleFrom, shuffled, type QueueTrack } from '@shared/queue'
 import { recoveryDelayMs, shouldRecoverPlayback } from '@shared/playback-recovery'
 import { api, messageOf } from '../api'
+import { PlaybackAudioChain } from '../audio/playback-chain'
 
 /** Replaying within this many seconds goes to the previous track instead. */
 const RESTART_THRESHOLD_S = 3
@@ -39,6 +40,8 @@ const RECOVERY_BUDGET_MS = 30_000
 
 export interface UsePlayerOptions {
   initialVolume: number
+  /** Equaliser and normalization. They apply live, without reloading a track. */
+  audioSettings: AudioSettings
   /** From settings; changing it re-orders the live queue without interrupting playback. */
   repeat: RepeatMode
   shuffle: boolean
@@ -149,9 +152,12 @@ function describeMediaError(error: MediaError | null): string {
  * is what will let remote streaming slot in without changing this file.
  */
 export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
-  const { initialVolume, repeat, shuffle, prefetchNext, onVolumeChange, onReport } = options
+  const { initialVolume, audioSettings, repeat, shuffle, prefetchNext, onVolumeChange, onReport } =
+    options
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const audioChainRef = useRef<PlaybackAudioChain | null>(null)
+  const audioSettingsRef = useRef(audioSettings)
   const [entries, setEntries] = useState<QueueTrack[]>([])
   const [index, setIndex] = useState(-1)
   const [playRequestId, setPlayRequestId] = useState(0)
@@ -232,6 +238,15 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
       element.preload = 'auto'
       element.volume = initialVolumeRef.current
       audioRef.current = element
+      // Created with the element, because a MediaElementAudioSourceNode can be
+      // attached exactly once. The chain falls back to direct element output if
+      // Web Audio is unavailable, and the element keeps its own volume until
+      // `active` is true.
+      audioChainRef.current = new PlaybackAudioChain(
+        element,
+        initialVolumeRef.current,
+        audioSettingsRef.current
+      )
     }
     return audioRef.current
   }, [])
@@ -373,13 +388,27 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
   }, [retryNow])
 
 
+  // Apply equaliser changes live. `audio()` also creates the chain on first run,
+  // so this effect can safely run before the first track loads.
+  useEffect(() => {
+    audioSettingsRef.current = audioSettings
+    audio()
+    audioChainRef.current?.setSettings(audioSettings)
+  }, [audioSettings, audio])
+
   // Reflect the stored volume once settings arrive from the main process.
   useEffect(() => {
     initialVolumeRef.current = initialVolume
     const element = audio()
-    element.volume = initialVolume
+    if (!audioChainRef.current?.setVolume(initialVolume)) element.volume = initialVolume
     setVolumeState(initialVolume)
   }, [initialVolume, audio])
+
+  // The chain is intentionally not disposed by an effect cleanup. React's
+  // development StrictMode mounts, cleans up and remounts effects; a cleanup
+  // here would close the context while the already-linked media element stayed
+  // alive, and a second MediaElementAudioSourceNode can never be created. The
+  // hook lives for the whole window, so the context is released with the page.
 
   // Load and play whenever the selected track changes, or the same track is
   // requested again (playRequestId).
@@ -414,6 +443,9 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     wantsPlayRef.current = resumeAt === null ? true : shouldPlay
     setPositionMs(resumeAt ?? 0)
     setDurationMs(current.durationMs ?? 0)
+    // Do not let the previous track's ReplayGain apply to a new, unmeasured one
+    // while its source is being resolved.
+    audioChainRef.current?.setTrackGain(null, null)
 
     const loadStartedAt = Date.now()
     void (async () => {
@@ -425,8 +457,13 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
           filePath: current.filePath
         })
         if (token !== loadTokenRef.current) return
+        audioChainRef.current?.setTrackGain(
+          source.replayGainDb ?? null,
+          source.replayGainPeak ?? null
+        )
         element.src = source.url
         element.load()
+        audioChainRef.current?.resume()
         if (resumeAt !== null) {
           // A position cannot be set before there is a duration to measure it
           // against, so the seek waits for metadata. `load()` was just called,
@@ -486,10 +523,14 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
       }
     }
     const handlePlay = (): void => {
+      // Autoplay policy can leave a newly created context suspended. Resuming
+      // on the element's own play event is the most reliable gesture we get.
+      audioChainRef.current?.resume()
       setIsPlaying(true)
       setIsLoading(false)
     }
     const handlePlaying = (): void => {
+      audioChainRef.current?.resume()
       setIsPlaying(true)
       setIsLoading(false)
       // `playing` means bytes are actually moving, unlike `play`.
@@ -574,6 +615,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
           wantsPlayRef.current = true
           resetRecovery()
           element.currentTime = 0
+          audioChainRef.current?.resume()
           void element.play().catch(() => setIsLoading(false))
         }
         return
@@ -855,6 +897,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
 
     if (element.paused) {
       wantsPlayRef.current = true
+      audioChainRef.current?.resume()
       void element.play().catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === 'NotAllowedError') {
           setIsLoading(false)
@@ -928,7 +971,8 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
   const setVolume = useCallback(
     (value: number): void => {
       const clamped = Math.min(Math.max(value, 0), 1)
-      audio().volume = clamped
+      const element = audio()
+      if (!audioChainRef.current?.setVolume(clamped)) element.volume = clamped
       setVolumeState(clamped)
       onVolumeChangeRef.current(clamped)
     },

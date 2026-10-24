@@ -1,4 +1,5 @@
 import { DEFAULT_APPEARANCE } from './appearance'
+import { DEFAULT_AUDIO_SETTINGS } from './audio'
 import { DEFAULT_PLAYLIST_INDEX_WIDTH } from './playlists'
 import type { AppSettings, DeepPartial } from './types'
 import { DEFAULT_PO_TOKEN_PROVIDER_URL } from './youtube'
@@ -16,6 +17,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   repeat: 'off',
   shuffle: false,
   theme: DEFAULT_APPEARANCE.theme,
+  // Both effects are off by default. Bypassing the audio graph entirely is the
+  // most faithful playback path, and normalization has nothing to apply until a
+  // library has actually been analysed.
+  audio: {
+    equalizer: {
+      ...DEFAULT_AUDIO_SETTINGS.equalizer,
+      bands: [...DEFAULT_AUDIO_SETTINGS.equalizer.bands]
+    },
+    normalization: { ...DEFAULT_AUDIO_SETTINGS.normalization }
+  },
   // Watching is on by default: a library that quietly misses the album you just
   // copied in is the thing people notice, and the scan it triggers is cheap
   // because unchanged files are never opened.
@@ -105,6 +116,13 @@ export const DEFAULT_PREFERENCE_PATCH: DeepPartial<AppSettings> = {
   repeat: DEFAULT_SETTINGS.repeat,
   shuffle: DEFAULT_SETTINGS.shuffle,
   theme: DEFAULT_SETTINGS.theme,
+  audio: {
+    equalizer: {
+      ...DEFAULT_SETTINGS.audio.equalizer,
+      bands: [...DEFAULT_SETTINGS.audio.equalizer.bands]
+    },
+    normalization: { ...DEFAULT_SETTINGS.audio.normalization }
+  },
   library: {
     watchForChanges: DEFAULT_SETTINGS.library.watchForChanges
   },
@@ -159,6 +177,13 @@ export const SECTION_PREFERENCE_PATCHES: Record<PreferenceSection, DeepPartial<A
     }
   },
   playback: {
+    audio: {
+      equalizer: {
+        ...DEFAULT_SETTINGS.audio.equalizer,
+        bands: [...DEFAULT_SETTINGS.audio.equalizer.bands]
+      },
+      normalization: { ...DEFAULT_SETTINGS.audio.normalization }
+    },
     interaction: { ...DEFAULT_SETTINGS.interaction },
     startup: {
       resumePlayback: DEFAULT_SETTINGS.startup.resumePlayback

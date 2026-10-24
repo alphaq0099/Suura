@@ -23,6 +23,17 @@ import {
   SURFACE_CHOICES,
   THEME_CHOICES
 } from '@shared/appearance'
+import {
+  DEFAULT_AUDIO_SETTINGS,
+  EQ_BAND_COUNT,
+  EQ_BAND_FREQUENCIES,
+  EQ_PRESETS,
+  dbToGain,
+  normalizationGain,
+  normalizeAudioSettings,
+  replayGainForLufs,
+  sanitizeAudioPatch
+} from '@shared/audio'
 import { DEFAULT_PREFERENCE_PATCH } from '@shared/settings-defaults'
 import { isLocalLibraryFilter, recentlyAddedCutoff } from '@shared/library'
 import { serializeDetails, silentLogger } from '@core/logging/logger'
@@ -63,6 +74,7 @@ import { scanLibraryFolders } from '@core/library/scanner'
 import { youtubeOriginOf, youtubeOriginOfNative } from '@core/library/metadata'
 import { artworkKeyFor, extractArtwork, extensionForMime } from '@core/library/artwork'
 import { LocalFileResolver } from '@engine/local-file-resolver'
+import { parseEbur128Summary } from '@engine/replay-gain'
 import { getEngineStatus } from '@engine/sidecar/engine-status'
 import { RequestScheduler } from '@engine/sidecar/request-scheduler'
 import {
@@ -125,6 +137,7 @@ import { isImportedPlaylistTrackId, onlineEntryToTrack, onlinePlaylistItemToTrac
 import { sanitizeFilePart, savePathParts } from '@shared/files'
 import { AsyncTtlCache } from '../src/main/async-cache'
 import { cleanupAbandonedDownloads, DownloadService } from '../src/main/download-service'
+import { ReplayGainService } from '../src/main/replay-gain-service'
 
 const execFileAsync = promisify(execFile)
 
@@ -352,6 +365,64 @@ async function main(): Promise<void> {
     const thirdRun: ScanRunSummary | null = repo.lastScanRun()
     checkEqual('a re-touched file was re-read', thirdRun?.updated ?? -1, 1)
     checkEqual('re-reading a file does not duplicate it', repo.stats().tracks, 4)
+
+    // --- replay gain storage ----------------------------------------------
+    checkEqual('replay gain: a newly indexed file starts unmeasured', toneA?.replayGainDb ?? null, null)
+    checkEqual('replay gain: the library counts every local file', repo.replayGainStats().total, 4)
+    checkEqual('replay gain: no file is measured yet', repo.replayGainStats().analyzed, 0)
+    checkEqual('replay gain: the scan queue contains every local file', repo.replayGainCandidates().length, 4)
+    if (toneA) {
+      repo.setReplayGain(toneA.id, -4.5, -0.8)
+      const measured = repo.getById(toneA.id)
+      checkEqual('replay gain: a measured gain is stored on the track', measured?.replayGainDb ?? null, -4.5)
+      checkEqual('replay gain: the true peak is stored alongside it', measured?.replayGainPeak ?? null, -0.8)
+      checkEqual('replay gain: a measured file leaves the scan queue', repo.replayGainCandidates().length, 3)
+      checkEqual('replay gain: the analysed count follows', repo.replayGainStats().analyzed, 1)
+
+      // The measurement belongs to the bytes. A changed file must not keep
+      // applying an old gain, so the scanner clears both columns.
+      if (toneA.filePath) {
+        const changed = new Date(Date.now() + 10_000)
+        await utimes(toneA.filePath, changed, changed)
+        await library.scan(musicDir)
+        const rescanned = repo.getById(toneA.id)
+        checkEqual('replay gain: a changed file loses its stale gain', rescanned?.replayGainDb ?? null, null)
+        checkEqual('replay gain: a changed file rejoins the scan queue', repo.replayGainCandidates().length, 4)
+      }
+    }
+
+    // The whole scan, not just its pieces: the service locates ffmpeg, runs two
+    // workers over the real fixtures, writes measured values and reports a
+    // finished phase. The generated tones are small, so this is quick.
+    const gainProgress: string[] = []
+    const gainService = new ReplayGainService({
+      settings,
+      repo,
+      log: silentLogger,
+      onProgress: (status) => gainProgress.push(status.phase)
+    })
+    const gainResult = await gainService.scan()
+    checkEqual('replay gain: the scan measured every local file', gainResult.libraryAnalyzed, 4)
+    checkEqual('replay gain: a finished scan leaves nothing queued', repo.replayGainCandidates().length, 0)
+    checkEqual('replay gain: the service reports completion', gainResult.phase, 'done')
+    check(
+      'replay gain: progress includes a scan and a finish',
+      gainProgress.includes('scanning') && gainProgress[gainProgress.length - 1] === 'done',
+      gainProgress.join(',')
+    )
+    check(
+      'replay gain: measured files carry a finite gain and peak',
+      repo
+        .list()
+        .tracks.every(
+          (track) =>
+            typeof track.replayGainDb === 'number' &&
+            Number.isFinite(track.replayGainDb) &&
+            typeof track.replayGainPeak === 'number' &&
+            Number.isFinite(track.replayGainPeak)
+        )
+    )
+    gainService.dispose()
 
     // --- search -----------------------------------------------------------
     const searchHits = library.list({ search: 'Tone' }).tracks
@@ -2274,6 +2345,88 @@ async function main(): Promise<void> {
     checkEqual('appearance: reset restores the default theme', resetAppearance.theme, 'dark')
     checkEqual('appearance: reset restores the default accent', resetAppearance.visuals.accent, 'blue')
 
+    // Equaliser and ReplayGain math. These are the values the Web Audio graph
+    // uses, so a wrong dB conversion is a wrong-sounding player, not a cosmetic
+    // bug. The parser half is tested with ffmpeg's own summary shape.
+    checkEqual('audio: the equalizer has ten bands', EQ_BAND_COUNT, 10)
+    check(
+      'audio: the bands run low to high',
+      EQ_BAND_FREQUENCIES.every((frequency, index) => index === 0 || frequency > (EQ_BAND_FREQUENCIES[index - 1] as number))
+    )
+    check(
+      'audio: every preset has one gain per band, inside the allowed range',
+      EQ_PRESETS.every(
+        (preset) =>
+          preset.gains.length === EQ_BAND_COUNT &&
+          preset.gains.every((gain) => gain >= -12 && gain <= 12)
+      )
+    )
+    checkEqual('audio: the flat preset is the default curve', DEFAULT_AUDIO_SETTINGS.equalizer.bands.join(','), '0,0,0,0,0,0,0,0,0,0')
+    check('audio: both effects start off', !DEFAULT_AUDIO_SETTINGS.equalizer.enabled && !DEFAULT_AUDIO_SETTINGS.normalization.enabled)
+    check('audio: 0 dB is unity gain', Math.abs(dbToGain(0) - 1) < 1e-9)
+    check('audio: +6 dB is about double', Math.abs(dbToGain(6) - 1.9952623) < 1e-6)
+    const clipped = normalizationGain(6, -1, true)
+    check(
+      'audio: normalization stops at the measured true peak',
+      Math.abs(clipped - 1 / dbToGain(-1)) < 1e-9,
+      String(clipped)
+    )
+    check(
+      'audio: a quieter track is not capped below its own gain',
+      Math.abs(normalizationGain(-3, -1, true) - dbToGain(-3)) < 1e-9
+    )
+    check(
+      'audio: disabling the clipping guard applies the full gain',
+      Math.abs(normalizationGain(6, -1, false) - dbToGain(6)) < 1e-9
+    )
+    checkEqual('audio: -23 LUFS needs +5 dB to reach the -18 target', replayGainForLufs(-23), 5)
+    checkEqual('audio: an impossible loudness is clamped', replayGainForLufs(100), -30)
+
+    const repairedAudio = normalizeAudioSettings({
+      equalizer: { preset: 'rock', bands: [99] },
+      normalization: { enabled: 'yes' }
+    })
+    checkEqual('audio: a short saved curve is repaired from the preset', repairedAudio.equalizer.bands.length, EQ_BAND_COUNT)
+    checkEqual('audio: a non-boolean switch falls back to off', repairedAudio.normalization.enabled, false)
+    const audioPatch = sanitizeAudioPatch({ equalizer: { preset: 'rock' } })
+    checkEqual('audio: choosing a preset carries its curve', audioPatch.equalizer?.bands?.length, EQ_BAND_COUNT)
+    check(
+      'audio: a patch with no bands does not invent one',
+      !('bands' in (sanitizeAudioPatch({ equalizer: { enabled: true } }).equalizer ?? {}))
+    )
+    checkEqual(
+      'audio: preamp values are clamped before reaching the graph',
+      sanitizeAudioPatch({ equalizer: { preampDb: 99 } }).equalizer?.preampDb,
+      12
+    )
+    const mergedAudio = mergeSettings(DEFAULT_SETTINGS, { audio: { equalizer: { enabled: true } } })
+    checkEqual('audio: an equalizer switch deep-merges', mergedAudio.audio.equalizer.enabled, true)
+    checkEqual('audio: the untouched bands survive the patch', mergedAudio.audio.equalizer.bands.length, EQ_BAND_COUNT)
+    checkEqual('reset: restores equalizer defaults', mergeSettings(mergedAudio, DEFAULT_PREFERENCE_PATCH).audio.equalizer.enabled, false)
+
+    const ffmpegSummary = [
+      '[Parsed_ebur128_0 @ 000001] Summary:',
+      '',
+      '  Integrated loudness:',
+      '    I:         -23.4 LUFS',
+      '    Threshold: -33.7 LUFS',
+      '',
+      '  Loudness range:',
+      '    LRA:         5.1 LU',
+      '',
+      '  True peak:',
+      '    Peak:       -1.2 dBFS'
+    ].join('\n')
+    const parsedLoudness = parseEbur128Summary(ffmpegSummary)
+    checkEqual('replay gain: ffmpeg integrated loudness is parsed', parsedLoudness?.integratedLufs ?? null, -23.4)
+    checkEqual('replay gain: ffmpeg true peak is parsed', parsedLoudness?.peakDb ?? null, -1.2)
+    checkEqual(
+      'replay gain: the last summary wins when ffmpeg repeats one',
+      parseEbur128Summary(`${ffmpegSummary}\nI: -18.0 LUFS\nPeak: -0.3 dBFS`)?.integratedLufs ?? null,
+      -18
+    )
+    check('replay gain: output without a summary is rejected', parseEbur128Summary('no measurement here') === null)
+
     // Reset preferences is not reset-everything: a chosen folder is a location,
     // not a taste, and losing one silently would be the worst kind of reset.
     const beforeReset = mergeSettings(DEFAULT_SETTINGS, {
@@ -2483,6 +2636,11 @@ async function main(): Promise<void> {
       check('stream: the body arrives intact', fullBody.length === payload.length && fullBody[1234] === payload[1234])
       checkEqual('stream: the upstream User-Agent reaches the CDN', lastUserAgent, 'PlayerSmoke/1.0')
       checkEqual('stream: other upstream headers are forwarded too', lastUpstreamHeader, 'yes')
+      checkEqual(
+        'stream: allows Web Audio to read the samples',
+        full.headers.get('access-control-allow-origin'),
+        '*'
+      )
 
       const partial = await proxy.handle(token, { range: 'bytes=100-199', method: 'GET' })
       const partialBody = Buffer.from(await partial.arrayBuffer())

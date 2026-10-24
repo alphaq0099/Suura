@@ -100,6 +100,12 @@ const api: PlayerApi = {
 
   prefetchSource: (track) => ipcRenderer.invoke(IPC.mediaPrefetch, track) as Promise<void>,
 
+  scanReplayGain: () => ipcRenderer.invoke(IPC.replayGainScan),
+
+  cancelReplayGain: () => ipcRenderer.invoke(IPC.replayGainCancel) as Promise<void>,
+
+  getReplayGainStatus: () => ipcRenderer.invoke(IPC.replayGainStatus),
+
   listOnline: () => ipcRenderer.invoke(IPC.onlineList),
 
   addOnlineLink: (url: string) => ipcRenderer.invoke(IPC.onlineAddLink, url),
