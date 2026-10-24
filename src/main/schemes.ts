@@ -6,9 +6,9 @@ import { STREAM_SCHEME } from '@shared/stream-url'
 /**
  * Declares the custom schemes as privileged. Must run before the app is ready.
  *
- * Both schemes go in a single call on purpose: `registerSchemesAsPrivileged`
- * installs the whole list at once, so splitting it across two modules risks the
- * second call replacing the first rather than adding to it.
+ * The schemes go in a single call on purpose: `registerSchemesAsPrivileged`
+ * installs the whole list at once, so splitting it across three modules risks
+ * the later call replacing the first rather than adding to it.
  *
  * `stream` is only set for media. It is what lets an <audio> element issue range
  * requests instead of buffering the entire file; images have no need for it.
@@ -33,7 +33,11 @@ export function registerPrivilegedSchemes(): void {
       privileges: {
         standard: true,
         secure: true,
-        supportFetchAPI: true
+        supportFetchAPI: true,
+        // Media Session artwork can be fetched in CORS mode when Chromium hands
+        // it to the Windows overlay. The handler answers with an allow-origin
+        // header, so enabling it here keeps <img> and the OS path both working.
+        corsEnabled: true
       }
     },
     {

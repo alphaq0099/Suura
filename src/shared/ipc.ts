@@ -112,7 +112,8 @@ export const IPC = {
   poTokenStart: 'engine:po-token-start',
   poTokenStop: 'engine:po-token-stop',
   windowGetMini: 'window:get-mini',
-  windowSetMini: 'window:set-mini'
+  windowSetMini: 'window:set-mini',
+  windowSetTaskbarState: 'window:set-taskbar-state'
 } as const
 
 /** Main -> renderer push channels. */
@@ -129,8 +130,9 @@ export type IpcChannel = (typeof IPC)[keyof typeof IPC]
 export type IpcEventChannel = (typeof IPC_EVENTS)[keyof typeof IPC_EVENTS]
 
 /**
- * Commands the main process can push at the player. Reserved for M2 (media keys,
- * tray menu, SMTC buttons); the renderer already handles them.
+ * Transport commands the main process can push at the player (media keys, the
+ * tray menu and the taskbar thumbnail buttons); the renderer already handles
+ * them.
  */
 export type PlayerCommand =
   | { type: 'play-pause' }
@@ -139,6 +141,12 @@ export type PlayerCommand =
   | { type: 'stop' }
   /** Toggle the compact layout; the renderer asks main to resize the window. */
   | { type: 'mini-player' }
+
+/** What the taskbar thumbnail toolbar should show right now. */
+export interface TaskbarState {
+  hasTrack: boolean
+  isPlaying: boolean
+}
 
 /** Payload type for each push event, so `on()` can be strongly typed. */
 export interface PlayerEvents {
@@ -287,13 +295,15 @@ export interface PlayerApi {
   clearPlayback(): void
   resolveSource(track: ResolvableTrack): Promise<ResolvedSource>
   /**
-   * Warms the resolver for a track that will probably play next.
+   * Resolves a track that will probably play next, without treating it as a
+   * play.
    *
-   * Fire-and-forget: it is a guess about the queue, so the caller does not care
-   * whether it succeeds, and resolving early is the difference between a next
-   * track that starts at once and one that waits for a sidecar run.
+   * It returns the source so the player can attach it to its idle element and
+   * hand over at the exact end of the current track. Unlike `resolveSource` it
+   * does not lift a history row for a YouTube link: a guess about the queue is
+   * not a play, and should not become one until the track actually starts.
    */
-  prefetchSource(track: ResolvableTrack): Promise<void>
+  prefetchSource(track: ResolvableTrack): Promise<ResolvedSource>
   /**
    * Measures ReplayGain for every local file that has no value yet.
    *
@@ -384,6 +394,14 @@ export interface PlayerApi {
    * its own layout; this call only owns the native bounds and minimum size.
    */
   setMiniPlayer(enabled: boolean): Promise<boolean>
+  /**
+   * Rebuilds the Windows taskbar thumbnail toolbar.
+   *
+   * Resolves false on platforms without the feature, or when the window is
+   * already gone. Its clicks come back as `playerCommand` events, so it is one
+   * more way into the same transport as the media keys and tray.
+   */
+  setTaskbarState(state: TaskbarState): Promise<boolean>
   on<E extends PlayerEventName>(event: E, callback: (payload: PlayerEvents[E]) => void): number
   off(token: number): void
 }

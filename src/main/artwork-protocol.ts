@@ -46,6 +46,9 @@ export function installArtworkProtocolHandler(deps: { artwork: ArtworkService; l
     return new Response(data, {
       headers: {
         'Content-Type': MIME_BY_EXTENSION[extension] ?? 'application/octet-stream',
+        // Media Session artwork is fetched as a cross-origin resource by
+        // Chromium's Windows integration; <img> ignores this header.
+        'Access-Control-Allow-Origin': '*',
         // A key is a content hash, so the bytes behind it can never change.
         'Cache-Control': 'public, max-age=31536000, immutable'
       }

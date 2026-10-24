@@ -4538,6 +4538,120 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       container.online.channel = realChannel
     }
 
+    // ---- gapless handoff, SMTC and taskbar ------------------------------
+    // The deck prepares the next local track on its idle element. A transition
+    // mark is written only when that prepared element is promoted, so its
+    // presence is the difference between a real handoff and a reload that
+    // happens to start soon after. The same run checks that the Media Session
+    // surface and the taskbar accept the player state.
+    const gapless = await evaluate<{
+      rows: number
+      reason: string | null
+      transitioned: boolean
+      marks: number
+      title: string
+      firstTitle: string
+      metadataTitle: string
+      metadataArtist: string
+      playbackState: string
+      hasActions: boolean
+      firstArtwork: string
+      artwork: string
+      taskbar: boolean
+      actualPlaying: boolean
+    }>(
+      window,
+      `(async () => {
+         const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const session = navigator.mediaSession
+         const artworkOf = () => session && session.metadata && session.metadata.artwork && session.metadata.artwork[0]
+           ? session.metadata.artwork[0].src
+           : ''
+         const out = {
+           rows: 0, reason: null, transitioned: false, marks: 0, title: '',
+           firstTitle: '', metadataTitle: '', metadataArtist: '', playbackState: '', hasActions: false,
+           firstArtwork: '', artwork: '', taskbar: false, actualPlaying: false
+         }
+         try {
+           performance.clearMarks('player:gapless')
+           const before = performance.getEntriesByName('player:gapless').length
+           const nav = [...document.querySelectorAll('.nav-item')].find((el) => (el.textContent || '').trim().startsWith('Library'))
+           if (nav) nav.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+           await wait(400)
+           const rows = [...document.querySelectorAll('.track-row')]
+           out.rows = rows.length
+           if (rows.length < 2) { out.reason = 'fewer than two library rows'; return out }
+           rows[0].dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+           const title = () => ((document.querySelector('.player-title') || {}).textContent || '').trim()
+           let deadline = Date.now() + 6000
+           while (Date.now() < deadline && !title()) await wait(100)
+           // The first track may or may not have a cover. Record the metadata
+           // artwork for both tracks so the cover in the pair is checked whichever
+           // row the fixture sort puts first.
+           deadline = Date.now() + 1500
+           while (Date.now() < deadline && ((session && session.metadata && session.metadata.title) || '') !== title()) await wait(100)
+           out.firstTitle = title()
+           await wait(250)
+           out.firstArtwork = artworkOf()
+           deadline = Date.now() + 12000
+           while (Date.now() < deadline && performance.getEntriesByName('player:gapless').length === before) await wait(150)
+           await wait(400)
+           out.marks = performance.getEntriesByName('player:gapless').length
+           out.transitioned = out.marks > before
+           out.title = title()
+           deadline = Date.now() + 1500
+           while (Date.now() < deadline && ((session && session.metadata && session.metadata.title) || '') !== title()) await wait(100)
+           await wait(250)
+           out.metadataTitle = session && session.metadata ? (session.metadata.title || '') : ''
+           out.metadataArtist = session && session.metadata ? (session.metadata.artist || '') : ''
+           out.playbackState = session ? session.playbackState : ''
+           out.hasActions = Boolean(session && typeof session.setActionHandler === 'function')
+           out.artwork = artworkOf()
+           out.taskbar = await window.player.setTaskbarState({ hasTrack: true, isPlaying: true })
+           const playButton = document.querySelector('.player-bar .icon-button.primary')
+           out.actualPlaying = Boolean(playButton) && playButton.getAttribute('title') === 'Pause'
+           await window.player.setTaskbarState({ hasTrack: Boolean(title()), isPlaying: out.actualPlaying })
+         } catch (error) {
+           out.reason = String(error)
+         }
+         return out
+       })()`
+    )
+    record(gapless.rows >= 2, 'two local tracks are available for a gapless transition', gapless.rows)
+    record(
+      gapless.transitioned && gapless.marks > 0,
+      'the next track is handed over on the prepared element without a reload',
+      { reason: gapless.reason, marks: gapless.marks, title: gapless.title }
+    )
+    record(
+      gapless.metadataTitle === gapless.title && gapless.playbackState === 'playing',
+      'Media Session publishes the current track for Windows SMTC',
+      {
+        title: gapless.metadataTitle,
+        player: gapless.title,
+        state: gapless.playbackState,
+        artist: gapless.metadataArtist
+      }
+    )
+    record(
+      gapless.hasActions &&
+        (gapless.firstArtwork.startsWith('player-art://') ||
+          gapless.artwork.startsWith('player-art://')),
+      'Media Session exposes transport handlers and the artwork scheme',
+      {
+        actions: gapless.hasActions,
+        first: gapless.firstArtwork,
+        second: gapless.artwork,
+        tracks: [gapless.firstTitle, gapless.title]
+      }
+    )
+
+    record(
+      process.platform === 'win32' ? gapless.taskbar : !gapless.taskbar,
+      'the taskbar thumbnail toolbar accepts playback state',
+      gapless.taskbar
+    )
+
     // ---- mini player ----------------------------------------------------
     // One window, two layouts. The renderer swaps the UI and asks main for the
     // native bounds; this check exercises that whole round trip, including the

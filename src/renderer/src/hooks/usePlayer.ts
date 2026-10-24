@@ -3,7 +3,7 @@ import type { AudioSettings, RepeatMode } from '@shared/types'
 import { nextDecision, shuffleFrom, shuffled, type QueueTrack } from '@shared/queue'
 import { recoveryDelayMs, shouldRecoverPlayback } from '@shared/playback-recovery'
 import { api, messageOf } from '../api'
-import { PlaybackAudioChain } from '../audio/playback-chain'
+import { PlaybackDeck } from '../audio/playback-deck'
 
 /** Replaying within this many seconds goes to the previous track instead. */
 const RESTART_THRESHOLD_S = 3
@@ -136,11 +136,12 @@ function describeMediaError(error: MediaError | null): string {
 }
 
 /**
- * Wraps a single HTMLAudioElement and owns the queue.
+ * Owns the queue and the two-element playback deck.
  *
- * Playback state lives on the element rather than in React state, because the
- * element is the real source of truth for position and pause state; React state
- * here is a mirror for rendering only.
+ * Playback state lives on the active element rather than in React state,
+ * because the element is the real source of truth for position and pause state;
+ * React state here is a mirror for rendering only. The idle element may already
+ * hold the next track, which is what makes an automatic transition gapless.
  *
  * The queue is held as an *ordered* array: shuffle reorders it and keeps the
  * original order aside, so turning shuffle back off restores what the user
@@ -155,8 +156,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
   const { initialVolume, audioSettings, repeat, shuffle, prefetchNext, onVolumeChange, onReport } =
     options
 
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-  const audioChainRef = useRef<PlaybackAudioChain | null>(null)
+  const deckRef = useRef<PlaybackDeck | null>(null)
   const audioSettingsRef = useRef(audioSettings)
   const [entries, setEntries] = useState<QueueTrack[]>([])
   const [index, setIndex] = useState(-1)
@@ -193,8 +193,14 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
   const resumeRef = useRef<number | null>(null)
   /** Whether the next load is a restore that should start playing. */
   const resumePlayRef = useRef(false)
-  /** Video ids already warmed this session, so a re-render never re-asks. */
-  const prefetchedRef = useRef(new Set<string>())
+  /** The next entry already attached to the idle element, if any. */
+  const preloadedRef = useRef<{ trackId: number; position: number } | null>(null)
+  /** Invalidates a preload that was in flight when the track or queue changed. */
+  const preloadTokenRef = useRef(0)
+  /** Bumped after a handoff so the preload effect runs again for the next pair. */
+  const [preloadEpoch, setPreloadEpoch] = useState(0)
+  /** Set while the current track was already handed to the deck without a load. */
+  const handoffRef = useRef<number | null>(null)
 
   /**
    * What the listener last asked for, which is not the same as what the element
@@ -232,24 +238,18 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     repeatRef.current = repeat
   }, [repeat])
 
-  const audio = useCallback((): HTMLAudioElement => {
-    if (!audioRef.current) {
-      const element = new Audio()
-      element.preload = 'auto'
-      element.volume = initialVolumeRef.current
-      audioRef.current = element
-      // Created with the element, because a MediaElementAudioSourceNode can be
-      // attached exactly once. The chain falls back to direct element output if
-      // Web Audio is unavailable, and the element keeps its own volume until
-      // `active` is true.
-      audioChainRef.current = new PlaybackAudioChain(
-        element,
-        initialVolumeRef.current,
-        audioSettingsRef.current
-      )
+  const deck = useCallback((): PlaybackDeck => {
+    if (!deckRef.current) {
+      // Both elements and their chains are created together. A later lazy
+      // creation of the second chain would still work, but creating both now
+      // keeps the preload path free of first-track surprises (a suspended
+      // AudioContext, for example, has to be resumed by a user gesture).
+      deckRef.current = new PlaybackDeck(initialVolumeRef.current, audioSettingsRef.current)
     }
-    return audioRef.current
+    return deckRef.current
   }, [])
+
+  const audio = useCallback((): HTMLAudioElement => deck().active.element, [deck])
 
   const current = index >= 0 ? (entries[index] ?? null) : null
 
@@ -329,9 +329,9 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
           return
         }
 
-        const element = audioRef.current
+        const element = audio()
         const at =
-          element && Number.isFinite(element.currentTime) && element.currentTime > 0
+          Number.isFinite(element.currentTime) && element.currentTime > 0
             ? element.currentTime * 1000
             : lastPositionRef.current
         // A second back: the audio already buffered before the failure stays
@@ -342,7 +342,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
         setPlayRequestId((value) => value + 1)
       }, delay)
     },
-    [giveUpRecovery, setReconnectState]
+    [audio, giveUpRecovery, setReconnectState]
   )
 
   useEffect(() => {
@@ -367,42 +367,40 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     if (stallTimerRef.current !== null) return
     stallTimerRef.current = window.setTimeout(() => {
       stallTimerRef.current = null
-      const element = audioRef.current
-      if (!wantsPlayRef.current || !element || element.error) return
+      const element = audio()
+      if (!wantsPlayRef.current || element.error) return
       if (element.paused || element.currentTime <= 0) return
       if (element.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) return
       scheduleRecoveryRef.current()
     }, STALL_TIMEOUT_MS)
-  }, [])
+  }, [audio])
 
   // Episode of connectivity returning. The backoff can be up to eight seconds,
   // and the listener should not have to wait it out after the network is back.
   useEffect(() => {
     const handleOnline = (): void => {
       if (!wantsPlayRef.current || !currentTrackRef.current) return
-      if (!reconnectingRef.current && !audioRef.current?.error) return
+      if (!reconnectingRef.current && !audio().error) return
       retryNow()
     }
     window.addEventListener('online', handleOnline)
     return () => window.removeEventListener('online', handleOnline)
-  }, [retryNow])
+  }, [audio, retryNow])
 
 
-  // Apply equaliser changes live. `audio()` also creates the chain on first run,
-  // so this effect can safely run before the first track loads.
+  // Apply equaliser changes live. `deck()` also creates both chains on first
+  // run, so this effect can safely run before the first track loads.
   useEffect(() => {
     audioSettingsRef.current = audioSettings
-    audio()
-    audioChainRef.current?.setSettings(audioSettings)
-  }, [audioSettings, audio])
+    deck().setSettings(audioSettings)
+  }, [audioSettings, deck])
 
   // Reflect the stored volume once settings arrive from the main process.
   useEffect(() => {
     initialVolumeRef.current = initialVolume
-    const element = audio()
-    if (!audioChainRef.current?.setVolume(initialVolume)) element.volume = initialVolume
+    deck().setVolume(initialVolume)
     setVolumeState(initialVolume)
-  }, [initialVolume, audio])
+  }, [initialVolume, deck])
 
   // The chain is intentionally not disposed by an effect cleanup. React's
   // development StrictMode mounts, cleans up and remounts effects; a cleanup
@@ -414,6 +412,20 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
   // requested again (playRequestId).
   useEffect(() => {
     if (!current) return
+    // A gapless handoff already attached this track to the now-active element
+    // and started it. Letting the load effect resolve it again would stop the
+    // audio, defeat the whole point, and report the previous track twice.
+    if (handoffRef.current === current.id) {
+      handoffRef.current = null
+      currentTrackRef.current = current
+      return
+    }
+    handoffRef.current = null
+    // Any preload belongs to the selection that just went away.
+    preloadTokenRef.current += 1
+    preloadedRef.current = null
+    deck().clearInactive()
+
     const element = audio()
     const token = ++loadTokenRef.current
 
@@ -445,7 +457,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     setDurationMs(current.durationMs ?? 0)
     // Do not let the previous track's ReplayGain apply to a new, unmeasured one
     // while its source is being resolved.
-    audioChainRef.current?.setTrackGain(null, null)
+    deck().setActiveTrackGain(null, null)
 
     const loadStartedAt = Date.now()
     void (async () => {
@@ -457,13 +469,8 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
           filePath: current.filePath
         })
         if (token !== loadTokenRef.current) return
-        audioChainRef.current?.setTrackGain(
-          source.replayGainDb ?? null,
-          source.replayGainPeak ?? null
-        )
-        element.src = source.url
-        element.load()
-        audioChainRef.current?.resume()
+        deck().prepareActive(source)
+        deck().active.chain.resume()
         if (resumeAt !== null) {
           // A position cannot be set before there is a duration to measure it
           // against, so the seek waits for metadata. `load()` was just called,
@@ -502,13 +509,22 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
         if (token === loadTokenRef.current && !reconnectingRef.current) setIsLoading(false)
       }
     })()
-  }, [current, playRequestId, audio, resetRecovery, setReconnectState])
+  }, [current, playRequestId, audio, deck, resetRecovery, setReconnectState])
 
-  // Element events -> React state.
+  // Element events -> React state. Both elements are watched because the idle
+  // one becomes active mid-event (on a handoff); anything it emits while idle is
+  // ignored, so a preload cannot move the bar or claim to be playing.
   useEffect(() => {
-    const element = audio()
+    const elements = deck().elements
+    const currentElement = (event: Event): HTMLAudioElement | null => {
+      const element = event.currentTarget
+      if (!(element instanceof HTMLAudioElement)) return null
+      return deck().isActive(element) ? element : null
+    }
 
-    const handleTime = (): void => {
+    const handleTime = (event: Event): void => {
+      const element = currentElement(event)
+      if (!element) return
       const at = element.currentTime * 1000
       lastPositionRef.current = at
       setPositionMs(at)
@@ -517,38 +533,48 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
       // still arrive after an error. Never let that cancel a pending retry.
       if (reconnectingRef.current && !element.error && !element.paused) settleRecovery()
     }
-    const handleDuration = (): void => {
+    const handleDuration = (event: Event): void => {
+      const element = currentElement(event)
+      if (!element) return
       if (Number.isFinite(element.duration) && element.duration > 0) {
         setDurationMs(element.duration * 1000)
       }
     }
-    const handlePlay = (): void => {
+    const handlePlay = (event: Event): void => {
+      if (!currentElement(event)) return
       // Autoplay policy can leave a newly created context suspended. Resuming
       // on the element's own play event is the most reliable gesture we get.
-      audioChainRef.current?.resume()
+      deck().resume()
       setIsPlaying(true)
       setIsLoading(false)
     }
-    const handlePlaying = (): void => {
-      audioChainRef.current?.resume()
+    const handlePlaying = (event: Event): void => {
+      if (!currentElement(event)) return
+      deck().resume()
       setIsPlaying(true)
       setIsLoading(false)
       // `playing` means bytes are actually moving, unlike `play`.
       settleRecovery()
     }
-    const handlePause = (): void => {
+    const handlePause = (event: Event): void => {
+      if (!currentElement(event)) return
       setIsPlaying(false)
       clearStallTimer()
     }
-    const handleWaiting = (): void => {
+    const handleWaiting = (event: Event): void => {
+      const element = currentElement(event)
+      if (!element) return
       setIsLoading(true)
       if (wantsPlayRef.current && element.currentTime > 0) armStallTimer()
     }
-    const handleCanPlay = (): void => {
+    const handleCanPlay = (event: Event): void => {
+      if (!currentElement(event)) return
       setIsLoading(false)
       clearStallTimer()
     }
-    const handleError = (): void => {
+    const handleError = (event: Event): void => {
+      const element = currentElement(event)
+      if (!element) return
       const mediaError = element.error
       const at = Number.isFinite(element.currentTime) ? element.currentTime * 1000 : 0
       if (at > 0) lastPositionRef.current = at
@@ -576,28 +602,27 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
       setReconnectState(false)
     }
 
-    element.addEventListener('timeupdate', handleTime)
-    element.addEventListener('loadedmetadata', handleDuration)
-    element.addEventListener('durationchange', handleDuration)
-    element.addEventListener('play', handlePlay)
-    element.addEventListener('playing', handlePlaying)
-    element.addEventListener('pause', handlePause)
-    element.addEventListener('waiting', handleWaiting)
-    element.addEventListener('canplay', handleCanPlay)
-    element.addEventListener('error', handleError)
+    const events: Array<[string, EventListener]> = [
+      ['timeupdate', handleTime],
+      ['loadedmetadata', handleDuration],
+      ['durationchange', handleDuration],
+      ['play', handlePlay],
+      ['playing', handlePlaying],
+      ['pause', handlePause],
+      ['waiting', handleWaiting],
+      ['canplay', handleCanPlay],
+      ['error', handleError]
+    ]
+    for (const element of elements) {
+      for (const [name, listener] of events) element.addEventListener(name, listener)
+    }
 
     return () => {
-      element.removeEventListener('timeupdate', handleTime)
-      element.removeEventListener('loadedmetadata', handleDuration)
-      element.removeEventListener('durationchange', handleDuration)
-      element.removeEventListener('play', handlePlay)
-      element.removeEventListener('playing', handlePlaying)
-      element.removeEventListener('pause', handlePause)
-      element.removeEventListener('waiting', handleWaiting)
-      element.removeEventListener('canplay', handleCanPlay)
-      element.removeEventListener('error', handleError)
+      for (const element of elements) {
+        for (const [name, listener] of events) element.removeEventListener(name, listener)
+      }
     }
-  }, [audio, armStallTimer, clearStallTimer, setReconnectState, settleRecovery])
+  }, [deck, armStallTimer, clearStallTimer, setReconnectState, settleRecovery])
 
   /**
    * Moves to the next entry, applying repeat.
@@ -610,18 +635,91 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
       const decision = nextDecision(indexRef.current, entriesRef.current.length, repeatRef.current, completed)
 
       if (decision.kind === 'replay') {
-        const element = audioRef.current
-        if (element) {
-          wantsPlayRef.current = true
-          resetRecovery()
-          element.currentTime = 0
-          audioChainRef.current?.resume()
-          void element.play().catch(() => setIsLoading(false))
-        }
+        const element = audio()
+        wantsPlayRef.current = true
+        resetRecovery()
+        element.currentTime = 0
+        deck().active.chain.resume()
+        void element.play().catch(() => setIsLoading(false))
         return
       }
 
       if (decision.kind === 'play') {
+        const upcoming = entriesRef.current[decision.position]
+        const preloaded = preloadedRef.current
+        // Both a natural end and a manual Next can use the idle element when the
+        // preloaded entry is the destination. The natural end is the album-
+        // continuity case; a manual Next just benefits by starting instantly.
+        if (
+          upcoming &&
+          preloaded &&
+          preloaded.trackId === upcoming.id &&
+          preloaded.position === decision.position &&
+          deck().canPromoteInactive()
+        ) {
+          // Read the outgoing position before the swap: promoteInactive pauses
+          // and deactivates that element, and after it `audio()` is the new one.
+          const outgoing = audio()
+          const outgoingPlayed = Number.isFinite(outgoing.currentTime)
+            ? Math.round(outgoing.currentTime * 1000)
+            : 0
+          const promoted = deck().promoteInactive()
+          // Manual Next normally goes through the load effect, which reports how
+          // far the outgoing track got. The handoff bypasses that effect, so the
+          // partial listen has to be reported here instead.
+          const previous = currentTrackRef.current
+          if (!completed && previous && previous.id !== upcoming.id) {
+            onReportRef.current(previous.id, outgoingPlayed, false)
+          }
+          preloadedRef.current = null
+          if (decision.position !== indexRef.current) handoffRef.current = upcoming.id
+          currentTrackRef.current = upcoming
+          lastFailureRef.current = null
+          wantsPlayRef.current = true
+          resetRecovery()
+          setError(null)
+          setIsPlaying(true)
+          setIsLoading(promoted.element.readyState < HTMLMediaElement.HAVE_FUTURE_DATA)
+          setPositionMs(0)
+          setDurationMs(
+            upcoming.durationMs ??
+              (Number.isFinite(promoted.element.duration)
+                ? Math.round(promoted.element.duration * 1000)
+                : 0)
+          )
+          setIndex(decision.position)
+          setPreloadEpoch((value) => value + 1)
+          try {
+            performance.mark('player:gapless')
+          } catch {
+            // Performance marks are only a diagnostic.
+          }
+          void promoted.element.play().catch((cause: unknown) => {
+            setIsLoading(false)
+            if (cause instanceof DOMException && cause.name === 'NotAllowedError') return
+            if (currentTrackRef.current?.sourceKind === 'youtube') {
+              scheduleRecoveryRef.current()
+              return
+            }
+            setError(messageOf(cause))
+            setIsPlaying(false)
+          })
+          return
+        }
+        // A stale or failed preload must not be retried forever.
+        if (preloaded) preloadedRef.current = null
+
+        if (decision.position === indexRef.current) {
+          // A one-entry queue on repeat-all comes back to the same row, so there
+          // is no index change to trigger the load effect. Start it again here.
+          const element = audio()
+          wantsPlayRef.current = true
+          resetRecovery()
+          element.currentTime = 0
+          deck().active.chain.resume()
+          void element.play().catch(() => setIsLoading(false))
+          return
+        }
         setIndex(decision.position)
         return
       }
@@ -630,13 +728,15 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
       resetRecovery()
       setIsPlaying(false)
     },
-    [resetRecovery]
+    [audio, deck, resetRecovery]
   )
 
   // Auto-advance at the end of a track.
   useEffect(() => {
-    const element = audio()
-    const handleEnded = (): void => {
+    const elements = deck().elements
+    const handleEnded = (event: Event): void => {
+      const element = event.currentTarget
+      if (!(element instanceof HTMLAudioElement) || !deck().isActive(element)) return
       const finished = currentTrackRef.current
       if (finished) {
         const played = Number.isFinite(element.duration) ? Math.round(element.duration * 1000) : 0
@@ -645,47 +745,65 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
       advance(true)
     }
 
-    element.addEventListener('ended', handleEnded)
-    return () => element.removeEventListener('ended', handleEnded)
-  }, [audio, advance])
+    for (const element of elements) element.addEventListener('ended', handleEnded)
+    return () => {
+      for (const element of elements) element.removeEventListener('ended', handleEnded)
+    }
+  }, [deck, advance])
 
-  // Resolve the next stream while this one plays.
+  // Prepare the next stream while this one plays.
   //
-  // The sidecar run is 7-10 s and it is the entire wait between two queued tracks;
-  // the audio itself, once the URL exists, starts in well under a second. Doing the
-  // resolve early moves that cost into a song the user is already listening to, so
-  // Next is a buffer, not a download. It is deliberately late (a few seconds in)
-  // and dropped on every track change: a user who is skipping through a playlist is
-  // not going to reach any of these tracks, and each warm-up costs a subprocess.
-  // The current track may be a local file with a stream behind it, so the guard is
-  // on the *next* entry rather than on what is playing now.
+  // The sidecar run is 7-10 s and it is the entire wait between two queued
+  // tracks; the audio itself, once the URL exists, starts in well under a second.
+  // Doing the resolve early moves that cost into a song the user is already
+  // listening to, and attaching the result to the idle element is what lets the
+  // next track start without a reload. Local files are prepared immediately;
+  // a YouTube resolve is deliberately late (a few seconds in) and dropped on
+  // every track change, because a user skipping through a playlist is not going
+  // to reach any of those tracks and each warm-up costs a subprocess.
+  //
+  // The current track may be a local file with a stream behind it, so the guard
+  // is on the *next* entry rather than on what is playing now.
   useEffect(() => {
-    if (!current || !isPlaying || !prefetchNext) return
-    const timer = setTimeout(() => {
-      const decision = nextDecision(indexRef.current, entriesRef.current.length, repeatRef.current, false)
-      if (decision.kind !== 'play') return
-      const upcoming = entriesRef.current[decision.position]
-      if (!upcoming || upcoming.sourceKind !== 'youtube' || !upcoming.sourceId) return
-      const videoId = upcoming.sourceId
-      if (prefetchedRef.current.has(videoId)) return
-      // Recorded before the call: a failure is not worth retrying on the next
-      // render, and asking twice for the same video would spawn two sidecars.
-      prefetchedRef.current.add(videoId)
-      void api
-        .prefetchSource({
-          id: upcoming.id,
-          sourceKind: upcoming.sourceKind,
-          sourceId: videoId,
-          filePath: upcoming.filePath
-        })
-        .catch(() => {
-          // A failed warm-up must not count as warm. After a network outage the
-          // next track would otherwise resolve cold in the middle of playback.
-          prefetchedRef.current.delete(videoId)
-        })
-    }, PREFETCH_DELAY_MS)
-    return () => clearTimeout(timer)
-  }, [current, isPlaying, prefetchNext])
+    if (!current || !isPlaying) return
+    // Repeat-one restarts the same element, and no following track is needed.
+    if (repeatRef.current === 'one') return
+    const decision = nextDecision(indexRef.current, entriesRef.current.length, repeatRef.current, true)
+    if (decision.kind !== 'play') return
+    const upcoming = entriesRef.current[decision.position]
+    if (!upcoming) return
+    // The setting is about YouTube's sidecar. A local source costs no process,
+    // so its preload stays on even when the remote warm-up is disabled.
+    if (upcoming.sourceKind === 'youtube' && !prefetchNext) return
+
+    const existing = preloadedRef.current
+    if (existing && existing.trackId === upcoming.id && existing.position === decision.position) return
+
+    const token = ++preloadTokenRef.current
+    const delay = upcoming.sourceKind === 'youtube' ? PREFETCH_DELAY_MS : 0
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const source = await api.prefetchSource({
+            id: upcoming.id,
+            sourceKind: upcoming.sourceKind,
+            sourceId: upcoming.sourceId,
+            filePath: upcoming.filePath
+          })
+          if (token !== preloadTokenRef.current) return
+          if (currentTrackRef.current?.id !== current.id) return
+          const stillNext = nextDecision(indexRef.current, entriesRef.current.length, repeatRef.current, true)
+          if (stillNext.kind !== 'play' || stillNext.position !== decision.position) return
+          if (entriesRef.current[decision.position]?.id !== upcoming.id) return
+          deck().prepareInactive(source)
+          preloadedRef.current = { trackId: upcoming.id, position: decision.position }
+        } catch {
+          if (token === preloadTokenRef.current) preloadedRef.current = null
+        }
+      })()
+    }, delay)
+    return () => window.clearTimeout(timer)
+  }, [current, isPlaying, prefetchNext, entries, index, repeat, preloadEpoch, deck])
 
   // Shuffle is a setting, so it can change while something is playing. Rebuild
   // the order around the current track instead of restarting playback.
@@ -785,7 +903,10 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     if (remaining.length === 0) {
       wantsPlayRef.current = false
       resetRecovery()
-      audioRef.current?.pause()
+      preloadTokenRef.current += 1
+      preloadedRef.current = null
+      deck().pause()
+      deck().clearInactive()
       setEntries([])
       setIndex(-1)
       setIsPlaying(false)
@@ -795,7 +916,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     const playingPosition = playing ? remaining.indexOf(playing) : -1
     setEntries(remaining)
     setIndex(playingPosition >= 0 ? playingPosition : Math.min(indexRef.current, remaining.length - 1))
-  }, [resetRecovery])
+  }, [deck, resetRecovery])
 
   /**
    * Reorders the visible queue.
@@ -858,12 +979,15 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
   const clearQueue = useCallback((): void => {
     wantsPlayRef.current = false
     resetRecovery()
-    audioRef.current?.pause()
+    preloadTokenRef.current += 1
+    preloadedRef.current = null
+    deck().pause()
+    deck().clearInactive()
     originRef.current = null
     setEntries([])
     setIndex(-1)
     setIsPlaying(false)
-  }, [resetRecovery])
+  }, [deck, resetRecovery])
 
   const jumpTo = useCallback(
     (position: number): void => {
@@ -897,7 +1021,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
 
     if (element.paused) {
       wantsPlayRef.current = true
-      audioChainRef.current?.resume()
+      deck().resume()
       void element.play().catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === 'NotAllowedError') {
           setIsLoading(false)
@@ -971,12 +1095,11 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
   const setVolume = useCallback(
     (value: number): void => {
       const clamped = Math.min(Math.max(value, 0), 1)
-      const element = audio()
-      if (!audioChainRef.current?.setVolume(clamped)) element.volume = clamped
+      deck().setVolume(clamped)
       setVolumeState(clamped)
       onVolumeChangeRef.current(clamped)
     },
-    [audio]
+    [deck]
   )
 
   const queue = useMemo(() => entries, [entries])

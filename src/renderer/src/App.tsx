@@ -38,6 +38,7 @@ import { useDownloads } from './hooks/useDownloads'
 import { useFileDrop } from './hooks/useFileDrop'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useLibrary } from './hooks/useLibrary'
+import { useMediaSession } from './hooks/useMediaSession'
 import { useOnline } from './hooks/useOnline'
 import { usePlaybackPersistence } from './hooks/usePlaybackPersistence'
 import { usePlayer } from './hooks/usePlayer'
@@ -339,6 +340,27 @@ export function App() {
     onReport: handleReport
   })
   const { toggle, next, previous, stop } = player
+
+  // Windows SMTC (volume flyout and media overlay) via Chromium's Media Session.
+  // The separate taskbar thumbnail toolbar is rebuilt from the same two facts.
+  useMediaSession({
+    track: player.current,
+    isPlaying: player.isPlaying,
+    positionMs: player.positionMs,
+    durationMs: player.durationMs,
+    onPlay: toggle,
+    onPause: toggle,
+    onNext: next,
+    onPrevious: previous,
+    onSeek: player.seek,
+    onStop: stop
+  })
+
+  useEffect(() => {
+    void api
+      .setTaskbarState({ hasTrack: Boolean(player.current), isPlaying: player.isPlaying })
+      .catch(() => undefined)
+  }, [player.current?.id, player.isPlaying])
 
   // Carries the queue across restarts. Bound to the player rather than to the
   // view, so it keeps working from any screen.

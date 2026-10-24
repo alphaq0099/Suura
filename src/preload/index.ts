@@ -7,7 +7,13 @@ import {
   type PlayerEventName,
   type PlayerEvents
 } from '@shared/ipc'
-import type { AppSettings, DeepPartial, ListTracksQuery, PlaybackSnapshot } from '@shared/types'
+import type {
+  AppSettings,
+  DeepPartial,
+  ListTracksQuery,
+  PlaybackSnapshot,
+  ResolvedSource
+} from '@shared/types'
 
 /**
  * The only bridge between the renderer and the main process.
@@ -104,7 +110,8 @@ const api: PlayerApi = {
 
   resolveSource: (track) => ipcRenderer.invoke(IPC.mediaResolve, track),
 
-  prefetchSource: (track) => ipcRenderer.invoke(IPC.mediaPrefetch, track) as Promise<void>,
+  prefetchSource: (track) =>
+    ipcRenderer.invoke(IPC.mediaPrefetch, track) as Promise<ResolvedSource>,
 
   scanReplayGain: () => ipcRenderer.invoke(IPC.replayGainScan),
 
@@ -168,6 +175,9 @@ const api: PlayerApi = {
 
   setMiniPlayer: (enabled: boolean) =>
     ipcRenderer.invoke(IPC.windowSetMini, enabled) as Promise<boolean>,
+
+  setTaskbarState: (state) =>
+    ipcRenderer.invoke(IPC.windowSetTaskbarState, state) as Promise<boolean>,
 
   on<E extends PlayerEventName>(event: E, callback: (payload: PlayerEvents[E]) => void): number {
     const token = nextToken++

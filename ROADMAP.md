@@ -300,9 +300,9 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
 **Exit:** 10,000-track library is fast, searchable and pleasant; audio starts in < 300 ms.
 
 ### M2 — Player Quality & System Integration  *(~2 weeks)*
-- [ ] Gapless playback between consecutive tracks (album continuity)
+- [x] Gapless playback between consecutive tracks (album continuity)
 - [x] Media keys (global shortcuts for play/pause, next, previous, stop)
-- [ ] Windows SMTC (now-playing overlay), taskbar thumbnail controls
+- [x] Windows SMTC (now-playing overlay), taskbar thumbnail controls
 - [x] Mini player, tray icon, close-to-tray behaviour
 - [x] 10-band EQ + presets, preamp
 - [ ] Optional crossfade

@@ -132,6 +132,7 @@ import {
 import { buildArtworkUrl, parseArtworkUrl } from '@shared/artwork-url'
 import { formatAudioSummary, formatCodec } from '@shared/format'
 import { nextDecision, shuffleFrom, shuffled } from '@shared/queue'
+import { sanitizeTaskbarState, taskbarControls } from '@shared/taskbar'
 import { parseRangeHeader } from '@shared/range'
 import { isImportedPlaylistTrackId, onlineEntryToTrack, onlinePlaylistItemToTrack } from '@shared/online'
 import { sanitizeFilePart, savePathParts } from '@shared/files'
@@ -588,6 +589,30 @@ async function main(): Promise<void> {
     checkEqual('a manual next at the end stops without repeat', decision(2, 3, 'off', false), 'stop')
     checkEqual('an empty queue never plays', decision(-1, 0, 'all', true), 'stop')
     checkEqual('a single track with repeat all loops', decision(0, 1, 'all', true), 'play:0')
+
+    // --- taskbar controls ---------------------------------------------------
+    // Windows only shows these in the thumbnail preview, and their play/pause
+    // label has to follow the player. Kept pure so the decision is checked even
+    // when the smoke run is not on Windows.
+    const noTaskbar = taskbarControls(false, false)
+    checkEqual('an empty player offers no taskbar buttons', noTaskbar.length, 0)
+    const pausedTaskbar = taskbarControls(true, false)
+    checkEqual('a loaded track offers three taskbar buttons', pausedTaskbar.length, 3)
+    checkEqual(
+      'the middle taskbar button plays while paused',
+      pausedTaskbar[1]?.command.type === 'play-pause' && pausedTaskbar[1].tooltip === 'Play',
+      true
+    )
+    checkEqual(
+      'the middle taskbar button pauses while playing',
+      taskbarControls(true, true)[1]?.tooltip,
+      'Pause'
+    )
+    check(
+      'taskbar state rejects malformed input',
+      sanitizeTaskbarState({ hasTrack: true }) === null &&
+        sanitizeTaskbarState({ hasTrack: true, isPlaying: true })?.isPlaying === true
+    )
 
     const sequence = ['a', 'b', 'c', 'd', 'e']
     const shuffling = shuffled(sequence, () => 0.5)

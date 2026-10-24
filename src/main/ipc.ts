@@ -40,6 +40,7 @@ import type {
   QualityTier,
   RepeatMode,
   ResolvableTrack,
+  ResolvedSource,
   RetentionMode,
   RetentionSettings,
   SaveToLibraryRequest,
@@ -58,6 +59,8 @@ import {
 } from '@core/db/backups'
 import { normalizePath } from '@core/library/content-key'
 import { libraryCsv } from '@core/library/library-csv'
+import { sanitizeTaskbarState } from '@shared/taskbar'
+import { applyTaskbarControls } from './taskbar'
 import { DEFAULT_SETTINGS, mergeSettings } from '@core/settings/settings-service'
 import { getEngineStatus } from '@engine/sidecar/engine-status'
 import {
@@ -454,6 +457,23 @@ function sanitizeListQuery(input: unknown): ListTracksQuery {
 export function registerIpcHandlers(container: AppContainer): void {
   const { settings, library, log } = container
 
+  /**
+   * Resolves a queue entry without recording a play. The local branch attaches
+   * ReplayGain here rather than in the resolver: gain belongs to the file, and a
+   * cached source must never carry a value from a file that has since changed.
+   */
+  async function resolveSource(request: ResolvableTrack): Promise<ResolvedSource> {
+    if (request.sourceKind === 'youtube') return container.resolvers.resolve(request)
+    const track = library.trackById(request.id)
+    if (!track) throw new Error('Unknown track.')
+    const source = await container.resolvers.resolve(track)
+    return {
+      ...source,
+      replayGainDb: track.replayGainDb,
+      replayGainPeak: track.replayGainPeak
+    }
+  }
+
   ipcMain.handle(IPC.settingsGet, () => settings.get())
 
   ipcMain.handle(IPC.settingsUpdate, (_event, patch: unknown) => settings.update(sanitizeSettingsPatch(patch)))
@@ -652,27 +672,16 @@ export function registerIpcHandlers(container: AppContainer): void {
       if (request.sourceId && !isImportedPlaylistTrackId(request.id)) {
         container.online.rememberPlay(request.sourceId)
       }
-      return container.resolvers.resolve(request)
     }
-    const track = library.trackById(request.id)
-    if (!track) throw new Error('Unknown track.')
-    const source = await container.resolvers.resolve(track)
-    // ReplayGain belongs to the file, not to the resolver. Attaching it here
-    // keeps LocalFileResolver unaware of audio settings and means a cached
-    // source can never carry a gain from a file that has since changed.
-    return {
-      ...source,
-      replayGainDb: track.replayGainDb,
-      replayGainPeak: track.replayGainPeak
-    }
+    return resolveSource(request)
   })
 
   // The next track's resolve, run while the current one plays. Deliberately not
   // `mediaResolve`: a guess about the queue is not a play, so it must not lift a
-  // history row or fail the caller when it does not work out.
+  // history row. The renderer attaches the returned source to its idle element.
   ipcMain.handle(IPC.mediaPrefetch, async (_event, input: unknown) => {
     const request = toResolvableTrack(input)
-    await container.resolvers.prefetch(request)
+    return resolveSource(request)
   })
 
   // Loudness analysis is a long job with its own progress event. The renderer
@@ -990,5 +999,15 @@ export function registerIpcHandlers(container: AppContainer): void {
     if (typeof enabled !== 'boolean') throw new Error('Window mode must be a boolean.')
     const window = BrowserWindow.fromWebContents(event.sender)
     return window ? setMiniPlayer(window, enabled) : false
+  })
+
+  // ---- taskbar thumbnail toolbar ---------------------------------------
+  // The renderer owns playback state, so it pushes the two facts the toolbar
+  // needs. Clicks come back on the normal player-command broadcast.
+  ipcMain.handle(IPC.windowSetTaskbarState, (event, input: unknown) => {
+    const state = sanitizeTaskbarState(input)
+    if (!state) throw new Error('Malformed taskbar state.')
+    const window = BrowserWindow.fromWebContents(event.sender)
+    return window ? applyTaskbarControls(window, state, log.child('taskbar')) : false
   })
 }
