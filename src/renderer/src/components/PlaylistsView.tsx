@@ -11,6 +11,7 @@ import type {
   Track
 } from '@shared/types'
 import { formatCount, formatDuration } from '@shared/format'
+import { tagQueueTracks } from '@shared/queue'
 import { onlinePlaylistItemToTrack } from '@shared/online'
 import type { PlayingList } from '@shared/online'
 import {
@@ -24,8 +25,9 @@ import type { UseDownloadsResult } from '../hooks/useDownloads'
 import { ArtworkImage } from './ArtworkImage'
 import { RowMenu } from './RowMenu'
 import { TrackDetails } from './TrackDetails'
-import { TrackList, describeClickAction } from './TrackList'
+import { TrackList } from './TrackList'
 import {
+  CheckIcon,
   DownloadIcon,
   InfoIcon,
   MoreIcon,
@@ -55,6 +57,10 @@ export interface PlaylistsViewProps {
   doubleClick: LibraryClickAction
   /** Density-derived row height, shared with the virtualizer. */
   rowHeight: number
+  /** The YouTube Channel column toggle; it applies to imported playlists only. */
+  showChannelColumn: boolean
+  /** Whether local playlists keep their Album column. Imported lists always do. */
+  showAlbumColumn: boolean
   /** Width of the list of playlists, in CSS pixels. */
   indexWidth: number
   /** Cover size in the selected playlist's header. */
@@ -138,6 +144,8 @@ export function PlaylistsView(props: PlaylistsViewProps) {
     singleClick,
     doubleClick,
     rowHeight,
+    showChannelColumn,
+    showAlbumColumn,
     indexWidth: storedIndexWidth,
     playlistArtworkSize,
     onIndexWidthChange,
@@ -183,6 +191,14 @@ export function PlaylistsView(props: PlaylistsViewProps) {
     y: number
   } | null>(null)
   const [trackMenu, setTrackMenu] = useState<{ track: Track; x: number; y: number } | null>(null)
+  const toggleSelected = useCallback((trackId: number): void => {
+    setSelectedIds((previous) => {
+      const next = new Set(previous)
+      if (next.has(trackId)) next.delete(trackId)
+      else next.add(trackId)
+      return next
+    })
+  }, [])
   const [confirmDeleteOnline, setConfirmDeleteOnline] = useState<number | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const [reimporting, setReimporting] = useState(false)
@@ -482,23 +498,49 @@ export function PlaylistsView(props: PlaylistsViewProps) {
   const playList = useCallback(
     (queue: Track[], index: number, list: PlayingList | null): void => {
       onPlayingListChange(list)
-      onPlay(queue, index)
+      // The queue remembers the context it was launched from, not just the rows:
+      // the same file can belong to several playlists and the Source column should
+      // name the one the user actually opened.
+      const source = {
+        kind: 'playlist' as const,
+        label: list?.title ?? detail?.playlist.name ?? 'Playlist'
+      }
+      onPlay(tagQueueTracks(queue, source), index)
     },
-    [onPlay, onPlayingListChange]
+    [detail?.playlist.name, onPlay, onPlayingListChange]
+  )
+
+  const selectedTracks = useMemo(
+    () => tracks.filter((track) => selectedIds.has(track.id)),
+    [selectedIds, tracks]
+  )
+
+  const selectedSource = useMemo(
+    () => ({
+      kind: 'playlist' as const,
+      label:
+        showingOnline && onlineDetail
+          ? onlineDetail.playlist.title
+          : detail?.playlist.name ?? 'Playlist'
+    }),
+    [detail?.playlist.name, onlineDetail, showingOnline]
   )
 
   const playSelected = useCallback((): void => {
-    const index = tracks.findIndex((track) => selectedIds.has(track.id))
-    if (index < 0) return
-    const chosen = tracks.filter((track) => selectedIds.has(track.id))
+    if (selectedTracks.length === 0) return
     playList(
-      chosen,
+      selectedTracks,
       0,
       showingOnline && onlineDetail
         ? { title: onlineDetail.playlist.title, tracks, playlistId: onlineDetail.playlist.id }
         : null
     )
-  }, [playList, onlineDetail, selectedIds, showingOnline, tracks])
+  }, [playList, onlineDetail, selectedTracks, showingOnline, tracks])
+
+  const queueSelected = useCallback((): void => {
+    if (selectedTracks.length === 0) return
+    onQueue(tagQueueTracks(selectedTracks, selectedSource))
+  }, [onQueue, selectedSource, selectedTracks])
 
   const reimport = useCallback(async (): Promise<void> => {
     if (!onlineDetail) return
@@ -534,23 +576,6 @@ export function PlaylistsView(props: PlaylistsViewProps) {
   // first track's picture, which is the best cover a hand-made list or a mix has.
   const headerTrack = tracks[0] ?? null
 
-  // One footer below both panes, rather than one inside the right pane. The two
-  // columns then finish on the same line at every window height.
-  const footnote =
-    tracks.length === 0
-      ? null
-      : showingOnline
-        ? `Imported playlists keep their source order, so drag-to-reorder is off. Click: ${describeClickAction(
-            singleClick
-          )}, double-click: ${describeClickAction(
-            doubleClick
-          )}. Saving downloads a copy into your music folder; until then every track is streamed.`
-        : detail
-          ? `Drag a row to reorder, or focus it and press Alt+↑/↓. Click: ${describeClickAction(
-              singleClick
-            )}, double-click: ${describeClickAction(doubleClick)}.`
-          : null
-
   const selectionBar =
     selectedIds.size > 0 ? (
       <div className="banner selection-bar">
@@ -565,7 +590,11 @@ export function PlaylistsView(props: PlaylistsViewProps) {
           <TrashIcon size={14} />
           <span>{showingOnline ? 'Remove from this playlist' : 'Remove from playlist'}</span>
         </button>
-        <button type="button" className="link-button" onClick={() => setSelectedIds(new Set<number>())}>
+        <button
+          type="button"
+          className="selection-clear"
+          onClick={() => setSelectedIds(new Set<number>())}
+        >
           Clear
         </button>
       </div>
@@ -701,7 +730,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                         <span className="playlist-title">{playlist.name}</span>
                       </span>
                       <span className="playlist-count">{formatCount(playlist.trackCount)}</span>
-                      <span className="playlist-kind custom">List</span>
+                      <span className="playlist-kind list">List</span>
                     </button>
                     <button
                       type="button"
@@ -781,7 +810,9 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                         <span className="playlist-title">{playlist.title}</span>
                       </span>
                       <span className="playlist-count">{formatCount(playlist.trackCount)}</span>
-                      <span className={`playlist-kind ${playlist.kind}`}>{listKindLabel(playlist)}</span>
+                      <span className={`playlist-kind ${playlist.kind === 'playlist' ? 'list' : playlist.kind}`}>
+                        {listKindLabel(playlist)}
+                      </span>
                     </button>
                     <button
                       type="button"
@@ -872,7 +903,18 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                     <PlayIcon size={14} />
                     <span>Play</span>
                   </button>
-                  <button type="button" onClick={() => onQueue(tracks)} disabled={tracks.length === 0}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onQueue(
+                        tagQueueTracks(tracks, {
+                          kind: 'playlist',
+                          label: onlineDetail.playlist.title
+                        })
+                      )
+                    }
+                    disabled={tracks.length === 0}
+                  >
                     <QueueIcon size={14} />
                     <span>Add all</span>
                   </button>
@@ -971,19 +1013,18 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                       playlistId: onlineDetail.playlist.id
                     })
                   }
-                  onSelect={(trackId, mode) =>
-                    setSelectedIds((previous) => {
-                      if (mode === 'replace') return new Set([trackId])
-                      const next = new Set(previous)
-                      if (next.has(trackId)) next.delete(trackId)
-                      else next.add(trackId)
-                      return next
-                    })
-                  }
+                  onSelect={(trackId, mode) => {
+                    if (mode === 'replace') setSelectedIds(new Set([trackId]))
+                    else toggleSelected(trackId)
+                  }}
+                  onSelectMany={(ids) => setSelectedIds(new Set(ids))}
                   onSelectAll={() => setSelectedIds(new Set(tracks.map((track) => track.id)))}
                   onClearSelection={() => setSelectedIds(new Set<number>())}
                   onReveal={onReveal}
                   onRowContextMenu={(track, _index, at) => setTrackMenu({ track, ...at })}
+                  artistLabel="Channel"
+                  showArtistColumn={showChannelColumn}
+                  showAlbumColumn
                   singleClick={singleClick}
                   doubleClick={doubleClick}
                   sortable={false}
@@ -1034,7 +1075,18 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                     <PlayIcon size={14} />
                     <span>Play</span>
                   </button>
-                  <button type="button" onClick={() => onQueue(tracks)} disabled={tracks.length === 0}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onQueue(
+                        tagQueueTracks(tracks, {
+                          kind: 'playlist',
+                          label: detail?.playlist.name ?? 'Playlist'
+                        })
+                      )
+                    }
+                    disabled={tracks.length === 0}
+                  >
                     <QueueIcon size={14} />
                     <span>Add all</span>
                   </button>
@@ -1086,19 +1138,16 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                   rowHeight={rowHeight}
                   onToggleSort={() => undefined}
                   onActivate={(index) => playList(tracks, index, null)}
-                  onSelect={(trackId, mode) =>
-                    setSelectedIds((previous) => {
-                      if (mode === 'replace') return new Set([trackId])
-                      const next = new Set(previous)
-                      if (next.has(trackId)) next.delete(trackId)
-                      else next.add(trackId)
-                      return next
-                    })
-                  }
+                  onSelect={(trackId, mode) => {
+                    if (mode === 'replace') setSelectedIds(new Set([trackId]))
+                    else toggleSelected(trackId)
+                  }}
+                  onSelectMany={(ids) => setSelectedIds(new Set(ids))}
                   onSelectAll={() => setSelectedIds(new Set(tracks.map((track) => track.id)))}
                   onClearSelection={() => setSelectedIds(new Set<number>())}
                   onReveal={onReveal}
                   onRowContextMenu={(track, _index, at) => setTrackMenu({ track, ...at })}
+                  showAlbumColumn={showAlbumColumn}
                   singleClick={singleClick}
                   doubleClick={doubleClick}
                   sortable={false}
@@ -1115,7 +1164,6 @@ export function PlaylistsView(props: PlaylistsViewProps) {
           )}
         </div>
 
-        {footnote ? <p className="table-footnote playlists-footnote">{footnote}</p> : null}
       </div>
 
       {rowMenu ? (
@@ -1172,6 +1220,28 @@ export function PlaylistsView(props: PlaylistsViewProps) {
           at={{ x: trackMenu.x, y: trackMenu.y }}
           title={trackMenu.track.title}
           items={[
+            {
+              id: 'select',
+              label: selectedIds.has(trackMenu.track.id) ? 'Deselect' : 'Select',
+              icon: <CheckIcon />,
+              onSelect: () => toggleSelected(trackMenu.track.id)
+            },
+            ...(selectedIds.has(trackMenu.track.id)
+              ? [
+                  {
+                    id: 'play-selected',
+                    label: 'Play selected',
+                    icon: <PlayIcon />,
+                    onSelect: playSelected
+                  },
+                  {
+                    id: 'queue-selected',
+                    label: 'Queue selected',
+                    icon: <QueueIcon />,
+                    onSelect: queueSelected
+                  }
+                ]
+              : []),
             {
               id: 'details',
               label: 'Details',

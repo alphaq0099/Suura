@@ -21,8 +21,12 @@ import { killTree } from './process-tree'
 import { RequestScheduler } from './request-scheduler'
 import { YouTubeGate } from './youtube-gate'
 
-/** Resolving is 7-10 s on a normal connection; 25 s leaves room for a slow night. */
-const DEFAULT_TIMEOUT_MS = 25_000
+/**
+ * Resolving takes 10-20 s once IPv4 is forced (yt-dlp's own startup is several
+ * seconds of that). 40 s covers a slow night without letting a blackholed
+ * connection hold the player for minutes.
+ */
+const DEFAULT_TIMEOUT_MS = 40_000
 
 /** A flat list of 200 entries is several requests on YouTube's side; 60 s is fair. */
 const PLAYLIST_TIMEOUT_MS = 60_000
@@ -58,11 +62,32 @@ const TRANSIENT_RETRY_DELAY_MS = 2_000
 const TRANSIENT_RETRY_JITTER_MS = 1_000
 const UPDATE_TIMEOUT_MS = 90_000
 
+/**
+ * Keep yt-dlp on IPv4.
+ *
+ * On some Windows networks YouTube resolves to an IPv6 address that blackholes.
+ * `--socket-timeout` does not bound the connection attempt, so yt-dlp sits at
+ * "Downloading webpage" long past the app's deadline and playback never starts
+ * (the process has to be killed). Forcing the family it can reach turns that
+ * indefinite hang into a normal ten-to-twenty second resolve. A native IPv6
+ * route is rare on the desktop networks this player targets; the option is
+ * applied to every network command so a search, a save and a play all agree.
+ */
+const FORCE_IPV4_ARG = '--force-ipv4'
+
+/** Transport flags every command that reaches YouTube or GitHub must carry. */
+export function withNetworkTransport(args: readonly string[]): string[] {
+  return [FORCE_IPV4_ARG, ...args]
+}
+
 export interface YtMediaInfo {
   videoId: string
   webpageUrl: string
   title: string
+  /** The track artist when the extractor reports one, otherwise the channel. */
   artist: string | null
+  /** The uploader/channel, kept apart from the artist for YouTube Links. */
+  channel: string | null
   durationSec: number | null
   thumbnailUrl: string | null
   formatId: string
@@ -164,6 +189,11 @@ export function buildInfoArgs(videoId: string, quality: QualityTier): string[] {
     '--ignore-config',
     '--no-playlist',
     '--no-progress',
+    // The default check probes each candidate format to prove it downloads
+    // before returning it. That is a second round trip per resolve, and the
+    // stream proxy already turns a dead format into a re-resolve. For a plain
+    // audio selector the probe buys little and costs a couple of seconds.
+    '--no-check-formats',
     '--socket-timeout',
     '15',
     '-f',
@@ -460,7 +490,7 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
       const fallback = engine.cookieFallback
       const useCookiesFirst = fallback === 'always' && browser !== null
       const baseArgs = withPoTokenProvider(
-        buildDownloadArgs(videoId, options.quality, options.format, options.outputTemplate),
+        withNetworkTransport(buildDownloadArgs(videoId, options.quality, options.format, options.outputTemplate)),
         engine
       )
       const binary = this.resolveBinary()
@@ -537,6 +567,11 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
       }
 
       const timer = setTimeout(() => {
+        this.deps.log.warn('yt-dlp download timed out', {
+          videoId,
+          timeoutMs,
+          stderr: stderr.slice(-2000)
+        })
         stop(new YtDlpError('The download took too long. Try again.', 'download-timeout'))
       }, timeoutMs)
 
@@ -638,10 +673,13 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
 
     const work = this.spawnBuffered(
       binary,
-      ['--ignore-config', '-U'],
+      withNetworkTransport(['--ignore-config', '-U']),
       signal,
       UPDATE_TIMEOUT_MS,
-      'Updating yt-dlp was cancelled.'
+      'Updating yt-dlp was cancelled.',
+      // `-U` talks to GitHub, not YouTube. The generic resolve message sent
+      // users looking at the wrong service when this timed out.
+      'Updating yt-dlp took too long. Check the connection and try again.'
     )
       .then(({ stdout, stderr }) => {
         const output = [stdout, stderr]
@@ -758,7 +796,7 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
     // Read the settings at call time; changing them in Settings must affect the
     // next request, not only the next launch.
     const commandArgs = this.withCookies(
-      withPoTokenProvider(args, this.deps.engine()),
+      withPoTokenProvider(withNetworkTransport(args), this.deps.engine()),
       useCookies
     )
 
@@ -790,7 +828,8 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
     args: string[],
     signal: AbortSignal | undefined,
     timeoutMs: number,
-    abortMessage = 'Resolving the link was cancelled.'
+    abortMessage = 'Resolving the link was cancelled.',
+    timeoutMessage = 'YouTube took too long to answer. Check the connection and try again.'
   ): Promise<{ stdout: string; stderr: string }> {
     return new Promise((resolve, reject) => {
       if (signal?.aborted) {
@@ -808,8 +847,10 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
 
       const out: Buffer[] = []
       let outBytes = 0
+      let stdoutTail = ''
       let stderr = ''
       let settled = false
+      const startedAt = Date.now()
 
       const cleanup = (): void => {
         clearTimeout(timer)
@@ -825,7 +866,17 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
       }
 
       const timer = setTimeout(() => {
-        stop(new YtDlpError('YouTube took too long to answer. Try again.', 'timeout'))
+        // The reason a resolve timed out used to disappear with the process.
+        // Keeping the tail of stderr is what tells "waiting on YouTube" apart
+        // from "the binary never started" or a stalled web request.
+        this.deps.log.warn('yt-dlp timed out', {
+          timeoutMs,
+          elapsedMs: Date.now() - startedAt,
+          stdoutBytes: outBytes,
+          stdout: stdoutTail,
+          stderr: stderr.slice(-4000)
+        })
+        stop(new YtDlpError(timeoutMessage, 'timeout'))
       }, timeoutMs)
 
       const onAbort = (): void => stop(new Error(abortMessage))
@@ -839,6 +890,7 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
           return
         }
         out.push(chunk)
+        stdoutTail = (stdoutTail + chunk.toString('utf8')).slice(-1000)
       })
 
       child.stderr?.on('data', (chunk: Buffer) => {
@@ -870,6 +922,10 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
 
 function isRetryableError(error: unknown): boolean {
   if (!(error instanceof YtDlpError)) return false
+  // Our own deadline is not a transient socket error. Retrying it doubles the
+  // time the listener waits without making a blocked request any likelier to
+  // finish; the next attempt should be the listener's decision, not a timer's.
+  if (error.detail === 'timeout') return false
   return isRetryableYouTubeFailure(`${error.message}\n${error.detail}`)
 }
 
@@ -945,7 +1001,10 @@ function parseInfo(stdout: string, requestedId: string): YtMediaInfo {
     videoId,
     webpageUrl: asString(info.webpage_url) ?? youtubeWatchUrl(videoId),
     title: asString(info.title) ?? 'Untitled',
-    artist: normalizeArtistName(asString(info.artist) ?? asString(info.uploader) ?? asString(info.channel)),
+    artist: normalizeArtistName(
+      asString(info.artist) ?? asString(info.creator) ?? asString(info.uploader) ?? asString(info.channel)
+    ),
+    channel: normalizeArtistName(asString(info.channel) ?? asString(info.uploader)),
     durationSec: duration,
     thumbnailUrl: thumbnailOf(info),
     formatId: asString(format.format_id) ?? '',

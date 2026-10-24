@@ -125,6 +125,7 @@ export const DEFAULT_APPEARANCE = {
     textSize: 'medium',
     iconSet: 'modern',
     showAlbumColumn: true,
+    showChannelColumn: true,
     playerArtwork: true,
     playerAmbience: true
   }

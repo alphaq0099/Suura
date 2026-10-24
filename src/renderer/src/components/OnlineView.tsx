@@ -1,18 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import type { DownloadProgress, OnlinePlaylist, OnlinePlaylistDetail, OnlineTrack, Track } from '@shared/types'
 import { formatCount, formatDuration } from '@shared/format'
+import { YOUTUBE_QUEUE_SOURCE, tagQueueTracks } from '@shared/queue'
 import { onlineEntryToTrack, onlinePlaylistItemToTrack } from '@shared/online'
 import type { PlayingList } from '@shared/online'
 import { describeYouTubeRefusal, parseYouTubeLink, youtubeListUrl } from '@shared/youtube'
 import { api, messageOf } from '../api'
 import type { UseDownloadsResult } from '../hooks/useDownloads'
 import { ArtworkImage } from './ArtworkImage'
+import { FieldContextMenu } from './FieldContextMenu'
+import { ScrollingText } from './ScrollingText'
+import { TrackDetails } from './TrackDetails'
 import {
   CheckIcon,
   ClipboardIcon,
   CloseIcon,
   CopyIcon,
   DownloadIcon,
+  InfoIcon,
   LinkIcon,
   MoreIcon,
   PlayIcon,
@@ -65,6 +70,7 @@ interface Notice {
 
 interface MenuState {
   entry: OnlineTrack
+  index: number
   x: number
   y: number
 }
@@ -75,10 +81,9 @@ interface ListOffer {
   kind: 'playlist' | 'album'
 }
 
-const MENU_WIDTH = 230
-const MENU_HEIGHT = 230
-const FIELD_MENU_WIDTH = 190
-const FIELD_MENU_HEIGHT = 130
+const MENU_WIDTH = 240
+// Tall enough for the selected-row actions without the menu growing off-screen.
+const MENU_HEIGHT = 360
 
 /**
  * The art a list card can show when it has no cover of its own.
@@ -144,10 +149,14 @@ export function OnlineView(props: OnlineViewProps) {
   const [offer, setOffer] = useState<ListOffer | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const [menu, setMenu] = useState<MenuState | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set())
+  const [detailsTrack, setDetailsTrack] = useState<Track | null>(null)
   const [fieldMenu, setFieldMenu] = useState<{ x: number; y: number } | null>(null)
 
   const inputRef = useRef<HTMLInputElement | null>(null)
   const playingCardRef = useRef<HTMLDivElement | null>(null)
+  const selectionAnchorRef = useRef<number | null>(null)
+  const focusIndexRef = useRef<number | null>(null)
   // Bumped per submit so an answer that arrives after a newer paste is ignored.
   const submitTokenRef = useRef(0)
 
@@ -176,6 +185,92 @@ export function OnlineView(props: OnlineViewProps) {
       : null
   let liveIndex = -1
   if (playingList && liveTrack) liveIndex = playingList.tracks.indexOf(liveTrack)
+
+  // Artist is an optional column: it only exists when YouTube supplies a real
+  // artist that is different from the uploader/channel. A list with one such row
+  // keeps the column for every row so the grid stays aligned; rows without a
+  // separate artist show an em dash.
+  const showArtistColumn = entries.some(
+    (entry) => Boolean(entry.artist && entry.channel && entry.artist !== entry.channel)
+  )
+
+  // Selection follows the same rules as the library, queue and playlists:
+  // Ctrl/Cmd toggles one row, Shift extends from a fixed anchor, and the
+  // checkboxes only appear once something is selected. Selection is stored by
+  // history id, not row number, so it cannot silently follow a list refresh.
+  const selecting = selectedIds.size > 0
+  const allSelected =
+    entries.length > 0 && entries.every((entry) => selectedIds.has(entry.id))
+  const selectedTracks = useMemo(
+    () => entries.filter((entry) => selectedIds.has(entry.id)).map(onlineEntryToTrack),
+    [entries, selectedIds]
+  )
+
+  const toggleSelected = useCallback(
+    (index: number): void => {
+      const entry = entries[index]
+      if (!entry) return
+      setSelectedIds((previous) => {
+        const next = new Set(previous)
+        if (next.has(entry.id)) next.delete(entry.id)
+        else next.add(entry.id)
+        return next
+      })
+      selectionAnchorRef.current = index
+      focusIndexRef.current = index
+    },
+    [entries]
+  )
+
+  const selectRange = useCallback(
+    (index: number): void => {
+      if (index < 0 || index >= entries.length) return
+      // Keep the row that started the selection fixed. A focused row is the
+      // fallback for the first Shift-click; the playing link is the last one.
+      const playingIndex = entries.findIndex(
+        (entry) => currentVideoId !== null && entry.videoId === currentVideoId
+      )
+      const anchor =
+        selectionAnchorRef.current ??
+        focusIndexRef.current ??
+        (playingIndex >= 0 ? playingIndex : 0)
+      selectionAnchorRef.current = anchor
+      const from = Math.min(anchor, index)
+      const to = Math.max(anchor, index)
+      const next = new Set<number>()
+      for (let at = from; at <= to; at += 1) {
+        const entry = entries[at]
+        if (entry) next.add(entry.id)
+      }
+      setSelectedIds(next)
+      focusIndexRef.current = index
+    },
+    [currentVideoId, entries]
+  )
+
+  const selectAll = useCallback((): void => {
+    setSelectedIds(new Set(entries.map((entry) => entry.id)))
+    selectionAnchorRef.current = entries.length > 0 ? 0 : null
+    focusIndexRef.current = entries.length > 0 ? 0 : null
+  }, [entries])
+
+  const clearSelection = useCallback((): void => {
+    setSelectedIds(new Set())
+    selectionAnchorRef.current = null
+    focusIndexRef.current = null
+  }, [])
+
+  useEffect(() => {
+    if (selectedIds.size === 0) selectionAnchorRef.current = null
+  }, [selectedIds])
+
+  // A removed link, a new one, or a fresh history read makes the old row
+  // numbers meaningless. Clear the mode rather than selecting different rows.
+  const entryIdsKey = entries.map((entry) => entry.id).join(',')
+  useEffect(() => {
+    clearSelection()
+    setMenu(null)
+  }, [entryIdsKey, clearSelection])
 
   // If the playing list is older than the newest three, bring its card into the
   // box's window instead of leaving the mark below the fold. `nearest` moves the
@@ -214,8 +309,12 @@ export function OnlineView(props: OnlineViewProps) {
           setUrl('')
           setOffer(null)
           const tracks = detail.items.map((item) => onlinePlaylistItemToTrack(item, detail.playlist))
+          const queue = tagQueueTracks(tracks, {
+            kind: 'playlist',
+            label: detail.playlist.title
+          })
           if (mode === 'play') {
-            onPlay(tracks, 0)
+            onPlay(queue, 0)
             // The card names the list and follows the track it is on; a static
             // "are playing" notice went stale the moment the first track ended.
             onPlayingListChange({
@@ -225,7 +324,7 @@ export function OnlineView(props: OnlineViewProps) {
             })
             setNotice(null)
           } else {
-            onQueue(tracks)
+            onQueue(queue)
             setNotice({
               kind: 'info',
               text: `${detail.playlist.title} · ${formatCount(tracks.length)} tracks were added to the queue.`
@@ -255,9 +354,9 @@ export function OnlineView(props: OnlineViewProps) {
           // history instead of dead-ending after one track.
           const rest = entriesRef.current.filter((item) => item.id !== entry.id).map(onlineEntryToTrack)
           onPlayingListChange(null)
-          onPlay([track, ...rest], 0)
+          onPlay(tagQueueTracks([track, ...rest], YOUTUBE_QUEUE_SOURCE), 0)
         } else {
-          onQueue([track])
+          onQueue(tagQueueTracks([track], YOUTUBE_QUEUE_SOURCE))
           setNotice({ kind: 'info', text: `Queued “${entry.title}”.` })
         }
       } catch (cause) {
@@ -319,23 +418,37 @@ export function OnlineView(props: OnlineViewProps) {
     setFieldMenu({ x: rect.left + 10, y: rect.bottom + 4 })
   }
 
-  const fieldMenuStyle = fieldMenu
-    ? {
-        left: Math.max(8, Math.min(fieldMenu.x, window.innerWidth - FIELD_MENU_WIDTH - 8)),
-        top: Math.max(8, Math.min(fieldMenu.y, window.innerHeight - FIELD_MENU_HEIGHT - 8))
-      }
-    : undefined
-
   const playAt = (index: number): void => {
     if (index < 0 || index >= entries.length) return
     onPlayingListChange(null)
-    onPlay(entries.slice(index).map(onlineEntryToTrack), 0)
+    onPlay(
+      tagQueueTracks(
+        entries.slice(index).map(onlineEntryToTrack),
+        YOUTUBE_QUEUE_SOURCE
+      ),
+      0
+    )
   }
 
   const queueOne = (entry: OnlineTrack): void => {
-    onQueue([onlineEntryToTrack(entry)])
+    onQueue(tagQueueTracks([onlineEntryToTrack(entry)], YOUTUBE_QUEUE_SOURCE))
     setNotice({ kind: 'info', text: `Queued “${entry.title}”.` })
   }
+
+  const playSelected = useCallback((): void => {
+    if (selectedTracks.length === 0) return
+    onPlayingListChange(null)
+    onPlay(tagQueueTracks(selectedTracks, YOUTUBE_QUEUE_SOURCE), 0)
+  }, [onPlay, onPlayingListChange, selectedTracks])
+
+  const queueSelected = useCallback((): void => {
+    if (selectedTracks.length === 0) return
+    onQueue(tagQueueTracks(selectedTracks, YOUTUBE_QUEUE_SOURCE))
+    setNotice({
+      kind: 'info',
+      text: `${formatCount(selectedTracks.length)} link${selectedTracks.length === 1 ? '' : 's'} added to the queue.`
+    })
+  }, [onQueue, selectedTracks])
 
   const copyLink = useCallback(async (entry: OnlineTrack): Promise<void> => {
     try {
@@ -363,9 +476,10 @@ export function OnlineView(props: OnlineViewProps) {
     [saveToLibrary]
   )
 
-  const openMenu = (entry: OnlineTrack, event: ReactMouseEvent): void => {
+  const openMenu = (entry: OnlineTrack, event: ReactMouseEvent, index: number): void => {
     event.preventDefault()
-    setMenu({ entry, x: event.clientX, y: event.clientY })
+    focusIndexRef.current = index
+    setMenu({ entry, index, x: event.clientX, y: event.clientY })
   }
 
   const menuStyle = menu
@@ -395,7 +509,10 @@ export function OnlineView(props: OnlineViewProps) {
         }
         const tracks = detail.items.map((item) => onlinePlaylistItemToTrack(item, detail.playlist))
         onPlayingListChange({ title: detail.playlist.title, tracks, playlistId: detail.playlist.id })
-        onPlay(tracks, 0)
+        onPlay(
+          tagQueueTracks(tracks, { kind: 'playlist', label: detail.playlist.title }),
+          0
+        )
       } catch (cause) {
         setNotice({ kind: 'error', text: messageOf(cause) })
       } finally {
@@ -621,9 +738,47 @@ export function OnlineView(props: OnlineViewProps) {
 
       {entries.length > 0 ? (
         <div className="online-section-head">
+          {selecting ? (
+            <label
+              className="head-select online-head-select"
+              title={allSelected ? 'Clear selection' : 'Select all links'}
+            >
+              <input
+                type="checkbox"
+                checked={allSelected}
+                ref={(node) => {
+                  if (node) node.indeterminate = !allSelected
+                }}
+                onChange={() => {
+                  if (allSelected) clearSelection()
+                  else selectAll()
+                }}
+                aria-label={allSelected ? 'Clear selection' : 'Select all links'}
+              />
+            </label>
+          ) : null}
           <h2>Links</h2>
           <span className="online-section-count">{formatCount(entries.length)}</span>
           <span className="online-section-hint">Newest activity first.</span>
+        </div>
+      ) : null}
+
+      {selecting ? (
+        <div className="banner selection-bar online-selection-bar">
+          <span>
+            <strong>{formatCount(selectedIds.size)}</strong> selected · click a title to play
+          </span>
+          <button type="button" onClick={playSelected}>
+            <PlayIcon size={14} />
+            <span>Play selected</span>
+          </button>
+          <button type="button" onClick={queueSelected}>
+            <QueueIcon size={14} />
+            <span>Add to queue</span>
+          </button>
+          <button type="button" className="selection-clear" onClick={clearSelection}>
+            Clear
+          </button>
         </div>
       ) : null}
 
@@ -638,9 +793,23 @@ export function OnlineView(props: OnlineViewProps) {
           </p>
         </div>
       ) : (
-        <ul className="online-list" aria-label="Links played from YouTube">
+        <ul
+          className="online-list"
+          aria-label="Links played from YouTube"
+          data-artist-column={showArtistColumn ? 'show' : 'hide'}
+        >
           {pending ? (
-            <li className={pending.error ? 'online-item pending failed' : 'online-item pending'}>
+            <li
+              className={[
+                'online-item',
+                'pending',
+                pending.error ? 'failed' : '',
+                selecting ? 'selecting' : ''
+              ]
+                .filter(Boolean)
+                .join(' ')}
+            >
+              {selecting ? <span className="online-select pending-select" aria-hidden="true" /> : null}
               <span className="online-pending-body">
                 <span className="online-art-cell">
                   <span className="artwork artwork-empty online-art" style={{ width: 30, height: 30 }} data-artwork="none" aria-hidden="true">
@@ -681,6 +850,8 @@ export function OnlineView(props: OnlineViewProps) {
             const current = currentVideoId !== null && entry.videoId === currentVideoId
             const saving = states[entry.videoId]
             const isSaved = saved.has(entry.videoId)
+            const artistName = entry.artist && entry.channel && entry.artist !== entry.channel ? entry.artist : null
+            const channelName = entry.channel ?? entry.artist ?? 'Unknown channel'
             const savingActive =
               saving !== undefined &&
               saving.status !== 'saved' &&
@@ -697,14 +868,51 @@ export function OnlineView(props: OnlineViewProps) {
             return (
               <li
                 key={entry.id}
-                className={['online-item', current ? 'current' : '', isSaved ? 'saved' : ''].filter(Boolean).join(' ')}
+                className={[
+                  'online-item',
+                  current ? 'current' : '',
+                  isSaved ? 'saved' : '',
+                  selecting ? 'selecting' : '',
+                  selectedIds.has(entry.id) ? 'selected' : ''
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                onContextMenu={(event) => openMenu(entry, event, index)}
               >
+                {selecting ? (
+                  <label
+                    className="online-select"
+                    title={selectedIds.has(entry.id) ? 'Deselect' : 'Select'}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(entry.id)}
+                      onChange={() => toggleSelected(index)}
+                      aria-label={`${
+                        selectedIds.has(entry.id) ? 'Deselect' : 'Select'
+                      } ${entry.title}`}
+                    />
+                  </label>
+                ) : null}
                 <button
                   type="button"
                   className="online-jump"
                   title={current ? 'Restart this link' : 'Play this link'}
-                  onClick={() => playAt(index)}
-                  onContextMenu={(event) => openMenu(entry, event)}
+                  onClick={(event) => {
+                    focusIndexRef.current = index
+                    if (event.ctrlKey || event.metaKey) {
+                      event.preventDefault()
+                      toggleSelected(index)
+                      return
+                    }
+                    if (event.shiftKey) {
+                      event.preventDefault()
+                      selectRange(index)
+                      return
+                    }
+                    playAt(index)
+                  }}
                 >
                   <span className="online-art-cell">
                     {/* A row with no cached cover borrows the negative-id lookup so
@@ -712,12 +920,18 @@ export function OnlineView(props: OnlineViewProps) {
                     <ArtworkImage track={onlineEntryToTrack(entry)} size={30} className="online-art" />
                   </span>
                   <span className="online-title">{entry.title}</span>
-                  <span className="online-artist" title={entry.artist ?? undefined}>
-                    {entry.artist ?? 'Unknown artist'}
-                  </span>
-                  <span className="online-album" title={entry.album ?? undefined}>
-                    {entry.album ?? '—'}
-                  </span>
+                  {showArtistColumn ? (
+                    <ScrollingText
+                      text={artistName ?? '—'}
+                      className="online-artist"
+                      title={artistName ? `Artist: ${artistName}` : 'Artist not reported by YouTube'}
+                    />
+                  ) : null}
+                  <ScrollingText
+                    text={channelName}
+                    className="online-channel"
+                    title={`Channel: ${channelName}`}
+                  />
                   {savingActive ? (
                     <span className="online-time saving-time" title="Saving to your library">
                       {savingLabel}
@@ -765,18 +979,9 @@ export function OnlineView(props: OnlineViewProps) {
                     className="icon-button subtle"
                     title="More actions"
                     aria-label={`More actions for ${entry.title}`}
-                    onClick={(event) => openMenu(entry, event)}
+                    onClick={(event) => openMenu(entry, event, index)}
                   >
                     <MoreIcon size={15} />
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-button subtle"
-                    title="Remove from history"
-                    aria-label={`Remove ${entry.title} from history`}
-                    onClick={() => void onRemove(entry.id)}
-                  >
-                    <CloseIcon />
                   </button>
                 </div>
               </li>
@@ -787,7 +992,7 @@ export function OnlineView(props: OnlineViewProps) {
 
       {fieldMenu ? (
         <FieldContextMenu
-          style={fieldMenuStyle}
+          at={fieldMenu}
           hasValue={url.trim().length > 0}
           onPaste={() => void paste()}
           onCopy={() => void copyField()}
@@ -806,104 +1011,24 @@ export function OnlineView(props: OnlineViewProps) {
           style={menuStyle}
           saved={saved.has(menu.entry.videoId)}
           saving={states[menu.entry.videoId]?.status}
-          onPlay={() => playAt(entries.findIndex((entry) => entry.id === menu.entry.id))}
+          isSelected={selectedIds.has(menu.entry.id)}
+          onToggleSelection={() => toggleSelected(menu.index)}
+          onPlay={() => playAt(menu.index)}
           onQueue={() => queueOne(menu.entry)}
+          onPlaySelected={playSelected}
+          onQueueSelected={queueSelected}
           onSave={() => void saveEntry(menu.entry)}
           onCopy={() => void copyLink(menu.entry)}
+          onDetails={() => setDetailsTrack(onlineEntryToTrack(menu.entry))}
           onRemove={() => void onRemove(menu.entry.id)}
           onClose={() => setMenu(null)}
         />
       ) : null}
+
+      {detailsTrack ? (
+        <TrackDetails track={detailsTrack} onClose={() => setDetailsTrack(null)} />
+      ) : null}
     </section>
-  )
-}
-
-/**
- * The link field's own menu.
- *
- * Electron gives a bare input no menu at all, and the app's other menus are
- * custom, so this one offers the two things a link field is for: putting a link
- * in and taking it back out. Paste is the reason it exists; Copy and Clear just
- * keep the right-click from feeling like a one-trick shortcut.
- */
-function FieldContextMenu(props: {
-  style: { left: number; top: number } | undefined
-  hasValue: boolean
-  onPaste: () => void
-  onCopy: () => void
-  onClear: () => void
-  onClose: () => void
-}) {
-  const { style, hasValue, onPaste, onCopy, onClear, onClose } = props
-  const containerRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    const onPointerDown = (event: PointerEvent): void => {
-      const node = event.target as Node | null
-      if (node && containerRef.current?.contains(node)) return
-      onClose()
-    }
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
-        event.stopPropagation()
-        onClose()
-      }
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
-    }
-  }, [onClose])
-
-  return (
-    <div
-      ref={containerRef}
-      className="context-menu field-menu"
-      style={style}
-      role="menu"
-      aria-label="Link field actions"
-    >
-      <button
-        type="button"
-        role="menuitem"
-        className="context-item"
-        onClick={() => {
-          onPaste()
-          onClose()
-        }}
-      >
-        <ClipboardIcon size={14} />
-        <span>Paste</span>
-      </button>
-      <button
-        type="button"
-        role="menuitem"
-        className="context-item"
-        disabled={!hasValue}
-        onClick={() => {
-          onCopy()
-          onClose()
-        }}
-      >
-        <CopyIcon size={14} />
-        <span>Copy</span>
-      </button>
-      <button
-        type="button"
-        role="menuitem"
-        className="context-item"
-        disabled={!hasValue}
-        onClick={() => {
-          onClear()
-          onClose()
-        }}
-      >
-        <CloseIcon size={14} />
-        <span>Clear</span>
-      </button>
-    </div>
   )
 }
 
@@ -915,14 +1040,35 @@ function OnlineContextMenu(props: {
   style: { left: number; top: number } | undefined
   saved: boolean
   saving: DownloadProgress['status'] | undefined
+  isSelected: boolean
+  onToggleSelection: () => void
   onPlay: () => void
   onQueue: () => void
+  onPlaySelected: () => void
+  onQueueSelected: () => void
   onSave: () => void
   onCopy: () => void
+  onDetails: () => void
   onRemove: () => void
   onClose: () => void
 }) {
-  const { state, style, saved, saving, onPlay, onQueue, onSave, onCopy, onRemove, onClose } = props
+  const {
+    state,
+    style,
+    saved,
+    saving,
+    isSelected,
+    onToggleSelection,
+    onPlay,
+    onQueue,
+    onPlaySelected,
+    onQueueSelected,
+    onSave,
+    onCopy,
+    onDetails,
+    onRemove,
+    onClose
+  } = props
   const containerRef = useRef<HTMLDivElement | null>(null)
   const savingActive =
     saving !== undefined && saving !== 'saved' && saving !== 'failed' && saving !== 'cancelled'
@@ -957,6 +1103,18 @@ function OnlineContextMenu(props: {
         role="menuitem"
         className="context-item"
         onClick={() => {
+          onToggleSelection()
+          onClose()
+        }}
+      >
+        <CheckIcon />
+        <span>{isSelected ? 'Deselect' : 'Select'}</span>
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        className="context-item"
+        onClick={() => {
           onPlay()
           onClose()
         }}
@@ -964,18 +1122,47 @@ function OnlineContextMenu(props: {
         <PlayIcon size={14} />
         <span>Play</span>
       </button>
-      <button
-        type="button"
-        role="menuitem"
-        className="context-item"
-        onClick={() => {
-          onQueue()
-          onClose()
-        }}
-      >
-        <QueueIcon size={14} />
-        <span>Add to queue</span>
-      </button>
+      {isSelected ? (
+        <>
+          <button
+            type="button"
+            role="menuitem"
+            className="context-item"
+            onClick={() => {
+              onPlaySelected()
+              onClose()
+            }}
+          >
+            <PlayIcon size={14} />
+            <span>Play selected</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="context-item"
+            onClick={() => {
+              onQueueSelected()
+              onClose()
+            }}
+          >
+            <QueueIcon size={14} />
+            <span>Queue selected</span>
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          role="menuitem"
+          className="context-item"
+          onClick={() => {
+            onQueue()
+            onClose()
+          }}
+        >
+          <QueueIcon size={14} />
+          <span>Add to queue</span>
+        </button>
+      )}
       <button
         type="button"
         role="menuitem"
@@ -1001,6 +1188,18 @@ function OnlineContextMenu(props: {
       >
         {saved ? <CheckIcon /> : savingActive ? <SpinnerIcon /> : <DownloadIcon />}
         <span>{saved ? 'In your library' : savingActive ? 'Saving…' : 'Save to library'}</span>
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        className="context-item"
+        onClick={() => {
+          onDetails()
+          onClose()
+        }}
+      >
+        <InfoIcon size={14} />
+        <span>Details</span>
       </button>
       <button
         type="button"

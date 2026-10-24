@@ -6,7 +6,38 @@
  * a shuffle that drops the track you are listening to) and awkward to prove
  * through the UI. Kept pure so `npm run smoke` can pin the rules down.
  */
-import type { RepeatMode } from './types'
+import type { RepeatMode, Track } from './types'
+
+/**
+ * Where a queue entry was launched from.
+ *
+ * This is deliberately attached to the queue entry rather than stored on the
+ * track: the same local file can be played from the Library, from one playlist
+ * or from another, and only the past queue knows which of those the user chose.
+ */
+export type QueueSourceKind = 'library' | 'youtube' | 'playlist'
+
+export interface QueueSource {
+  kind: QueueSourceKind
+  /** What the Source column shows: "Library", "YouTube" or a playlist name. */
+  label: string
+}
+
+export type QueueTrack = Track & { queueSource?: QueueSource }
+
+export const LIBRARY_QUEUE_SOURCE: QueueSource = { kind: 'library', label: 'Library' }
+export const YOUTUBE_QUEUE_SOURCE: QueueSource = { kind: 'youtube', label: 'YouTube' }
+
+/** A copy of every track with the same source label. */
+export function tagQueueTracks(tracks: readonly Track[], source: QueueSource): QueueTrack[] {
+  return tracks.map((track) => ({ ...track, queueSource: source }))
+}
+
+/** The label for a row, with a sensible fallback for restored queues. */
+export function queueSourceLabel(track: QueueTrack): string {
+  if (track.queueSource?.label) return track.queueSource.label
+  return track.sourceKind === 'youtube' ? YOUTUBE_QUEUE_SOURCE.label : LIBRARY_QUEUE_SOURCE.label
+}
 
 /** What should happen when the current entry ends or Next is pressed. */
 export type AdvanceDecision =

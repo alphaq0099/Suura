@@ -114,20 +114,10 @@ export function Sidebar({
       <div className="sidebar-footer">
         <div
           className="sidebar-source"
-          title="Local files plus links remembered from YouTube. YouTube links stream through yt-dlp."
+          title={`All sources: ${totalTracks === null ? '--' : formatCount(totalTracks)} tracks. Local library: ${localCount}. YouTube: ${youtubeCount} remembered links. YouTube links stream through yt-dlp.`}
         >
-          <span className="sidebar-source-label">
-            Local library <span aria-hidden="true">•</span> YouTube
-          </span>
+          <span className="sidebar-source-label">All sources</span>
           <strong className="sidebar-source-total">{totalTracks === null ? '--' : formatCount(totalTracks)}</strong>
-        </div>
-        <div className="sidebar-source-split">
-          <span>
-            Local <strong>{localCount}</strong>
-          </span>
-          <span>
-            YouTube <strong>{youtubeCount}</strong>
-          </span>
         </div>
         <div className="sidebar-stat">
           <span>Artists</span>

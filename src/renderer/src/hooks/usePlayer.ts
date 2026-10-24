@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { RepeatMode, Track } from '@shared/types'
-import { nextDecision, shuffleFrom, shuffled } from '@shared/queue'
+import type { RepeatMode } from '@shared/types'
+import { nextDecision, shuffleFrom, shuffled, type QueueTrack } from '@shared/queue'
+import { recoveryDelayMs, shouldRecoverPlayback } from '@shared/playback-recovery'
 import { api, messageOf } from '../api'
 
 /** Replaying within this many seconds goes to the previous track instead. */
@@ -13,6 +14,28 @@ const RESTART_THRESHOLD_S = 3
  * early enough that a listener who settles in gets the whole warm-up for free.
  */
 const PREFETCH_DELAY_MS = 4000
+
+/**
+ * No progress for this long after playback started is treated as a stall.
+ *
+ * A dropped connection does not always fire `error`: the element can sit in
+ * `waiting` forever. The timeout is generous enough to cover a slow buffer and
+ * short enough that the listener does not have to notice and press play.
+ */
+const STALL_TIMEOUT_MS = 15_000
+
+/**
+ * A resolve that took this long before failing is not the kind of transient
+ * blip the reconnect loop is for.
+ *
+ * yt-dlp has its own deadline. When it expires, retrying immediately spends the
+ * same deadline again and the listener waits twice as long for the same answer.
+ * The error is shown instead; pressing play is the retry.
+ */
+const SLOW_RESOLVE_MS = 10_000
+
+/** Total wall-clock budget for one automatic reconnect, independent of attempts. */
+const RECOVERY_BUDGET_MS = 30_000
 
 export interface UsePlayerOptions {
   initialVolume: number
@@ -27,19 +50,21 @@ export interface UsePlayerOptions {
 }
 
 export interface UsePlayerResult {
-  current: Track | null
+  current: QueueTrack | null
   /** The queue in playback order, which is what the queue panel shows. */
-  queue: Track[]
+  queue: QueueTrack[]
   /** Position of `current` within `queue`, or -1 when nothing is playing. */
   index: number
   isPlaying: boolean
   isLoading: boolean
+  /** True while the interrupted stream is being retried automatically. */
+  reconnecting: boolean
   positionMs: number
   durationMs: number
   volume: number
   error: string | null
   /** Replace the queue and start at `startIndex`. */
-  playQueue: (tracks: Track[], startIndex: number) => void
+  playQueue: (tracks: QueueTrack[], startIndex: number) => void
   /**
    * Put a saved queue back without starting it.
    *
@@ -47,10 +72,14 @@ export interface UsePlayerResult {
    * `autoPlay` is true: resuming means "carry on from where I was", not "make
    * noise the moment the window opens".
    */
-  restore: (tracks: Track[], startIndex: number, positionMs: number, autoPlay?: boolean) => void
+  restore: (tracks: QueueTrack[], startIndex: number, positionMs: number, autoPlay?: boolean) => void
   /** Append to the queue without disturbing playback. */
-  enqueue: (tracks: Track[]) => void
+  enqueue: (tracks: QueueTrack[]) => void
   removeAt: (position: number) => void
+  /** Reorder one visible row. Works while shuffle is on, too. */
+  move: (from: number, to: number) => void
+  /** Drop every row before the current one, keeping the current track at the front. */
+  removePlayed: () => void
   clearQueue: () => void
   jumpTo: (position: number) => void
   toggle: () => void
@@ -64,12 +93,26 @@ export interface UsePlayerResult {
 /** Resolves when the element knows its duration (immediately if it already does). */
 function onceLoadedMetadata(element: HTMLAudioElement): Promise<void> {
   if (element.readyState >= HTMLMediaElement.HAVE_METADATA) return Promise.resolve()
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const done = (): void => {
-      element.removeEventListener('loadedmetadata', done)
+      cleanup()
       resolve()
     }
+    // Waiting only for metadata leaves this promise pending forever when the
+    // stream fails before its headers arrive -- which is exactly what a 503 from
+    // the reconnecting proxy looks like. Reject so the load path can recover.
+    const failed = (): void => {
+      cleanup()
+      reject(new Error('The stream could not be loaded.'))
+    }
+    const cleanup = (): void => {
+      element.removeEventListener('loadedmetadata', done)
+      element.removeEventListener('error', failed)
+      element.removeEventListener('abort', failed)
+    }
     element.addEventListener('loadedmetadata', done)
+    element.addEventListener('error', failed)
+    element.addEventListener('abort', failed)
   })
 }
 
@@ -109,30 +152,31 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
   const { initialVolume, repeat, shuffle, prefetchNext, onVolumeChange, onReport } = options
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  const [entries, setEntries] = useState<Track[]>([])
+  const [entries, setEntries] = useState<QueueTrack[]>([])
   const [index, setIndex] = useState(-1)
   const [playRequestId, setPlayRequestId] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [reconnecting, setReconnecting] = useState(false)
   const [positionMs, setPositionMs] = useState(0)
   const [durationMs, setDurationMs] = useState(0)
   const [volume, setVolumeState] = useState(initialVolume)
   const [error, setError] = useState<string | null>(null)
 
   const loadTokenRef = useRef(0)
-  const currentTrackRef = useRef<Track | null>(null)
+  const currentTrackRef = useRef<QueueTrack | null>(null)
   const onReportRef = useRef(onReport)
   const onVolumeChangeRef = useRef(onVolumeChange)
   const initialVolumeRef = useRef(initialVolume)
 
   // Mirrors of state that event handlers and callbacks need without
   // re-subscribing: `ended` fires long after the render that scheduled it.
-  const entriesRef = useRef<Track[]>([])
+  const entriesRef = useRef<QueueTrack[]>([])
   const indexRef = useRef(-1)
   const repeatRef = useRef<RepeatMode>(repeat)
   const shuffleRef = useRef(shuffle)
   /** The un-shuffled queue, so toggling shuffle off restores the real order. */
-  const originRef = useRef<Track[] | null>(null)
+  const originRef = useRef<QueueTrack[] | null>(null)
   /**
    * Where a restored track should start, consumed once by the load effect.
    *
@@ -145,6 +189,22 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
   const resumePlayRef = useRef(false)
   /** Video ids already warmed this session, so a re-render never re-asks. */
   const prefetchedRef = useRef(new Set<string>())
+
+  /**
+   * What the listener last asked for, which is not the same as what the element
+   * is doing: a failed request must not cancel the intent to play.
+   */
+  const wantsPlayRef = useRef(false)
+  const recoveryAttemptRef = useRef(0)
+  const recoveryStartedAtRef = useRef(0)
+  const recoveryTimerRef = useRef<number | null>(null)
+  const stallTimerRef = useRef<number | null>(null)
+  const reconnectingRef = useRef(false)
+  /** Last position known to be playing, used when the element loses its own time. */
+  const lastPositionRef = useRef(0)
+  /** The last real failure, kept so the final message is not a generic one. */
+  const lastFailureRef = useRef<string | null>(null)
+  const scheduleRecoveryRef = useRef<(immediate?: boolean) => void>(() => undefined)
 
   useEffect(() => {
     onReportRef.current = onReport
@@ -178,6 +238,141 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
 
   const current = index >= 0 ? (entries[index] ?? null) : null
 
+  const clearRecoveryTimer = useCallback((): void => {
+    if (recoveryTimerRef.current !== null) {
+      window.clearTimeout(recoveryTimerRef.current)
+      recoveryTimerRef.current = null
+    }
+  }, [])
+
+  const clearStallTimer = useCallback((): void => {
+    if (stallTimerRef.current !== null) {
+      window.clearTimeout(stallTimerRef.current)
+      stallTimerRef.current = null
+    }
+  }, [])
+
+  const setReconnectState = useCallback((value: boolean): void => {
+    reconnectingRef.current = value
+    setReconnecting(value)
+  }, [])
+
+  /** Forgets the retry budget and any pending attempt. */
+  const resetRecovery = useCallback((): void => {
+    clearRecoveryTimer()
+    clearStallTimer()
+    recoveryAttemptRef.current = 0
+    recoveryStartedAtRef.current = 0
+    if (reconnectingRef.current) setReconnectState(false)
+  }, [clearRecoveryTimer, clearStallTimer, setReconnectState])
+
+  const giveUpRecovery = useCallback((): void => {
+    setReconnectState(false)
+    setIsLoading(false)
+    setError(lastFailureRef.current ?? 'Playback could not be reconnected. Check your connection, then press play.')
+  }, [setReconnectState])
+
+  /** Data is flowing again: the attempt counter starts over. */
+  const settleRecovery = useCallback((): void => {
+    resetRecovery()
+    lastFailureRef.current = null
+    setError(null)
+  }, [resetRecovery])
+
+  /**
+   * Schedules the next reconnect, reloading the same token from the last position.
+   *
+   * Re-running the load path (rather than only calling `play()` on a dead
+   * element) is what makes recovery work: `load()` throws away the failed
+   * request, the main process gets another chance to refresh the URL, and the
+   * saved position is restored once metadata arrives.
+   */
+  const scheduleRecovery = useCallback(
+    (immediate = false): void => {
+      if (recoveryTimerRef.current !== null) return
+      if (!wantsPlayRef.current || !currentTrackRef.current) return
+
+      if (recoveryAttemptRef.current === 0) recoveryStartedAtRef.current = Date.now()
+      const overBudget =
+        recoveryStartedAtRef.current > 0 && Date.now() - recoveryStartedAtRef.current > RECOVERY_BUDGET_MS
+      const delay = immediate ? 0 : recoveryDelayMs(recoveryAttemptRef.current)
+      if (delay === null || overBudget) {
+        giveUpRecovery()
+        return
+      }
+
+      recoveryAttemptRef.current += 1
+      setIsLoading(true)
+      setReconnectState(true)
+      setError(null)
+
+      recoveryTimerRef.current = window.setTimeout(() => {
+        recoveryTimerRef.current = null
+        if (!wantsPlayRef.current || !currentTrackRef.current) {
+          setReconnectState(false)
+          setIsLoading(false)
+          return
+        }
+
+        const element = audioRef.current
+        const at =
+          element && Number.isFinite(element.currentTime) && element.currentTime > 0
+            ? element.currentTime * 1000
+            : lastPositionRef.current
+        // A second back: the audio already buffered before the failure stays
+        // usable, and resuming exactly on the boundary asks for the one range
+        // the CDN just failed to deliver.
+        resumeRef.current = Math.max(0, Math.round(at) - 1_000)
+        resumePlayRef.current = true
+        setPlayRequestId((value) => value + 1)
+      }, delay)
+    },
+    [giveUpRecovery, setReconnectState]
+  )
+
+  useEffect(() => {
+    scheduleRecoveryRef.current = scheduleRecovery
+  }, [scheduleRecovery])
+
+  /** Regaining connectivity is the best moment to try, without waiting out the backoff. */
+  const retryNow = useCallback((): void => {
+    if (!wantsPlayRef.current || !currentTrackRef.current) return
+    clearRecoveryTimer()
+    recoveryAttemptRef.current = 0
+    scheduleRecovery(true)
+  }, [clearRecoveryTimer, scheduleRecovery])
+
+  /**
+   * Watches a stream that went quiet without firing `error`.
+   *
+   * Only mid-playback: `currentTime > 0` means this is a stall, not the normal
+   * buffering wait at the start of a track.
+   */
+  const armStallTimer = useCallback((): void => {
+    if (stallTimerRef.current !== null) return
+    stallTimerRef.current = window.setTimeout(() => {
+      stallTimerRef.current = null
+      const element = audioRef.current
+      if (!wantsPlayRef.current || !element || element.error) return
+      if (element.paused || element.currentTime <= 0) return
+      if (element.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) return
+      scheduleRecoveryRef.current()
+    }, STALL_TIMEOUT_MS)
+  }, [])
+
+  // Episode of connectivity returning. The backoff can be up to eight seconds,
+  // and the listener should not have to wait it out after the network is back.
+  useEffect(() => {
+    const handleOnline = (): void => {
+      if (!wantsPlayRef.current || !currentTrackRef.current) return
+      if (!reconnectingRef.current && !audioRef.current?.error) return
+      retryNow()
+    }
+    window.addEventListener('online', handleOnline)
+    return () => window.removeEventListener('online', handleOnline)
+  }, [retryNow])
+
+
   // Reflect the stored volume once settings arrive from the main process.
   useEffect(() => {
     initialVolumeRef.current = initialVolume
@@ -200,6 +395,11 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
       // old source stays attached until it answers: without this the previous
       // song keeps playing over the spinner, so Next looks like it did nothing.
       element.pause()
+      // A new track starts with a new retry budget. Doing this only on an id
+      // change matters: a recovery reloads the same track and must keep count.
+      resetRecovery()
+      lastFailureRef.current = null
+      lastPositionRef.current = 0
     }
     currentTrackRef.current = current
 
@@ -209,9 +409,13 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     resumeRef.current = null
     const shouldPlay = resumePlayRef.current
     resumePlayRef.current = false
+    // A normal load always plays; a restore only if it asked to. Recording the
+    // intent here means a later network failure knows whether to recover at all.
+    wantsPlayRef.current = resumeAt === null ? true : shouldPlay
     setPositionMs(resumeAt ?? 0)
     setDurationMs(current.durationMs ?? 0)
 
+    const loadStartedAt = Date.now()
     void (async () => {
       try {
         const source = await api.resolveSource({
@@ -240,19 +444,42 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
         await element.play()
       } catch (cause) {
         if (token !== loadTokenRef.current) return
+        lastFailureRef.current = messageOf(cause)
+        const blocked = cause instanceof DOMException && cause.name === 'NotAllowedError'
+        // A resolve is also part of the stream: if the network is down it fails
+        // before the element ever gets a source, so it needs the same recovery.
+        // A deadline that already ran out is different: retrying it would spend
+        // the whole timeout again, which is the reason one Play could hang for
+        // minutes. Show that error and let the listener decide.
+        const slowResolve = Date.now() - loadStartedAt >= SLOW_RESOLVE_MS
+        if (!blocked && !slowResolve && wantsPlayRef.current && current.sourceKind === 'youtube') {
+          scheduleRecoveryRef.current()
+          return
+        }
         setError(messageOf(cause))
         setIsPlaying(false)
+        setReconnectState(false)
       } finally {
-        if (token === loadTokenRef.current) setIsLoading(false)
+        // While a reconnect is pending the spinner stays on; the retry timer,
+        // not this attempt, decides when the wait is over.
+        if (token === loadTokenRef.current && !reconnectingRef.current) setIsLoading(false)
       }
     })()
-  }, [current, playRequestId, audio])
+  }, [current, playRequestId, audio, resetRecovery, setReconnectState])
 
   // Element events -> React state.
   useEffect(() => {
     const element = audio()
 
-    const handleTime = (): void => setPositionMs(element.currentTime * 1000)
+    const handleTime = (): void => {
+      const at = element.currentTime * 1000
+      lastPositionRef.current = at
+      setPositionMs(at)
+      clearStallTimer()
+      // `timeupdate` is the "data is flowing" signal, but a queued event can
+      // still arrive after an error. Never let that cancel a pending retry.
+      if (reconnectingRef.current && !element.error && !element.paused) settleRecovery()
+    }
     const handleDuration = (): void => {
       if (Number.isFinite(element.duration) && element.duration > 0) {
         setDurationMs(element.duration * 1000)
@@ -262,20 +489,57 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
       setIsPlaying(true)
       setIsLoading(false)
     }
-    const handlePause = (): void => setIsPlaying(false)
-    const handleWaiting = (): void => setIsLoading(true)
-    const handleCanPlay = (): void => setIsLoading(false)
+    const handlePlaying = (): void => {
+      setIsPlaying(true)
+      setIsLoading(false)
+      // `playing` means bytes are actually moving, unlike `play`.
+      settleRecovery()
+    }
+    const handlePause = (): void => {
+      setIsPlaying(false)
+      clearStallTimer()
+    }
+    const handleWaiting = (): void => {
+      setIsLoading(true)
+      if (wantsPlayRef.current && element.currentTime > 0) armStallTimer()
+    }
+    const handleCanPlay = (): void => {
+      setIsLoading(false)
+      clearStallTimer()
+    }
     const handleError = (): void => {
-      setError(describeMediaError(element.error))
+      const mediaError = element.error
+      const at = Number.isFinite(element.currentTime) ? element.currentTime * 1000 : 0
+      if (at > 0) lastPositionRef.current = at
+      clearStallTimer()
+      const failure = describeMediaError(mediaError)
+
+      // A network loss is not the end of the track: keep the intent, show the
+      // reconnect state and try again from where it stopped.
+      if (
+        shouldRecoverPlayback(
+          mediaError?.code ?? null,
+          currentTrackRef.current?.sourceKind ?? null,
+          wantsPlayRef.current
+        )
+      ) {
+        setIsPlaying(false)
+        setIsLoading(true)
+        scheduleRecoveryRef.current()
+        return
+      }
+
+      setError(failure)
       setIsPlaying(false)
       setIsLoading(false)
+      setReconnectState(false)
     }
 
     element.addEventListener('timeupdate', handleTime)
     element.addEventListener('loadedmetadata', handleDuration)
     element.addEventListener('durationchange', handleDuration)
     element.addEventListener('play', handlePlay)
-    element.addEventListener('playing', handlePlay)
+    element.addEventListener('playing', handlePlaying)
     element.addEventListener('pause', handlePause)
     element.addEventListener('waiting', handleWaiting)
     element.addEventListener('canplay', handleCanPlay)
@@ -286,13 +550,13 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
       element.removeEventListener('loadedmetadata', handleDuration)
       element.removeEventListener('durationchange', handleDuration)
       element.removeEventListener('play', handlePlay)
-      element.removeEventListener('playing', handlePlay)
+      element.removeEventListener('playing', handlePlaying)
       element.removeEventListener('pause', handlePause)
       element.removeEventListener('waiting', handleWaiting)
       element.removeEventListener('canplay', handleCanPlay)
       element.removeEventListener('error', handleError)
     }
-  }, [audio])
+  }, [audio, armStallTimer, clearStallTimer, setReconnectState, settleRecovery])
 
   /**
    * Moves to the next entry, applying repeat.
@@ -300,25 +564,32 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
    * `completed` distinguishes a track that reached its end (where repeat-one
    * replays it) from the user pressing Next (where it should always move on).
    */
-  const advance = useCallback((completed: boolean): void => {
-    const decision = nextDecision(indexRef.current, entriesRef.current.length, repeatRef.current, completed)
+  const advance = useCallback(
+    (completed: boolean): void => {
+      const decision = nextDecision(indexRef.current, entriesRef.current.length, repeatRef.current, completed)
 
-    if (decision.kind === 'replay') {
-      const element = audioRef.current
-      if (element) {
-        element.currentTime = 0
-        void element.play().catch(() => setIsLoading(false))
+      if (decision.kind === 'replay') {
+        const element = audioRef.current
+        if (element) {
+          wantsPlayRef.current = true
+          resetRecovery()
+          element.currentTime = 0
+          void element.play().catch(() => setIsLoading(false))
+        }
+        return
       }
-      return
-    }
 
-    if (decision.kind === 'play') {
-      setIndex(decision.position)
-      return
-    }
+      if (decision.kind === 'play') {
+        setIndex(decision.position)
+        return
+      }
 
-    setIsPlaying(false)
-  }, [])
+      wantsPlayRef.current = false
+      resetRecovery()
+      setIsPlaying(false)
+    },
+    [resetRecovery]
+  )
 
   // Auto-advance at the end of a track.
   useEffect(() => {
@@ -353,18 +624,23 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
       if (decision.kind !== 'play') return
       const upcoming = entriesRef.current[decision.position]
       if (!upcoming || upcoming.sourceKind !== 'youtube' || !upcoming.sourceId) return
-      if (prefetchedRef.current.has(upcoming.sourceId)) return
+      const videoId = upcoming.sourceId
+      if (prefetchedRef.current.has(videoId)) return
       // Recorded before the call: a failure is not worth retrying on the next
       // render, and asking twice for the same video would spawn two sidecars.
-      prefetchedRef.current.add(upcoming.sourceId)
+      prefetchedRef.current.add(videoId)
       void api
         .prefetchSource({
           id: upcoming.id,
           sourceKind: upcoming.sourceKind,
-          sourceId: upcoming.sourceId,
+          sourceId: videoId,
           filePath: upcoming.filePath
         })
-        .catch(() => undefined)
+        .catch(() => {
+          // A failed warm-up must not count as warm. After a network outage the
+          // next track would otherwise resolve cold in the middle of playback.
+          prefetchedRef.current.delete(videoId)
+        })
     }, PREFETCH_DELAY_MS)
     return () => clearTimeout(timer)
   }, [current, isPlaying, prefetchNext])
@@ -395,27 +671,34 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     setIndex(position >= 0 ? position : 0)
   }, [shuffle])
 
-  const playQueue = useCallback((tracks: Track[], startIndex: number): void => {
-    if (tracks.length === 0) return
-    const safeIndex = startIndex >= 0 && startIndex < tracks.length ? startIndex : 0
-    originRef.current = null
-
-    if (shuffleRef.current) {
-      setEntries(shuffleFrom(tracks, safeIndex))
-      setIndex(0)
-    } else {
-      setEntries(tracks)
-      setIndex(safeIndex)
-    }
-    // Forces a reload even when the same row is played twice.
-    setPlayRequestId((value) => value + 1)
-  }, [])
-
-  const restore = useCallback(
-    (tracks: Track[], startIndex: number, positionMs: number, autoPlay = false): void => {
+  const playQueue = useCallback(
+    (tracks: QueueTrack[], startIndex: number): void => {
       if (tracks.length === 0) return
       const safeIndex = startIndex >= 0 && startIndex < tracks.length ? startIndex : 0
       originRef.current = null
+      resetRecovery()
+      lastFailureRef.current = null
+
+      if (shuffleRef.current) {
+        setEntries(shuffleFrom(tracks, safeIndex))
+        setIndex(0)
+      } else {
+        setEntries(tracks)
+        setIndex(safeIndex)
+      }
+      // Forces a reload even when the same row is played twice.
+      setPlayRequestId((value) => value + 1)
+    },
+    [resetRecovery]
+  )
+
+  const restore = useCallback(
+    (tracks: QueueTrack[], startIndex: number, positionMs: number, autoPlay = false): void => {
+      if (tracks.length === 0) return
+      const safeIndex = startIndex >= 0 && startIndex < tracks.length ? startIndex : 0
+      originRef.current = null
+      resetRecovery()
+      lastFailureRef.current = null
       // Keep a restore at position 0 on the seek path too. A null here means
       // "normal load", which starts playback; a paused restore must not.
       resumeRef.current = Number.isFinite(positionMs) ? Math.max(0, Math.round(positionMs)) : 0
@@ -426,31 +709,40 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
       // the request id makes "restore over the same track" work too.
       setPlayRequestId((value) => value + 1)
     },
-    []
+    [resetRecovery]
   )
 
-  const enqueue = useCallback((tracks: Track[]): void => {
-    if (tracks.length === 0) return
-    const queue = entriesRef.current
-    if (queue.length === 0) {
-      setEntries(tracks)
-      setIndex(0)
-      setPlayRequestId((value) => value + 1)
-      return
-    }
-    originRef.current = originRef.current ? [...originRef.current, ...tracks] : null
-    setEntries([...queue, ...tracks])
-  }, [])
+  const enqueue = useCallback(
+    (tracks: QueueTrack[]): void => {
+      if (tracks.length === 0) return
+      const queue = entriesRef.current
+      if (queue.length === 0) {
+        resetRecovery()
+        setEntries(tracks)
+        setIndex(0)
+        setPlayRequestId((value) => value + 1)
+        return
+      }
+      originRef.current = originRef.current ? [...originRef.current, ...tracks] : null
+      setEntries([...queue, ...tracks])
+    },
+    [resetRecovery]
+  )
 
   const removeAt = useCallback((position: number): void => {
     const queue = entriesRef.current
     if (position < 0 || position >= queue.length) return
 
     const playing = queue[indexRef.current] ?? null
+    const removed = queue[position]
     const remaining = queue.filter((_, at) => at !== position)
-    originRef.current = originRef.current?.filter((_, at) => at !== position) ?? null
+    // The un-shuffled order is a different order, so the index cannot be reused;
+    // remove the same entry by identity instead.
+    originRef.current = removed ? (originRef.current?.filter((track) => track !== removed) ?? null) : null
 
     if (remaining.length === 0) {
+      wantsPlayRef.current = false
+      resetRecovery()
       audioRef.current?.pause()
       setEntries([])
       setIndex(-1)
@@ -458,38 +750,128 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
       return
     }
 
-    const playingPosition = playing ? remaining.findIndex((track) => track.id === playing.id) : -1
+    const playingPosition = playing ? remaining.indexOf(playing) : -1
     setEntries(remaining)
     setIndex(playingPosition >= 0 ? playingPosition : Math.min(indexRef.current, remaining.length - 1))
+  }, [resetRecovery])
+
+  /**
+   * Reorders the visible queue.
+   *
+   * A drop while shuffle is on is still a real instruction, so the same relative
+   * move is applied to the saved un-shuffled order when one exists. Otherwise
+   * turning shuffle off would put the track back where it started and make the
+   * drag look like it did nothing.
+   */
+  const move = useCallback((from: number, to: number): void => {
+    const queue = entriesRef.current
+    if (from === to || from < 0 || to < 0 || from >= queue.length || to >= queue.length) return
+
+    const playing = queue[indexRef.current] ?? null
+    const moved = queue[from]
+    if (!moved) return
+
+    const next = [...queue]
+    next.splice(from, 1)
+    next.splice(to, 0, moved)
+
+    const origin = originRef.current
+    if (origin) {
+      const originFrom = origin.indexOf(moved)
+      if (originFrom >= 0) {
+        const originNext = [...origin]
+        originNext.splice(originFrom, 1)
+        // The row after the moved one is the anchor: inserting before it in the
+        // un-shuffled order keeps the two orders as close as they can be.
+        const follower = next[to + 1] ?? null
+        const followerAt = follower ? originNext.indexOf(follower) : -1
+        if (followerAt >= 0) originNext.splice(followerAt, 0, moved)
+        else originNext.push(moved)
+        originRef.current = originNext
+      }
+    }
+
+    setEntries(next)
+    if (playing) {
+      const playingPosition = next.indexOf(playing)
+      if (playingPosition !== indexRef.current) setIndex(playingPosition)
+    }
+  }, [])
+
+  const removePlayed = useCallback((): void => {
+    const queue = entriesRef.current
+    const position = indexRef.current
+    if (position <= 0 || queue.length === 0) return
+
+    const played = queue.slice(0, position)
+    const remaining = queue.slice(position)
+    if (originRef.current) {
+      const playedSet = new Set(played)
+      originRef.current = originRef.current.filter((track) => !playedSet.has(track))
+    }
+    setEntries(remaining)
+    setIndex(0)
   }, [])
 
   const clearQueue = useCallback((): void => {
+    wantsPlayRef.current = false
+    resetRecovery()
     audioRef.current?.pause()
     originRef.current = null
     setEntries([])
     setIndex(-1)
     setIsPlaying(false)
-  }, [])
+  }, [resetRecovery])
 
-  const jumpTo = useCallback((position: number): void => {
-    const queue = entriesRef.current
-    if (position < 0 || position >= queue.length) return
-    if (position === indexRef.current) {
-      setPlayRequestId((value) => value + 1)
-      return
-    }
-    setIndex(position)
-  }, [])
+  const jumpTo = useCallback(
+    (position: number): void => {
+      const queue = entriesRef.current
+      if (position < 0 || position >= queue.length) return
+      if (position === indexRef.current) {
+        // Re-selecting the playing row is also how a stuck stream is restarted.
+        resetRecovery()
+        setPlayRequestId((value) => value + 1)
+        return
+      }
+      setIndex(position)
+    },
+    [resetRecovery]
+  )
 
   const toggle = useCallback((): void => {
     const element = audio()
     if (!currentTrackRef.current) return
+
+    // A media element that has errored will not start again from `play()`: the
+    // request it is holding is dead. Reloading it is the only way out, and that
+    // is what the recovery path does.
+    if (element.error || !element.currentSrc) {
+      // Either the last load failed or it never got a source (a resolve
+      // deadline). `play()` cannot help in both cases; reload the token.
+      wantsPlayRef.current = true
+      retryNow()
+      return
+    }
+
     if (element.paused) {
-      void element.play().catch(() => setIsLoading(false))
+      wantsPlayRef.current = true
+      void element.play().catch((cause: unknown) => {
+        if (cause instanceof DOMException && cause.name === 'NotAllowedError') {
+          setIsLoading(false)
+          return
+        }
+        if (currentTrackRef.current?.sourceKind === 'youtube') {
+          scheduleRecoveryRef.current()
+          return
+        }
+        setIsLoading(false)
+      })
     } else {
+      wantsPlayRef.current = false
+      resetRecovery()
       element.pause()
     }
-  }, [audio])
+  }, [audio, resetRecovery, retryNow])
 
   const next = useCallback((): void => {
     advance(false)
@@ -498,10 +880,13 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
   /** Media "stop": pause and rewind, unlike play/pause which keeps the position. */
   const stop = useCallback((): void => {
     const element = audio()
+    wantsPlayRef.current = false
+    resetRecovery()
     element.pause()
     element.currentTime = 0
+    lastPositionRef.current = 0
     setPositionMs(0)
-  }, [audio])
+  }, [audio, resetRecovery])
 
   const previous = useCallback((): void => {
     const element = audio()
@@ -558,6 +943,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     index,
     isPlaying,
     isLoading,
+    reconnecting,
     positionMs,
     durationMs,
     volume,
@@ -566,6 +952,8 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     restore,
     enqueue,
     removeAt,
+    move,
+    removePlayed,
     clearQueue,
     jumpTo,
     toggle,

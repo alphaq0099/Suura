@@ -445,20 +445,16 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          const jump = document.querySelector('.queue-item .queue-jump')
          const jumpCells = jump ? [...jump.children].filter((el) => el.offsetWidth > 0) : []
          const remove = document.querySelector('.queue-item .queue-remove')
-         const actionHead = visibleHeads[visibleHeads.length - 1]
-         const centerX = (el) => {
-           const rect = el.getBoundingClientRect()
-           return rect.left + rect.width / 2
-         }
+         // The action column has no label now, so there are exactly as many header
+         // cells as there are jump cells; the remove button sits in the label-less
+         // last column.
          const cellsAligned =
-           visibleHeads.length === jumpCells.length + 1 &&
+           visibleHeads.length === jumpCells.length &&
            jumpCells.every(
              (cell, i) =>
                Math.abs(cell.getBoundingClientRect().left - visibleHeads[i].getBoundingClientRect().left) <= 1
            ) &&
-           Boolean(remove) &&
-           Boolean(actionHead) &&
-           Math.abs(centerX(remove) - centerX(actionHead)) <= 1
+           Boolean(remove)
          const subtitle = document.querySelector('.main-view .view-header .subtitle')
          const head = document.querySelector('.queue-head')
          const clearOfSubtitle =
@@ -494,7 +490,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     // both are queued.
     record(transport.queueCountLabel === '2', 'the player bar counts the queue', transport.queueCountLabel)
     record(
-      transport.queueHead === '# | Title | Artist | Album / playlist | Duration | Action' &&
+      transport.queueHead === '# | Title | Artist | Source | Duration' &&
         !transport.queueHeadOverflow &&
         transport.queueAligned,
       'the queue header names the same columns as the library, sits over its rows and clears the subtitle',
@@ -747,6 +743,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
           videoId: 'selftestaa1',
           title: 'Online Tone One',
           artist: 'Selftest Streamer',
+          channel: 'Selftest Streamer',
           album: null,
           durationMs: 210_000,
           sourceUrl: youtubeWatchUrl('selftestaa1'),
@@ -758,7 +755,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         {
           videoId: 'selftestbb2',
           title: 'Online Tone Two with a deliberately long name that has to truncate instead of widening its row',
-          artist: 'Selftest Streamer',
+          // A real artist that is not the uploader: the optional Artist column
+          // must appear, stay aligned with Channel, and reveal an overlong name
+          // with the hover scroll rather than widening the row.
+          artist: 'Selftest Artist With A Deliberately Long Name',
+          channel: 'Selftest Streamer',
           album: null,
           durationMs: 90_000,
           sourceUrl: youtubeWatchUrl('selftestbb2'),
@@ -771,6 +772,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
           videoId: 'not-a-video-id',
           title: 'Online Tone Three',
           artist: null,
+          channel: null,
           album: null,
           durationMs: null,
           sourceUrl: youtubeWatchUrl('not-a-video-id'),
@@ -1074,13 +1076,220 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          })()`
       )
       record(
-        settingsTabs.count === 6 &&
-          settingsTabs.labels === 'General|Appearance|Behaviour|Streaming|Misc|About' &&
+        settingsTabs.count === 5 &&
+          settingsTabs.labels === 'General|Appearance|Streaming|Misc|About' &&
           settingsTabs.appearanceVisible &&
           settingsTabs.onePanel &&
           settingsTabs.restored,
-        `settings has six tabs and shows one panel at a time at ${width}x${height}`,
+        `settings has five tabs and shows one panel at a time at ${width}x${height}`,
         settingsTabs
+      )
+
+      // General is a direct two-column card grid, so it is the cleanest proof
+      // that the grid folds to one column below 1120px. At 1200 it must not need
+      // a vertical scrollbar either; that was the wasted-space complaint.
+      const settingsCards = await evaluate<{
+        firstTop: number
+        firstLeft: number
+        secondTop: number
+        secondLeft: number
+        scrolls: boolean
+      }>(
+        window,
+        `(async () => {
+           const panel = document.querySelector('#settings-panel-general')
+           const cards = panel ? [...panel.querySelectorAll(':scope > .cards > .card')] : []
+           const a = cards[0] ? cards[0].getBoundingClientRect() : null
+           const b = cards[1] ? cards[1].getBoundingClientRect() : null
+           return {
+             firstTop: a ? Math.round(a.top) : -1,
+             firstLeft: a ? Math.round(a.left) : -1,
+             secondTop: b ? Math.round(b.top) : -1,
+             secondLeft: b ? Math.round(b.left) : -1,
+             scrolls: Boolean(panel && panel.scrollHeight > panel.clientHeight + 1)
+           }
+         })()`
+      )
+      record(
+        settingsCards.firstLeft >= 0 &&
+          settingsCards.secondLeft >= 0 &&
+          (width > 1120
+            ? Math.abs(settingsCards.firstTop - settingsCards.secondTop) <= 1 &&
+              settingsCards.secondLeft > settingsCards.firstLeft
+            : settingsCards.secondTop > settingsCards.firstTop) &&
+          (width <= 1120 || !settingsCards.scrolls),
+        `settings places General's cards side by side without a scrollbar at ${width}x${height}`,
+        settingsCards
+      )
+
+      // The settings panel clips its own overflow, so a hint bubble must live
+      // outside it. Focusing a hint in the right-hand column also proves the
+      // fixed-position fallback stays inside the window instead of disappearing
+      // under the panel edge.
+      const settingsHint = await evaluate<{
+        cardFound: boolean
+        triggerFound: boolean
+        activeAfterFocus: boolean
+        portal: boolean
+        open: boolean
+        visible: boolean
+        within: boolean
+        rect: string
+        viewport: string
+      }>(
+        window,
+        `(async () => {
+           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+           const card = [...document.querySelectorAll('#settings-panel-general .card')].find((el) =>
+             (el.textContent || '').includes('Startup & resume')
+           )
+           const trigger = card ? card.querySelector('.info-hint-trigger') : null
+           trigger?.focus()
+           const activeAfterFocus = document.activeElement === trigger
+           // A window that is not the foreground window can decline to deliver a
+           // programmatic focus event on some Chromium builds. The hint is also
+           // hoverable, so fall back to the path a mouse would take; the geometry
+           // assertions below are what this check is really about.
+           if (!document.querySelector('.info-hint-bubble.open')) {
+             trigger?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body }))
+           }
+           // Visibility is part of the bubble's 120ms transition; leave enough
+           // room that a busy first pass at 1200px cannot sample it half-open.
+           await sleep(320)
+           const bubble = document.querySelector('.info-hint-bubble.open')
+           const box = bubble ? bubble.getBoundingClientRect() : null
+           const style = bubble ? getComputedStyle(bubble) : null
+           const result = {
+             cardFound: Boolean(card),
+             triggerFound: Boolean(trigger),
+             activeAfterFocus,
+             portal: Boolean(bubble && bubble.parentElement === document.body),
+             open: Boolean(bubble),
+             visible: Boolean(style && style.visibility === 'visible' && style.opacity !== '0'),
+             within: Boolean(
+               box &&
+                 box.left >= 0 &&
+                 box.top >= 0 &&
+                 box.right <= window.innerWidth + 0.5 &&
+                 box.bottom <= window.innerHeight + 0.5
+             ),
+             rect: box
+               ? [box.left, box.top, box.right, box.bottom].map((value) => Math.round(value)).join(',')
+               : '',
+             viewport: window.innerWidth + 'x' + window.innerHeight
+           }
+           trigger?.blur()
+           await sleep(80)
+           return result
+         })()`
+      )
+      record(
+        settingsHint.portal && settingsHint.open && settingsHint.visible && settingsHint.within,
+        `settings tooltips escape the panel and stay in view at ${width}x${height}`,
+        settingsHint
+      )
+
+      const settingsGrid = await evaluate<{
+        appearance: { columns: number; cards: number; scrolls: boolean; content: number; height: number }
+        streaming: { columns: number; cards: number; scrolls: boolean; content: number; height: number }
+        misc: { columns: number; cards: number; scrolls: boolean; content: number; height: number }
+      }>(
+        window,
+        `(async () => {
+           const out = {}
+           for (const id of ['appearance', 'streaming', 'misc']) {
+             const tab = document.getElementById('settings-tab-' + id)
+             if (tab) {
+               tab.click()
+               await new Promise((resolve) => setTimeout(resolve, 80))
+             }
+             const panel = document.getElementById('settings-panel-' + id)
+             const cards = panel ? [...panel.querySelectorAll('.card')] : []
+             const lefts = new Set(cards.map((card) => Math.round(card.getBoundingClientRect().left)))
+             out[id] = {
+               columns: lefts.size,
+               cards: cards.length,
+               scrolls: Boolean(panel && panel.scrollHeight > panel.clientHeight + 1),
+               content: panel ? panel.scrollHeight : -1,
+               height: panel ? panel.clientHeight : -1
+             }
+           }
+           document.getElementById('settings-tab-general')?.click()
+           await new Promise((resolve) => setTimeout(resolve, 80))
+           return out
+         })()`
+      )
+      const expectedColumns = width > 1120 ? 2 : 1
+      record(
+        settingsGrid.appearance.columns === expectedColumns &&
+          settingsGrid.streaming.columns === expectedColumns &&
+          settingsGrid.misc.columns === expectedColumns,
+        `settings tabs use ${expectedColumns} card column(s) at ${width}x${height}`,
+        settingsGrid
+      )
+
+      // Appearance used to leave a tall empty space beside the short right-hand
+      // column and then repeat the List columns card under both columns. The
+      // reset is now a compact card at the end of the left stack, and List
+      // columns belongs to the right stack.
+      const appearanceLayout = await evaluate<{
+        resetInLeft: boolean
+        resetOutsideCards: boolean
+        listColumnsInRight: boolean
+        notes: number
+        resetHeight: number
+      }>(
+        window,
+        `(async () => {
+           const tab = document.getElementById('settings-tab-appearance')
+           if (tab) tab.click()
+           await new Promise((resolve) => setTimeout(resolve, 100))
+           const panel = document.getElementById('settings-panel-appearance')
+           const columns = panel ? [...panel.querySelectorAll(':scope > .cards > .cards-col')] : []
+           const reset = panel ? panel.querySelector('.appearance-reset') : null
+           const cardNamed = (name) =>
+             [...(panel ? panel.querySelectorAll('.card') : [])].find((card) =>
+               ((card.querySelector('h2') || {}).textContent || '').includes(name)
+             )
+           const listColumns = cardNamed('List columns')
+           const out = {
+             resetInLeft: Boolean(reset && columns[0] && columns[0].contains(reset)),
+             resetOutsideCards: Boolean(panel && reset && reset.parentElement === panel),
+             listColumnsInRight: Boolean(listColumns && columns[1] && columns[1].contains(listColumns)),
+             notes: panel ? panel.querySelectorAll('.field-note').length : -1,
+             resetHeight: reset ? Math.round(reset.getBoundingClientRect().height) : -1
+           }
+           document.getElementById('settings-tab-general')?.click()
+           await new Promise((resolve) => setTimeout(resolve, 80))
+           return out
+         })()`
+      )
+      record(
+        appearanceLayout.resetInLeft &&
+          !appearanceLayout.resetOutsideCards &&
+          appearanceLayout.listColumnsInRight &&
+          appearanceLayout.notes === 0 &&
+          appearanceLayout.resetHeight > 0 &&
+          appearanceLayout.resetHeight < 160,
+        `Appearance balances both columns and keeps Reset compact at ${width}x${height}`,
+        appearanceLayout
+      )
+
+      const navCountOpacity = await evaluate<number>(
+        window,
+        `(() => {
+           const counts = [...document.querySelectorAll('.nav-item .nav-count')]
+           if (counts.length === 0) return -1
+           // The real pointer can happen to rest over one row. Every count that
+           // is not hovered must still be invisible, so the minimum is the
+           // rest-state proof and one hovered row cannot make the check flaky.
+           return Math.min(...counts.map((node) => parseFloat(getComputedStyle(node).opacity)))
+         })()`
+      )
+      record(
+        navCountOpacity === 0,
+        `sidebar row counts stay quiet until hover at ${width}x${height}`,
+        navCountOpacity
       )
 
       await showView('Queue')
@@ -1134,6 +1343,13 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     // through the real controls and then read the computed result. Reading the
     // settings object back would only prove that a write happened, not that the
     // CSS and the virtualizer listened.
+    //
+    // The layout sweep leaves the window at 940px, where the container query has
+    // already dropped Album. Bring it back to 1200px so both metadata columns
+    // are visible and the hidden-column checks measure the setting, not the
+    // responsive breakpoint.
+    window.setSize(1200, 780)
+    await delay(250)
     const appearance = await evaluate<{
       themeReachedRoot: boolean
       themeButtonPressed: string
@@ -1147,13 +1363,28 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       accentedBlur: string
       motionReachedRoot: boolean
       reducedTransitionMs: number
-      motionPreviewAnimation: string
       textSizeReachedRoot: boolean
       xlargeBodyPx: number
       iconSetReachedRoot: boolean
       classicSidebarIconSet: string
       albumHidden: boolean
       albumColumnDisplay: string
+      artistWidth: number
+      albumWidth: number
+      timeWidth: number
+      titleWidth: number
+      timeFits: boolean
+      timeAligned: boolean
+      actionsAligned: boolean
+      hiddenTimeWidth: number
+      hiddenTimeFits: boolean
+      hiddenTimeAligned: boolean
+      hiddenActionsAligned: boolean
+      channelHidden: boolean
+      channelColumnDisplay: string
+      onlineArtistDisplay: string
+      onlineNoOverflow: boolean
+      onlineTimeFits: boolean
       resetTheme: string
       resetAccent: string
       resetDensity: string
@@ -1162,6 +1393,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       resetTextSize: string
       resetIconSet: string
       resetAlbumColumn: string
+      resetChannelColumn: string
       mediumBodyPx: number
       comfortableRowHeight: number
     }>(
@@ -1172,13 +1404,18 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            accentReachedRoot: false, accentVariable: '',
            densityReachedRoot: false, compactRowHeight: -1, compactCssHeight: '',
            surfaceReachedRoot: false, accentedBlur: '',
-           motionReachedRoot: false, reducedTransitionMs: -1, motionPreviewAnimation: '',
+           motionReachedRoot: false, reducedTransitionMs: -1,
            textSizeReachedRoot: false, xlargeBodyPx: -1,
            iconSetReachedRoot: false, classicSidebarIconSet: '',
            albumHidden: false, albumColumnDisplay: '',
+           artistWidth: -1, albumWidth: -1, timeWidth: -1, titleWidth: -1,
+           timeFits: false, timeAligned: false, actionsAligned: false,
+           hiddenTimeWidth: -1, hiddenTimeFits: false, hiddenTimeAligned: false, hiddenActionsAligned: false,
+           channelHidden: false, channelColumnDisplay: '', onlineArtistDisplay: '',
+           onlineNoOverflow: false, onlineTimeFits: false,
            resetTheme: '', resetAccent: '', resetDensity: '', resetSurface: '', resetMotion: '',
-           resetTextSize: '', resetIconSet: '', resetAlbumColumn: '', mediumBodyPx: -1,
-           comfortableRowHeight: -1
+           resetTextSize: '', resetIconSet: '', resetAlbumColumn: '', resetChannelColumn: '',
+           mediumBodyPx: -1, comfortableRowHeight: -1
          }
          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
          const press = (element) => { if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
@@ -1237,8 +1474,6 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          await sleep(450)
          out.motionReachedRoot = root.dataset.motion === 'reduced'
          out.reducedTransitionMs = transitionMs(choice('data-theme-choice', 'light'))
-         const previewBar = document.querySelector('.motion-preview-bars span')
-         out.motionPreviewAnimation = previewBar ? getComputedStyle(previewBar).animationName : ''
 
          // Text size and the sidebar glyphs are global choices; the Album column
          // is a layout choice. Check the DOM that each one actually changes.
@@ -1252,6 +1487,39 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.iconSetReachedRoot = document.querySelector('.app')?.dataset.iconSet === 'classic'
          out.classicSidebarIconSet = document.querySelector('.sidebar')?.dataset.iconSet || ''
 
+         const rect = (element) => (element ? element.getBoundingClientRect() : null)
+
+         // Measure the full table at Extra Large before hiding Album. Artist and
+         // Album must be equally wide, the title must be the flexible one, and
+         // Duration and Actions must line up with the header and the row edge.
+         nav('Library')
+         await sleep(400)
+         const baseRow = document.querySelector('.track-row')
+         const baseHead = document.querySelector('.track-head')
+         const baseRowRect = rect(baseRow)
+         const baseArtistRect = rect(baseRow?.querySelector('.col-artist'))
+         const baseAlbumRect = rect(baseRow?.querySelector('.col-album'))
+         const baseTimeRect = rect(baseRow?.querySelector('.col-time'))
+         const baseTitleRect = rect(baseRow?.querySelector('.col-title'))
+         const baseActionsRect = rect(baseRow?.querySelector('.col-actions'))
+         const baseHeadTimeRect = rect(baseHead?.querySelector('.col-time'))
+         const baseTimeCell = baseRow?.querySelector('.col-time')
+         out.artistWidth = baseArtistRect ? Math.round(baseArtistRect.width) : -1
+         out.albumWidth = baseAlbumRect ? Math.round(baseAlbumRect.width) : -1
+         out.timeWidth = baseTimeRect ? Math.round(baseTimeRect.width) : -1
+         out.titleWidth = baseTitleRect ? Math.round(baseTitleRect.width) : -1
+         out.timeFits = Boolean(baseTimeCell && baseTimeCell.scrollWidth <= baseTimeCell.clientWidth + 1)
+         out.timeAligned = Boolean(
+           baseTimeRect && baseHeadTimeRect && Math.abs(baseTimeRect.left - baseHeadTimeRect.left) <= 1
+         )
+         out.actionsAligned = Boolean(
+           baseActionsRect && baseRowRect && Math.abs(baseActionsRect.right - baseRowRect.right) <= 1
+         )
+
+         nav('Settings')
+         await sleep(300)
+         tab('Appearance')
+         await sleep(200)
          const albumToggle = document.querySelector('[data-album-column-toggle]')
          if (albumToggle && albumToggle.checked) {
            press(albumToggle)
@@ -1260,8 +1528,49 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.albumHidden = document.querySelector('.app')?.dataset.albumColumn === 'hide'
          nav('Library')
          await sleep(400)
-         const albumCell = document.querySelector('.track-row .col-album')
+         const hiddenRow = document.querySelector('.track-row')
+         const hiddenHead = document.querySelector('.track-head')
+         const hiddenRowRect = rect(hiddenRow)
+         const albumCell = hiddenRow?.querySelector('.col-album')
+         const hiddenTimeCell = hiddenRow?.querySelector('.col-time')
+         const hiddenTimeRect = rect(hiddenTimeCell)
+         const hiddenHeadTimeRect = rect(hiddenHead?.querySelector('.col-time'))
+         const hiddenActionsRect = rect(hiddenRow?.querySelector('.col-actions'))
          out.albumColumnDisplay = albumCell ? getComputedStyle(albumCell).display : ''
+         out.hiddenTimeWidth = hiddenTimeRect ? Math.round(hiddenTimeRect.width) : -1
+         out.hiddenTimeFits = Boolean(
+           hiddenTimeCell && hiddenTimeCell.scrollWidth <= hiddenTimeCell.clientWidth + 1
+         )
+         out.hiddenTimeAligned = Boolean(
+           hiddenTimeRect && hiddenHeadTimeRect && Math.abs(hiddenTimeRect.left - hiddenHeadTimeRect.left) <= 1
+         )
+         out.hiddenActionsAligned = Boolean(
+           hiddenActionsRect && hiddenRowRect && Math.abs(hiddenActionsRect.right - hiddenRowRect.right) <= 1
+         )
+         nav('Settings')
+         await sleep(300)
+         tab('Appearance')
+         await sleep(200)
+
+         // Channel is its own promise, but YouTube Links always keep it. The
+         // checkbox now only hides the column on imported playlists, so the
+         // YouTube view must be unchanged after turning it off.
+         const channelToggle = document.querySelector('[data-channel-column-toggle]')
+         if (channelToggle && channelToggle.checked) {
+           press(channelToggle)
+           await sleep(450)
+         }
+         out.channelHidden = document.querySelector('.app')?.dataset.channelColumn === 'hide'
+         nav('YouTube')
+         await sleep(450)
+         const channelCell = document.querySelector('.online-channel')
+         out.channelColumnDisplay = channelCell ? getComputedStyle(channelCell).display : ''
+         const onlineArtistCell = document.querySelector('.online-artist')
+         out.onlineArtistDisplay = onlineArtistCell ? getComputedStyle(onlineArtistCell).display : ''
+         const onlineList = document.querySelector('.online-list')
+         const onlineTimeCell = document.querySelector('.online-jump .online-time')
+         out.onlineNoOverflow = Boolean(onlineList && onlineList.scrollWidth <= onlineList.clientWidth + 1)
+         out.onlineTimeFits = Boolean(onlineTimeCell && onlineTimeCell.scrollWidth <= onlineTimeCell.clientWidth + 1)
          nav('Settings')
          await sleep(300)
          tab('Appearance')
@@ -1277,6 +1586,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.resetTextSize = root.dataset.textSize || ''
          out.resetIconSet = document.querySelector('.app')?.dataset.iconSet || ''
          out.resetAlbumColumn = document.querySelector('.app')?.dataset.albumColumn || ''
+         out.resetChannelColumn = document.querySelector('.app')?.dataset.channelColumn || ''
 
          nav('Library')
          await sleep(400)
@@ -1313,10 +1623,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       appearance
     )
     record(
-      appearance.motionReachedRoot &&
-        appearance.reducedTransitionMs <= 0.01 &&
-        appearance.motionPreviewAnimation === 'none',
-      'appearance: Reduced motion folds transitions and freezes the preview',
+      appearance.motionReachedRoot && appearance.reducedTransitionMs <= 0.01,
+      'appearance: Reduced motion folds transitions',
       appearance
     )
     record(
@@ -1325,8 +1633,35 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         appearance.iconSetReachedRoot &&
         appearance.classicSidebarIconSet === 'classic' &&
         appearance.albumHidden &&
-        appearance.albumColumnDisplay === 'none',
-      'appearance: text size, sidebar icons and the Album column reach the app',
+        appearance.albumColumnDisplay === 'none' &&
+        appearance.channelHidden &&
+        appearance.channelColumnDisplay !== 'none',
+      'appearance: text size, sidebar icons and the Album/Channel columns reach the app',
+      appearance
+    )
+    record(
+      appearance.artistWidth > 0 &&
+        Math.abs(appearance.artistWidth - appearance.albumWidth) <= 1 &&
+        appearance.titleWidth > appearance.artistWidth &&
+        appearance.timeWidth > 0 &&
+        appearance.timeFits &&
+        appearance.timeAligned &&
+        appearance.actionsAligned &&
+        appearance.hiddenTimeWidth === appearance.timeWidth &&
+        appearance.hiddenTimeFits &&
+        appearance.hiddenTimeAligned &&
+        appearance.hiddenActionsAligned,
+      'appearance: only the title flexes; hiding Album leaves Duration and Actions in place at Extra Large',
+      appearance
+    )
+    record(
+      appearance.onlineNoOverflow && appearance.onlineTimeFits,
+      'appearance: YouTube Links fit at Extra Large without clipping Duration',
+      appearance
+    )
+    record(
+      appearance.onlineArtistDisplay !== 'none',
+      'appearance: YouTube Links keep the optional Artist column beside Channel',
       appearance
     )
     record(
@@ -1338,6 +1673,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         appearance.resetTextSize === 'medium' &&
         appearance.resetIconSet === 'modern' &&
         appearance.resetAlbumColumn === 'show' &&
+        appearance.resetChannelColumn === 'show' &&
         appearance.mediumBodyPx < 16,
       'appearance: Reset puts every choice back',
       appearance
@@ -1495,8 +1831,6 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          setSelect('Open at launch', 'search')
          await sleep(500)
 
-         tab('Behaviour')
-         await sleep(250)
          setSelect('Single click', 'play')
          setSelect('Volume wheel step', '10')
          const resume = resumeInput()
@@ -1561,29 +1895,25 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.watchRestored = watchInput()?.checked === true
          out.startupRestored = selectField('Open at launch')?.value === 'last'
          out.foldersKept = document.querySelectorAll('.folder-list li').length === foldersBefore
-         tab('Behaviour')
-         await sleep(300)
          out.behaviourRestored = selectField('Single click')?.value === 'select'
          out.wheelRestored = selectField('Volume wheel step')?.value === '5'
          out.resumeRestored = resumeInput()?.checked === false
 
-         // Per-tab reset: change General and Behaviour, then reset only Behaviour.
-         // The startup view must survive a Behaviour reset, and the wheel step must
-         // go back to its default without touching the other tab.
+         // Per-section reset: change General and Playback, then reset only
+         // Playback. The startup view must survive a Playback reset, and the
+         // wheel step must go back to its default without touching the other
+         // section.
          tab('General')
          await sleep(250)
          setSelect('Open at launch', 'online')
-         await sleep(500)
-         tab('Behaviour')
-         await sleep(250)
          setSelect('Volume wheel step', '10')
          await sleep(500)
          tab('Misc')
          await sleep(300)
-         const resetBehaviour = [...document.querySelectorAll('button')].find(
-           (el) => (el.textContent || '').trim() === 'Reset Behaviour'
+         const resetPlayback = [...document.querySelectorAll('button')].find(
+           (el) => (el.textContent || '').trim() === 'Reset Playback'
          )
-         press(resetBehaviour)
+         press(resetPlayback)
          await sleep(700)
          out.sectionKeptOther =
            selectField('Open at launch')?.value === 'online' &&
@@ -1678,7 +2008,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     )
     record(
       settingsSafety.sectionKeptOther && settingsSafety.sectionResetRestored,
-      'settings: a per-tab reset leaves the other tabs alone',
+      'settings: a per-section reset leaves the other sections alone',
       settingsSafety
     )
     record(
@@ -1994,21 +2324,22 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.panelOpened = panel() ? getComputedStyle(panel()).visibility === 'visible' : false
          out.panelRowsFit = panel() ? panel().scrollWidth <= panel().clientWidth + 1 : false
 
-         // The panel's depth is a gradient that is masked away at both ends. A
-         // box-shadow instead sits at full strength from the panel's first pixel
-         // down, and the host clips it, so it started at a hard corner. Computed
-         // styles resolve transparent to rgba(0, 0, 0, 0), which is what the ends
-         // of the mask have to be.
-         const before = panel() ? getComputedStyle(panel(), '::before') : null
-         const mask = before ? before.maskImage : ''
+         // The panel is a floating card: a full border, rounded corners and a
+         // real shadow, rather than the hard edge-to-edge strip it used to be.
+         const panelStyle = panel() ? getComputedStyle(panel()) : null
+         const radius = panelStyle ? parseFloat(panelStyle.borderTopLeftRadius) : 0
+         const borders = panelStyle
+           ? [panelStyle.borderTopWidth, panelStyle.borderRightWidth, panelStyle.borderBottomWidth, panelStyle.borderLeftWidth].map(parseFloat)
+           : []
          out.shadowFades =
-           Boolean(before) &&
-           getComputedStyle(panel()).boxShadow === 'none' &&
-           before.backgroundImage.includes('linear-gradient') &&
-           mask.startsWith('linear-gradient') &&
-           mask.includes('rgba(0, 0, 0, 0) 0%') &&
-           mask.includes('rgba(0, 0, 0, 0) 100%')
-         out.shadowStyle = getComputedStyle(panel()).boxShadow + ' | ' + mask
+           Boolean(panelStyle) &&
+           radius > 0 &&
+           panelStyle.boxShadow !== 'none' &&
+           borders.length === 4 &&
+           borders.every((width) => width > 0)
+         out.shadowStyle = panelStyle
+           ? radius + 'px radius | ' + panelStyle.boxShadow + ' | ' + panelStyle.borderTopWidth + ' border'
+           : 'no panel'
 
          // Picking from the panel plays that track and leaves the list where it is:
          // choosing the next track is not the same as leaving the queue.
@@ -2115,7 +2446,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     record(visuals.panelOpened, 'the queue button slides the panel in')
     record(
       visuals.shadowFades,
-      'the panel\'s shadow fades in and out instead of starting at a hard corner',
+      'the queue panel is a rounded, bordered card with a shadow',
       visuals.shadowStyle
     )
     record(visuals.panelRowsFit, 'the queue panel fits its own width with no sideways overflow')
@@ -2154,7 +2485,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       artFitsBand: boolean
       singleClickPlays: boolean
       singleClickSelectsOnly: boolean
-      footNote: string
+      legacyFooters: number
       seekBarFollows: boolean
       seekBarDetail: string
       seekBarFollowsPlaying: boolean
@@ -2162,7 +2493,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     }>(
       window,
       `(async () => {
-         const out = { sizeReachesDom: false, smallBox: -1, xlargeBox: -1, artFitsBand: false, singleClickPlays: false, singleClickSelectsOnly: false, footNote: '', seekBarFollows: false, seekBarDetail: '', seekBarFollowsPlaying: false, seekBarPlayingDetail: '' }
+         const out = { sizeReachesDom: false, smallBox: -1, xlargeBox: -1, artFitsBand: false, singleClickPlays: false, singleClickSelectsOnly: false, legacyFooters: -1, seekBarFollows: false, seekBarDetail: '', seekBarFollowsPlaying: false, seekBarPlayingDetail: '' }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (s) => document.querySelector(s)
          const press = (el) => { if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
@@ -2254,7 +2585,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          if (tone) tone.dispatchEvent(new MouseEvent('click', { bubbles: true }))
          await sleep(400)
          out.singleClickSelectsOnly = barTitle() === 'Selftest Silent' && Boolean(pick('.track-row.selected'))
-         out.footNote = ((pick('.table-footnote') || {}).textContent || '')
+         out.legacyFooters = document.querySelectorAll('.table-footnote').length
 
          // --- the scrubber keeps up with a seek -----------------------------
          // The element reports its time a few times a second, so a seek that only
@@ -2326,9 +2657,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     record(prefs.artFitsBand, 'the largest artwork still fits its band at the smallest window')
     record(prefs.singleClickPlays, 'a single click plays when the setting says it should')
     record(
-      prefs.singleClickSelectsOnly && prefs.footNote.includes('Click: select'),
-      'a single click selects without playing on the default setting',
-      prefs.footNote.trim().slice(0, 64)
+      prefs.singleClickSelectsOnly && prefs.legacyFooters === 0,
+      'a single click selects without playing on the default setting, with no list footer',
+      `${prefs.legacyFooters} legacy footers`
     )
     record(
       prefs.seekBarFollows,
@@ -2339,6 +2670,338 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       prefs.seekBarFollowsPlaying,
       'the scrubber still follows a seek while the track is playing',
       prefs.seekBarPlayingDetail
+    )
+
+    // ---- 13b. checkbox selection and field menus ------------------------
+    // Once one row is selected, the index column becomes the selection control;
+    // a click anywhere else on the row plays instead of replacing the selection.
+    // The same pass checks that the library/search fields share the link field's
+    // Paste/Copy/Clear menu and that the queue's save action honours a selection.
+    const selection = await evaluate<{
+      rows: number
+      checkboxes: number
+      checked: number
+      playWhileSelected: boolean
+      selectionKept: boolean
+      checkboxSelects: boolean
+      playbackKept: boolean
+      rightClickDeselects: boolean
+      contextSelectedActions: string
+      headSelect: boolean
+      headIndeterminate: boolean
+      headSelectsAll: boolean
+      headClears: boolean
+      shiftRange: boolean
+      searchMenuItems: string
+      searchPasted: boolean
+      searchCleared: boolean
+      queueCheckboxes: boolean
+      queueChecked: number
+      queueHeaderIndeterminate: boolean
+      queueShiftRange: boolean
+      queueHeaderClears: boolean
+      queueBarButtons: string
+      queueBarClearNormal: boolean
+      queueRowActions: string
+      queueMenuSelected: boolean
+      queueMenuPlaySelected: boolean
+      queueBarClears: boolean
+      selectedHeading: string
+      discoverPasted: boolean
+      discoverCleared: boolean
+    }>(
+      window,
+      `(async () => {
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const pick = (selector) => document.querySelector(selector)
+         const pickAll = (selector) => [...document.querySelectorAll(selector)]
+         const text = (element) => (element ? (element.textContent || '').trim() : '')
+         const press = (element) => {
+           if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         }
+         const nav = (label) => {
+           const button = pickAll('.nav-item').find((el) => text(el).startsWith(label))
+           press(button)
+         }
+         const rowTitle = (row) => text(row ? row.querySelector('.row-title-text') : null)
+         const rowFor = (title) => pickAll('.track-row').find((row) => rowTitle(row) === title)
+         const barTitle = () => text(pick('.player-title'))
+         const out = {
+           rows: 0, checkboxes: 0, checked: 0, playWhileSelected: false, selectionKept: false,
+           checkboxSelects: false, playbackKept: false, rightClickDeselects: false,
+           contextSelectedActions: '', headSelect: false, headIndeterminate: false,
+           headSelectsAll: false, headClears: false, shiftRange: false,
+           searchMenuItems: '', searchPasted: false, searchCleared: false,
+           queueCheckboxes: false, queueChecked: 0, queueHeaderIndeterminate: false,
+           queueShiftRange: false, queueHeaderClears: false, queueBarButtons: '',
+           queueBarClearNormal: false, queueRowActions: '', queueMenuSelected: false,
+           queueMenuPlaySelected: false, queueBarClears: false,
+           selectedHeading: '', discoverPasted: false, discoverCleared: false
+         }
+
+         // The previous step leaves Tone selected on the default select click.
+         if (!pick('.track-row.selected')) {
+           const tone = rowFor('Selftest Tone')
+           if (tone) tone.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
+           await sleep(300)
+         }
+         out.rows = pickAll('.track-row').length
+         out.checkboxes = pickAll('.track-row .row-select input').length
+         out.checked = pickAll('.track-row .row-select input').filter((input) => input.checked).length
+
+         // A plain click on an unselected row must play it and keep Tone selected.
+         const silent = rowFor('Selftest Silent')
+         if (silent) silent.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await sleep(450)
+         out.playWhileSelected = barTitle() === 'Selftest Silent'
+         out.selectionKept =
+           pickAll('.track-row.selected').length === 1 &&
+           Boolean(rowFor('Selftest Tone')) &&
+           rowFor('Selftest Tone').classList.contains('selected')
+
+         // The checkbox is the one click that changes the selection.
+         const silentBox = rowFor('Selftest Silent') ? rowFor('Selftest Silent').querySelector('.row-select input') : null
+         if (silentBox) silentBox.click()
+         await sleep(300)
+         out.checkboxSelects =
+           pickAll('.track-row.selected').length === 2 &&
+           Boolean(rowFor('Selftest Silent')) &&
+           rowFor('Selftest Silent').classList.contains('selected')
+         out.playbackKept = barTitle() === 'Selftest Silent'
+
+         // Right-clicking a selected row offers Deselect.
+         const tone = rowFor('Selftest Tone')
+         if (tone) {
+           tone.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 220, clientY: 220 }))
+         }
+         await sleep(300)
+         out.contextSelectedActions = pickAll('.context-menu .context-item').map(text).join(' | ')
+         const deselect = pickAll('.context-menu .context-item').find((el) => text(el) === 'Deselect')
+         if (deselect) press(deselect)
+         await sleep(300)
+         out.rightClickDeselects =
+           pickAll('.track-row.selected').length === 1 &&
+           Boolean(rowFor('Selftest Silent')) &&
+           rowFor('Selftest Silent').classList.contains('selected')
+
+         // The # header is the select-all control. With one of two rows selected
+         // it is indeterminate; clicking it selects every loaded row, clicking
+         // again clears the selection.
+         const headBox = pick('.track-head .head-select input')
+         out.headSelect = Boolean(headBox)
+         out.headIndeterminate = Boolean(headBox && headBox.indeterminate)
+         if (headBox) headBox.click()
+         await sleep(350)
+         const loadedBoxes = pickAll('.track-row .row-select input')
+         const allHead = pick('.track-head .head-select input')
+         out.headSelectsAll =
+           loadedBoxes.length > 0 &&
+           loadedBoxes.every((input) => input.checked) &&
+           Boolean(allHead && allHead.checked)
+         const checkedHead = pick('.track-head .head-select input')
+         if (checkedHead) checkedHead.click()
+         await sleep(350)
+         out.headClears =
+           pickAll('.track-row .row-select input').every((input) => !input.checked) &&
+           !pick('.selection-bar')
+
+         // Shift+click extends from the last anchor rather than behaving like a
+         // second Ctrl+click.
+         const toneRow = rowFor('Selftest Tone')
+         if (toneRow) toneRow.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
+         await sleep(250)
+         const silentRow = rowFor('Selftest Silent')
+         if (silentRow) silentRow.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }))
+         await sleep(300)
+         out.shiftRange =
+           pickAll('.track-row.selected').length >= 2 &&
+           Boolean(rowFor('Selftest Tone')) &&
+           rowFor('Selftest Tone').classList.contains('selected') &&
+           Boolean(rowFor('Selftest Silent')) &&
+           rowFor('Selftest Silent').classList.contains('selected')
+
+         // Library search: right-click Paste, then right-click Clear.
+         await window.player.writeClipboardText('Selftest Tone')
+         const search = pick('.search-field input')
+         if (search) {
+           search.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 140, clientY: 140 }))
+         }
+         await sleep(250)
+         out.searchMenuItems = pickAll('.field-menu .context-item').map(text).join(' | ')
+         const searchPaste = pickAll('.field-menu .context-item').find((el) => text(el) === 'Paste')
+         if (searchPaste) press(searchPaste)
+         await sleep(450)
+         out.searchPasted = Boolean(search) && search.value === 'Selftest Tone'
+         if (search) {
+           search.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 140, clientY: 140 }))
+         }
+         await sleep(200)
+         const searchClear = pickAll('.field-menu .context-item').find((el) => text(el) === 'Clear')
+         if (searchClear) press(searchClear)
+         await sleep(400)
+         out.searchCleared = Boolean(search) && search.value === ''
+
+         // The full Queue view: Ctrl+click chooses the first row, then Shift+click
+         // the last extends the range. The # header is select-all/clear.
+         nav('Queue')
+         await sleep(500)
+         const queueJumps = pickAll('.queue-jump')
+         if (queueJumps[0]) {
+           queueJumps[0].dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
+         }
+         await sleep(300)
+         out.queueCheckboxes =
+           pickAll('.queue-item').length > 0 &&
+           pickAll('.queue-item .queue-select input').length === pickAll('.queue-item').length
+         out.queueChecked = pickAll('.queue-item .queue-select input').filter((input) => input.checked).length
+         const queueHeadBox = pick('.queue-head .head-select input')
+         out.queueHeaderIndeterminate = Boolean(queueHeadBox && queueHeadBox.indeterminate)
+         out.queueBarButtons = pickAll('.selection-bar button').map(text).join(' | ')
+         out.queueBarClearNormal =
+           Boolean(pick('.selection-bar button.selection-clear')) &&
+           !pick('.selection-bar .link-button')
+         if (queueJumps.length > 1) {
+           queueJumps[queueJumps.length - 1].dispatchEvent(
+             new MouseEvent('click', { bubbles: true, shiftKey: true })
+           )
+           await sleep(300)
+         }
+         out.queueShiftRange =
+           queueJumps.length > 1 &&
+           pickAll('.queue-item .queue-select input').filter((input) => input.checked).length ===
+             queueJumps.length
+         const allQueueHead = pick('.queue-head .head-select input')
+         if (allQueueHead && allQueueHead.checked) allQueueHead.click()
+         await sleep(300)
+         out.queueHeaderClears =
+           pickAll('.queue-item .queue-select input').every((input) => !input.checked) &&
+           !pick('.queue-head .head-select')
+
+         // Re-select one row and check the selected-row menu and the overflow
+         // menu's Play selected action.
+         const firstQueueRow = pick('.queue-jump')
+         if (firstQueueRow) {
+           firstQueueRow.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
+           await sleep(250)
+           firstQueueRow.dispatchEvent(
+             new MouseEvent('contextmenu', { bubbles: true, clientX: 260, clientY: 260 })
+           )
+           await sleep(250)
+           out.queueRowActions = pickAll('.context-menu .context-item').map(text).join(' | ')
+           document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+           await sleep(200)
+         }
+         press(pick('.queue-actions-trigger'))
+         await sleep(250)
+         const queueItems = pickAll('.queue-actions-menu .queue-actions-item').map(text)
+         out.queueMenuSelected = queueItems.indexOf('Save selected as playlist…') >= 0
+         out.queueMenuPlaySelected = queueItems.indexOf('Play selected') >= 0
+         const saveSelected = pickAll('.queue-actions-menu .queue-actions-item').find(
+           (el) => text(el) === 'Save selected as playlist…'
+         )
+         if (saveSelected) press(saveSelected)
+         await sleep(300)
+         out.selectedHeading = text(pick('.atp-head'))
+         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+         await sleep(200)
+         press(pick('.selection-bar .selection-clear'))
+         await sleep(300)
+         out.queueBarClears = !pick('.queue-head .head-select')
+
+         // Search view has the same field menu as the link field.
+         nav('Search')
+         await sleep(450)
+         await window.player.writeClipboardText('Selftest')
+         const discover = pick('.discover-input input')
+         if (discover) {
+           discover.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 160, clientY: 160 }))
+         }
+         await sleep(250)
+         const discoverPaste = pickAll('.field-menu .context-item').find((el) => text(el) === 'Paste')
+         if (discoverPaste) press(discoverPaste)
+         await sleep(400)
+         out.discoverPasted = Boolean(discover) && discover.value === 'Selftest'
+         if (discover) {
+           discover.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 160, clientY: 160 }))
+         }
+         await sleep(200)
+         const discoverClear = pickAll('.field-menu .context-item').find((el) => text(el) === 'Clear')
+         if (discoverClear) press(discoverClear)
+         await sleep(350)
+         out.discoverCleared = Boolean(discover) && discover.value === ''
+
+         nav('Library')
+         await sleep(350)
+         return out
+       })()`
+    )
+    record(
+      selection.rows > 0 && selection.checkboxes === selection.rows && selection.checked === 1,
+      'with a selection every row exposes a checkbox in the index column',
+      `${selection.checkboxes} checkboxes for ${selection.rows} rows, ${selection.checked} checked`
+    )
+    record(
+      selection.playWhileSelected && selection.selectionKept,
+      'clicking a row while selected plays it without changing the selection'
+    )
+    record(
+      selection.checkboxSelects && selection.playbackKept,
+      'the checkbox adds a row to the selection without starting playback'
+    )
+    record(
+      selection.rightClickDeselects &&
+        selection.contextSelectedActions.includes('Play selected') &&
+        selection.contextSelectedActions.includes('Queue selected'),
+      'right-clicking a selected row offers Deselect, Play selected and Queue selected',
+      selection.contextSelectedActions
+    )
+    record(
+      selection.headSelect &&
+        selection.headIndeterminate &&
+        selection.headSelectsAll &&
+        selection.headClears,
+      'the # header is a select-all checkbox with an indeterminate state'
+    )
+    record(selection.shiftRange, 'Shift-click selects a range instead of toggling one row')
+    record(
+      selection.searchMenuItems === 'Paste | Copy | Clear' &&
+        selection.searchPasted &&
+        selection.searchCleared,
+      'the library search field offers Paste, Copy and Clear',
+      selection.searchMenuItems
+    )
+    record(
+      selection.queueCheckboxes && selection.queueChecked === 1 && selection.queueMenuSelected,
+      'the queue turns its index column into checkboxes and scopes Save to the selection'
+    )
+    record(
+      selection.queueBarButtons === 'Play selected | Save as playlist | Clear' &&
+        selection.queueBarClearNormal &&
+        selection.queueBarClears,
+      'the queue selection bar offers Play selected, Save as playlist and a normal Clear',
+      selection.queueBarButtons
+    )
+    record(
+      selection.queueHeaderIndeterminate &&
+        selection.queueShiftRange &&
+        selection.queueHeaderClears,
+      'the queue header selects all and Shift-click extends a range'
+    )
+    record(
+      selection.queueRowActions.includes('Play selected') &&
+        selection.queueRowActions.includes('Queue selected') &&
+        selection.queueMenuPlaySelected,
+      'queue rows and the overflow menu offer Play selected and Queue selected',
+      selection.queueRowActions
+    )
+    record(
+      selection.selectedHeading === 'Selected · 1 tracks',
+      'the queue save menu names the selected scope',
+      selection.selectedHeading
+    )
+    record(
+      selection.discoverPasted && selection.discoverCleared,
+      'the Search field offers Paste and Clear from its context menu'
     )
 
     // ---- 14. the library keeps up with the disk by itself ----------------
@@ -2404,6 +3067,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       contextStatus: string
       countAfterAdds: number
       rowsAfterAdds: number
+      legacyFooters: number
       keyboardOrder: string
       dropLine: boolean
       dragOrder: string
@@ -2446,7 +3110,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            emptyState: false, created: false, hasImport: false, hasExport: false, sidebarCount: '', menuOpened: false,
            addedViaBar: false, hasRemoveFromLibrary: false, barStatus: '', contextMenuOpened: false,
            addedViaContext: false, contextStatus: '', countAfterAdds: -1,
-           rowsAfterAdds: -1, keyboardOrder: '', dropLine: false, dragOrder: '',
+           rowsAfterAdds: -1, legacyFooters: -1, keyboardOrder: '', dropLine: false, dragOrder: '',
            libraryColumns: '', libraryHeaderOverflow: true, libraryHasFormat: true,
            viewOverflow: -1, listOverflow: -1, actionsInside: false,
            rowsAfterRemove: -1, playedTitle: '', renamed: '', detailsMenu: false,
@@ -2543,6 +3207,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          await sleep(550)
          out.countAfterAdds = countInIndex()
          out.rowsAfterAdds = titles().length
+         out.legacyFooters = pickAll('.table-footnote').length
 
          // --- Alt+Down moves the focused row down one place
          const grid = pick('.list-scroll')
@@ -2688,13 +3353,21 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          await sleep(700)
          press(pick('.np-queue'))
          await sleep(500)
-         press(pick('.np-queue-save'))
+         press(pick('.np-queue-panel .queue-actions-trigger'))
+         await sleep(300)
+         const actionsMenu = pick('.queue-actions-menu')
+         out.queueMenuOpened = Boolean(actionsMenu)
+         press(
+           pickAll('.queue-actions-menu button').find(
+             (el) => text(el).trim().indexOf('Save as playlist') === 0
+           )
+         )
          await sleep(350)
-         const queueMenu = pick('.np-queue-panel .add-to-playlist')
-         out.queueMenuOpened = Boolean(queueMenu)
-         press(menuItem('.np-queue-panel .add-to-playlist', 'Selftest Renamed'))
+         const queueMenu = pick('.add-to-playlist')
+         out.queueMenuOpened = out.queueMenuOpened && Boolean(queueMenu)
+         press(menuItem('.add-to-playlist', 'Selftest Renamed'))
          await sleep(500)
-         out.queueStatus = text(pick('.np-queue-panel .atp-status')).trim()
+         out.queueStatus = text(pick('.add-to-playlist .atp-status')).trim()
          press(pick('.np-close'))
          await sleep(600)
          nav('Playlists')
@@ -2731,6 +3404,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       lists.countAfterAdds === 2 && lists.rowsAfterAdds === 2,
       'the playlist lists what was added, in the order it was added',
       `${lists.countAfterAdds} in the index, ${lists.rowsAfterAdds} rows`
+    )
+    record(
+      lists.legacyFooters === 0,
+      'the playlist list has no persistent footer below its rows',
+      `${lists.legacyFooters} footers`
     )
     record(
       lists.keyboardOrder === 'Selftest Silent | Selftest Tone',
@@ -2859,6 +3537,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       rows: number
       firstTitle: string
       firstArtist: string
+      artistScrolls: boolean
+      firstChannel: string
       firstDuration: string
       sidebarCount: string
       rowCovers: number
@@ -2876,6 +3556,14 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       refusedPending: number
       pendingRows: number
       menuItems: string
+      selectionActions: string
+      selectionCount: string
+      selectedRows: number
+      ctrlSelectedRows: number
+      rowCheckboxes: number
+      selectAllChecked: boolean
+      selectedMenuItems: string
+      selectionCleared: boolean
       saveEnabled: boolean
       rowSaveButtons: number
       copiedLink: string
@@ -2885,7 +3573,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     }>(
       window,
       `(async () => {
-         const out = { rows: 0, firstTitle: '', firstArtist: '', firstDuration: '', sidebarCount: '', rowCovers: 0, rowCoverLoaded: false, rowPlaceholders: 0, pasteFilled: '', pasteMenuVisible: false, pasteMenuItems: '', pasteMenuFilled: '', pasteMenuClosed: false, historyScrolls: false, playDisabled: false, invalidError: '', refusedError: '', refusedPending: 0, pendingRows: 0, menuItems: '', saveEnabled: false, rowSaveButtons: 0, copiedLink: '', removedRows: -1, clearedRows: -1, emptyAfterClear: false }
+         const out = { rows: 0, firstTitle: '', firstArtist: '', artistScrolls: false, firstChannel: '', firstDuration: '', sidebarCount: '', rowCovers: 0, rowCoverLoaded: false, rowPlaceholders: 0, pasteFilled: '', pasteMenuVisible: false, pasteMenuItems: '', pasteMenuFilled: '', pasteMenuClosed: false, historyScrolls: false, playDisabled: false, invalidError: '', refusedError: '', refusedPending: 0, pendingRows: 0, menuItems: '', selectionActions: '', selectionCount: '', selectedRows: 0, ctrlSelectedRows: 0, rowCheckboxes: 0, selectAllChecked: false, selectedMenuItems: '', selectionCleared: false, saveEnabled: false, rowSaveButtons: 0, copiedLink: '', removedRows: -1, clearedRows: -1, emptyAfterClear: false }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (s) => document.querySelector(s)
          const pickAll = (s) => [...document.querySelectorAll(s)]
@@ -2914,6 +3602,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.rows = pickAll('.online-item').length
          out.firstTitle = text(pick('.online-title')).trim()
          out.firstArtist = text(pick('.online-artist')).trim()
+         out.artistScrolls = Boolean(pick('.online-artist')?.classList.contains('is-overflowing'))
+         out.firstChannel = text(pick('.online-channel')).trim()
          out.firstDuration = text(pick('.online-time')).trim()
          const onlineNav = pickAll('.nav-item').find((el) => (el.textContent || '').trim().startsWith('YouTube'))
          out.sidebarCount = text(onlineNav ? onlineNav.querySelector('.nav-count') : null).trim()
@@ -2982,24 +3672,76 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.refusedError = text(pick('.banner')).trim()
          out.refusedPending = pickAll('.online-item.pending').length
 
-         // Right-click a row: Copy and Save live in the menu. Every row also
-         // carries its own save button, so a row can be kept without a menu.
+         // Right-click a row: Select, Copy and Save live in the menu. Every row
+         // also carries its own save button, so a row can be kept without a menu.
          out.rowSaveButtons = pickAll('.online-actions button[aria-label^="Save"]').length
          const jump = pick('.online-jump')
          if (jump) jump.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 260, clientY: 260 }))
          await sleep(250)
          const items = pickAll('.context-menu .context-item')
          out.menuItems = items.map((el) => text(el).trim()).join(' | ')
-         const save = items.find((el) => text(el).indexOf('Save to library') === 0)
+
+         // A menu entry enters selection mode; Shift-click then extends the
+         // range to the third link. The section head's # checkbox turns into a
+         // select-all checkbox and shows the all-selected state.
+         press(items.find((el) => text(el).trim() === 'Select'))
+         await sleep(300)
+         const selectionBar = pick('.online-selection-bar')
+         out.selectionActions = selectionBar
+           ? pickAll('.online-selection-bar button').map((el) => text(el).trim()).join(' | ')
+           : ''
+         out.selectionCount = text(selectionBar ? selectionBar.querySelector('span') : null).trim()
+         out.selectedRows = pickAll('.online-item.selected').length
+         out.rowCheckboxes = pickAll('.online-select input').length
+         const jumps = pickAll('.online-jump')
+         if (jumps[1]) jumps[1].dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
+         await sleep(250)
+         out.ctrlSelectedRows = pickAll('.online-item.selected').length
+
+         // Restart from one row so Shift-click can extend to the whole list.
+         press(pick('.online-selection-bar .selection-clear'))
+         await sleep(250)
+         if (jump) jump.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 260, clientY: 260 }))
+         await sleep(200)
+         press(pickAll('.context-menu .context-item').find((el) => text(el).trim() === 'Select'))
+         await sleep(250)
+         if (jumps[2]) jumps[2].dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }))
+         await sleep(300)
+         out.selectedRows = pickAll('.online-item.selected').length
+         out.selectionCount = text(pick('.online-selection-bar > span')).trim()
+         const selectAllBox = pick('.online-head-select input')
+         out.selectAllChecked = Boolean(selectAllBox && selectAllBox.checked)
+
+         // With rows selected the row menu offers the selection actions too.
+         if (jump) jump.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 260, clientY: 260 }))
+         await sleep(250)
+         const selectedItems = pickAll('.context-menu .context-item')
+         out.selectedMenuItems = selectedItems.map((el) => text(el).trim()).join(' | ')
+         const save = selectedItems.find((el) => text(el).indexOf('Save to library') === 0)
          out.saveEnabled = Boolean(save && !save.disabled)
-         press(items.find((el) => text(el).trim() === 'Copy link'))
+         press(selectedItems.find((el) => text(el).trim() === 'Copy link'))
          await sleep(300)
          // Read it back now. The system clipboard is global, and later steps or
          // another program could overwrite it before the assertion at the end.
          out.copiedLink = await window.player.readClipboardText()
 
-         // Remove one row with its own button, then clear the rest.
-         press(pickAll('.online-item button[aria-label^="Remove"]')[0])
+         // The now-checked # checkbox is the way out of selection mode.
+         const clearAll = pick('.online-head-select input')
+         if (clearAll) clearAll.click()
+         await sleep(300)
+         out.selectionCleared =
+           !pick('.online-selection-bar') &&
+           pickAll('.online-item.selected').length === 0 &&
+           pickAll('.online-select input').length === 0
+
+         // Remove lives in the row menu now: the row keeps only Save, Queue and
+         // the menu button. Remove one row, then clear the rest.
+         press(pickAll('.online-item button[aria-label^="More actions"]')[0])
+         await sleep(250)
+         const removeItem = pickAll('.context-menu .context-item').find(
+           (el) => text(el).trim() === 'Remove from history'
+         )
+         press(removeItem)
          await sleep(600)
          out.removedRows = pickAll('.online-item').length
 
@@ -3015,9 +3757,14 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     record(onlineView.rows === 3, 'the YouTube view lists the remembered links', onlineView.rows)
     record(onlineView.firstTitle.indexOf('Online Tone Two') === 0, 'the newest link is listed first', onlineView.firstTitle)
     record(
-      onlineView.firstArtist === 'Selftest Streamer',
-      'the YouTube view shows the artist',
-      onlineView.firstArtist
+      onlineView.firstChannel === 'Selftest Streamer',
+      'the YouTube view labels the uploader as a channel',
+      onlineView.firstChannel
+    )
+    record(
+      onlineView.firstArtist === 'Selftest Artist With A Deliberately Long Name' && onlineView.artistScrolls,
+      'the YouTube view shows a separate artist and marks a long name for hover scrolling',
+      `${onlineView.firstArtist} / scrolls ${onlineView.artistScrolls}`
     )
     record(onlineView.firstDuration === '1:30', 'the YouTube view shows the duration', onlineView.firstDuration)
     record(onlineView.sidebarCount === '3', 'the sidebar counts the remembered links', onlineView.sidebarCount)
@@ -3056,13 +3803,36 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       onlineView.refusedError || 'no error text'
     )
     record(
-      onlineView.menuItems.indexOf('Play') === 0 &&
+      onlineView.menuItems.indexOf('Select') === 0 &&
+        onlineView.menuItems.includes('Play') &&
         onlineView.menuItems.includes('Add to queue') &&
         onlineView.menuItems.includes('Save to library') &&
         onlineView.menuItems.includes('Copy link') &&
         onlineView.menuItems.includes('Remove from history'),
-      'a right-click menu offers the row actions',
+      'a right-click menu offers Select and the row actions',
       onlineView.menuItems
+    )
+    record(
+      onlineView.selectionActions === 'Play selected | Add to queue | Clear' &&
+        onlineView.ctrlSelectedRows === 2 &&
+        onlineView.selectionCount.startsWith('3 selected') &&
+        onlineView.selectedRows === 3 &&
+        onlineView.rowCheckboxes === 3 &&
+        onlineView.selectAllChecked,
+      'YouTube links select with a menu entry, Ctrl/Shift-click and a select-all checkbox',
+      `Ctrl ${onlineView.ctrlSelectedRows}, Shift ${onlineView.selectedRows}; ${onlineView.selectionActions}; ${onlineView.selectionCount}`
+    )
+    record(
+      onlineView.selectedMenuItems.indexOf('Deselect') === 0 &&
+        onlineView.selectedMenuItems.includes('Play selected') &&
+        onlineView.selectedMenuItems.includes('Queue selected'),
+      'a selected YouTube link menu offers the selection actions',
+      onlineView.selectedMenuItems
+    )
+    record(
+      onlineView.selectionCleared,
+      'the select-all checkbox clears the YouTube selection',
+      `cleared ${onlineView.selectionCleared}`
     )
     record(
       onlineView.saveEnabled && onlineView.rowSaveButtons === 3,
@@ -3112,10 +3882,14 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       onlineCardTitle: string
       onlineCardMeta: string
       historyRows: number
+      channelColumnHidden: boolean
+      channelTimeAligned: boolean
+      channelActionsAligned: boolean
+      channelTimeFits: boolean
     }>(
       window,
       `(async () => {
-         const out = { groupTitles: '', onlineRows: -1, kind: '', paneTitle: '', titles: '', note: '', hasReimport: false, hasClear: false, hasSaveAll: false, rowSaveButtons: 0, rowRevealButtons: 0, indexCount: '', rowsAfterRemove: -1, playedTitle: '', hasCover: false, playingCard: false, separateStrip: false, playingCardAfterTrip: false, onlineCardCover: false, importedScrolls: false, cardsAfterDelete: -1, groupEmpty: false, emptyAfterDelete: false, hasListId: false, reimportCount: '', renamedTitle: '', renamedIndex: '', onlineCards: -1, onlineCardTitle: '', onlineCardMeta: '', historyRows: -1 }
+         const out = { groupTitles: '', onlineRows: -1, kind: '', paneTitle: '', titles: '', note: '', hasReimport: false, hasClear: false, hasSaveAll: false, rowSaveButtons: 0, rowRevealButtons: 0, indexCount: '', rowsAfterRemove: -1, playedTitle: '', hasCover: false, playingCard: false, separateStrip: false, playingCardAfterTrip: false, onlineCardCover: false, importedScrolls: false, cardsAfterDelete: -1, groupEmpty: false, emptyAfterDelete: false, hasListId: false, reimportCount: '', renamedTitle: '', renamedIndex: '', onlineCards: -1, onlineCardTitle: '', onlineCardMeta: '', historyRows: -1, channelColumnHidden: false, channelTimeAligned: false, channelActionsAligned: false, channelTimeFits: false }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (s) => document.querySelector(s)
          const pickAll = (s) => [...document.querySelectorAll(s)]
@@ -3183,6 +3957,46 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.rowsAfterRemove = pickAll('.track-row').length
          const groupAfter = onlineGroup()
          out.indexCount = text(groupAfter ? groupAfter.querySelector('.playlist-count') : null).trim()
+
+         // The imported-playlist half of the hidden-column regression: turning
+         // Channel off must leave Duration on the header's track and Actions on
+         // the row's right edge, not slide them into one another.
+         const rect = (el) => (el ? el.getBoundingClientRect() : null)
+         const toggleChannel = async (on) => {
+           nav('Settings')
+           await sleep(300)
+           const appearanceTab = pickAll('.settings-tab').find((el) => text(el).trim() === 'Appearance')
+           press(appearanceTab)
+           await sleep(200)
+           const toggle = pick('[data-channel-column-toggle]')
+           if (toggle && toggle.checked !== on) {
+             press(toggle)
+             await sleep(450)
+           }
+         }
+         await toggleChannel(false)
+         nav('Playlists')
+         await sleep(700)
+         const hiddenChannel = pick('.track-row .col-artist')
+         const channelTime = pick('.track-row .col-time')
+         const channelHeadTime = pick('.track-head .col-time')
+         const channelActions = pick('.track-row .col-actions')
+         const channelRow = pick('.track-row')
+         const channelTimeRect = rect(channelTime)
+         const channelHeadTimeRect = rect(channelHeadTime)
+         const channelActionsRect = rect(channelActions)
+         const channelRowRect = rect(channelRow)
+         out.channelColumnHidden = Boolean(hiddenChannel && getComputedStyle(hiddenChannel).display === 'none')
+         out.channelTimeAligned = Boolean(
+           channelTimeRect && channelHeadTimeRect && Math.abs(channelTimeRect.left - channelHeadTimeRect.left) <= 1
+         )
+         out.channelActionsAligned = Boolean(
+           channelActionsRect && channelRowRect && Math.abs(channelActionsRect.right - channelRowRect.right) <= 1
+         )
+         out.channelTimeFits = Boolean(channelTime && channelTime.scrollWidth <= channelTime.clientWidth + 1)
+         await toggleChannel(true)
+         nav('Playlists')
+         await sleep(700)
 
          press(pickAll('.playlist-pane-head button').find((el) => text(el).trim().indexOf('Play') === 0))
          await sleep(900)
@@ -3275,6 +4089,14 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       onlineLists.rowsAfterRemove === 1 && onlineLists.indexCount === '1',
       'removing an imported entry updates the snapshot and the index count',
       `${onlineLists.rowsAfterRemove} rows, index ${onlineLists.indexCount}`
+    )
+    record(
+      onlineLists.channelColumnHidden &&
+        onlineLists.channelTimeAligned &&
+        onlineLists.channelActionsAligned &&
+        onlineLists.channelTimeFits,
+      'an imported playlist keeps Duration and Actions in place when Channel is hidden',
+      onlineLists
     )
     record(
       onlineLists.playedTitle === 'Online Tone Two',
@@ -3442,7 +4264,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       `${afterReload?.queue ?? -1} tracks in the queue`
     )
 
-    // The default is quiet, but the Behaviour opt-in must actually start the
+    // The default is quiet, but the resume opt-in must actually start the
     // restored queue. Turn it on through the UI, reload, and watch the primary
     // button become Pause while the saved track is still there.
     const autoplayArmed = await evaluate<boolean>(
@@ -3461,11 +4283,6 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          )
          press(settingsNav)
          await sleep(400)
-         const behaviourTab = [...document.querySelectorAll('.settings-tab')].find(
-           (el) => (el.textContent || '').trim() === 'Behaviour'
-         )
-         press(behaviourTab)
-         await sleep(300)
          if (resume() && !resume().checked) resume().click()
          await sleep(900)
          return resume()?.checked === true
@@ -3500,11 +4317,218 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
 
     record(
       autoplayArmed && autoplayRestored?.paused === false,
-      'automatic resume plays the restored queue when the Behaviour option is on',
+      'automatic resume plays the restored queue when the resume option is on',
       autoplayArmed
         ? `${autoplayRestored?.title || 'nothing'} / ${autoplayRestored?.paused ? 'paused' : 'playing'}`
         : 'resume switch did not turn on'
     )
+
+    // ---- 16. Search rows, selection and menus ---------------------------
+    // Search normally asks YouTube over the network. The layout, selection and
+    // row-menu behaviour are local, so stub only the discovery provider: the
+    // renderer still runs its whole search path, including the IPC round trip,
+    // without making a real request or depending on what YouTube returns today.
+    window.setSize(1200, 780)
+    await delay(300)
+    const realSearch = container.online.search
+    const realChannel = container.online.channel
+    const searchResults = [
+      {
+        videoId: 'selftestsearch1',
+        title: 'Search Tone One',
+        artist: 'Search Artist',
+        durationMs: 125_000,
+        channelId: 'UCselftest',
+        channelName: 'Search Channel'
+      },
+      {
+        videoId: 'selftestsearch2',
+        title: 'Search Tone Two',
+        artist: null,
+        durationMs: 95_000,
+        channelId: 'UCselftest',
+        channelName: 'Search Channel'
+      }
+    ]
+    container.online.search = async () => searchResults
+    container.online.channel = async () => ({
+      channelId: 'UCselftest',
+      name: 'Search Channel',
+      url: 'https://www.youtube.com/channel/UCselftest',
+      entries: searchResults.slice(0, 1)
+    })
+    try {
+      const searchUi = await evaluate<{
+        rows: number
+        localRows: number
+        youtubeRows: number
+        dividerBadges: number
+        rowSourceBadges: number
+        albumCells: number
+        channelLinks: number
+        channelLinkText: string
+        channelLinkUnderline: string
+        titleWider: boolean
+        selectedOne: boolean
+        checkboxes: number
+        selectedTwo: boolean
+        menuOpen: boolean
+        menuLabels: string[]
+        playlistMenu: boolean
+        menusClosed: boolean
+        channelTitle: string
+        channelRows: number
+        channelHasBack: boolean
+        backToSearch: boolean
+      }>(
+        window,
+        `(async () => {
+           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+           const pick = (selector) => document.querySelector(selector)
+           const pickAll = (selector) => [...document.querySelectorAll(selector)]
+           const text = (element) => ((element || {}).textContent || '')
+           const out = {
+             rows: 0, localRows: 0, youtubeRows: 0, dividerBadges: 0, rowSourceBadges: 0,
+             albumCells: 0, channelLinks: 0, channelLinkText: '', channelLinkUnderline: '',
+             titleWider: false, selectedOne: false, checkboxes: 0, selectedTwo: false,
+             menuOpen: false, menuLabels: [], playlistMenu: false, menusClosed: false,
+             channelTitle: '', channelRows: 0, channelHasBack: false, backToSearch: false
+           }
+
+           const searchNav = pickAll('.nav-item').find((el) => text(el).trim().startsWith('Search'))
+           if (searchNav) searchNav.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+           await sleep(350)
+
+           const input = pick('.discover-input input')
+           const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+           if (input) {
+             setValue.call(input, 'Selftest')
+             input.dispatchEvent(new Event('input', { bubbles: true }))
+           }
+           await sleep(120)
+           const submit = pick('.discover-bar button[type="submit"]')
+           if (submit) submit.click()
+
+           let deadline = Date.now() + 6000
+           while (Date.now() < deadline && pickAll('.discover-item').length < 4) await sleep(100)
+
+           const dividers = pickAll('.discover-divider')
+           out.rows = pickAll('.discover-item').length
+           out.localRows = Number(text(dividers[0] ? dividers[0].querySelector('.discover-count') : null))
+           out.youtubeRows = Number(text(dividers[1] ? dividers[1].querySelector('.discover-count') : null))
+           out.dividerBadges = pickAll('.discover-divider .source-badge').length
+           out.rowSourceBadges = pickAll('.discover-item .source-badge').length
+           out.albumCells = pickAll('.discover-album').length
+           out.channelLinks = pickAll('.discover-channel-link').length
+           const channelLink = pick('.discover-channel-link')
+           out.channelLinkText = text(channelLink).trim()
+           out.channelLinkUnderline = channelLink ? getComputedStyle(channelLink).textDecorationLine : 'missing'
+           const localTitle = pick('.discover-item .discover-title')
+           const localArtist = pick('.discover-item .discover-artist')
+           out.titleWider = Boolean(
+             localTitle && localArtist && localTitle.getBoundingClientRect().width > localArtist.getBoundingClientRect().width
+           )
+
+           const rows = pickAll('.discover-item')
+           if (rows[0]) rows[0].dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
+           await sleep(150)
+           out.selectedOne = Boolean(rows[0] && rows[0].classList.contains('selected') && pick('.discover-selection-bar'))
+           out.checkboxes = pickAll('.discover-select input').length
+           if (rows[1]) rows[1].dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
+           await sleep(150)
+           out.selectedTwo = pickAll('.discover-item.selected').length === 2
+
+           if (rows[0]) {
+             rows[0].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 220, clientY: 220 }))
+           }
+           await sleep(150)
+           const menu = pick('.row-menu')
+           out.menuOpen = Boolean(menu)
+           out.menuLabels = menu ? pickAll('.row-menu .context-item').map((item) => text(item).trim()) : []
+           const playlistItem = menu
+             ? pickAll('.row-menu .context-item').find((item) => text(item).trim().startsWith('Add to playlist'))
+             : null
+           if (playlistItem) playlistItem.click()
+           await sleep(180)
+           out.playlistMenu = Boolean(pick('.add-to-playlist'))
+           document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+           await sleep(120)
+           out.menusClosed = !pick('.row-menu') && !pick('.add-to-playlist')
+
+           const link = pick('.discover-channel-link')
+           if (link) link.click()
+           deadline = Date.now() + 3000
+           while (Date.now() < deadline && text(pick('.view-header h1')).trim() !== 'Search Channel') await sleep(100)
+           out.channelTitle = text(pick('.view-header h1')).trim()
+           out.channelRows = pickAll('.discover-item').length
+           out.channelHasBack = pickAll('.view-header button').some((button) => text(button).includes('Back to results'))
+
+           const back = pickAll('.view-header button').find((button) => text(button).includes('Back to results'))
+           if (back) back.click()
+           await sleep(400)
+           out.backToSearch = text(pick('.view-header h1')).trim() === 'Search' && pickAll('.discover-item').length >= 4
+           return out
+         })()`
+      )
+      record(
+        searchUi.rows >= 4 && searchUi.localRows >= 2 && searchUi.youtubeRows === 2,
+        'Search lists matching local tracks and YouTube results in one grouped list',
+        { rows: searchUi.rows, local: searchUi.localRows, youtube: searchUi.youtubeRows }
+      )
+      record(
+        searchUi.dividerBadges === 2 && searchUi.rowSourceBadges === 0 && searchUi.albumCells === 0,
+        'Search uses section source badges only and drops the old album column',
+        {
+          dividers: searchUi.dividerBadges,
+          rows: searchUi.rowSourceBadges,
+          albums: searchUi.albumCells
+        }
+      )
+      record(
+        searchUi.channelLinks === 2 &&
+          searchUi.channelLinkText === 'Search Channel' &&
+          searchUi.channelLinkUnderline === 'none',
+        'Search puts the channel link on the channel name, with no underline',
+        { links: searchUi.channelLinks, text: searchUi.channelLinkText, decoration: searchUi.channelLinkUnderline }
+      )
+      record(
+        searchUi.titleWider,
+        'Search gives the title more room than the channel name',
+        searchUi.titleWider
+      )
+      record(
+        searchUi.selectedOne && searchUi.checkboxes === 4 && searchUi.selectedTwo,
+        'Search rows select with Ctrl-click and reveal a checkbox per row',
+        { first: searchUi.selectedOne, boxes: searchUi.checkboxes, two: searchUi.selectedTwo }
+      )
+      record(
+        searchUi.menuOpen &&
+          searchUi.menuLabels.includes('Deselect') &&
+          searchUi.menuLabels.some((label) => label.startsWith('Play selected')) &&
+          searchUi.menuLabels.includes('Add to playlist…') &&
+          searchUi.menuLabels.includes('Select all results'),
+        'Search right-click offers row actions, selection actions and the playlist submenu',
+        searchUi.menuLabels
+      )
+      record(
+        searchUi.playlistMenu && searchUi.menusClosed,
+        'Search Add to playlist opens the existing playlist menu and closes cleanly',
+        { opened: searchUi.playlistMenu, closed: searchUi.menusClosed }
+      )
+      record(
+        searchUi.channelTitle === 'Search Channel' && searchUi.channelRows === 1 && searchUi.channelHasBack,
+        'Search opens a channel from the row link',
+        { title: searchUi.channelTitle, rows: searchUi.channelRows, back: searchUi.channelHasBack }
+      )
+      record(
+        searchUi.backToSearch,
+        'Search returns from a channel to the results that were there',
+        searchUi.backToSearch
+      )
+    } finally {
+      container.online.search = realSearch
+      container.online.channel = realChannel
+    }
   } catch (error) {
     failures += 1
     console.log(`SELFTEST FAIL  harness threw: ${describe(error)}`)

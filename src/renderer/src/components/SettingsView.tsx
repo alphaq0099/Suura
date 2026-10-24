@@ -1,4 +1,5 @@
-import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import {
   ACCENT_CHOICES,
   DEFAULT_APPEARANCE,
@@ -137,7 +138,7 @@ const VOLUME_WHEEL_CHOICES: Array<{ value: number; label: string }> = [
 
 const SECTION_RESET_CHOICES = [
   { id: 'general', label: 'General' },
-  { id: 'behaviour', label: 'Behaviour' },
+  { id: 'playback', label: 'Playback' },
   { id: 'streaming', label: 'Streaming' },
   { id: 'appearance', label: 'Appearance' }
 ] as const
@@ -145,7 +146,6 @@ const SECTION_RESET_CHOICES = [
 const TABS = [
   { id: 'general', label: 'General' },
   { id: 'appearance', label: 'Appearance' },
-  { id: 'behaviour', label: 'Behaviour' },
   { id: 'streaming', label: 'Streaming' },
   { id: 'misc', label: 'Misc' },
   { id: 'about', label: 'About' }
@@ -156,20 +156,85 @@ type TabId = (typeof TABS)[number]['id']
 /**
  * A compact explanation that stays out of the way until it is needed.
  *
+ * The bubble is portalled to <body> and positioned against the viewport rather
+ * than the card. The settings panel clips its own overflow, so an absolutely
+ * positioned bubble in the right-hand column was cut off no matter which way
+ * it opened. A fixed bubble can also flip above the trigger when there is no
+ * room below it.
+ *
  * The trigger is focusable as well as hoverable, so the text is reachable
  * without a mouse. `aria-describedby` ties the visible bubble to the icon
  * instead of leaving it as decoration.
  */
 function InfoHint(props: { label: string; children: ReactNode }) {
   const id = useId()
+  const triggerRef = useRef<HTMLSpanElement | null>(null)
+  const bubbleRef = useRef<HTMLSpanElement | null>(null)
+  const [hovered, setHovered] = useState(false)
+  const [focused, setFocused] = useState(false)
+  const [position, setPosition] = useState({ top: 0, left: 0 })
+  const open = hovered || focused
+
+  useLayoutEffect(() => {
+    if (!open) return
+
+    const place = (): void => {
+      const trigger = triggerRef.current
+      const bubble = bubbleRef.current
+      if (!trigger || !bubble) return
+
+      const anchor = trigger.getBoundingClientRect()
+      const box = bubble.getBoundingClientRect()
+      const edge = 8
+      const gap = 7
+      const centered = anchor.left + anchor.width / 2 - box.width / 2
+      const maxLeft = Math.max(edge, window.innerWidth - box.width - edge)
+      const left = Math.min(Math.max(centered, edge), maxLeft)
+
+      let top = anchor.bottom + gap
+      if (top + box.height > window.innerHeight - edge) {
+        top = anchor.top - box.height - gap
+      }
+      if (top < edge) top = edge
+
+      setPosition((current) =>
+        current.top === top && current.left === left ? current : { top, left }
+      )
+    }
+
+    place()
+    const observer = new ResizeObserver(place)
+    if (triggerRef.current) observer.observe(triggerRef.current)
+    if (bubbleRef.current) observer.observe(bubbleRef.current)
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', place, true)
+    }
+  }, [open])
+
   return (
-    <span className="info-hint">
+    <span
+      className="info-hint"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
       <span
+        ref={triggerRef}
         className="info-hint-trigger"
         tabIndex={0}
         role="img"
         aria-label={props.label}
         aria-describedby={id}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onKeyDown={(event) => {
+          if (event.key !== 'Escape') return
+          setFocused(false)
+          event.currentTarget.blur()
+        }}
         onClick={(event) => {
           // A hint often sits inside a <label>; without this, reading it would
           // toggle the checkbox or open the select it explains.
@@ -179,9 +244,18 @@ function InfoHint(props: { label: string; children: ReactNode }) {
       >
         <InfoIcon size={13} />
       </span>
-      <span id={id} className="info-hint-bubble" role="tooltip">
-        {props.children}
-      </span>
+      {createPortal(
+        <span
+          ref={bubbleRef}
+          id={id}
+          className={open ? 'info-hint-bubble open' : 'info-hint-bubble'}
+          role="tooltip"
+          style={{ top: position.top, left: position.left }}
+        >
+          {props.children}
+        </span>,
+        document.body
+      )}
     </span>
   )
 }
@@ -245,7 +319,7 @@ export function SettingsView(props: SettingsViewProps) {
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
   const resetButtonRef = useRef<HTMLButtonElement | null>(null)
 
-  // A tab strip is one tab stop, not six. Arrow keys move between tabs, Home and
+  // A tab strip is one tab stop, not five. Arrow keys move between tabs, Home and
   // End jump to the edges, and the newly selected tab takes focus — the pattern
   // screen-reader and keyboard users expect from role="tablist".
   const moveTab = (event: KeyboardEvent<HTMLButtonElement>, index: number): void => {
@@ -391,6 +465,8 @@ export function SettingsView(props: SettingsViewProps) {
   const providerUrlInvalid =
     settings.engine.poTokenProviderUrl.trim().length > 0 &&
     !normalizePoTokenProviderUrl(settings.engine.poTokenProviderUrl)
+  const providerCommand = settings.engine.poTokenProviderCommand?.trim() ?? ''
+  const providerCommandMissing = providerCommand.length === 0
 
   const copyDiagnostics = async (): Promise<void> => {
     setDiagnosticsBusy(true)
@@ -513,21 +589,22 @@ export function SettingsView(props: SettingsViewProps) {
                   </span>
                 </label>
               </div>
-              <p className="card-hint">New, changed and removed files update the library without pressing Rescan.</p>
             </article>
 
             <article className="card">
               <header className="card-header">
                 <h2>
-                  Startup
-                  <InfoHint label="About startup">
+                  Startup &amp; resume
+                  <InfoHint label="About startup and resume">
                     Last used returns to the view you left open; Settings is never restored. The first launch after
-                    adding a folder always scans, even when the launch scan is off.
+                    adding a folder always scans, even when the launch scan is off. Resuming brings back the last
+                    local queue; with the option off the queue still returns, but paused.
                   </InfoHint>
                 </h2>
               </header>
               <p className="card-hint">
-                Where Player opens, and whether it checks the folders for changes made while it was closed.
+                Where Player opens, whether it checks for changes made while it was closed, and what happens to the
+                last queue.
               </p>
               <div className="field-grid">
                 <label className="field">
@@ -556,6 +633,99 @@ export function SettingsView(props: SettingsViewProps) {
                       for a large library on a slow or network drive and scan manually instead.
                     </InfoHint>
                   </span>
+                </label>
+                <label className="field checkbox">
+                  <input
+                    type="checkbox"
+                    checked={settings.startup.resumePlayback}
+                    onChange={(event) => onUpdate({ startup: { resumePlayback: event.target.checked } })}
+                  />
+                  <span>
+                    Resume playback automatically
+                    <InfoHint label="About automatic resume">
+                      Restores the last local queue, seeks to the saved position and starts playing. With this off the
+                      queue still returns, but paused, so opening the app is quiet.
+                    </InfoHint>
+                  </span>
+                </label>
+              </div>
+            </article>
+
+            <article className="card">
+              <header className="card-header">
+                <h2>
+                  Click behaviour
+                  <InfoHint label="About click behaviour">
+                    Two conventions are in wide use - select on click, or play on click - and whichever one you are
+                    used to, the other feels broken. A double click always arrives as two single clicks first, so
+                    choosing &quot;play&quot; for both starts the track on the first click and does not restart it on
+                    the second.
+                  </InfoHint>
+                </h2>
+              </header>
+              <p className="card-hint">
+                Choose what one click does; double-click always receives two single clicks first.
+              </p>
+              <div className="field-grid">
+                <label className="field">
+                  <span>Single click</span>
+                  <select
+                    value={settings.interaction.librarySingleClick}
+                    onChange={(event) =>
+                      onUpdate({ interaction: { librarySingleClick: event.target.value as LibraryClickAction } })
+                    }
+                  >
+                    {CLICK_CHOICES.map((choice) => (
+                      <option key={choice.value} value={choice.value}>
+                        {choice.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Double click</span>
+                  <select
+                    value={settings.interaction.libraryDoubleClick}
+                    onChange={(event) =>
+                      onUpdate({ interaction: { libraryDoubleClick: event.target.value as LibraryClickAction } })
+                    }
+                  >
+                    {CLICK_CHOICES.map((choice) => (
+                      <option key={choice.value} value={choice.value}>
+                        {choice.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </article>
+
+            <article className="card">
+              <header className="card-header">
+                <h2>
+                  Playback &amp; volume
+                  <InfoHint label="About playback and volume">
+                    The wheel step applies to the volume control in the player bar and the full-window player. Holding
+                    Shift always uses one percent. Volume itself is remembered between launches.
+                  </InfoHint>
+                </h2>
+              </header>
+              <p className="card-hint">How much one wheel notch changes the volume.</p>
+              <div className="field-grid">
+                <label className="field">
+                  <span>Volume wheel step</span>
+                  <select
+                    value={settings.interaction.volumeWheelStep}
+                    onChange={(event) =>
+                      onUpdate({ interaction: { volumeWheelStep: Number(event.target.value) } })
+                    }
+                  >
+                    {VOLUME_WHEEL_CHOICES.map((choice) => (
+                      <option key={choice.value} value={choice.value}>
+                        {choice.label}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </div>
             </article>
@@ -682,7 +852,7 @@ export function SettingsView(props: SettingsViewProps) {
                     Motion
                     <InfoHint label="About motion">
                       Follow Windows uses the system animation setting. Reduced removes most transitions but keeps a
-                      slow spinner. Full always animates. The bars below preview the difference.
+                      slow spinner. Full always animates.
                     </InfoHint>
                   </span>
                   <div className="segmented" role="group" aria-label="Motion">
@@ -701,24 +871,30 @@ export function SettingsView(props: SettingsViewProps) {
                     ))}
                   </div>
                 </div>
-                <div className="motion-preview" aria-hidden="true">
-                  <span className="motion-preview-label">Preview</span>
-                  <span className="motion-preview-bars">
-                    <span />
-                    <span />
-                    <span />
-                  </span>
-                </div>
               </article>
 
+              <div className="appearance-reset">
+                <div>
+                  <strong>Reset appearance</strong>
+                  <p>Theme, layout, text, columns and cover art.</p>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Reset appearance"
+                  onClick={() => onUpdate(DEFAULT_APPEARANCE)}
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+
+            <div className="cards-col">
               <article className="card">
                 <header className="card-header">
                   <h2>
-                    Text, icons &amp; columns
-                    <InfoHint label="About text, icons and columns">
+                    Text &amp; icons
+                    <InfoHint label="About text and icons">
                       Text size scales every label, heading and hint together. The icon choice applies to the sidebar.
-                      The Album column can be hidden when you would rather give that width to track titles; the choice
-                      stays consistent across the Library and playlists.
                     </InfoHint>
                   </h2>
                 </header>
@@ -764,19 +940,8 @@ export function SettingsView(props: SettingsViewProps) {
                     ))}
                   </div>
                 </div>
-                <label className="field checkbox">
-                  <input
-                    type="checkbox"
-                    data-album-column-toggle
-                    checked={settings.visuals.showAlbumColumn}
-                    onChange={(event) => onUpdate({ visuals: { showAlbumColumn: event.target.checked } })}
-                  />
-                  <span>Show the Album column in the Library and playlists</span>
-                </label>
               </article>
-            </div>
 
-            <div className="cards-col">
               <article className="card">
                 <header className="card-header">
                   <h2>
@@ -865,124 +1030,47 @@ export function SettingsView(props: SettingsViewProps) {
                   </label>
                 </div>
               </article>
-            </div>
-          </div>
 
-          <div className="appearance-reset">
-            <div>
-              <strong>Reset appearance</strong>
-              <p>
-                Puts the theme, accent, density, surface, motion, text, icon, column and cover-art choices back to their
-                defaults.
-              </p>
-            </div>
-            <button type="button" onClick={() => onUpdate(DEFAULT_APPEARANCE)}>
-              Reset appearance
-            </button>
-          </div>
-        </section>
-
-        <section
-          className="settings-panel"
-          role="tabpanel"
-          id="settings-panel-behaviour"
-          aria-labelledby="settings-tab-behaviour"
-          tabIndex={0}
-          hidden={tab !== 'behaviour'}
-        >
-          <div className="cards">
-            <article className="card">
-              <header className="card-header">
-                <h2>
-                  Click behaviour
-                  <InfoHint label="About click behaviour">
-                    Two conventions are in wide use — select on click, or play on click — and whichever one you are
-                    used to, the other feels broken. A double click always arrives as two single clicks first, so
-                    choosing &quot;play&quot; for both starts the track on the first click and does not restart it on
-                    the second.
-                  </InfoHint>
-                </h2>
-              </header>
-              <p className="card-hint">
-                Choose what one click does; double-click always receives two single clicks first.
-              </p>
-              <div className="field-grid">
-                <label className="field">
-                  <span>Single click</span>
-                  <select
-                    value={settings.interaction.librarySingleClick}
-                    onChange={(event) =>
-                      onUpdate({ interaction: { librarySingleClick: event.target.value as LibraryClickAction } })
-                    }
-                  >
-                    {CLICK_CHOICES.map((choice) => (
-                      <option key={choice.value} value={choice.value}>
-                        {choice.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field">
-                  <span>Double click</span>
-                  <select
-                    value={settings.interaction.libraryDoubleClick}
-                    onChange={(event) =>
-                      onUpdate({ interaction: { libraryDoubleClick: event.target.value as LibraryClickAction } })
-                    }
-                  >
-                    {CLICK_CHOICES.map((choice) => (
-                      <option key={choice.value} value={choice.value}>
-                        {choice.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            </article>
-
-            <article className="card">
-              <header className="card-header">
-                <h2>
-                  Volume &amp; startup
-                  <InfoHint label="About volume and startup">
-                    The wheel step applies to the volume control in the player bar and the full-window player. Holding
-                    Shift always uses one percent. Resuming a saved queue can start playback, so it is off by default.
-                  </InfoHint>
-                </h2>
-              </header>
-              <p className="card-hint">How much one wheel notch changes, and what happens to the last queue.</p>
-              <div className="field-grid">
-                <label className="field">
-                  <span>Volume wheel step</span>
-                  <select
-                    value={settings.interaction.volumeWheelStep}
-                    onChange={(event) =>
-                      onUpdate({ interaction: { volumeWheelStep: Number(event.target.value) } })
-                    }
-                  >
-                    {VOLUME_WHEEL_CHOICES.map((choice) => (
-                      <option key={choice.value} value={choice.value}>
-                        {choice.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field checkbox">
-                  <input
-                    type="checkbox"
-                    checked={settings.startup.resumePlayback}
-                    onChange={(event) => onUpdate({ startup: { resumePlayback: event.target.checked } })}
-                  />
-                  <span>
-                    Resume playback automatically
-                    <InfoHint label="About automatic resume">
-                      Restores the last local queue, seeks to the saved position and starts playing. With this off the
-                      queue still returns, but paused, so opening the app is quiet.
+              <article className="card">
+                <header className="card-header">
+                  <h2>
+                    List columns
+                    <InfoHint label="About list columns">
+                      The Album and Channel checkboxes hide those columns where they exist; a very narrow pane still
+                      drops them automatically. Channel applies to YouTube links and imported lists; local rows keep
+                      Artist.
                     </InfoHint>
-                  </span>
-                </label>
-              </div>
-            </article>
+                  </h2>
+                </header>
+                <p className="card-hint">Choose which optional columns appear in each kind of list.</p>
+                <div className="column-toggle-groups">
+                  <div className="column-toggle-group">
+                    <h3>Local lists</h3>
+                    <label className="field checkbox">
+                      <input
+                        type="checkbox"
+                        data-album-column-toggle
+                        checked={settings.visuals.showAlbumColumn}
+                        onChange={(event) => onUpdate({ visuals: { showAlbumColumn: event.target.checked } })}
+                      />
+                      <span>Show the Album column</span>
+                    </label>
+                  </div>
+                  <div className="column-toggle-group">
+                    <h3>YouTube lists</h3>
+                    <label className="field checkbox">
+                      <input
+                        type="checkbox"
+                        data-channel-column-toggle
+                        checked={settings.visuals.showChannelColumn}
+                        onChange={(event) => onUpdate({ visuals: { showChannelColumn: event.target.checked } })}
+                      />
+                      <span>Show the Channel column in imported playlists</span>
+                    </label>
+                  </div>
+                </div>
+              </article>
+            </div>
           </div>
         </section>
 
@@ -994,7 +1082,7 @@ export function SettingsView(props: SettingsViewProps) {
           tabIndex={0}
           hidden={tab !== 'streaming'}
         >
-          <div className="cards cards-single">
+          <div className="cards">
             <div className="cards-col">
               <article className="card">
                 <header className="card-header">
@@ -1125,16 +1213,18 @@ export function SettingsView(props: SettingsViewProps) {
                   </label>
                   <label className="field wide">
                     <span>
-                      Provider command (optional)
+                      Provider command (optional; needed for Start and auto-start)
                       <InfoHint label="About the provider command">
-                        A command this app can start and stop for you. It is split into arguments without a shell, so
-                        quoted paths work but pipes and variables do not. Leave it blank if you run the server yourself.
+                        A command this app can start and stop for you, for example{' '}
+                        <code>node &quot;C:\path\to\bgutil\server\build\main.js&quot;</code>. It is split into
+                        arguments without a shell, so quoted paths work but pipes and variables do not. Leave it blank
+                        if you run the server yourself.
                       </InfoHint>
                     </span>
                     <input
                       type="text"
                       value={settings.engine.poTokenProviderCommand ?? ''}
-                      placeholder='node "C:\path\to\bgutil\server\build\main.js"'
+                      placeholder="No command set"
                       onChange={(event) =>
                         onUpdate({ engine: { poTokenProviderCommand: event.target.value || null } })
                       }
@@ -1144,17 +1234,30 @@ export function SettingsView(props: SettingsViewProps) {
                     <input
                       type="checkbox"
                       checked={settings.engine.poTokenAutoStart}
+                      title={
+                        providerCommandMissing
+                          ? 'Add a provider command above before auto-start can start a provider.'
+                          : undefined
+                      }
                       onChange={(event) => onUpdate({ engine: { poTokenAutoStart: event.target.checked } })}
                     />
                     <span>
                       Start the provider automatically
                       <InfoHint label="About automatic provider start">
                         Runs the command above on launch and when the switch is turned on. The app stops only the
-                        process it started, never a server you launched yourself.
+                        process it started, never a server you launched yourself. Auto-start stays idle until a command
+                        is set.
                       </InfoHint>
                     </span>
                   </label>
                 </div>
+
+                {settings.engine.poTokenEnabled && providerCommandMissing ? (
+                  <p className="card-hint">
+                    No provider command is set. Run the provider yourself, or add one above to use Start and
+                    auto-start.
+                  </p>
+                ) : null}
 
                 {providerUrlInvalid ? (
                   <p className="card-hint status-error">
@@ -1167,11 +1270,14 @@ export function SettingsView(props: SettingsViewProps) {
                   <button
                     type="button"
                     onClick={() => void runProvider('start')}
-                    disabled={
-                      !settings.engine.poTokenEnabled ||
-                      !settings.engine.poTokenProviderCommand?.trim() ||
-                      providerBusy !== null
+                    title={
+                      !settings.engine.poTokenEnabled
+                        ? 'Turn on Use a PO Token provider first.'
+                        : providerCommandMissing
+                          ? 'Add a provider command, or run the server yourself and leave this button alone.'
+                          : undefined
                     }
+                    disabled={!settings.engine.poTokenEnabled || providerCommandMissing || providerBusy !== null}
                   >
                     {providerBusy === 'start' ? <SpinnerIcon /> : null}
                     <span>Start provider</span>
@@ -1189,23 +1295,29 @@ export function SettingsView(props: SettingsViewProps) {
                 {engineStatus?.poToken ? (
                   <ul className="status-list">
                     <li className={engineStatus.poToken.enabled ? 'ok' : ''}>
-                      <span className="status-name">Switch</span>
+                      <span className="status-name">App switch</span>
                       <span className="status-value">
                         {engineStatus.poToken.enabled ? 'enabled' : 'off'}
                       </span>
                     </li>
                     <li className={engineStatus.poToken.serverReachable ? 'ok' : 'bad'}>
-                      <span className="status-name">Provider</span>
-                      <span className="status-value">
+                      <span className="status-name">Server</span>
+                      <span className="status-value" title={engineStatus.poToken.providerUrl}>
                         {engineStatus.poToken.serverReachable
-                          ? `reachable${engineStatus.poToken.serverVersion ? ` · v${engineStatus.poToken.serverVersion}` : ''}`
-                          : 'not reachable'}
+                          ? `reachable at ${engineStatus.poToken.providerUrl.replace(/^https?:\/\//, '')}${engineStatus.poToken.serverVersion ? `, v${engineStatus.poToken.serverVersion}` : ''}`
+                          : `no answer at ${engineStatus.poToken.providerUrl.replace(/^https?:\/\//, '')}`}
                       </span>
                     </li>
                     <li className={engineStatus.poToken.managedRunning ? 'ok' : ''}>
-                      <span className="status-name">Process</span>
+                      <span className="status-name">Managed process</span>
                       <span className="status-value">
-                        {engineStatus.poToken.managedRunning ? 'started by Player' : 'not started by Player'}
+                        {engineStatus.poToken.managedRunning ? 'running' : 'not running'}
+                      </span>
+                    </li>
+                    <li className={engineStatus.poToken.commandConfigured ? 'ok' : ''}>
+                      <span className="status-name">Start command</span>
+                      <span className="status-value">
+                        {engineStatus.poToken.commandConfigured ? 'set' : 'not set'}
                       </span>
                     </li>
                   </ul>
@@ -1218,7 +1330,9 @@ export function SettingsView(props: SettingsViewProps) {
                 {providerError ? <p className="card-hint status-error">{providerError}</p> : null}
                 {providerNote ? <p className="card-hint">{providerNote}</p> : null}
               </article>
+            </div>
 
+            <div className="cards-col">
               <article className="card">
                 <header className="card-header">
                   <h2>
@@ -1371,9 +1485,7 @@ export function SettingsView(props: SettingsViewProps) {
                   </label>
                 </div>
               </article>
-            </div>
 
-            <div className="cards-col">
               <article className="card">
                 <header className="card-header">
                   <h2>
@@ -1449,10 +1561,11 @@ export function SettingsView(props: SettingsViewProps) {
           hidden={tab !== 'misc'}
         >
           <div className="cards">
-            <article className="card">
-              <header className="card-header">
-                <h2>
-                  Storage &amp; diagnostics
+            <div className="cards-col">
+              <article className="card">
+                <header className="card-header">
+                  <h2>
+                    Storage &amp; diagnostics
                   <InfoHint label="About app data">
                     Everything the app writes lives here. The log file is the first place to look when something goes
                     wrong; the database and config are the two files not to edit while Player is running.
@@ -1486,12 +1599,14 @@ export function SettingsView(props: SettingsViewProps) {
               ) : (
                 <p className="card-hint">Loading…</p>
               )}
-            </article>
+              </article>
+            </div>
 
-            <article className="card">
-              <header className="card-header">
-                <h2>
-                  Backup &amp; restore
+            <div className="cards-col">
+              <article className="card">
+                <header className="card-header">
+                  <h2>
+                    Backup &amp; restore
                   <InfoHint label="About backups">
                     Automatic copies are taken at startup and before a library upgrade; only the newest count you
                     choose stay in the backups folder. Restore validates the chosen folder, moves current data aside,
@@ -1608,18 +1723,23 @@ export function SettingsView(props: SettingsViewProps) {
               ) : null}
             </article>
 
-            <article className="card">
-              <header className="card-header">
-                <h2>
-                  Reset preferences
-                  <InfoHint label="About resetting preferences">
-                    Resets playback, appearance, click behaviour, import limits, saving quality and request budgets.
-                    Library folders and the engine and download folders you chose are kept: forgetting a folder is not
-                    a preference change. A preference reset is not a data reset.
-                  </InfoHint>
-                </h2>
-              </header>
+            </div>
+          </div>
+
+          <footer className="settings-footer">
+            <div className="settings-footer-head">
+              <h2>
+                Reset preferences
+                <InfoHint label="About resetting preferences">
+                  Resets playback, appearance, click behaviour, import limits, saving quality and request budgets.
+                  Library folders and the engine and download folders you chose are kept: forgetting a folder is not a
+                  preference change. A preference reset is not a data reset.
+                </InfoHint>
+              </h2>
               <p className="card-hint">Puts preferences back to defaults; library folders and data stay.</p>
+            </div>
+            <div className="settings-section-resets">
+              <span>Reset one section</span>
               <div className="field-row">
                 {SECTION_RESET_CHOICES.map((choice) => (
                   <button
@@ -1635,7 +1755,8 @@ export function SettingsView(props: SettingsViewProps) {
                   </button>
                 ))}
               </div>
-              <p className="card-hint">Reset one tab at a time; the others and your folders stay as they are.</p>
+            </div>
+            <p className="card-hint">The other sections and your folders stay as they are.</p>
               <div className="settings-reset">
                 {confirmReset ? (
                   <div className="reset-confirm" role="alert">
@@ -1673,9 +1794,8 @@ export function SettingsView(props: SettingsViewProps) {
                     {resetDone ? <span role="status">Preferences reset.</span> : null}
                   </div>
                 )}
-              </div>
-            </article>
-          </div>
+            </div>
+          </footer>
         </section>
 
         <section
@@ -1692,7 +1812,7 @@ export function SettingsView(props: SettingsViewProps) {
                 <h2>
                   About
                   <InfoHint label="About this build">
-                    Unified search, channel pages, metadata cleanup and the six-tab Settings page are in, including the
+                    Unified search, channel pages, metadata cleanup and the five-tab Settings page are in, including the
                     bounded Appearance choices and a preference reset. Offline caching and the full Downloads screen
                     are deferred to M12. The roadmap in ROADMAP.md is the source of truth for what comes next.
                   </InfoHint>

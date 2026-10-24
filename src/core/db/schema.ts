@@ -336,6 +336,22 @@ export const MIGRATIONS: readonly Migration[] = [
         CREATE INDEX idx_tracks_missing ON tracks(missing_at);
       `)
     }
+  },
+  {
+    version: 10,
+    name: 'online track channels',
+    up: (db) => {
+      // A YouTube link has two possible names: the track artist YouTube may
+      // expose, and the uploader/channel. The old row stored only the resolver's
+      // fallback (`artist ?? uploader ?? channel`), so there was no way to show
+      // both when a real artist existed. Keep the historical value as the
+      // channel: it is the uploader for every row written before this column
+      // existed, and a re-paste refreshes the pair with the precise values.
+      db.exec(`
+        ALTER TABLE online_tracks ADD COLUMN channel TEXT;
+        UPDATE online_tracks SET channel = artist WHERE channel IS NULL;
+      `)
+    }
   }
 ]
 

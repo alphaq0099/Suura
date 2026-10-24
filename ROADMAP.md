@@ -277,7 +277,9 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
 - [x] Library UI: virtualized list, sort by title/artist/album/duration/year/added/played, search via FTS5. Columns are
       **#, Title, Artist, Album, Duration, Action**; Format is not a column but a row's **Details** sheet (format, codec,
       bitrate, sample rate, channels, size, path, added/played, YouTube origin), opened from the ⋯ button or the row menu.
-      The Queue view carries the same six-column header, aligned with its rows.
+      The Queue view carries the same six-column header, aligned with its rows. The later consistency pass makes Title
+      the only flexible track, gives Artist/Album equal bounded widths, and uses a separate **#, Title, optional Artist,
+      Channel, Duration, Action** grid for YouTube Links (no Album).
 - [x] Artwork: embedded covers extracted lazily, resized, cached content-addressed, served over `player-art://`
 - [x] Now Playing: full-window player with a blurred art backdrop, transport, volume, queue and a scrubber; the queue
       as a panel inside the window, slid in by the button that opened it and dismissed by a press anywhere outside it
@@ -334,7 +336,7 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
       per session and the timer dies with the track, so skimming a queue does not spawn a sidecar per row. Only the
       resolve is brought forward; the bytes are still streamed on demand.
 - [x] Paste surface: a dedicated **YouTube** view (sidebar, under Library) with a persistent link history — a pasted link
-      becomes a row at once (*Resolving…*), then fills in; **Add to queue** / **Play now**, per-row album/artist/duration,
+      becomes a row at once (*Resolving…*), then fills in; **Add to queue** / **Play now**, per-row album/channel/duration,
       a right-click menu (Play, Add to queue, Copy link, Remove) and a **YouTube** badge in the player bar. Rows show a
       cached thumbnail, fetched from the video id the first time the row is drawn (and repaired if an earlier pass failed).
       Saving a row into the library is M4 (done). The history is links, not files, so it survives a restart and a cache
@@ -439,27 +441,27 @@ works, but it has no hierarchy and no way to find a single option.
       Token provider (URL, command, auto-start, status), and a three-mode browser-cookie fallback with its privacy caveat
 - [x] Bounded Appearance: Midnight/Cream/Follow Windows, five contrast-checked accents, Compact/Comfortable/Spacious
       density, Small/Medium/Large/Extra Large text presets, Modern/Classic sidebar glyphs, Solid/Accented surfaces (accent
-      wash and CSS blur, not native acrylic or album-art frost), motion preference with a live preview, info-icon
-      explanations, cover-art and playlist-cover sizes, optional Album column, and reset. One bundled typeface (Inter)
-      rather than a font-family picker. No arbitrary CSS, third-party icon packs, layout builder, custom accent or
-      Material theme in v1
+      wash and CSS blur, not native acrylic or album-art frost), a motion preference, info-icon
+      explanations, cover-art and playlist-cover sizes, grouped **Local lists** Album / **YouTube lists** Channel
+      controls, and reset. One bundled typeface (Inter) rather than a font-family picker. No arbitrary CSS, third-party
+      icon packs, layout builder, custom accent or Material theme in v1
 - [x] Review defaults and reset-to-default. **Misc → Reset preferences** restores playback, appearance, behaviour, import
       limits, saving quality and request-budget choices from the same defaults a first launch uses, while keeping the
       library, engine and download folders and the last engine-update timestamp. Settings export/restore is deliberately
       left to the backup work in M7
 - [x] Density pass after first use: Streaming is one column with two-column fields (no dead half-page under short
-      cards), PO Token and cookie fallback are separate cards, and long explanations moved from General, Behaviour,
+      cards), PO Token and cookie fallback are separate cards, and long explanations moved from General, Appearance,
       Misc and About into info tooltips behind one-line hints
 - [x] Second pass on the controls themselves: General opens the last non-settings view by default (or a fixed Library,
-      YouTube, Search, Playlists or Queue) and can scan on launch; Behaviour sets the wheel step (5% default, 1–25,
-      Shift 1%) and can play the restored queue instead of leaving it paused; Misc sets automatic-backup retention
-      (10 default, 3–50) and prunes immediately; General, Behaviour, Streaming and Appearance each reset without
-      touching folders or the other tabs; About shows the app, Electron, Chromium and Node versions plus Copy diagnostics
+      YouTube, Search, Playlists or Queue), can scan on launch, sets click behaviour, the wheel step (5% default, 1–15,
+      Shift 1%) and whether the restored queue plays or stays paused; Misc sets automatic-backup retention
+      (10 default, 3–50) and prunes immediately; General, Playback, Streaming and Appearance each reset without
+      touching folders or the other sections; About shows the app, Electron, Chromium and Node versions plus Copy diagnostics
       (versions, paths, folder count and user agent, never cookies or library files)
 - [x] Accessibility and keyboard pass: tablist arrow/Home/End movement with roving focus, focusable scrollable panels,
       real `<label>` elements around every field, `aria-pressed` on the choice buttons, a live error banner and a
       two-step reset confirmation with a status message
-- [x] Search within Settings considered and deferred: six tabs keep every option one click away, so a second search box
+- [x] Search within Settings considered and deferred: five tabs keep every option one click away, so a second search box
       would add a mode without removing a step. Revisit if the page outgrows the tabs
 **Exit:** a new user can find and change any setting without scrolling past unrelated cards, and every control has a
 visible effect. **Met.**
@@ -523,6 +525,10 @@ restore, migration guard, and id-preserving relocation were exercised in the smo
 - [ ] Advanced: WASAPI exclusive output, ASIO, bit-perfect/hi-res path, device selection
 - [ ] Plugin/extension API for community resolvers
 - [ ] Optional CLI companion for scripting
+- [ ] **Richer song metadata** for YouTube rows: infer artist/album from titles (`Artist - Song`, `Artist - Topic`)
+      or enrich from a music database (MusicBrainz, Spotify, Last.fm), mark inferred values clearly, and never overwrite
+      explicit tags. YouTube itself only supplies `artist` for Music/Topic uploads; for ordinary videos the channel is
+      the only reliable identity, so this is a parser/database problem rather than a missing field.
 
 ### M12 — Offline Cache & Downloads *(deferred to the end, ~2–3 weeks)*
 **Goal:** the other half of the original M4, deliberately postponed until the library, discovery and Settings work is
@@ -646,7 +652,9 @@ ordinary local track that remembers its video id. A compact **Saves** dock shows
 from every view, with cancel, retry and reveal. **M3 is measured** at 50/50 links, a 8.3 s median cold resolve and a
 0.46 s median to the CDN's first bytes, so `< 3 s` is adopted for warm/prefetched playback and cold paste has a 10 s
 display target. **M5's core is in**: a unified **Search** view over the local library and YouTube, channel pages, and
-title/artist cleanup. Every track list shares the **# / Title / Artist / Album / Duration / Action** grid, with Format
-in a row's **Details** sheet, and the Queue has a header aligned with its rows. Next is the **Settings revamp (M6)**,
-whose design is still to be agreed, then data care (M7), which is now complete. Offline caching and the full Downloads
-screen stay deferred to M12.
+title/artist cleanup. Every track list shares the same **#, Title, …metadata, Duration, Action** priorities, with
+Format in a row's **Details** sheet, and the Queue has a header aligned with its rows. The current consistency pass
+keeps Title as the only flexible track, gives Artist/Album equal bounded widths, removes Album from YouTube Links in
+favour of Channel plus an optional Artist, and keeps Duration/Actions fixed when a column is hidden. Next is the
+**Settings revamp (M6)**, whose design is still to be agreed, then data care (M7), which is now complete. Offline
+caching and the full Downloads screen stay deferred to M12.

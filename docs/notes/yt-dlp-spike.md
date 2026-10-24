@@ -42,7 +42,9 @@ directly — the proxy already planned for M3 is required rather than convenient
    the app never asked for.
 2. **The 3 s first-audio target is not reachable with a cold CLI call here.** Even the fastest audio-only path is 7 s,
    and process startup alone is over half the budget at best. Options, in order of preference:
-   - resolve when the track is *chosen*, not when play is pressed (a hover/selection prefetch hides most of it);
+   - resolve when the track is *chosen*, not when play is pressed (a hover/selection prefetch hides most of it, but
+     each one is a full extraction: nine hover prefetches in a minute triggered the bot-check discussion, so this is
+     not safe without a strict cap and working PO tokens);
    - keep resolved URLs for the session and re-resolve on `403` (already the retention design);
    - re-measure on the target machine and revise the roadmap number rather than pretending 3 s was met.
 3. **Do not pin `player_client`.** The fast client loses audio-only formats; the pinned ones that would be acceptable fail

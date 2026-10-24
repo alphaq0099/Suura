@@ -137,12 +137,13 @@ export const DEFAULT_PREFERENCE_PATCH: DeepPartial<AppSettings> = {
   }
 }
 
-export type PreferenceSection = 'general' | 'behaviour' | 'streaming' | 'appearance'
+export type PreferenceSection = 'general' | 'playback' | 'streaming' | 'appearance'
 
 /**
- * Per-tab reset patches. These deliberately mirror the preferences in each tab
- * rather than everything the full reset touches: resetting General must not
- * silently change the player volume or the saved-file format.
+ * Per-section reset patches. These deliberately mirror the preferences in each
+ * section rather than everything the full reset touches: resetting General must
+ * not silently change the player volume, click behaviour or the saved-file
+ * format.
  */
 export const SECTION_PREFERENCE_PATCHES: Record<PreferenceSection, DeepPartial<AppSettings>> = {
   general: {
@@ -157,7 +158,7 @@ export const SECTION_PREFERENCE_PATCHES: Record<PreferenceSection, DeepPartial<A
       indexWidth: DEFAULT_SETTINGS.playlists.indexWidth
     }
   },
-  behaviour: {
+  playback: {
     interaction: { ...DEFAULT_SETTINGS.interaction },
     startup: {
       resumePlayback: DEFAULT_SETTINGS.startup.resumePlayback

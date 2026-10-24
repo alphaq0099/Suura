@@ -90,8 +90,8 @@ export function TrashIcon({ size = 16 }: IconProps) {
 export function CogIcon({ size = 16 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
-      <circle cx="12" cy="12" r="3.2" />
-      <path d="M12 3.5v2.2M12 18.3v2.2M4.9 7.8l1.9 1.1M17.2 15.1l1.9 1.1M4.9 16.2l1.9-1.1M17.2 8.9l1.9-1.1" />
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.1 2.1-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-3v-.2a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1-2.1-2.1.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H4.3v-3h.2a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1 2.1-2.1.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6v-.2h3v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1 2.1 2.1-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v3h-.2a1.7 1.7 0 0 0-1.6 1Z" />
     </svg>
   )
 }
@@ -231,8 +231,7 @@ export function QueueIcon({ size = 16 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
       <path d="M4 7h11M4 12h11M4 17h7" />
-      <path d="M18.5 11v6.2" />
-      <circle cx="17" cy="18" r="1.9" />
+      <path d="m15.5 14 4 2.8-4 2.8z" fill="currentColor" />
     </svg>
   )
 }
@@ -249,8 +248,9 @@ export function CloseIcon({ size = 14 }: IconProps) {
 export function PlaylistIcon({ size = 16 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
-      <path d="M9 6h11M9 12h11M9 18h11" />
-      <path d="M4 6h.01M4 12h.01M4 18h.01" />
+      <path d="M4 7h9M4 12h9M4 17h7" />
+      <path d="M17.5 6v8.1" />
+      <circle cx="15.8" cy="16" r="1.9" />
     </svg>
   )
 }
@@ -363,37 +363,36 @@ export function YouTubeIcon({ size = 18 }: IconProps) {
   )
 }
 
-/** Lines plus a note: Playlists in the Modern sidebar set. */
+/** A card with a music note: Playlists in the Modern sidebar set. */
 export function ListMusicIcon({ size = 18 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
-      <path d="M4 6h9M4 12h7M4 18h7" />
-      <path d="M18 6v9.2" />
-      <path d="m18 6 3 .8" />
-      <circle cx="16.2" cy="17" r="2.3" />
+      <rect x="3.5" y="4" width="17" height="16" rx="2" />
+      <path d="M9.5 16V7.8l6-1.2v8.2" />
+      <circle cx="7.7" cy="16.2" r="1.8" />
+      <circle cx="13.7" cy="14.8" r="1.8" />
     </svg>
   )
 }
 
-/** Lines plus a play mark: Queue in the Modern sidebar set. */
+/** A playing row above the rest: Queue in the Modern sidebar set. */
 export function QueueModernIcon({ size = 18 }: IconProps) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M4 7h10M4 12h10M4 17h6" {...STROKE} />
-      <path d="m16 9.8 5 2.7-5 2.7z" fill="currentColor" />
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <rect x="3.5" y="4.5" width="17" height="6" rx="1.5" />
+      <path d="m7 6 2.6 1.5L7 9z" fill="currentColor" />
+      <path d="M3.5 14.5h17M3.5 18h11" />
     </svg>
   )
 }
 
-/** Three sliders: Settings in the Modern sidebar set. */
+/** Horizontal sliders: Settings in the Modern sidebar set. */
 export function SlidersIcon({ size = 18 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
-      <path d="M4 7h4M12 7h8" />
-      <circle cx="10" cy="7" r="2" />
-      <path d="M4 12h10M18 12h2" />
-      <circle cx="16" cy="12" r="2" />
-      <path d="M4 17h2M10 17h10" />
+      <path d="M4 7h16M4 12h16M4 17h16" />
+      <circle cx="9" cy="7" r="2" />
+      <circle cx="15" cy="12" r="2" />
       <circle cx="8" cy="17" r="2" />
     </svg>
   )

@@ -24,11 +24,73 @@ export interface LoggerOptions {
   maxBytes?: number
 }
 
-function serialize(details: unknown): string {
+/** Enough nesting to reach `fetch` -> cause -> AggregateError, but never a runaway. */
+const MAX_DETAIL_DEPTH = 5
+const MAX_DETAIL_ITEMS = 20
+
+/**
+ * Turns a value into something `JSON.stringify` can show without losing errors.
+ *
+ * An `Error`'s `name`, `message`, `stack` and `cause` are not enumerable, so a
+ * plain `JSON.stringify({ error })` prints `{"error":{}}`. That is exactly how a
+ * `fetch` failure used to reach the log, hiding whether the socket was reset, the
+ * name lookup failed or the request timed out. Expanding errors by hand keeps the
+ * useful half of a failure visible.
+ */
+function expandDetails(value: unknown, seen: WeakSet<object>, depth: number): unknown {
+  if (value === null || value === undefined) return value
+  if (typeof value === 'bigint') return `${value.toString()}n`
+  if (typeof value !== 'object') return value
+  if (depth >= MAX_DETAIL_DEPTH) return '[depth limit]'
+
+  if (value instanceof Error) {
+    if (seen.has(value)) return '[circular]'
+    seen.add(value)
+
+    const shape: Record<string, unknown> = { name: value.name, message: value.message }
+    for (const key of ['code', 'errno', 'syscall', 'hostname', 'address', 'port'] as const) {
+      const extra = (value as unknown as Record<string, unknown>)[key]
+      if (extra !== undefined) shape[key] = expandDetails(extra, seen, depth + 1)
+    }
+    const cause = (value as { cause?: unknown }).cause
+    if (cause !== undefined) shape.cause = expandDetails(cause, seen, depth + 1)
+    // `AggregateError` (the shape a failed DNS lookup takes) keeps these aside.
+    const nested = (value as { errors?: unknown }).errors
+    if (Array.isArray(nested)) {
+      shape.errors = nested.slice(0, MAX_DETAIL_ITEMS).map((item) => expandDetails(item, seen, depth + 1))
+    }
+    if (value.stack) shape.stack = value.stack
+    return shape
+  }
+
+  if (Array.isArray(value)) {
+    if (seen.has(value)) return '[circular]'
+    seen.add(value)
+    const items = value.slice(0, MAX_DETAIL_ITEMS).map((item) => expandDetails(item, seen, depth + 1))
+    if (value.length > MAX_DETAIL_ITEMS) items.push(`… ${value.length - MAX_DETAIL_ITEMS} more`)
+    return items
+  }
+
+  if (seen.has(value)) return '[circular]'
+  seen.add(value)
+  const shape: Record<string, unknown> = {}
+  let count = 0
+  for (const [key, item] of Object.entries(value)) {
+    if (count >= MAX_DETAIL_ITEMS) {
+      shape['…'] = 'more keys omitted'
+      break
+    }
+    shape[key] = expandDetails(item, seen, depth + 1)
+    count += 1
+  }
+  return shape
+}
+
+/** The text a log line appends for its details. Exported so tests can pin it. */
+export function serializeDetails(details: unknown): string {
   if (details === undefined) return ''
-  if (details instanceof Error) return ` ${details.name}: ${details.message}${details.stack ? `\n${details.stack}` : ''}`
   try {
-    return ` ${JSON.stringify(details)}`
+    return ` ${JSON.stringify(expandDetails(details, new WeakSet<object>(), 0))}`
   } catch {
     return ' [unserializable details]'
   }
@@ -60,7 +122,7 @@ class FileLogger implements Logger {
 
   private write(level: LogLevel, message: string, details?: unknown): void {
     if (LEVEL_ORDER[level] < this.minLevel) return
-    const line = `${new Date().toISOString()} ${level.toUpperCase().padEnd(5)} [${this.scope}] ${message}${serialize(details)}`
+    const line = `${new Date().toISOString()} ${level.toUpperCase().padEnd(5)} [${this.scope}] ${message}${serializeDetails(details)}`
     if (this.toConsole) {
       const sink = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log
       sink(line)

@@ -261,12 +261,17 @@ export function createOnlineService(deps: {
       // with the same message the player already knows how to show.
       const link = await deps.resolver.resolveLink(input)
       const metadata = cleanYouTubeMetadata(link.track.title, link.track.artist)
+      // The resolver's artist already falls back to the channel. Keep the
+      // channel separately so a real artist (when YouTube supplies one) can sit
+      // beside it in YouTube Links rather than replacing it.
+      const channel = link.track.channel ?? metadata.artist
 
       const entry = deps.repo.upsert(
         {
           videoId: link.track.sourceId,
           title: metadata.title,
-          artist: metadata.artist,
+          artist: metadata.artist ?? channel,
+          channel,
           // Album fields arrive with playlist/album import (M5). A single watch
           // link carries no album, and inventing one would be worse than null.
           album: null,

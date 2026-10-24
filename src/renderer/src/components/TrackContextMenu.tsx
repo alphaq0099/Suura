@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AddTracksOutcome, Playlist, Track } from '@shared/types'
-import { PlayIcon, InfoIcon, PlaylistIcon, RevealIcon } from './Icons'
+import { CheckIcon, PlayIcon, InfoIcon, PlaylistIcon, QueueIcon, RevealIcon } from './Icons'
 import { AddToPlaylistMenu } from './AddToPlaylistMenu'
 
 export interface TrackContextMenuProps {
@@ -13,11 +13,19 @@ export interface TrackContextMenuProps {
   onPlay: () => void
   onDetails: () => void
   onReveal: () => void
+  isSelected: boolean
+  onToggleSelection: () => void
+  onPlaySelected: () => void
+  onQueueSelected: () => void
+  /** Rows "Add to playlist" acts on: the selection if this row is selected. */
+  trackIds: number[]
+  addHeading?: string
   onClose: () => void
 }
 
 const WIDTH = 240
-const HEIGHT = 200
+const BASE_HEIGHT = 236
+const SELECTED_ACTION_HEIGHT = 72
 
 /**
  * The right-click menu on a library row.
@@ -28,7 +36,23 @@ const HEIGHT = 200
  * grow stale.
  */
 export function TrackContextMenu(props: TrackContextMenuProps) {
-  const { track, at, playlists, onAddTracks, onCreatePlaylist, onPlay, onDetails, onReveal, onClose } = props
+  const {
+    track,
+    at,
+    playlists,
+    onAddTracks,
+    onCreatePlaylist,
+    onPlay,
+    onDetails,
+    onReveal,
+    isSelected,
+    onToggleSelection,
+    onPlaySelected,
+    onQueueSelected,
+    trackIds,
+    addHeading,
+    onClose
+  } = props
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [page, setPage] = useState<'root' | 'playlists'>('root')
 
@@ -53,9 +77,10 @@ export function TrackContextMenu(props: TrackContextMenuProps) {
   }, [onClose])
 
   // Clamped so a right-click near the right or bottom edge stays on screen.
+  const height = BASE_HEIGHT + (isSelected ? SELECTED_ACTION_HEIGHT : 0)
   const style = {
     left: Math.max(8, Math.min(at.x, window.innerWidth - WIDTH - 8)),
-    top: Math.max(8, Math.min(at.y, window.innerHeight - HEIGHT - 8))
+    top: Math.max(8, Math.min(at.y, window.innerHeight - height - 8))
   }
 
   return (
@@ -76,6 +101,46 @@ export function TrackContextMenu(props: TrackContextMenuProps) {
           >
             <PlayIcon size={14} />
             <span>Play</span>
+          </button>
+          {isSelected ? (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                className="context-item"
+                onClick={() => {
+                  onPlaySelected()
+                  onClose()
+                }}
+              >
+                <PlayIcon size={14} />
+                <span>Play selected</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="context-item"
+                onClick={() => {
+                  onQueueSelected()
+                  onClose()
+                }}
+              >
+                <QueueIcon size={14} />
+                <span>Queue selected</span>
+              </button>
+            </>
+          ) : null}
+          <button
+            type="button"
+            role="menuitem"
+            className="context-item"
+            onClick={() => {
+              onToggleSelection()
+              onClose()
+            }}
+          >
+            <CheckIcon size={14} />
+            <span>{isSelected ? 'Deselect' : 'Select'}</span>
           </button>
           <button type="button" role="menuitem" className="context-item" onClick={() => setPage('playlists')}>
             <PlaylistIcon size={14} />
@@ -109,11 +174,11 @@ export function TrackContextMenu(props: TrackContextMenuProps) {
       ) : (
         <AddToPlaylistMenu
           playlists={playlists}
-          trackIds={[track.id]}
+          trackIds={trackIds}
           onAdd={onAddTracks}
           onCreate={onCreatePlaylist}
           onClose={onClose}
-          heading="Add to playlist"
+          heading={addHeading ?? 'Add to playlist'}
         />
       )}
     </div>

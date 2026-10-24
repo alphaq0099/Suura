@@ -299,7 +299,14 @@ export interface OnlineTrack {
   id: number
   videoId: string
   title: string
+  /** The track artist when YouTube exposes one, otherwise the channel. */
   artist: string | null
+  /**
+   * The uploader/channel, kept separately from `artist` so a YouTube row can
+   * show both when the extractor supplies a real artist. Older rows backfill
+   * this from `artist`, which is why both fields can still hold the same name.
+   */
+  channel: string | null
   album: string | null
   durationMs: number | null
   /**
@@ -552,8 +559,17 @@ export interface VisualSettings {
   textSize: TextSize
   /** Sidebar glyph family. */
   iconSet: IconSet
-  /** Keep the Album column in track lists. */
+  /** Keep the Album column in local track lists. Imported playlists always keep it. */
   showAlbumColumn: boolean
+  /**
+   * Keep the Channel column in imported YouTube playlists.
+   *
+   * YouTube Links always show the channel, because that is the row's only
+   * reliable second identity; the column can still be hidden on an imported
+   * playlist, where Album carries the list's own context. Local rows keep the
+   * Artist column whatever this says.
+   */
+  showChannelColumn: boolean
   /** Whether the full-window player draws the large cover. */
   playerArtwork: boolean
   /** Whether cover art tints the player bar and the full-window background. */

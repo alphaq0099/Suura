@@ -62,7 +62,11 @@ export function splitCommandLine(input: string): string[] {
   return args
 }
 
-const START_TIMEOUT_MS = 15_000
+// The bgutil provider pulls in jsdom before it binds its port; a cold start on
+// this machine takes 11-12 seconds, and a resolve or update running beside it
+// can push that past 15. The wait runs in the background, so a longer deadline
+// costs nothing except a later "provider ready" message.
+const START_TIMEOUT_MS = 45_000
 const PING_TIMEOUT_MS = 2_000
 const STOP_WAIT_MS = 2_000
 const MAX_LOG_TAIL = 4_000
@@ -249,7 +253,10 @@ export class PoTokenProvider {
       await delay(250)
     }
 
-    this.lastError = `The PO Token provider did not answer at ${providerUrl} within 15 seconds.`
+    const tail = this.stderrTail.trim()
+    this.lastError = `The PO Token provider did not answer at ${providerUrl} within ${Math.round(
+      START_TIMEOUT_MS / 1000
+    )} seconds.${tail ? ` Output: ${tail.slice(-1000)}` : ''}`
     this.dispose()
     throw new Error(this.lastError)
   }

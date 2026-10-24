@@ -29,6 +29,8 @@ export interface PlayerBarProps {
   /** Percent per wheel notch. Shift still uses one percent. */
   volumeWheelStep: number
   error: string | null
+  /** True while an interrupted stream is being retried. */
+  reconnecting: boolean
   queueIndex: number
   queueLength: number
   repeat: RepeatMode
@@ -54,6 +56,7 @@ export function PlayerBar(props: PlayerBarProps) {
     volume,
     volumeWheelStep,
     error,
+    reconnecting,
     queueIndex,
     queueLength,
     repeat,
@@ -125,7 +128,11 @@ export function PlayerBar(props: PlayerBarProps) {
             {current ? [current.artist ?? 'Unknown artist', current.album].filter(Boolean).join(' · ') : 'Pick a track from your library'}
             {hasQueue ? `  (${queueIndex + 1}/${queueLength})` : ''}
           </div>
-          {error ? <div className="player-error">{error}</div> : null}
+          {reconnecting ? (
+            <div className="player-error reconnecting">Reconnecting…</div>
+          ) : error ? (
+            <div className="player-error">{error}</div>
+          ) : null}
         </div>
       </button>
 

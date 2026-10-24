@@ -13,13 +13,16 @@ import type {
 } from '@shared/types'
 import { formatBytes, formatCount, formatTimestamp } from '@shared/format'
 import { LIBRARY_FILTER_OPTIONS, RECENTLY_ADDED_DAYS } from '@shared/library'
+import { api } from '../api'
 import type { UseDownloadsResult } from '../hooks/useDownloads'
 import { AddToPlaylistMenu } from './AddToPlaylistMenu'
+import { FieldContextMenu, useFieldContextMenu } from './FieldContextMenu'
 import { RowMenu } from './RowMenu'
 import { TrackContextMenu } from './TrackContextMenu'
 import { TrackDetails } from './TrackDetails'
-import { TrackList, describeClickAction } from './TrackList'
+import { TrackList } from './TrackList'
 import {
+  CheckIcon,
   CloseIcon,
   FolderIcon,
   InfoIcon,
@@ -68,6 +71,7 @@ export interface LibraryViewProps {
   onPlaySelected: () => void
   onReveal: (trackId: number) => void
   onSelect: (trackId: number, mode: 'replace' | 'toggle') => void
+  onSelectMany: (trackIds: number[]) => void
   onSelectAll: () => void
   onClearSelection: () => void
   onRequestMore: () => void
@@ -78,6 +82,8 @@ export interface LibraryViewProps {
   onRemoveTracks: (trackIds: number[]) => Promise<number>
   onRemoveStream: (track: Track) => void
   downloads: UseDownloadsResult
+  /** Whether local lists keep their Album column. */
+  showAlbumColumn: boolean
   /** What a click on a row does. See `LibraryClickAction`. */
   singleClick: LibraryClickAction
   doubleClick: LibraryClickAction
@@ -125,6 +131,7 @@ export function LibraryView(props: LibraryViewProps) {
     onPlaySelected,
     onReveal,
     onSelect,
+    onSelectMany,
     onSelectAll,
     onClearSelection,
     onRequestMore,
@@ -135,6 +142,7 @@ export function LibraryView(props: LibraryViewProps) {
     onRemoveTracks,
     onRemoveStream,
     downloads,
+    showAlbumColumn,
     singleClick,
     doubleClick,
     playlists,
@@ -148,8 +156,34 @@ export function LibraryView(props: LibraryViewProps) {
   const [detailsTrack, setDetailsTrack] = useState<Track | null>(null)
   const [bulkBusy, setBulkBusy] = useState(false)
   const [bulkError, setBulkError] = useState<string | null>(null)
+  const fieldMenu = useFieldContextMenu(searchInputRef)
 
   const { saved, states, save: saveToLibrary, refreshSaved } = downloads
+
+  const pasteSearch = useCallback(async (): Promise<void> => {
+    try {
+      const text = (await api.readClipboardText()).trim()
+      if (text.length > 0) onSearchChange(text)
+    } catch {
+      // The clipboard is best-effort; a denied read should not interrupt search.
+    } finally {
+      searchInputRef.current?.focus()
+    }
+  }, [onSearchChange, searchInputRef])
+
+  const copySearch = useCallback(async (): Promise<void> => {
+    try {
+      await api.writeClipboardText(search)
+    } catch {
+      // As above: Copy failing is not worth a page-level error banner.
+    }
+    searchInputRef.current?.focus()
+  }, [search, searchInputRef])
+
+  const clearSearchField = useCallback((): void => {
+    onSearchChange('')
+    searchInputRef.current?.focus()
+  }, [onSearchChange, searchInputRef])
 
   // Switching views changes what every row means; a menu opened on the old list
   // would otherwise stay floating over the new one.
@@ -256,7 +290,7 @@ export function LibraryView(props: LibraryViewProps) {
           <p className="subtitle">{subtitle}</p>
         </div>
         <div className="header-actions">
-          <div className="search-field">
+          <div className="search-field" onContextMenu={fieldMenu.open}>
             <SearchIcon />
             <input
               ref={searchInputRef}
@@ -265,6 +299,7 @@ export function LibraryView(props: LibraryViewProps) {
               placeholder={showingStreams ? 'Search YouTube links…' : 'Search title, artist, album…'}
               value={search}
               onChange={(event) => onSearchChange(event.target.value)}
+              onKeyDown={fieldMenu.onKeyDown}
               aria-label={showingStreams ? 'Search YouTube links' : 'Search library'}
             />
             {searching ? (
@@ -379,12 +414,7 @@ export function LibraryView(props: LibraryViewProps) {
               <span>Remove from library</span>
             </button>
           ) : null}
-          {selectedIds.size < tracks.length ? (
-            <button type="button" onClick={onSelectAll}>
-              <span>Select all loaded ({formatCount(tracks.length)})</span>
-            </button>
-          ) : null}
-          <button type="button" className="link-button" onClick={onClearSelection}>
+          <button type="button" className="selection-clear" onClick={onClearSelection}>
             Clear
           </button>
         </div>
@@ -436,6 +466,7 @@ export function LibraryView(props: LibraryViewProps) {
             onToggleSort={() => undefined}
             onActivate={onPlay}
             onSelect={onSelect}
+            onSelectMany={onSelectMany}
             onSelectAll={onSelectAll}
             onClearSelection={onClearSelection}
             onReveal={onReveal}
@@ -444,6 +475,8 @@ export function LibraryView(props: LibraryViewProps) {
             saveState={(track) => (track.sourceId ? states[track.sourceId] : undefined)}
             onQueue={onQueueStream}
             onRowContextMenu={(track, _index, at) => setStreamMenu({ track, ...at })}
+            artistLabel="Channel"
+            showAlbumColumn={false}
             singleClick={singleClick}
             doubleClick={doubleClick}
           />
@@ -492,10 +525,12 @@ export function LibraryView(props: LibraryViewProps) {
           onToggleSort={onToggleSort}
           onActivate={onPlay}
           onSelect={onSelect}
+          onSelectMany={onSelectMany}
           onSelectAll={onSelectAll}
           onClearSelection={onClearSelection}
           onReveal={onReveal}
           onRequestMore={onRequestMore}
+          showAlbumColumn={showAlbumColumn}
           singleClick={singleClick}
           doubleClick={doubleClick}
           onRowContextMenu={(track, _index, at) => {
@@ -507,17 +542,15 @@ export function LibraryView(props: LibraryViewProps) {
         />
       )}
 
-      {tracks.length > 0 ? (
-        <p className="table-footnote">
-          Showing {formatCount(tracks.length)} of {formatCount(total)} {searching ? 'matching' : ''}{' '}
-          {showingStreams ? 'YouTube links' : 'tracks'}. Click: {describeClickAction(singleClick)}, double-click:{' '}
-          {describeClickAction(doubleClick)}.{' '}
-          {showingStreams
-            ? 'Saving downloads a copy into your music folder; the row menu can forget the link.'
-            : sort
-              ? 'Sorting is applied to the whole library.'
-              : ''}
-        </p>
+      {fieldMenu.at ? (
+        <FieldContextMenu
+          at={fieldMenu.at}
+          hasValue={search.length > 0}
+          onPaste={() => void pasteSearch()}
+          onCopy={() => void copySearch()}
+          onClear={clearSearchField}
+          onClose={fieldMenu.close}
+        />
       ) : null}
 
       {addMenu ? (
@@ -547,6 +580,18 @@ export function LibraryView(props: LibraryViewProps) {
           }}
           onDetails={() => setDetailsTrack(contextMenu.track)}
           onReveal={() => onReveal(contextMenu.track.id)}
+          isSelected={selectedIds.has(contextMenu.track.id)}
+          onToggleSelection={() => onSelect(contextMenu.track.id, 'toggle')}
+          onPlaySelected={onPlaySelected}
+          onQueueSelected={onQueueSelected}
+          trackIds={
+            selectedIds.has(contextMenu.track.id) ? [...selectedIds] : [contextMenu.track.id]
+          }
+          addHeading={
+            selectedIds.has(contextMenu.track.id) && selectedIds.size > 1
+              ? `${formatCount(selectedIds.size)} selected`
+              : 'Add to playlist'
+          }
           onClose={() => setContextMenu(null)}
         />
       ) : null}
@@ -556,6 +601,28 @@ export function LibraryView(props: LibraryViewProps) {
           at={{ x: streamMenu.x, y: streamMenu.y }}
           title={streamMenu.track.title}
           items={[
+            {
+              id: 'select',
+              label: selectedIds.has(streamMenu.track.id) ? 'Deselect' : 'Select',
+              icon: <CheckIcon />,
+              onSelect: () => onSelect(streamMenu.track.id, 'toggle')
+            },
+            ...(selectedIds.has(streamMenu.track.id)
+              ? [
+                  {
+                    id: 'play-selected',
+                    label: 'Play selected',
+                    icon: <PlayIcon />,
+                    onSelect: onPlaySelected
+                  },
+                  {
+                    id: 'queue-selected',
+                    label: 'Queue selected',
+                    icon: <QueueIcon />,
+                    onSelect: onQueueSelected
+                  }
+                ]
+              : []),
             {
               id: 'details',
               label: 'Details',

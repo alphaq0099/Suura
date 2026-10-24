@@ -18,6 +18,7 @@ export interface YouTubeTrackDraft {
   sourceId: string
   title: string
   artist: string | null
+  channel: string | null
   durationMs: number | null
   codec: string | null
   bitrateKbps: number | null
@@ -170,6 +171,7 @@ function draftOf(info: YtMediaInfo): YouTubeTrackDraft {
     sourceId: info.videoId,
     title: info.title,
     artist: info.artist,
+    channel: info.channel,
     durationMs: info.durationSec === null ? null : Math.round(info.durationSec * 1000),
     codec: info.codec,
     bitrateKbps: info.bitrateKbps,

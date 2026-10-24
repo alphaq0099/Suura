@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
 
 export interface RowMenuItem {
@@ -24,6 +25,12 @@ export interface RowMenuProps {
   onClose: () => void
   /** Wider menus suit long playlist names; the default matches the track menu. */
   width?: number
+  /**
+   * Render into `document.body`. Menus opened from a transformed or filtered
+   * ancestor (the now-playing panel) would otherwise be positioned against that
+   * ancestor and clipped by it.
+   */
+  portal?: boolean
 }
 
 /**
@@ -33,7 +40,7 @@ export interface RowMenuProps {
  * the playlist tracks use it for Details/Remove. The interaction is the same as
  * the library's context menu, including Escape and click-outside to close.
  */
-export function RowMenu({ at, title, items, onClose, width = 220 }: RowMenuProps) {
+export function RowMenu({ at, title, items, onClose, width = 220, portal = false }: RowMenuProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [confirming, setConfirming] = useState<string | null>(null)
 
@@ -69,7 +76,7 @@ export function RowMenu({ at, title, items, onClose, width = 220 }: RowMenuProps
     width
   }
 
-  return (
+  const content = (
     <div
       ref={containerRef}
       className="context-menu row-menu"
@@ -108,4 +115,6 @@ export function RowMenu({ at, title, items, onClose, width = 220 }: RowMenuProps
       })}
     </div>
   )
+
+  return portal ? createPortal(content, document.body) : content
 }

@@ -16,6 +16,7 @@ interface OnlineRow {
   video_id: string
   title: string
   artist: string | null
+  channel: string | null
   album: string | null
   duration_ms: number | null
   source_url: string
@@ -29,13 +30,14 @@ export interface OnlineInput {
   videoId: string
   title: string
   artist: string | null
+  channel: string | null
   album: string | null
   durationMs: number | null
   sourceUrl: string
   artworkKey: string | null
 }
 
-const COLUMNS = `id, video_id, title, artist, album, duration_ms, source_url, artwork_key, added_at, last_played_at`
+const COLUMNS = `id, video_id, title, artist, channel, album, duration_ms, source_url, artwork_key, added_at, last_played_at`
 
 function mapRow(row: OnlineRow): OnlineTrack {
   return {
@@ -43,6 +45,7 @@ function mapRow(row: OnlineRow): OnlineTrack {
     videoId: row.video_id,
     title: row.title,
     artist: row.artist,
+    channel: row.channel,
     album: row.album,
     durationMs: row.duration_ms,
     sourceUrl: row.source_url,
@@ -102,11 +105,12 @@ export class OnlineRepository {
       this.db
         .prepare(
           `INSERT INTO online_tracks
-             (video_id, title, artist, album, duration_ms, source_url, artwork_key, added_at, last_played_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+             (video_id, title, artist, channel, album, duration_ms, source_url, artwork_key, added_at, last_played_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
            ON CONFLICT(video_id) DO UPDATE SET
              title       = excluded.title,
              artist      = excluded.artist,
+             channel     = excluded.channel,
              album       = excluded.album,
              duration_ms = excluded.duration_ms,
              source_url  = excluded.source_url,
@@ -117,6 +121,7 @@ export class OnlineRepository {
           input.videoId,
           input.title,
           input.artist,
+          input.channel,
           input.album,
           input.durationMs,
           input.sourceUrl,

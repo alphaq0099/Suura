@@ -25,7 +25,7 @@ import {
 } from '@shared/appearance'
 import { DEFAULT_PREFERENCE_PATCH } from '@shared/settings-defaults'
 import { isLocalLibraryFilter, recentlyAddedCutoff } from '@shared/library'
-import { silentLogger } from '@core/logging/logger'
+import { serializeDetails, silentLogger } from '@core/logging/logger'
 import { resolveAppPaths, ensureAppDirectories } from '@core/paths'
 import { DEFAULT_SETTINGS, mergeSettings, SettingsService } from '@core/settings/settings-service'
 import { DatabaseSchemaTooNewError, latestVersion, openLibraryDatabase } from '@core/db/database'
@@ -83,7 +83,8 @@ import {
   buildSearchArgs,
   parseChannel,
   parsePlaylist,
-  parseSearchResults
+  parseSearchResults,
+  withNetworkTransport
 } from '@engine/sidecar/yt-dlp'
 import { RemoteStreamProxy, type UpstreamMedia } from '@engine/stream-proxy'
 import { ResolverRegistry } from '@engine/resolver'
@@ -91,6 +92,11 @@ import { YouTubeResolver } from '@engine/youtube-resolver'
 import { PLAYLIST_INDEX_MAX, PLAYLIST_INDEX_MIN, clampPlaylistIndexWidth } from '@shared/playlists'
 import { parseMediaUrl } from '@shared/media-url'
 import { buildStreamUrl, parseStreamUrl } from '@shared/stream-url'
+import {
+  PLAYBACK_RECOVERY_DELAYS_MS,
+  recoveryDelayMs,
+  shouldRecoverPlayback
+} from '@shared/playback-recovery'
 import {
   DEFAULT_PO_TOKEN_PROVIDER_URL,
   cleanYouTubeMetadata,
@@ -1994,6 +2000,10 @@ async function main(): Promise<void> {
 
     const args = buildInfoArgs('dQw4w9WgXcQ', 'best')
     checkEqual('youtube: the user config is always ignored', args.slice(0, 2).join(' '), '--ignore-config --no-playlist')
+    check('youtube: the extra format probe is skipped on a resolve', args.includes('--no-check-formats'))
+    const networkArgs = withNetworkTransport(args)
+    checkEqual('youtube: every network command forces IPv4', networkArgs[0], '--force-ipv4')
+    checkEqual('youtube: forcing IPv4 keeps the resolve arguments', networkArgs.slice(1).join(' '), args.join(' '))
     check('youtube: the format is audio-only with a muxed fallback', args.includes('bestaudio/best'))
     const botCheckMessage = describeYouTubeFailure('ERROR: Sign in to confirm you are not a bot').toLowerCase()
     check(
@@ -2014,7 +2024,7 @@ async function main(): Promise<void> {
       'youtube: a bot check is never retryable',
       !isRetryableYouTubeFailure('ERROR: Sign in to confirm you are not a bot')
     )
-    check('youtube: a 25-second timeout is not doubled by a retry', !isRetryableYouTubeFailure('timeout'))
+    check('youtube: a resolve deadline is not doubled by a retry', !isRetryableYouTubeFailure('timeout'))
     checkEqual(
       'youtube: cookies are passed only when a browser is chosen',
       withBrowserCookies(['--ignore-config'], 'chrome').slice(0, 3).join(' '),
@@ -2352,6 +2362,30 @@ async function main(): Promise<void> {
         (schedulerStarts[2] ?? 0) - (schedulerStarts[1] ?? 0) >= 20
     )
 
+    const nestedError = Object.assign(new TypeError('fetch failed'), {
+      cause: Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' })
+    })
+    const nestedText = serializeDetails({ error: nestedError })
+    check(
+      'logging: a nested error keeps its message, cause and code',
+      nestedText.includes('fetch failed') &&
+        nestedText.includes('socket hang up') &&
+        nestedText.includes('ECONNRESET')
+    )
+    const circular: Record<string, unknown> = { error: new Error('circular boom') }
+    circular.self = circular
+    check('logging: circular details are serialized safely', serializeDetails(circular).includes('circular boom'))
+    checkEqual('logging: no details adds no suffix', serializeDetails(undefined), '')
+
+    checkEqual('recovery: the first retry is quick', recoveryDelayMs(0), PLAYBACK_RECOVERY_DELAYS_MS[0])
+    checkEqual('recovery: the retry delay grows', recoveryDelayMs(4), 8_000)
+    checkEqual('recovery: the budget is finite', recoveryDelayMs(PLAYBACK_RECOVERY_DELAYS_MS.length), null)
+    check('recovery: a network error in a stream is retryable', shouldRecoverPlayback(2, 'youtube', true))
+    check('recovery: an unsupported stream source is retryable', shouldRecoverPlayback(4, 'youtube', true))
+    check('recovery: a local-file error is not retried', !shouldRecoverPlayback(2, 'local', true))
+    check('recovery: a paused listener is left alone', !shouldRecoverPlayback(2, 'youtube', false))
+    check('recovery: a decode error is not retried', !shouldRecoverPlayback(3, 'youtube', true))
+
     const tokenId = '00000000-0000-4000-8000-000000000000'
     checkEqual('stream: the URL round-trips', parseStreamUrl(buildStreamUrl(tokenId))?.token, tokenId)
     check('stream: a foreign scheme is rejected', parseStreamUrl(`player-media://stream/${tokenId}`) === null)
@@ -2361,7 +2395,40 @@ async function main(): Promise<void> {
 
     let lastUserAgent = ''
     let lastUpstreamHeader = ''
+    let flakyHits = 0
+    let downHits = 0
+    let recoverHits = 0
+    let blipHits = 0
     const server = createServer((request, response) => {
+      // Dropping the socket is the closest a local server gets to the outage in
+      // the report: `fetch` rejects at the transport level, not with a status.
+      if (request.url === '/flaky') {
+        flakyHits += 1
+        if (flakyHits <= 2) {
+          request.destroy()
+          return
+        }
+      }
+      if (request.url === '/blip') {
+        blipHits += 1
+        if (blipHits === 1) {
+          request.destroy()
+          return
+        }
+      }
+      if (request.url === '/down') {
+        downHits += 1
+        request.destroy()
+        return
+      }
+      if (request.url === '/down-recover') {
+        recoverHits += 1
+        if (recoverHits <= 2) {
+          request.destroy()
+          return
+        }
+      }
+
       if (request.url === '/expired' || request.url === '/forbidden') {
         response.writeHead(403, { 'content-type': 'text/plain' })
         response.end('expired')
@@ -2442,11 +2509,146 @@ async function main(): Promise<void> {
         404
       )
 
+      // A transport failure is not a dead link. The proxy retries it, and only
+      // reports a failure once the small budget is spent.
+      const retrying = new RemoteStreamProxy(async () => upstream('/fresh'), silentLogger, {
+        attempts: 3,
+        retryDelayMs: 1,
+        sleep: async () => undefined,
+        random: () => 0.5
+      })
+      const retryToken = retrying.register('video-flaky', upstream('/flaky'))
+      const retriedResponse = await retrying.handle(retryToken, { range: null, method: 'GET' })
+      checkEqual('stream: a dropped connection is retried', retriedResponse.status, 200)
+      checkEqual('stream: the retry reaches the server again', flakyHits, 3)
+      await retriedResponse.body?.cancel()
+
+      let proxyNow = 1_000_000
+      const down = new RemoteStreamProxy(async () => null, silentLogger, {
+        attempts: 1,
+        retryDelayMs: 1_000,
+        sleep: async () => undefined,
+        now: () => proxyNow,
+        random: () => 0.5
+      })
+      const downToken = down.register('video-down', upstream('/down'))
+      const firstDown = await down.handle(downToken, { range: null, method: 'GET' })
+      checkEqual('stream: a transport failure answers 503', firstDown.status, 503)
+      checkEqual('stream: a transport failure asks for a short wait', firstDown.headers.get('retry-after'), '1')
+
+      const secondDown = await down.handle(downToken, { range: null, method: 'GET' })
+      checkEqual('stream: a request inside the cooldown is refused', secondDown.status, 503)
+      checkEqual('stream: the cooldown makes no upstream request', downHits, 1)
+
+      proxyNow += 1_001
+      const thirdDown = await down.handle(downToken, { range: null, method: 'GET' })
+      checkEqual('stream: a request after the cooldown tries again', thirdDown.status, 503)
+      checkEqual('stream: the cooldown expires into a real attempt', downHits, 2)
+
+      // The reported case: one interruption, the network comes back, and the
+      // same URL is fine again. No re-resolve should be needed for a blip.
+      let blipNow = 100
+      const blip = new RemoteStreamProxy(async () => null, silentLogger, {
+        attempts: 1,
+        retryDelayMs: 10,
+        sleep: async () => undefined,
+        now: () => blipNow,
+        random: () => 0.5
+      })
+      const blipToken = blip.register('video-blip', upstream('/blip'))
+      checkEqual(
+        'stream: the interruption fails the first request',
+        (await blip.handle(blipToken, { range: null, method: 'GET' })).status,
+        503
+      )
+      blipNow += 11
+      const afterBlip = await blip.handle(blipToken, { range: null, method: 'GET' })
+      checkEqual('stream: the same URL works once the network returns', afterBlip.status, 200)
+      checkEqual('stream: a blip recovers without a re-resolve', blipHits, 2)
+      await afterBlip.body?.cancel()
+
+      // Chromium asks again within milliseconds after a failed response. Two
+      // simultaneous asks must share one upstream attempt, not race each other.
+      downHits = 0
+      const concurrent = new RemoteStreamProxy(async () => null, silentLogger, {
+        attempts: 1,
+        sleep: async () => undefined,
+        now: () => proxyNow + 60_000,
+        random: () => 0.5
+      })
+      const concurrentToken = concurrent.register('video-concurrent', upstream('/down'))
+      const [concurrentA, concurrentB] = await Promise.all([
+        concurrent.handle(concurrentToken, { range: null, method: 'GET' }),
+        concurrent.handle(concurrentToken, { range: null, method: 'GET' })
+      ])
+      check('stream: both simultaneous callers are told to wait', concurrentA.status === 503 && concurrentB.status === 503)
+      checkEqual('stream: simultaneous retries share one upstream request', downHits, 1)
+
+      // A second failed cycle is the signal that the outage is not momentary, so
+      // the proxy refreshes the signed URL before the listener has to act.
+      let recoveryNow = 500_000
+      let resolveCalls = 0
+      const recovering = new RemoteStreamProxy(
+        async () => {
+          resolveCalls += 1
+          return upstream('/fresh')
+        },
+        silentLogger,
+        {
+          attempts: 1,
+          retryDelayMs: 1,
+          sleep: async () => undefined,
+          now: () => recoveryNow,
+          refreshCooldownMs: 0,
+          random: () => 0.5
+        }
+      )
+      const recoveryToken = recovering.register('video-recover', upstream('/down-recover'))
+      checkEqual(
+        'stream: the first transport failure keeps the URL',
+        (await recovering.handle(recoveryToken, { range: null, method: 'GET' })).status,
+        503
+      )
+      checkEqual('stream: the first failure does not spend a resolve', resolveCalls, 0)
+      recoveryNow += 10
+      checkEqual(
+        'stream: the second transport failure still answers 503',
+        (await recovering.handle(recoveryToken, { range: null, method: 'GET' })).status,
+        503
+      )
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      checkEqual('stream: the second failure refreshes the URL', resolveCalls, 1)
+      recoveryNow += 10
+      const recovered = await recovering.handle(recoveryToken, { range: null, method: 'GET' })
+      checkEqual('stream: the refreshed URL recovers playback', recovered.status, 200)
+      checkEqual('stream: recovery does not ask the dead URL again', recoverHits, 2)
+      await recovered.body?.cancel()
+
+      let expiryNow = 1_000
+      let expiryRefreshes = 0
+      const expiring = new RemoteStreamProxy(
+        async () => {
+          expiryRefreshes += 1
+          return upstream('/fresh')
+        },
+        silentLogger,
+        { now: () => expiryNow, refreshCooldownMs: 0, sleep: async () => undefined }
+      )
+      const expiringToken = expiring.register('video-expired', {
+        ...upstream('/audio'),
+        expiresAt: expiryNow - 1
+      })
+      const expiredServed = await expiring.handle(expiringToken, { range: null, method: 'GET' })
+      checkEqual('stream: an expired URL is refreshed before it is used', expiryRefreshes, 1)
+      checkEqual('stream: the refreshed URL serves the request', expiredServed.status, 200)
+      await expiredServed.body?.cancel()
+
       const media: YtMediaInfo = {
         videoId: 'dQw4w9WgXcQ',
         webpageUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
         title: 'Smoke Test Video',
         artist: 'Smoke Tester',
+        channel: 'Smoke Channel',
         durationSec: 200,
         thumbnailUrl: null,
         formatId: '251',
@@ -2600,6 +2802,7 @@ async function main(): Promise<void> {
           videoId: 'aaaaaaaaaaa',
           title: 'First Song',
           artist: 'First Artist',
+          channel: 'First Channel',
           album: null,
           durationMs: 210_000,
           sourceUrl: youtubeWatchUrl('aaaaaaaaaaa'),
@@ -2609,6 +2812,11 @@ async function main(): Promise<void> {
       )
       checkEqual('online: a pasted link becomes a row', repo.list().length, 1)
       checkEqual('online: the row keeps the video id', first.videoId, 'aaaaaaaaaaa')
+      checkEqual(
+        'online: the artist and channel are stored separately',
+        `${first.artist} / ${first.channel}`,
+        'First Artist / First Channel'
+      )
       checkEqual(
         'online: the canonical watch URL is stored',
         first.sourceUrl,
@@ -2622,6 +2830,7 @@ async function main(): Promise<void> {
           videoId: 'bbbbbbbbbbb',
           title: 'Second Song',
           artist: null,
+          channel: null,
           album: null,
           durationMs: null,
           sourceUrl: youtubeWatchUrl('bbbbbbbbbbb'),
@@ -2636,6 +2845,7 @@ async function main(): Promise<void> {
           videoId: 'aaaaaaaaaaa',
           title: 'First Song (Remastered)',
           artist: 'First Artist',
+          channel: 'First Channel',
           album: null,
           durationMs: 215_000,
           sourceUrl: youtubeWatchUrl('aaaaaaaaaaa'),
@@ -2682,6 +2892,7 @@ async function main(): Promise<void> {
           videoId: 'ccccccccccc',
           title: 'Third Song',
           artist: null,
+          channel: null,
           album: null,
           durationMs: null,
           sourceUrl: youtubeWatchUrl('ccccccccccc'),
@@ -2694,6 +2905,7 @@ async function main(): Promise<void> {
           videoId: 'ddddddddddd',
           title: 'Fourth Song',
           artist: null,
+          channel: null,
           album: null,
           durationMs: null,
           sourceUrl: youtubeWatchUrl('ddddddddddd'),

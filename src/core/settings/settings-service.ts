@@ -145,7 +145,8 @@ export class SettingsService {
         iconSet: ICON_SETS.includes(storedVisuals.iconSet as IconSet)
           ? (storedVisuals.iconSet as IconSet)
           : DEFAULT_SETTINGS.visuals.iconSet,
-        showAlbumColumn: storedVisuals.showAlbumColumn !== false
+        showAlbumColumn: storedVisuals.showAlbumColumn !== false,
+        showChannelColumn: storedVisuals.showChannelColumn !== false
       }
     }
 

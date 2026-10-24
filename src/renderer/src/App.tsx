@@ -6,11 +6,18 @@ import type {
   DeepPartial,
   EngineStatus,
   PoTokenStatus,
+  RepeatMode,
   RuntimeInfo,
   Track,
   YouTubeSearchResult
 } from '@shared/types'
 import { onlineEntryToTrack, type PlayingList } from '@shared/online'
+import {
+  LIBRARY_QUEUE_SOURCE,
+  YOUTUBE_QUEUE_SOURCE,
+  tagQueueTracks,
+  type QueueTrack
+} from '@shared/queue'
 import { youtubeWatchUrl } from '@shared/youtube'
 import { api, messageOf } from './api'
 import { LibraryView } from './components/LibraryView'
@@ -20,7 +27,7 @@ import { PlayerBar } from './components/PlayerBar'
 import { PlaylistsView } from './components/PlaylistsView'
 import { QueueView } from './components/QueueView'
 import { SavesPanel } from './components/SavesPanel'
-import { SearchView } from './components/SearchView'
+import { SearchView, type SearchSelectionItem } from './components/SearchView'
 import { SettingsView } from './components/SettingsView'
 import { Sidebar, type ViewName } from './components/Sidebar'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
@@ -444,7 +451,8 @@ export function App() {
   const playTrack = useCallback(
     (index: number): void => {
       if (showingStreams) setPlayingList(null)
-      player.playQueue(visibleTracks, index)
+      const source = showingStreams ? YOUTUBE_QUEUE_SOURCE : LIBRARY_QUEUE_SOURCE
+      player.playQueue(tagQueueTracks(visibleTracks, source), index)
     },
     [player, showingStreams, visibleTracks]
   )
@@ -453,7 +461,8 @@ export function App() {
     const selected = visibleTracks.filter((track) => selectedIds.has(track.id))
     if (selected.length === 0) return
     if (showingStreams) setPlayingList(null)
-    player.playQueue(selected, 0)
+    const source = showingStreams ? YOUTUBE_QUEUE_SOURCE : LIBRARY_QUEUE_SOURCE
+    player.playQueue(tagQueueTracks(selected, source), 0)
   }, [player, selectedIds, showingStreams, visibleTracks])
 
   const selectAllVisible = useCallback((): void => {
@@ -466,16 +475,33 @@ export function App() {
 
   const queueStream = useCallback(
     (track: Track): void => {
-      player.enqueue([track])
+      player.enqueue(tagQueueTracks([track], YOUTUBE_QUEUE_SOURCE))
     },
     [player]
   )
 
-  const queueSelectedStreams = useCallback((): void => {
-    const selected = streamTracks.filter((track) => selectedIds.has(track.id))
+  const queueSelected = useCallback((): void => {
+    const selected = visibleTracks.filter((track) => selectedIds.has(track.id))
     if (selected.length === 0) return
-    player.enqueue(selected)
-  }, [player, selectedIds, streamTracks])
+    const source = showingStreams ? YOUTUBE_QUEUE_SOURCE : LIBRARY_QUEUE_SOURCE
+    player.enqueue(tagQueueTracks(selected, source))
+  }, [player, selectedIds, showingStreams, visibleTracks])
+
+  const playQueueTracks = useCallback(
+    (tracks: QueueTrack[]): void => {
+      if (tracks.length === 0) return
+      player.playQueue(tracks, 0)
+    },
+    [player]
+  )
+
+  const enqueueTracks = useCallback(
+    (tracks: QueueTrack[]): void => {
+      if (tracks.length === 0) return
+      player.enqueue(tracks)
+    },
+    [player]
+  )
 
   const removeStream = useCallback(
     async (track: Track): Promise<void> => {
@@ -503,7 +529,7 @@ export function App() {
     async (result: YouTubeSearchResult): Promise<void> => {
       const entry = await online.addLink(youtubeWatchUrl(result.videoId))
       setPlayingList(null)
-      player.playQueue([onlineEntryToTrack(entry)], 0)
+      player.playQueue(tagQueueTracks([onlineEntryToTrack(entry)], YOUTUBE_QUEUE_SOURCE), 0)
     },
     [online, player]
   )
@@ -511,7 +537,47 @@ export function App() {
   const queueYouTubeResult = useCallback(
     async (result: YouTubeSearchResult): Promise<void> => {
       const entry = await online.addLink(youtubeWatchUrl(result.videoId))
-      player.enqueue([onlineEntryToTrack(entry)])
+      player.enqueue(tagQueueTracks([onlineEntryToTrack(entry)], YOUTUBE_QUEUE_SOURCE))
+    },
+    [online, player]
+  )
+
+  /**
+   * Search can select local rows and YouTube rows in one list. Build the queue
+   * in row order, resolving each stream through the same add-link path as a
+   * single click, then hand the player one queue with both sources tagged.
+   */
+  const playSearchSelection = useCallback(
+    async (items: SearchSelectionItem[]): Promise<void> => {
+      const queue: QueueTrack[] = []
+      for (const item of items) {
+        if (item.kind === 'local') {
+          queue.push(...tagQueueTracks([item.track], LIBRARY_QUEUE_SOURCE))
+          continue
+        }
+        const entry = await online.addLink(youtubeWatchUrl(item.result.videoId))
+        queue.push(...tagQueueTracks([onlineEntryToTrack(entry)], YOUTUBE_QUEUE_SOURCE))
+      }
+      if (queue.length === 0) return
+      setPlayingList(null)
+      player.playQueue(queue, 0)
+    },
+    [online, player]
+  )
+
+  const queueSearchSelection = useCallback(
+    async (items: SearchSelectionItem[]): Promise<void> => {
+      const queue: QueueTrack[] = []
+      for (const item of items) {
+        if (item.kind === 'local') {
+          queue.push(...tagQueueTracks([item.track], LIBRARY_QUEUE_SOURCE))
+          continue
+        }
+        const entry = await online.addLink(youtubeWatchUrl(item.result.videoId))
+        queue.push(...tagQueueTracks([onlineEntryToTrack(entry)], YOUTUBE_QUEUE_SOURCE))
+      }
+      if (queue.length === 0) return
+      player.enqueue(queue)
     },
     [online, player]
   )
@@ -522,6 +588,13 @@ export function App() {
     const nextMode = current === 'off' ? 'all' : current === 'all' ? 'one' : 'off'
     void update({ repeat: nextMode })
   }, [settings?.repeat, update])
+
+  const setRepeat = useCallback(
+    (mode: RepeatMode): void => {
+      void update({ repeat: mode })
+    },
+    [update]
+  )
 
   const toggleShuffle = useCallback((): void => {
     void update({ shuffle: !(settings?.shuffle ?? false) })
@@ -628,6 +701,7 @@ export function App() {
       data-artwork-shape={settings.visuals.artworkShape}
       data-artwork-size={settings.visuals.artworkSize}
       data-album-column={settings.visuals.showAlbumColumn ? 'show' : 'hide'}
+      data-channel-column={settings.visuals.showChannelColumn ? 'show' : 'hide'}
       data-text-size={settings.visuals.textSize}
       data-icon-set={settings.visuals.iconSet}
       data-player-artwork={settings.visuals.playerArtwork ? 'true' : 'false'}
@@ -674,16 +748,18 @@ export function App() {
           onPlaySelected={playSelected}
           onReveal={(trackId) => void revealTrack(trackId)}
           onSelect={select}
+          onSelectMany={selectMany}
           onSelectAll={selectAllVisible}
           onClearSelection={clearSelection}
           onRequestMore={showingStreams ? () => undefined : loadMore}
           onFilterChange={setLibraryFilter}
           onOpenYouTube={() => setView('online')}
           onQueueStream={queueStream}
-          onQueueSelected={queueSelectedStreams}
+          onQueueSelected={queueSelected}
           onRemoveTracks={removeTracks}
           onRemoveStream={(track) => void removeStream(track)}
           downloads={downloads}
+          showAlbumColumn={settings.visuals.showAlbumColumn}
           singleClick={settings.interaction.librarySingleClick}
           doubleClick={settings.interaction.libraryDoubleClick}
           playlists={playlists.playlists}
@@ -727,6 +803,8 @@ export function App() {
           singleClick={settings.interaction.librarySingleClick}
           doubleClick={settings.interaction.libraryDoubleClick}
           rowHeight={DENSITY_ROW_HEIGHT[settings.visuals.density]}
+          showChannelColumn={settings.visuals.showChannelColumn}
+          showAlbumColumn={settings.visuals.showAlbumColumn}
           playlistArtworkSize={settings.visuals.playlistArtworkSize}
           indexWidth={settings.playlists.indexWidth}
           onIndexWidthChange={setPlaylistIndexWidth}
@@ -755,10 +833,22 @@ export function App() {
           queue={player.queue}
           index={player.index}
           isPlaying={player.isPlaying}
+          repeat={settings.repeat}
+          shuffle={settings.shuffle}
+          downloads={downloads}
+          playlists={playlists.playlists}
           onJump={player.jumpTo}
           onRemove={player.removeAt}
+          onMove={player.move}
+          onRemovePlayed={player.removePlayed}
           onClear={player.clearQueue}
+          onToggleShuffle={toggleShuffle}
+          onRepeatChange={setRepeat}
+          onAddTracksToPlaylist={playlists.addTracks}
+          onCreatePlaylist={playlists.create}
           onBrowseLibrary={() => setView('library')}
+          onPlaySelected={playQueueTracks}
+          onQueueSelected={enqueueTracks}
         />
       ) : (
         <SettingsView
@@ -797,10 +887,15 @@ export function App() {
         currentTrackId={player.current?.id ?? null}
         currentVideoId={player.current?.sourceKind === 'youtube' ? (player.current.sourceId ?? null) : null}
         isPlaying={player.isPlaying}
-        onPlayLocal={(queue) => player.playQueue(queue, 0)}
-        onQueueLocal={player.enqueue}
+        playlists={playlists.playlists}
+        onAddTracksToPlaylist={playlists.addTracks}
+        onCreatePlaylist={playlists.create}
+        onPlayLocal={(queue) => player.playQueue(tagQueueTracks(queue, LIBRARY_QUEUE_SOURCE), 0)}
+        onQueueLocal={(queue) => player.enqueue(tagQueueTracks(queue, LIBRARY_QUEUE_SOURCE))}
         onPlayYouTube={playYouTubeResult}
         onQueueYouTube={queueYouTubeResult}
+        onPlaySearchSelection={playSearchSelection}
+        onQueueSearchSelection={queueSearchSelection}
       />
 
       <SavesPanel downloads={downloads} onReveal={(trackId) => void revealTrack(trackId)} />
@@ -809,6 +904,7 @@ export function App() {
         current={player.current}
         isPlaying={player.isPlaying}
         isLoading={player.isLoading}
+        reconnecting={player.reconnecting}
         positionMs={player.positionMs}
         durationMs={player.durationMs}
         volume={player.volume}
@@ -841,6 +937,7 @@ export function App() {
           current={player.current}
           isPlaying={player.isPlaying}
           isLoading={player.isLoading}
+          reconnecting={player.reconnecting}
           positionMs={player.positionMs}
           durationMs={player.durationMs}
           volume={player.volume}
@@ -856,9 +953,16 @@ export function App() {
           onSeek={player.seek}
           onVolume={player.setVolume}
           onCycleRepeat={cycleRepeat}
+          onRepeatChange={setRepeat}
           onToggleShuffle={toggleShuffle}
           onJumpQueue={player.jumpTo}
+          onRemoveQueueItem={player.removeAt}
+          onPlaySelected={playQueueTracks}
+          onQueueSelected={enqueueTracks}
+          onRemovePlayed={player.removePlayed}
+          onClearQueue={player.clearQueue}
           onClose={closeNowPlaying}
+          downloads={downloads}
           playlists={playlists.playlists}
           onAddTracksToPlaylist={playlists.addTracks}
           onCreatePlaylist={playlists.create}

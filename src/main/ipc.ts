@@ -255,6 +255,9 @@ export function sanitizeSettingsPatch(input: unknown): DeepPartial<AppSettings> 
     if (typeof source.showAlbumColumn === 'boolean') {
       visuals.showAlbumColumn = source.showAlbumColumn
     }
+    if (typeof source.showChannelColumn === 'boolean') {
+      visuals.showChannelColumn = source.showChannelColumn
+    }
     if (typeof source.accent === 'string' && ACCENTS.includes(source.accent as AccentName)) {
       visuals.accent = source.accent as AccentName
     }

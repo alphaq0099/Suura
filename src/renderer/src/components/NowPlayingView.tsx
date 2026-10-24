@@ -1,5 +1,8 @@
 import {
+  useCallback,
   useEffect,
+  useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -9,12 +12,16 @@ import {
 import type { AddTracksOutcome, ArtworkFit, Playlist, RepeatMode, Track } from '@shared/types'
 import { buildArtworkUrl } from '@shared/artwork-url'
 import { formatCount, formatDuration } from '@shared/format'
+import type { QueueTrack } from '@shared/queue'
+import type { UseDownloadsResult } from '../hooks/useDownloads'
 import { useArtwork } from '../hooks/useArtwork'
 import { useWheelVolume } from '../hooks/useWheelVolume'
 import { ArtworkImage } from './ArtworkImage'
-import { AddToPlaylistMenu } from './AddToPlaylistMenu'
+import { QueueActionsMenu } from './QueueActionsMenu'
+import { RowMenu } from './RowMenu'
 import { SeekBar } from './SeekBar'
 import {
+  CheckIcon,
   ChevronDownIcon,
   NextIcon,
   PauseIcon,
@@ -25,6 +32,7 @@ import {
   RepeatOneIcon,
   ShuffleIcon,
   SpinnerIcon,
+  TrashIcon,
   VolumeIcon,
   VolumeLowIcon,
   VolumeMuteIcon
@@ -34,6 +42,8 @@ export interface NowPlayingViewProps {
   current: Track | null
   isPlaying: boolean
   isLoading: boolean
+  /** True while an interrupted stream is being retried. */
+  reconnecting: boolean
   positionMs: number
   durationMs: number
   volume: number
@@ -41,7 +51,7 @@ export interface NowPlayingViewProps {
   volumeWheelStep: number
   queueIndex: number
   /** The real queue, in the order it will play. Drives the panel below. */
-  queue: Track[]
+  queue: QueueTrack[]
   repeat: RepeatMode
   shuffle: boolean
   /** How the large artwork is drawn. Small artwork always crops. */
@@ -52,9 +62,17 @@ export interface NowPlayingViewProps {
   onSeek: (positionMs: number) => void
   onVolume: (volume: number) => void
   onCycleRepeat: () => void
+  onRepeatChange: (mode: RepeatMode) => void
   onToggleShuffle: () => void
   onJumpQueue: (position: number) => void
+  onRemoveQueueItem: (position: number) => void
+  onPlaySelected: (tracks: QueueTrack[]) => void
+  onQueueSelected: (tracks: QueueTrack[]) => void
+  /** Drop every row before the current one. */
+  onRemovePlayed: () => void
+  onClearQueue: () => void
   onClose: () => void
+  downloads: UseDownloadsResult
   playlists: Playlist[]
   onAddTracksToPlaylist: (playlistId: number, trackIds: number[]) => Promise<AddTracksOutcome>
   onCreatePlaylist: (name: string) => Promise<Playlist>
@@ -88,6 +106,7 @@ export function NowPlayingView(props: NowPlayingViewProps) {
     current,
     isPlaying,
     isLoading,
+    reconnecting,
     positionMs,
     durationMs,
     volume,
@@ -103,9 +122,16 @@ export function NowPlayingView(props: NowPlayingViewProps) {
     onSeek,
     onVolume,
     onCycleRepeat,
+    onRepeatChange,
     onToggleShuffle,
     onJumpQueue,
+    onRemoveQueueItem,
+    onPlaySelected,
+    onQueueSelected,
+    onRemovePlayed,
+    onClearQueue,
     onClose,
+    downloads,
     playlists,
     onAddTracksToPlaylist,
     onCreatePlaylist,
@@ -115,8 +141,63 @@ export function NowPlayingView(props: NowPlayingViewProps) {
   const artworkKey = useArtwork(current)
   const containerRef = useRef<HTMLDivElement | null>(null)
   const currentRowRef = useRef<HTMLButtonElement | null>(null)
+  const queueListRef = useRef<HTMLOListElement | null>(null)
   const [queueOpen, setQueueOpen] = useState(false)
-  const [saveMenuOpen, setSaveMenuOpen] = useState(false)
+  const [selectedPositions, setSelectedPositions] = useState<ReadonlySet<number>>(
+    () => new Set<number>()
+  )
+  const [rowMenu, setRowMenu] = useState<{ position: number; x: number; y: number } | null>(null)
+  const selectionAnchorRef = useRef<number | null>(null)
+  const focusPositionRef = useRef<number | null>(null)
+
+  const toggleSelected = useCallback((position: number): void => {
+    setSelectedPositions((previous) => {
+      const next = new Set(previous)
+      if (next.has(position)) next.delete(position)
+      else next.add(position)
+      return next
+    })
+    selectionAnchorRef.current = position
+    focusPositionRef.current = position
+  }, [])
+
+  const selectRange = useCallback(
+    (position: number): void => {
+      // Anchor the range where selection started. Falling back to the playing
+      // row (then the clicked row) keeps the first Shift-click a real range.
+      const anchor = selectionAnchorRef.current ?? focusPositionRef.current ?? queueIndex
+      selectionAnchorRef.current = anchor
+      const from = Math.min(anchor, position)
+      const to = Math.max(anchor, position)
+      const next = new Set<number>()
+      for (let at = from; at <= to; at += 1) next.add(at)
+      setSelectedPositions(next)
+      focusPositionRef.current = position
+    },
+    [queueIndex]
+  )
+
+  const clearSelection = useCallback((): void => {
+    setSelectedPositions(new Set<number>())
+    selectionAnchorRef.current = null
+    focusPositionRef.current = null
+  }, [])
+
+  // Positions only mean something for the queue they were selected in.
+  useEffect(() => {
+    clearSelection()
+    setRowMenu(null)
+  }, [clearSelection, queue])
+
+  const selectedTracks = useMemo(
+    () =>
+      [...selectedPositions]
+        .sort((a, b) => a - b)
+        .map((position) => queue[position])
+        .filter((track): track is QueueTrack => Boolean(track)),
+    [queue, selectedPositions]
+  )
+  const selecting = selectedPositions.size > 0
 
   // Mute is deliberately not a stored setting. It is only "the volume is zero,
   // but remember what it was", so unmuting restores the level the user actually
@@ -141,11 +222,22 @@ export function NowPlayingView(props: NowPlayingViewProps) {
   }, [])
 
   // Playback advancing on its own should not leave the panel showing a row that
-  // is no longer anywhere near the track that is playing. `nearest` so opening
-  // the panel on a visible row does not shunt the list for no reason.
-  useEffect(() => {
+  // is no longer anywhere near the track that is playing. This runs before paint
+  // and scrolls only the list itself: `scrollIntoView` after the slide started was
+  // what made the opening panel jump for a frame.
+  useLayoutEffect(() => {
     if (!queueOpen) return
-    currentRowRef.current?.scrollIntoView({ block: 'nearest' })
+    const list = queueListRef.current
+    const row = currentRowRef.current
+    if (!list || !row) return
+    const listRect = list.getBoundingClientRect()
+    const rowRect = row.getBoundingClientRect()
+    const rowTop = list.scrollTop + rowRect.top - listRect.top
+    const rowBottom = rowTop + rowRect.height
+    if (rowTop < list.scrollTop) list.scrollTop = rowTop
+    else if (rowBottom > list.scrollTop + list.clientHeight) {
+      list.scrollTop = rowBottom - list.clientHeight
+    }
   }, [queueOpen, queueIndex])
 
   // Escape unwinds one layer at a time: the panel first, then the window. This
@@ -154,6 +246,10 @@ export function NowPlayingView(props: NowPlayingViewProps) {
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key !== 'Escape') return
     event.stopPropagation()
+    if (rowMenu) {
+      setRowMenu(null)
+      return
+    }
     if (queueOpen) {
       setQueueOpen(false)
       return
@@ -169,15 +265,18 @@ export function NowPlayingView(props: NowPlayingViewProps) {
   const onPointerDown = (event: PointerEvent<HTMLDivElement>): void => {
     if (!queueOpen) return
     const target = event.target as HTMLElement | null
-    if (target?.closest('.np-queue-panel, .np-queue')) return
+    if (
+      target?.closest(
+        '.np-queue-panel, .np-queue, .add-to-playlist, .queue-actions-menu, .context-menu'
+      )
+    ) {
+      return
+    }
     setQueueOpen(false)
   }
 
   const hasQueue = queue.length > 0 && queueIndex >= 0
   const queueTotalMs = queue.reduce((sum, track) => sum + (track.durationMs ?? 0), 0)
-  // A playlist is a set of library rows. Stream links are session-only, so saving
-  // one would silently produce an empty playlist; say so instead.
-  const queueHasStream = queue.some((track) => track.sourceKind !== 'local')
   const backdrop = artworkKey ? { backgroundImage: `url("${buildArtworkUrl(artworkKey)}")` } : undefined
 
   return (
@@ -218,7 +317,11 @@ export function NowPlayingView(props: NowPlayingViewProps) {
           <ChevronDownIcon size={22} />
         </button>
         <span className="np-context">
-          {hasQueue ? `Playing from the queue · ${queueIndex + 1} of ${queue.length}` : 'Nothing queued'}
+          {reconnecting
+            ? 'Reconnecting…'
+            : hasQueue
+              ? `Playing from the queue · ${queueIndex + 1} of ${queue.length}`
+              : 'Nothing queued'}
         </span>
       </header>
 
@@ -244,45 +347,81 @@ export function NowPlayingView(props: NowPlayingViewProps) {
           <header className="np-queue-head">
             <h2>Queue</h2>
             <span className="np-queue-meta">
-              {formatCount(queue.length)} tracks · {formatDuration(queueTotalMs)}
+              {selecting
+                ? `${formatCount(selectedPositions.size)} selected · click a title to play`
+                : `${formatCount(queue.length)} tracks · ${formatDuration(queueTotalMs)}`}
             </span>
-            <button
-              type="button"
-              className="link-button np-queue-save"
-              disabled={queue.length === 0 || queueHasStream}
-              title={queueHasStream ? 'Stream links cannot be saved to a playlist yet' : undefined}
-              onClick={(event) => {
-                event.stopPropagation()
-                setSaveMenuOpen(true)
-              }}
-            >
-              Save as playlist…
-            </button>
-          </header>
-
-          {saveMenuOpen ? (
-            <AddToPlaylistMenu
+            <QueueActionsMenu
+              queue={queue}
+              index={queueIndex}
+              repeat={repeat}
+              shuffle={shuffle}
+              downloads={downloads}
               playlists={playlists}
-              trackIds={queue.map((track) => track.id)}
-              heading={`Queue · ${formatCount(queue.length)} tracks`}
-              onAdd={onAddTracksToPlaylist}
-              onCreate={onCreatePlaylist}
-              onClose={() => setSaveMenuOpen(false)}
+              onAddTracksToPlaylist={onAddTracksToPlaylist}
+              onCreatePlaylist={onCreatePlaylist}
+              onToggleShuffle={onToggleShuffle}
+              onRepeatChange={onRepeatChange}
+              onRemovePlayed={onRemovePlayed}
+              onClear={onClearQueue}
+              selectedTracks={selectedTracks}
+              onClearSelection={clearSelection}
+              onPlaySelected={onPlaySelected}
             />
-          ) : null}
-          <ol className="np-queue-list">
+          </header>
+          <ol className="np-queue-list" ref={queueListRef}>
             {queue.map((track, index) => (
-              <li key={`${track.id}-${index}`}>
+              <li key={`${track.id}-${index}`} className={selecting ? 'selecting' : undefined}>
+                {selecting ? (
+                  <label
+                    className="np-queue-select"
+                    title={selectedPositions.has(index) ? 'Deselect' : 'Select'}
+                    onClick={(event) => event.stopPropagation()}
+                    onDoubleClick={(event) => event.stopPropagation()}
+                    onDragStart={(event) => event.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedPositions.has(index)}
+                      onChange={() => toggleSelected(index)}
+                      aria-label={`${selectedPositions.has(index) ? 'Deselect' : 'Select'} ${
+                        track.title
+                      }`}
+                    />
+                  </label>
+                ) : null}
                 <button
                   type="button"
                   className={index === queueIndex ? 'np-queue-row current' : 'np-queue-row'}
-                  onClick={() => onJumpQueue(index)}
+                  onClick={(event) => {
+                    focusPositionRef.current = index
+                    if (event.ctrlKey || event.metaKey) {
+                      event.preventDefault()
+                      toggleSelected(index)
+                      return
+                    }
+                    if (event.shiftKey) {
+                      event.preventDefault()
+                      selectRange(index)
+                      return
+                    }
+                    onJumpQueue(index)
+                  }}
+                  onContextMenu={(event) => {
+                    event.preventDefault()
+                    focusPositionRef.current = index
+                    setRowMenu({ position: index, x: event.clientX, y: event.clientY })
+                  }}
                   ref={index === queueIndex ? currentRowRef : undefined}
                   title={track.title}
                   aria-current={index === queueIndex}
                 >
                   <span className="np-queue-position">
-                    {index === queueIndex ? <span className="playing-dot" /> : index + 1}
+                    {selecting ? null : index === queueIndex ? (
+                      <span className="playing-dot" />
+                    ) : (
+                      index + 1
+                    )}
                   </span>
                   <span className="np-queue-title">{track.title}</span>
                   <span className="np-queue-time">{formatDuration(track.durationMs)}</span>
@@ -417,6 +556,52 @@ export function NowPlayingView(props: NowPlayingViewProps) {
           onSeek={onSeek}
         />
       </div>
+
+      {rowMenu && queue[rowMenu.position] ? (
+        <RowMenu
+          portal
+          at={{ x: rowMenu.x, y: rowMenu.y }}
+          title={queue[rowMenu.position]?.title}
+          items={[
+            {
+              id: 'select',
+              label: selectedPositions.has(rowMenu.position) ? 'Deselect' : 'Select',
+              icon: <CheckIcon />,
+              onSelect: () => toggleSelected(rowMenu.position)
+            },
+            {
+              id: 'play',
+              label: 'Play',
+              icon: <PlayIcon />,
+              onSelect: () => onJumpQueue(rowMenu.position)
+            },
+            ...(selectedPositions.has(rowMenu.position)
+              ? [
+                  {
+                    id: 'play-selected',
+                    label: 'Play selected',
+                    icon: <PlayIcon />,
+                    onSelect: () => onPlaySelected(selectedTracks)
+                  },
+                  {
+                    id: 'queue-selected',
+                    label: 'Queue selected',
+                    icon: <QueueIcon />,
+                    onSelect: () => onQueueSelected(selectedTracks)
+                  }
+                ]
+              : []),
+            {
+              id: 'remove',
+              label: 'Remove from queue',
+              icon: <TrashIcon />,
+              danger: true,
+              onSelect: () => onRemoveQueueItem(rowMenu.position)
+            }
+          ]}
+          onClose={() => setRowMenu(null)}
+        />
+      ) : null}
     </div>
   )
 }

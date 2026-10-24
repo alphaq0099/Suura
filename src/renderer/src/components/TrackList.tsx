@@ -4,6 +4,7 @@ import type { DownloadStatus, LibraryClickAction, SortDirection, Track, TrackSor
 import { formatDuration } from '@shared/format'
 import { useRowReorder } from '../hooks/useRowReorder'
 import { ArtworkImage } from './ArtworkImage'
+import { ScrollingText } from './ScrollingText'
 import {
   CheckIcon,
   DownloadIcon,
@@ -48,6 +49,8 @@ export interface TrackListProps {
   /** Play the row at this index of `tracks`. */
   onActivate: (index: number) => void
   onSelect: (trackId: number, mode: 'replace' | 'toggle') => void
+  /** Select every row between the cursor and this click (Shift+click). */
+  onSelectMany?: (trackIds: number[]) => void
   onSelectAll: () => void
   onClearSelection: () => void
   onReveal: (trackId: number) => void
@@ -97,6 +100,22 @@ export interface TrackListProps {
    */
   onDetails?: (track: Track) => void
   /**
+   * The second column's heading. YouTube rows carry a channel/uploader rather
+   * than a reliable track artist, so those tables say "Channel"; local lists keep
+   * the default "Artist".
+   */
+  artistLabel?: string
+  /**
+   * Hide the second column entirely. The Channel toggle uses this on imported
+   * YouTube playlists; YouTube Links always keep their channel.
+   */
+  showArtistColumn?: boolean
+  /**
+   * Keep the Album column. Local lists follow the Settings checkbox; imported
+   * playlists always pass true because the album is the list's own context.
+   */
+  showAlbumColumn?: boolean
+  /**
    * Adds a "Save to library" action to stream rows. Local rows never get one:
    * they are already a file, which is what saving produces.
    */
@@ -144,6 +163,7 @@ export function TrackList(props: TrackListProps) {
     onToggleSort,
     onActivate,
     onSelect,
+    onSelectMany,
     onSelectAll,
     onClearSelection,
     onReveal,
@@ -159,6 +179,9 @@ export function TrackList(props: TrackListProps) {
     listKey,
     onRowContextMenu,
     onDetails,
+    artistLabel = 'Artist',
+    showArtistColumn = true,
+    showAlbumColumn = true,
     onSave,
     isSaved,
     saveState
@@ -168,6 +191,7 @@ export function TrackList(props: TrackListProps) {
   const [scrollTop, setScrollTop] = useState(0)
   const [viewport, setViewport] = useState(480)
   const [activeIndex, setActiveIndex] = useState(0)
+  const selectionAnchorRef = useRef<number | null>(null)
 
   const drag = useRowReorder({
     enabled: Boolean(reorder),
@@ -185,14 +209,15 @@ export function TrackList(props: TrackListProps) {
   /**
    * Runs a configured gesture.
    *
-   * `modifiers` is separate from the action because Shift and Ctrl mean the same
-   * thing whatever the action is: extend or toggle the selection rather than
-   * replacing it.
+   * Ctrl/Cmd and Shift are handled before this: they always mean selection,
+   * whatever the configured click action is, because otherwise changing the
+   * click setting would take the standard multi-select gestures away.
    */
   const applyClickAction = useCallback(
-    (action: LibraryClickAction, index: number, track: Track, modifiers: boolean): void => {
+    (action: LibraryClickAction, index: number, track: Track): void => {
       if (action === 'select' || action === 'select-play') {
-        onSelect(track.id, modifiers ? 'toggle' : 'replace')
+        selectionAnchorRef.current = index
+        onSelect(track.id, 'replace')
       }
       if (action === 'play' || action === 'select-play') {
         onActivate(index)
@@ -205,6 +230,43 @@ export function TrackList(props: TrackListProps) {
   // handler, so when both gestures play, the second one would restart a track the
   // first has just started — audible, and not what anyone means by a double click.
   const doubleClickRepeats = doubleClick === 'play' && (singleClick === 'play' || singleClick === 'select-play')
+
+  /**
+   * Once anything is selected, the # column becomes a checkbox column and a
+   * plain click on the rest of the row plays. That makes the checkbox the only
+   * click that replaces the selection; Ctrl/Cmd and Shift stay as shortcuts.
+   */
+  const hasSelection = selectedIds.size > 0
+  const allLoadedSelected =
+    tracks.length > 0 && tracks.every((track) => selectedIds.has(track.id))
+  const someLoadedSelected = tracks.some((track) => selectedIds.has(track.id))
+
+  const selectRange = useCallback(
+    (toIndex: number): void => {
+      // Keep the row that started the selection fixed. A Shift-click is an
+      // extension of it, not a new starting point; otherwise extending twice
+      // behaves like Ctrl-clicking one row at a time.
+      const anchor = selectionAnchorRef.current ?? activeIndex
+      selectionAnchorRef.current = anchor
+      const from = Math.min(anchor, toIndex)
+      const to = Math.max(anchor, toIndex)
+      const ids = tracks.slice(from, to + 1).map((track) => track.id)
+      if (onSelectMany) {
+        onSelectMany(ids)
+      } else {
+        const track = tracks[toIndex]
+        if (track) onSelect(track.id, 'replace')
+      }
+      setActiveIndex(toIndex)
+    },
+    [activeIndex, onSelect, onSelectMany, tracks]
+  )
+
+  // An emptied selection has no anchor left to extend. Without this, a later
+  // Shift-click could still reach back to a row the user cleared long ago.
+  useEffect(() => {
+    if (selectedIds.size === 0) selectionAnchorRef.current = null
+  }, [selectedIds])
 
   useEffect(() => {
     const element = scrollerRef.current
@@ -220,6 +282,7 @@ export function TrackList(props: TrackListProps) {
   useEffect(() => {
     setScrollTop(0)
     setActiveIndex(0)
+    selectionAnchorRef.current = null
     if (scrollerRef.current) scrollerRef.current.scrollTop = 0
   }, [sort, direction, listKey])
 
@@ -365,7 +428,9 @@ export function TrackList(props: TrackListProps) {
   }
 
   const activeId = tracks[activeIndex] ? `track-row-${activeIndex}` : undefined
-  const columns = COLUMNS
+  const columns = COLUMNS.map((column) =>
+    column.className === 'col-artist' ? { ...column, label: artistLabel } : column
+  )
   // Remove is a first-class icon only when there is no row menu to hold it.
   // Otherwise the menu keeps the row quiet and the action column narrow.
   const directRemove = onRemove !== undefined && onRowContextMenu === undefined
@@ -380,16 +445,39 @@ export function TrackList(props: TrackListProps) {
       ]
         .filter(Boolean)
         .join(' ')}
+      data-artist-column={showArtistColumn ? 'show' : 'hide'}
+      data-album-column={showAlbumColumn ? 'show' : 'hide'}
+      data-artist-label={artistLabel}
     >
       <div className="track-head" role="row">
         {columns.map((column) => (
           <div
             key={column.className}
             role="columnheader"
-            className={`head-cell ${column.className}`}
+            className={`head-cell ${column.className}${
+              column.className === 'col-index' && hasSelection ? ' head-select-cell' : ''
+            }`}
             aria-sort={column.field && sort === column.field ? (direction === 'asc' ? 'ascending' : 'descending') : undefined}
           >
-            {column.field && sortable ? (
+            {column.className === 'col-index' && hasSelection ? (
+              <label
+                className="head-select"
+                title={allLoadedSelected ? 'Clear selection' : 'Select all loaded tracks'}
+              >
+                <input
+                  type="checkbox"
+                  checked={allLoadedSelected}
+                  ref={(node) => {
+                    if (node) node.indeterminate = someLoadedSelected && !allLoadedSelected
+                  }}
+                  onChange={() => {
+                    if (allLoadedSelected) onClearSelection()
+                    else onSelectAll()
+                  }}
+                  aria-label={allLoadedSelected ? 'Clear selection' : 'Select all loaded tracks'}
+                />
+              </label>
+            ) : column.field && sortable ? (
               <button
                 type="button"
                 className="sort-button"
@@ -442,6 +530,7 @@ export function TrackList(props: TrackListProps) {
                 isCurrent ? 'current' : '',
                 isSelected ? 'selected' : '',
                 isActive ? 'active' : '',
+                hasSelection ? 'selecting' : '',
                 isDragging ? 'dragging' : '',
                 dropEdge ? `drop-${dropEdge}` : ''
               ]
@@ -467,12 +556,38 @@ export function TrackList(props: TrackListProps) {
                     // is: it is where the arrow keys will start from, not a
                     // symptom of having selected something.
                     setActiveIndex(index)
-                    applyClickAction(singleClick, index, track, event.ctrlKey || event.metaKey || event.shiftKey)
+                    if (event.ctrlKey || event.metaKey) {
+                      event.preventDefault()
+                      selectionAnchorRef.current = index
+                      onSelect(track.id, 'toggle')
+                      return
+                    }
+                    if (event.shiftKey) {
+                      event.preventDefault()
+                      selectRange(index)
+                      return
+                    }
+                    if (hasSelection) {
+                      onActivate(index)
+                      return
+                    }
+                    applyClickAction(singleClick, index, track)
                   }}
                   onDoubleClick={(event) => {
+                    if (event.ctrlKey || event.metaKey || event.shiftKey) return
+                    // With a selection active the row is a play surface. Honour a
+                    // double-click-to-play setting, but never let the double click
+                    // replace the selection; only the checkbox does that.
+                    if (hasSelection) {
+                      if (doubleClick === 'play' || doubleClick === 'select-play') {
+                        if (doubleClickRepeats && isCurrent && isPlaying) return
+                        onActivate(index)
+                      }
+                      return
+                    }
                     // Skip a restart the first click of this double click just started.
                     if (doubleClickRepeats && isCurrent && isPlaying) return
-                    applyClickAction(doubleClick, index, track, event.ctrlKey || event.metaKey || event.shiftKey)
+                    applyClickAction(doubleClick, index, track)
                   }}
                   onContextMenu={(event) => {
                     if (!onRowContextMenu) return
@@ -480,12 +595,37 @@ export function TrackList(props: TrackListProps) {
                     setActiveIndex(index)
                     onRowContextMenu(track, index, { x: event.clientX, y: event.clientY })
                   }}
-                  title={`Click: ${describeClickAction(singleClick)} · Double-click: ${describeClickAction(
-                    doubleClick
-                  )}${reorder ? ' · Drag or Alt+↑/↓ to reorder' : ''}`}
+                  title={
+                    hasSelection
+                      ? `Click to play · Ctrl/Shift-click to select${
+                          reorder ? ' · Drag or Alt+↑/↓ to reorder' : ''
+                        }`
+                      : `Click: ${describeClickAction(singleClick)} · Double-click: ${describeClickAction(
+                          doubleClick
+                        )} · Ctrl/Shift-click to select${reorder ? ' · Drag or Alt+↑/↓ to reorder' : ''}`
+                  }
                 >
                   <div role="gridcell" className="cell col-index">
-                    {isCurrent && isPlaying ? (
+                    {hasSelection ? (
+                      <label
+                        className="row-select"
+                        title={isSelected ? 'Deselect' : 'Select'}
+                        onClick={(event) => event.stopPropagation()}
+                        onDoubleClick={(event) => event.stopPropagation()}
+                        onDragStart={(event) => event.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {
+                            setActiveIndex(index)
+                            selectionAnchorRef.current = index
+                            onSelect(track.id, 'toggle')
+                          }}
+                          aria-label={`${isSelected ? 'Deselect' : 'Select'} ${track.title}`}
+                        />
+                      </label>
+                    ) : isCurrent && isPlaying ? (
                       <span className="playing-dot" />
                     ) : (
                       <>
@@ -511,8 +651,8 @@ export function TrackList(props: TrackListProps) {
                     <ArtworkImage track={track} size={24} className="row-art" />
                     <span className="row-title-text">{track.title}</span>
                   </div>
-                  <div role="gridcell" className="cell col-artist" title={track.artist ?? undefined}>
-                    {track.artist ?? '—'}
+                  <div role="gridcell" className="cell col-artist">
+                    <ScrollingText text={track.artist ?? '—'} title={track.artist ?? undefined} />
                   </div>
                   <div role="gridcell" className="cell col-album" title={track.album ?? undefined}>
                     {track.album ?? '—'}
