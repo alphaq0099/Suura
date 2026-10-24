@@ -2305,6 +2305,11 @@ input[type='radio'] {
   color: var(--bar-text-dim);
 }
 
+/* Buffering is temporary as well, and should not read as a failure. */
+.player-error.buffering {
+  color: var(--bar-text-dim);
+}
+
 .player-controls {
   display: grid;
   gap: 6px;
@@ -5007,6 +5012,10 @@ button.online-jump:hover {
 }
 
 .mini-player-error.reconnecting {
+  color: var(--text-dim);
+}
+
+.mini-player-error.buffering {
   color: var(--text-dim);
 }
 

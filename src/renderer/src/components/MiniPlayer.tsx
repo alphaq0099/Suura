@@ -17,6 +17,8 @@ export interface MiniPlayerProps {
   current: Track | null
   isPlaying: boolean
   isLoading: boolean
+  /** True while a started stream is waiting for more data. */
+  buffering: boolean
   reconnecting: boolean
   positionMs: number
   durationMs: number
@@ -45,6 +47,7 @@ export function MiniPlayer(props: MiniPlayerProps) {
     current,
     isPlaying,
     isLoading,
+    buffering,
     reconnecting,
     positionMs,
     durationMs,
@@ -103,6 +106,10 @@ export function MiniPlayer(props: MiniPlayerProps) {
           <div className="mini-player-error" title={error}>
             {error}
           </div>
+        ) : buffering ? (
+          <div className="mini-player-error buffering" title="Buffering…">
+            Buffering…
+          </div>
         ) : null}
 
         <SeekBar
@@ -130,8 +137,17 @@ export function MiniPlayer(props: MiniPlayerProps) {
             onClick={onToggle}
             disabled={!current}
             title={isPlaying ? 'Pause' : 'Play'}
+            aria-busy={buffering}
           >
-            {isLoading && !isPlaying ? <SpinnerIcon size={18} /> : isPlaying ? <PauseIcon /> : <PlayIcon />}
+            {buffering ? (
+              <SpinnerIcon size={18} />
+            ) : isLoading && !isPlaying ? (
+              <SpinnerIcon size={18} />
+            ) : isPlaying ? (
+              <PauseIcon />
+            ) : (
+              <PlayIcon />
+            )}
           </button>
           <button type="button" className="icon-button" onClick={onNext} disabled={!current} title="Next">
             <NextIcon />

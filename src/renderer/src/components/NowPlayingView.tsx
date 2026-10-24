@@ -42,6 +42,8 @@ export interface NowPlayingViewProps {
   current: Track | null
   isPlaying: boolean
   isLoading: boolean
+  /** True while a started stream is waiting for more data. */
+  buffering: boolean
   /** True while an interrupted stream is being retried. */
   reconnecting: boolean
   positionMs: number
@@ -106,6 +108,7 @@ export function NowPlayingView(props: NowPlayingViewProps) {
     current,
     isPlaying,
     isLoading,
+    buffering,
     reconnecting,
     positionMs,
     durationMs,
@@ -319,9 +322,11 @@ export function NowPlayingView(props: NowPlayingViewProps) {
         <span className="np-context">
           {reconnecting
             ? 'Reconnecting…'
-            : hasQueue
-              ? `Playing from the queue · ${queueIndex + 1} of ${queue.length}`
-              : 'Nothing queued'}
+            : buffering
+              ? 'Buffering…'
+              : hasQueue
+                ? `Playing from the queue · ${queueIndex + 1} of ${queue.length}`
+                : 'Nothing queued'}
         </span>
       </header>
 
@@ -482,8 +487,11 @@ export function NowPlayingView(props: NowPlayingViewProps) {
               onClick={onToggle}
               disabled={!current}
               title={isPlaying ? 'Pause' : 'Play'}
+              aria-busy={buffering}
             >
-              {isLoading && !isPlaying ? (
+              {buffering ? (
+                <SpinnerIcon size={24} />
+              ) : isLoading && !isPlaying ? (
                 <SpinnerIcon size={24} />
               ) : isPlaying ? (
                 <PauseIcon size={26} />

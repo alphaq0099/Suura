@@ -321,8 +321,9 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
       `player-stream://` custom protocol instead of a localhost server, with header replay, stable tokens and range
       forwarding
 - [x] Player integration: **Stream only** mode works end-to-end
-- [ ] Playback state machine for stream sources (loading → buffering → playing → failed) — loading and failed are
-      carried by the existing player state; a distinct *buffering* state is still open
+- [x] Playback state machine for stream sources (loading → buffering → playing → failed) — loading, buffering,
+      playing and failed are distinct; a started stream that runs dry says *Buffering…*, and a long stall hands over
+      to the reconnect state
 - [x] Error taxonomy & user-facing messages (expired URL, bot check, geo-block, unavailable, network)
 - [x] Re-resolve on failure/expiry, transparent to the player
 - [x] Resolve-result metadata cache (avoid re-resolving the same video within a session)

@@ -1047,6 +1047,7 @@ export function App() {
         current={player.current}
         isPlaying={player.isPlaying}
         isLoading={player.isLoading}
+        buffering={player.buffering}
         reconnecting={player.reconnecting}
         positionMs={player.positionMs}
         durationMs={player.durationMs}
@@ -1074,6 +1075,7 @@ export function App() {
           current={player.current}
           isPlaying={player.isPlaying}
           isLoading={player.isLoading}
+          buffering={player.buffering}
           reconnecting={player.reconnecting}
           positionMs={player.positionMs}
           durationMs={player.durationMs}
@@ -1102,6 +1104,7 @@ export function App() {
           current={player.current}
           isPlaying={player.isPlaying}
           isLoading={player.isLoading}
+          buffering={player.buffering}
           reconnecting={player.reconnecting}
           positionMs={player.positionMs}
           durationMs={player.durationMs}

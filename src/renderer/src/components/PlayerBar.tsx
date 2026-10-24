@@ -24,6 +24,8 @@ export interface PlayerBarProps {
   current: Track | null
   isPlaying: boolean
   isLoading: boolean
+  /** True while a started stream is waiting for more data. */
+  buffering: boolean
   positionMs: number
   durationMs: number
   volume: number
@@ -53,6 +55,7 @@ export function PlayerBar(props: PlayerBarProps) {
     current,
     isPlaying,
     isLoading,
+    buffering,
     positionMs,
     durationMs,
     volume,
@@ -135,6 +138,8 @@ export function PlayerBar(props: PlayerBarProps) {
             <div className="player-error reconnecting">Reconnecting…</div>
           ) : error ? (
             <div className="player-error">{error}</div>
+          ) : buffering ? (
+            <div className="player-error buffering">Buffering…</div>
           ) : null}
         </div>
       </button>
@@ -159,8 +164,17 @@ export function PlayerBar(props: PlayerBarProps) {
             onClick={onToggle}
             disabled={!current}
             title={isPlaying ? 'Pause' : 'Play'}
+            aria-busy={buffering}
           >
-            {isLoading && !isPlaying ? <SpinnerIcon size={18} /> : isPlaying ? <PauseIcon /> : <PlayIcon />}
+            {buffering ? (
+              <SpinnerIcon size={18} />
+            ) : isLoading && !isPlaying ? (
+              <SpinnerIcon size={18} />
+            ) : isPlaying ? (
+              <PauseIcon />
+            ) : (
+              <PlayIcon />
+            )}
           </button>
           <button
             type="button"

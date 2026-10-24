@@ -4559,6 +4559,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       artwork: string
       taskbar: boolean
       actualPlaying: boolean
+      buffering: boolean
     }>(
       window,
       `(async () => {
@@ -4570,7 +4571,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          const out = {
            rows: 0, reason: null, transitioned: false, marks: 0, title: '',
            firstTitle: '', metadataTitle: '', metadataArtist: '', playbackState: '', hasActions: false,
-           firstArtwork: '', artwork: '', taskbar: false, actualPlaying: false
+           firstArtwork: '', artwork: '', taskbar: false, actualPlaying: false, buffering: false
          }
          try {
            performance.clearMarks('player:gapless')
@@ -4610,6 +4611,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            out.taskbar = await window.player.setTaskbarState({ hasTrack: true, isPlaying: true })
            const playButton = document.querySelector('.player-bar .icon-button.primary')
            out.actualPlaying = Boolean(playButton) && playButton.getAttribute('title') === 'Pause'
+           out.buffering = Boolean(document.querySelector('.player-error.buffering'))
            await window.player.setTaskbarState({ hasTrack: Boolean(title()), isPlaying: out.actualPlaying })
          } catch (error) {
            out.reason = String(error)
@@ -4650,6 +4652,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       process.platform === 'win32' ? gapless.taskbar : !gapless.taskbar,
       'the taskbar thumbnail toolbar accepts playback state',
       gapless.taskbar
+    )
+    record(
+      !gapless.buffering,
+      'healthy playback does not leave the buffering status on screen',
+      gapless.buffering
     )
 
     // ---- mini player ----------------------------------------------------

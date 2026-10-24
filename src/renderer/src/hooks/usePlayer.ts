@@ -60,6 +60,8 @@ export interface UsePlayerResult {
   index: number
   isPlaying: boolean
   isLoading: boolean
+  /** True while playback has started but the stream is waiting for more data. */
+  buffering: boolean
   /** True while the interrupted stream is being retried automatically. */
   reconnecting: boolean
   positionMs: number
@@ -163,6 +165,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
   const [playRequestId, setPlayRequestId] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [buffering, setBuffering] = useState(false)
   const [reconnecting, setReconnecting] = useState(false)
   const [positionMs, setPositionMs] = useState(0)
   const [durationMs, setDurationMs] = useState(0)
@@ -212,6 +215,9 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
   const recoveryTimerRef = useRef<number | null>(null)
   const stallTimerRef = useRef<number | null>(null)
   const reconnectingRef = useRef(false)
+  const bufferingRef = useRef(false)
+  /** Whether the active source has produced audio at least once. */
+  const hasStartedRef = useRef(false)
   /** Last position known to be playing, used when the element loses its own time. */
   const lastPositionRef = useRef(0)
   /** The last real failure, kept so the final message is not a generic one. */
@@ -272,20 +278,28 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     setReconnecting(value)
   }, [])
 
+  const setBufferingState = useCallback((value: boolean): void => {
+    if (bufferingRef.current === value) return
+    bufferingRef.current = value
+    setBuffering(value)
+  }, [])
+
   /** Forgets the retry budget and any pending attempt. */
   const resetRecovery = useCallback((): void => {
     clearRecoveryTimer()
     clearStallTimer()
     recoveryAttemptRef.current = 0
     recoveryStartedAtRef.current = 0
+    setBufferingState(false)
     if (reconnectingRef.current) setReconnectState(false)
-  }, [clearRecoveryTimer, clearStallTimer, setReconnectState])
+  }, [clearRecoveryTimer, clearStallTimer, setBufferingState, setReconnectState])
 
   const giveUpRecovery = useCallback((): void => {
     setReconnectState(false)
+    setBufferingState(false)
     setIsLoading(false)
     setError(lastFailureRef.current ?? 'Playback could not be reconnected. Check your connection, then press play.')
-  }, [setReconnectState])
+  }, [setBufferingState, setReconnectState])
 
   /** Data is flowing again: the attempt counter starts over. */
   const settleRecovery = useCallback((): void => {
@@ -319,6 +333,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
       recoveryAttemptRef.current += 1
       setIsLoading(true)
       setReconnectState(true)
+      setBufferingState(false)
       setError(null)
 
       recoveryTimerRef.current = window.setTimeout(() => {
@@ -342,7 +357,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
         setPlayRequestId((value) => value + 1)
       }, delay)
     },
-    [audio, giveUpRecovery, setReconnectState]
+    [audio, giveUpRecovery, setBufferingState, setReconnectState]
   )
 
   useEffect(() => {
@@ -421,6 +436,10 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
       return
     }
     handoffRef.current = null
+    // A new source has not produced audio yet; any wait before it does is
+    // loading, not buffering.
+    hasStartedRef.current = false
+    setBufferingState(false)
     // Any preload belongs to the selection that just went away.
     preloadTokenRef.current += 1
     preloadedRef.current = null
@@ -509,7 +528,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
         if (token === loadTokenRef.current && !reconnectingRef.current) setIsLoading(false)
       }
     })()
-  }, [current, playRequestId, audio, deck, resetRecovery, setReconnectState])
+  }, [current, playRequestId, audio, deck, resetRecovery, setBufferingState, setReconnectState])
 
   // Element events -> React state. Both elements are watched because the idle
   // one becomes active mid-event (on a handoff); anything it emits while idle is
@@ -525,6 +544,10 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     const handleTime = (event: Event): void => {
       const element = currentElement(event)
       if (!element) return
+      if (!reconnectingRef.current) {
+        hasStartedRef.current = true
+        setBufferingState(false)
+      }
       const at = element.currentTime * 1000
       lastPositionRef.current = at
       setPositionMs(at)
@@ -550,6 +573,8 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     }
     const handlePlaying = (event: Event): void => {
       if (!currentElement(event)) return
+      hasStartedRef.current = true
+      setBufferingState(false)
       deck().resume()
       setIsPlaying(true)
       setIsLoading(false)
@@ -558,23 +583,44 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     }
     const handlePause = (event: Event): void => {
       if (!currentElement(event)) return
+      setBufferingState(false)
       setIsPlaying(false)
       clearStallTimer()
     }
     const handleWaiting = (event: Event): void => {
       const element = currentElement(event)
       if (!element) return
-      setIsLoading(true)
-      if (wantsPlayRef.current && element.currentTime > 0) armStallTimer()
+      // Recovery owns the status while it runs; a wait from its reload is not
+      // new information for the bar.
+      if (reconnectingRef.current) {
+        setBufferingState(false)
+        setIsLoading(true)
+        return
+      }
+      // A first wait is part of loading the track. A wait after audio has
+      // started is buffering: the user is already listening, and the bar
+      // should say so rather than look as if the track never began.
+      if (hasStartedRef.current && wantsPlayRef.current) {
+        setIsLoading(false)
+        setBufferingState(true)
+      } else {
+        setBufferingState(false)
+        setIsLoading(true)
+      }
+      // A started stream that has stopped moving deserves the same reconnect
+      // path even if it stalled at the very beginning after a seek.
+      if (wantsPlayRef.current && hasStartedRef.current) armStallTimer()
     }
     const handleCanPlay = (event: Event): void => {
       if (!currentElement(event)) return
+      setBufferingState(false)
       setIsLoading(false)
       clearStallTimer()
     }
     const handleError = (event: Event): void => {
       const element = currentElement(event)
       if (!element) return
+      setBufferingState(false)
       const mediaError = element.error
       const at = Number.isFinite(element.currentTime) ? element.currentTime * 1000 : 0
       if (at > 0) lastPositionRef.current = at
@@ -622,7 +668,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
         for (const [name, listener] of events) element.removeEventListener(name, listener)
       }
     }
-  }, [deck, armStallTimer, clearStallTimer, setReconnectState, settleRecovery])
+  }, [deck, armStallTimer, clearStallTimer, setBufferingState, setReconnectState, settleRecovery])
 
   /**
    * Moves to the next entry, applying repeat.
@@ -674,6 +720,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
           preloadedRef.current = null
           if (decision.position !== indexRef.current) handoffRef.current = upcoming.id
           currentTrackRef.current = upcoming
+          hasStartedRef.current = true
           lastFailureRef.current = null
           wantsPlayRef.current = true
           resetRecovery()
@@ -903,6 +950,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     if (remaining.length === 0) {
       wantsPlayRef.current = false
       resetRecovery()
+      hasStartedRef.current = false
       preloadTokenRef.current += 1
       preloadedRef.current = null
       deck().pause()
@@ -910,6 +958,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
       setEntries([])
       setIndex(-1)
       setIsPlaying(false)
+      setIsLoading(false)
       return
     }
 
@@ -979,6 +1028,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
   const clearQueue = useCallback((): void => {
     wantsPlayRef.current = false
     resetRecovery()
+    hasStartedRef.current = false
     preloadTokenRef.current += 1
     preloadedRef.current = null
     deck().pause()
@@ -987,6 +1037,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     setEntries([])
     setIndex(-1)
     setIsPlaying(false)
+    setIsLoading(false)
   }, [deck, resetRecovery])
 
   const jumpTo = useCallback(
@@ -1049,6 +1100,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     const element = audio()
     wantsPlayRef.current = false
     resetRecovery()
+    hasStartedRef.current = false
     element.pause()
     element.currentTime = 0
     lastPositionRef.current = 0
@@ -1110,6 +1162,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     index,
     isPlaying,
     isLoading,
+    buffering,
     reconnecting,
     positionMs,
     durationMs,
