@@ -6,8 +6,10 @@
  */
 import type {
   AddTracksOutcome,
+  AlbumPage,
   AppPaths,
   AppSettings,
+  ArtistSummary,
   CacheEntry,
   CacheStats,
   DeepPartial,
@@ -18,6 +20,7 @@ import type {
   DuplicateReport,
   EngineStatus,
   LibraryStats,
+  ListAlbumsQuery,
   ListTracksQuery,
   OnlinePlaylist,
   RelocateReport,
@@ -64,6 +67,8 @@ export const IPC = {
   libraryScanCancel: 'library:scan-cancel',
   libraryAddPaths: 'library:add-paths',
   libraryListTracks: 'library:list-tracks',
+  libraryListAlbums: 'library:list-albums',
+  libraryListArtists: 'library:list-artists',
   libraryStats: 'library:stats',
   libraryRemoveFolder: 'library:remove-folder',
   libraryRevealTrack: 'library:reveal-track',
@@ -228,6 +233,10 @@ export interface PlayerApi {
    */
   getPathForFile(file: File): string
   listTracks(query?: ListTracksQuery): Promise<TrackPage>
+  /** Album summaries grouped by album title and album artist. */
+  listAlbums(query?: ListAlbumsQuery): Promise<AlbumPage>
+  /** Artists for the Home shelf, most recently played first. */
+  listArtists(limit?: number): Promise<ArtistSummary[]>
   getStats(): Promise<LibraryStats>
   removeLibraryFolder(folder: string): Promise<AppSettings>
   revealTrack(trackId: number): Promise<void>

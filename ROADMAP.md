@@ -281,6 +281,10 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
       the only flexible track, gives Artist/Album equal bounded widths, and uses a separate **#, Title, optional Artist,
       Channel, Duration, Action** grid for YouTube Links (no Album).
 - [x] Artwork: embedded covers extracted lazily, resized, cached content-addressed, served over `player-art://`
+- [x] Home dashboard and album grid (visual revamp): cover-led hero with stats, recently played/added shelves, artist
+      cards that filter the grid, playlist cards, and a searchable/sortable **All albums** grid with an in-place album
+      detail view. Album summaries group by title plus the album-artist fallback; covers load lazily as cards approach
+      the viewport. Home is the fresh-install launch view.
 - [x] Now Playing: full-window player with a blurred art backdrop, transport, volume, queue and a scrubber; the queue
       as a panel inside the window, slid in by the button that opened it and dismissed by a press anywhere outside it
 - [x] Visuals settings: artwork square or circular, cropped to a square or given the cover's own shape, and sized from
@@ -537,7 +541,7 @@ restore, migration guard, and id-preserving relocation were exercised in the smo
 ### M12 — Offline Cache & Downloads *(M12a done; M12b screens next)*
 **Goal:** the other half of the original M4, split so the risky data layer could land before the screens. M12a
 (cache engine, offline detection, download history data, disk pre-flight and honest Settings) is complete. M12b is the
-cache-manager and Downloads UI, held until after the visual revamp and M8.
+cache-manager and Downloads UI, and is next now that the Home/album-grid revamp is complete.
 
 **M12a — data layer and offline playback (done)**
 - [x] Cache engine: background full fetch of the resolved URL into `cache/stream/<videoId>.<ext>.part`, rename on
@@ -586,11 +590,11 @@ needs M12b.
 | M9 | Android Port | New engine + player + UI | 4–6 w | M8 |
 | M10 | Two-Device Continuity *(optional)* | LAN companion server | 2–4 w | M9 |
 | M11 | Long-term extras | Scrobbling, lyrics, hi-res | continuous | — |
-| M12 | Offline Cache & Downloads *(M12a done)* | Cache engine, offline replay, history; screens | 2–3 w | M4, M6 |
+| M12 | Offline Cache & Downloads *(M12a done; M12b next)* | Cache engine, offline replay, history; screens | 2–3 w | M4, M6 |
 
 **Critical path:** M0 → M1 → M3 → M4 → M5 → M6 → M8 → M9. M2 can be interleaved, M7 is data-care hygiene, and M12a's
-data layer is complete; its manager and Downloads screens (M12b) wait until after the visual revamp and M8, because
-they touch M4 and M6 and should follow them rather than run beside them.
+data layer is complete. The visual revamp has landed as Home plus the album grid; M12b's manager and Downloads screens
+come next, then Windows release engineering (M8).
 
 ---
 
@@ -681,6 +685,8 @@ title/artist cleanup. Every track list shares the same **#, Title, …metadata, 
 Format in a row's **Details** sheet, and the Queue has a header aligned with its rows. The current consistency pass
 keeps Title as the only flexible track, gives Artist/Album equal bounded widths, removes Album from YouTube Links in
 favour of Channel plus an optional Artist, and keeps Duration/Actions fixed when a column is hidden. **M12a is done**:
-the bounded stream cache, offline replay, retention modes, download history and disk pre-flight are in place. Next is
-the visual revamp, then the M12b manager/Downloads screens, then Windows release engineering (M8). Offline caching is
-no longer deferred; only its screens are.
+the bounded stream cache, offline replay, retention modes, download history and disk pre-flight are in place. **The
+visual revamp is done**: Home opens on a cover-led dashboard with library totals, recently played/added shelves, artist
+and playlist cards, and a searchable/sortable album grid whose album cards open an in-place track list. Next is the
+M12b manager/Downloads screens, then Windows release engineering (M8). Offline caching is no longer deferred; only its
+screens are.

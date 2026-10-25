@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { ArtworkRequest } from '@shared/ipc'
 import type { Track } from '@shared/types'
 import { api } from '../api'
 
@@ -19,15 +20,20 @@ const resolved = new Map<string, string | null>()
 /** Requests in flight, so a track visible in several places is asked about once. */
 const inFlight = new Map<string, Promise<string | null>>()
 
-function identityOf(track: Track): string {
-  if (track.sourceKind === 'youtube' && track.sourceId) return `youtube:${track.sourceId}`
-  return `local:${track.id}`
+function identityOf(target: ArtworkTarget): string {
+  if (target.sourceKind === 'youtube' && target.sourceId) return `youtube:${target.sourceId}`
+  return `local:${target.id}`
 }
 
 interface ArtworkTarget {
   id: number
   sourceKind: Track['sourceKind']
   sourceId: string | null
+}
+
+function targetOf(request: ArtworkRequest): ArtworkTarget {
+  if (typeof request === 'number') return { id: request, sourceKind: 'local', sourceId: null }
+  return { id: request.id, sourceKind: request.sourceKind, sourceId: request.sourceId }
 }
 
 function request(target: ArtworkTarget, identity: string): Promise<string | null> {
@@ -52,13 +58,18 @@ function request(target: ArtworkTarget, identity: string): Promise<string | null
  * artwork service has not looked at yet are requested, and the answer is cached
  * here afterwards. The result is paired with the identity it belongs to so
  * switching tracks never shows the previous track's cover for a frame.
+ *
+ * `fallback` lets a card ask about a representative track when it has no `Track`
+ * object of its own (an album or artist summary). It is only consulted when
+ * `track` is null.
  */
-export function useArtwork(track: Track | null): string | null {
+export function useArtwork(track: Track | null, fallback: ArtworkRequest | null = null): string | null {
   const embedded = track?.artworkKey ?? null
-  const identity = track ? identityOf(track) : null
-  const trackId = track?.id ?? null
-  const sourceKind = track?.sourceKind ?? null
-  const sourceId = track?.sourceId ?? null
+  const target = track ? targetOf(track) : fallback !== null ? targetOf(fallback) : null
+  const identity = target ? identityOf(target) : null
+  const trackId = target?.id ?? null
+  const sourceKind = target?.sourceKind ?? null
+  const sourceId = target?.sourceId ?? null
   const [looked, setLooked] = useState<{ identity: string; key: string | null } | null>(null)
 
   useEffect(() => {

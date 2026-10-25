@@ -166,6 +166,163 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     )
     record(scanStats?.tracks === 2, 'scan through the IPC bridge indexed the fixtures', scanStats)
 
+    // ---- 3b. home and the album grid ------------------------------------
+    // Home is the first thing a new install shows, so these checks start there
+    // before the rest of the suite moves to the Library. They exercise the same
+    // album summary queries the dashboard uses, including the artist fallback
+    // that puts two files with different track artists into two groups.
+    const home = await evaluate<{
+      isHome: boolean
+      activeNav: string
+      heroTitle: string
+      stats: string
+      shelfTitles: string
+      shelfAlbums: number
+      artistCards: number
+      gridCards: number
+      detailTitle: string
+      detailRows: number
+      detailHasTone: boolean
+      backWorks: boolean
+      searchEmpty: boolean
+      searchCleared: boolean
+      artistFiltered: boolean
+      artistChip: string
+      artistCleared: boolean
+      onLibrary: boolean
+    }>(
+      window,
+      `(async () => {
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const nav = (label) =>
+           [...document.querySelectorAll('.nav-item')].find((el) =>
+             (el.textContent || '').trim().startsWith(label)
+           )
+         const waitFor = async (select, timeout = 6000) => {
+           const deadline = Date.now() + timeout
+           while (Date.now() < deadline && !document.querySelector(select)) await sleep(100)
+           return document.querySelector(select)
+         }
+         const gridCards = () => [...document.querySelectorAll('.album-grid .album-card')]
+         const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+
+         const out = {
+           isHome: false, activeNav: '', heroTitle: '', stats: '', shelfTitles: '',
+           shelfAlbums: 0, artistCards: 0, gridCards: 0, detailTitle: '', detailRows: 0,
+           detailHasTone: false, backWorks: false, searchEmpty: false, searchCleared: false,
+           artistFiltered: false, artistChip: '', artistCleared: false, onLibrary: false
+         }
+
+         nav('Home')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await sleep(350)
+         await waitFor('.album-grid .album-card')
+         out.isHome = Boolean(document.querySelector('.home-view'))
+         out.activeNav = (document.querySelector('.nav-item.active')?.textContent || '').trim()
+         out.heroTitle = (document.querySelector('.home-hero-copy h2')?.textContent || '').trim()
+         out.stats = [...document.querySelectorAll('.home-stat strong')]
+           .map((el) => (el.textContent || '').trim())
+           .join('|')
+         out.shelfTitles = [...document.querySelectorAll('.home-section-head h2')]
+           .map((el) => (el.textContent || '').trim())
+           .join('|')
+         out.shelfAlbums = document.querySelectorAll('.home-shelf .album-card').length
+         out.artistCards = document.querySelectorAll('.artist-card').length
+         out.gridCards = gridCards().length
+
+         const target = gridCards().find((card) => {
+           const title = (card.querySelector('.album-card-title')?.textContent || '').trim()
+           const meta = (card.querySelector('.album-card-meta')?.textContent || '').trim()
+           return title === 'Selftest Album' && meta.includes('Selftest') && !meta.includes('Zzz')
+         })
+         target?.querySelector('.album-card-main')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         const detail = await waitFor('.album-detail')
+         out.detailTitle = (document.querySelector('.album-detail-copy h2')?.textContent || '').trim()
+         out.detailRows = document.querySelectorAll('.album-detail .track-row').length
+         out.detailHasTone = [...document.querySelectorAll('.album-detail .row-title-text')].some(
+           (el) => (el.textContent || '').trim() === 'Selftest Tone'
+         )
+         document.querySelector('.home-back')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await waitFor('.album-grid')
+         out.backWorks = Boolean(document.querySelector('.album-grid')) && !detail?.isConnected
+
+         const search = document.querySelector('.album-search input')
+         if (search) {
+           setValue.call(search, 'NoSuchAlbum')
+           search.dispatchEvent(new Event('input', { bubbles: true }))
+         }
+         await waitFor('.album-grid-empty')
+         out.searchEmpty = Boolean(document.querySelector('.album-grid-empty'))
+         document.querySelector('.clear-search')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         let deadline = Date.now() + 5000
+         while (Date.now() < deadline && gridCards().length < 2) await sleep(100)
+         out.searchCleared = gridCards().length === 2
+
+         const artistCard = [...document.querySelectorAll('.artist-card')].find(
+           (card) => (card.querySelector('.artist-card-name')?.textContent || '').trim() === 'Selftest'
+         )
+         artistCard?.querySelector('.artist-card-main')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await waitFor('.album-artist-chip')
+         await sleep(450)
+         const gridHeading = (document.querySelector('.album-grid-head h2')?.textContent || '').trim()
+         out.artistChip = (document.querySelector('.album-artist-chip')?.textContent || '').trim()
+         out.artistFiltered = gridCards().length === 1 && gridHeading.includes('Selftest')
+         document.querySelector('.album-artist-chip')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         deadline = Date.now() + 5000
+         while (Date.now() < deadline && gridCards().length < 2) await sleep(100)
+         out.artistCleared = gridCards().length === 2
+
+         nav('Library')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await waitFor('.track-row')
+         out.onLibrary = Boolean(document.querySelector('.track-row'))
+         return out
+       })()`
+    )
+    record(
+      home.isHome && home.activeNav.startsWith('Home'),
+      'home is the initial view and marks itself in the sidebar',
+      { active: home.activeNav, stats: home.stats }
+    )
+    record(
+      home.stats.startsWith('2|2|2|') &&
+        home.heroTitle.includes('at a glance') &&
+        home.shelfTitles.includes('Recently added') &&
+        home.shelfAlbums === 2 &&
+        home.artistCards === 2 &&
+        home.gridCards === 2,
+      'home shows library stats, album shelves, artists and the album grid',
+      {
+        stats: home.stats,
+        shelves: home.shelfTitles,
+        albums: home.shelfAlbums,
+        artists: home.artistCards,
+        grid: home.gridCards
+      }
+    )
+    record(
+      home.detailTitle === 'Selftest Album' &&
+        home.detailRows === 1 &&
+        home.detailHasTone &&
+        home.backWorks,
+      'an album card opens its exact album and returns to the grid',
+      {
+        title: home.detailTitle,
+        rows: home.detailRows,
+        tone: home.detailHasTone,
+        back: home.backWorks
+      }
+    )
+    record(
+      home.searchEmpty && home.searchCleared,
+      'the album grid can search down to nothing and clear again',
+      { empty: home.searchEmpty, cleared: home.searchCleared }
+    )
+    record(
+      home.artistFiltered && home.artistChip.includes('Selftest') && home.artistCleared,
+      'an artist card filters the album grid and the chip removes the filter',
+      { filtered: home.artistFiltered, chip: home.artistChip, cleared: home.artistCleared }
+    )
+    record(home.onLibrary, 'the Home dashboard can hand off to the full library')
+
     // ---- 4. the UI click path ------------------------------------------
     // Clicking a row is the actual user interaction: React onClick/onDoubleClick
     // -> playQueue -> resolveSource -> <audio>. A single click selects (so the
@@ -963,7 +1120,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       window.setSize(width, height)
       await delay(250)
 
-      const showView = async (label: 'Library' | 'Search' | 'YouTube' | 'Settings' | 'Queue'): Promise<void> => {
+      const showView = async (label: 'Home' | 'Library' | 'Search' | 'YouTube' | 'Settings' | 'Queue'): Promise<void> => {
         await evaluate(
           window,
           `(async () => {
@@ -974,6 +1131,19 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            })()`
         )
       }
+
+      await showView('Home')
+      const homeLayout = await evaluate<LayoutProbe>(window, LAYOUT_PROBE)
+      record(
+        homeLayout.hasHome &&
+          homeLayout.homeStatsInside &&
+          homeLayout.main === 0 &&
+          homeLayout.home === 0 &&
+          homeLayout.bar === 0 &&
+          homeLayout.page === 0,
+        `home hero and stats fit inside the view at ${width}x${height}`,
+        homeLayout
+      )
 
       await showView('Library')
       const library = await evaluate<LayoutProbe>(window, LAYOUT_PROBE)
@@ -4924,6 +5094,7 @@ interface LayoutProbe {
   table: number
   bar: number
   nowPlaying: number
+  home: number
   hasCards: boolean
   hasTable: boolean
   hasQueue: boolean
@@ -4932,6 +5103,8 @@ interface LayoutProbe {
   discover: number
   hasDiscover: boolean
   discoverShrink: string | null
+  hasHome: boolean
+  homeStatsInside: boolean
   hasNowPlaying: boolean
 }
 
@@ -4952,6 +5125,7 @@ const LAYOUT_PROBE = `(() => {
     table: overflow('.list-scroll'),
     bar: overflow('.player-bar'),
     nowPlaying: overflow('.now-playing'),
+    home: overflow('.home-view'),
     hasCards: Boolean(document.querySelector('.cards')),
     hasTable: Boolean(document.querySelector('.list-scroll') && document.querySelector('.track-head')),
     hasQueue: Boolean(document.querySelector('.queue-list')),
@@ -4959,6 +5133,15 @@ const LAYOUT_PROBE = `(() => {
     hasOnline: Boolean(document.querySelector('.online-list')),
     discover: overflow('.discover-list') + overflow('.discover-bar'),
     hasDiscover: Boolean(document.querySelector('.discover-bar') || document.querySelector('.discover-list')),
+    hasHome: Boolean(document.querySelector('.home-view .home-hero')),
+    homeStatsInside: (() => {
+      const hero = document.querySelector('.home-hero')
+      const stats = document.querySelector('.home-stats')
+      if (!hero || !stats) return false
+      const outside = hero.getBoundingClientRect()
+      const inside = stats.getBoundingClientRect()
+      return inside.top >= outside.top && inside.bottom <= outside.bottom + 1
+    })(),
     // A flex child that is allowed to shrink clips its own rows instead of
     // making the view scroll. Every direct child must keep its natural height.
     discoverShrink: (() => {

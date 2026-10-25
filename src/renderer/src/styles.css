@@ -14,6 +14,7 @@
   --bg-active: #262a3d;
   --bg-sunken: #0c0e14;
   --bg-panel: #12141d;
+  --bg-panel-rgb: 18 20 29;
   --bg-elevated: #151824;
   --bg-input: #10121b;
   --bg-subtle: #171a24;
@@ -130,6 +131,7 @@
   --bg-active: #e2d7c7;
   --bg-sunken: #e9e0d2;
   --bg-panel: #f8f2e8;
+  --bg-panel-rgb: 248 242 232;
   --bg-elevated: #fdf9f2;
   --bg-input: #fffdf8;
   --bg-subtle: #f5eee4;
@@ -804,6 +806,710 @@ input[type='radio'] {
   max-width: 420px;
   line-height: 1.5;
 }
+
+/* ---------- home ---------- */
+
+/* The Home view is narrow when the sidebar and a resized window leave little
+   room. Container queries keep the hero and cards aware of the pane, not the
+   window, the same way the track list already does. */
+.home-view {
+  container-type: inline-size;
+  container-name: home;
+  gap: 22px;
+}
+
+/* The view is a scroll container, not a fixed-height flex box. Without this the
+   hero can be squeezed to its min-height and clip the stats row when it wraps
+   below the copy at narrow sizes. */
+.home-view > * {
+  flex: 0 0 auto;
+}
+
+.home-header {
+  align-items: center;
+}
+
+.home-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(270px, 0.75fr);
+  gap: 24px;
+  align-items: center;
+  padding: 26px 28px;
+  min-height: 188px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 6px);
+  background:
+    linear-gradient(135deg, rgb(var(--accent-rgb) / 18%), transparent 58%),
+    var(--bg-panel);
+  box-shadow: 0 14px 38px rgb(0 0 0 / 0.08);
+}
+
+.home-hero-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.24;
+  filter: saturate(1.2);
+  transform: scale(1.04);
+  pointer-events: none;
+}
+
+.home-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(
+    90deg,
+    rgb(var(--bg-panel-rgb) / 92%) 0%,
+    rgb(var(--bg-panel-rgb) / 72%) 46%,
+    rgb(var(--bg-panel-rgb) / 22%) 100%
+  );
+  pointer-events: none;
+}
+
+.home-hero > :not(.home-hero-backdrop) {
+  position: relative;
+  z-index: 2;
+}
+
+.home-hero-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.home-kicker {
+  color: var(--accent);
+  font-size: calc(10.5px * var(--text-scale));
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.home-hero h2 {
+  margin: 0;
+  max-width: 20ch;
+  font-size: calc(30px * var(--text-scale));
+  line-height: 1.06;
+  letter-spacing: -0.025em;
+}
+
+.home-hero p {
+  margin: 0;
+  max-width: 54ch;
+  color: var(--text-dim);
+  line-height: 1.55;
+}
+
+.home-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.home-scan {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-faint);
+  font-size: calc(12px * var(--text-scale));
+}
+
+.home-scan-note {
+  color: var(--text-faint);
+  font-size: calc(11.5px * var(--text-scale));
+}
+
+.home-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.home-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgb(var(--bg-raised-rgb) / 58%);
+  backdrop-filter: blur(10px);
+}
+
+.home-stat strong {
+  font-size: calc(21px * var(--text-scale));
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.home-stat span {
+  color: var(--text-faint);
+  font-size: calc(11px * var(--text-scale));
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.home-section {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  min-width: 0;
+}
+
+.home-section[hidden] {
+  display: none;
+}
+
+.home-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.home-section-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: calc(16px * var(--text-scale));
+  letter-spacing: -0.015em;
+}
+
+.home-section-head h2 svg {
+  color: var(--accent);
+}
+
+.home-section-head > span {
+  color: var(--text-faint);
+  font-size: calc(11.5px * var(--text-scale));
+}
+
+.home-shelf {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(128px, 154px);
+  gap: 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 2px 10px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
+
+.home-shelf > * {
+  scroll-snap-align: start;
+}
+
+.home-shelves-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 118px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-faint);
+}
+
+.home-empty {
+  min-height: 220px;
+}
+
+/* ---------- album / artist cards ---------- */
+
+.album-card {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.album-card-main,
+.artist-card-main,
+.playlist-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.album-card-main:hover:not(:disabled),
+.artist-card-main:hover:not(:disabled),
+.playlist-card:hover:not(:disabled) {
+  border-color: transparent;
+  background: transparent;
+}
+
+.album-card-main:focus-visible,
+.artist-card-main:focus-visible,
+.playlist-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+.album-card-art,
+.artist-card-art,
+.playlist-card-cover {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 2px);
+  background: var(--bg-art);
+  box-shadow: 0 10px 26px rgb(0 0 0 / 0.14);
+}
+
+.album-cover,
+.artist-cover,
+.album-detail-cover {
+  width: 100% !important;
+  height: 100% !important;
+  border: 0 !important;
+  border-radius: inherit !important;
+  object-fit: cover;
+}
+
+.album-card-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 42%, rgb(0 0 0 / 0.34));
+  opacity: 0;
+  transition: opacity 160ms ease;
+  pointer-events: none;
+}
+
+.album-card:hover .album-card-shade,
+.album-card:focus-within .album-card-shade {
+  opacity: 1;
+}
+
+.album-card-play {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  box-shadow: 0 6px 16px rgb(0 0 0 / 0.3);
+  opacity: 0;
+  transform: translateY(-3px);
+  transition: opacity 140ms ease, transform 140ms ease, background 120ms ease;
+}
+
+.album-card:hover .album-card-play,
+.album-card:focus-within .album-card-play,
+.artist-card:hover .album-card-play,
+.artist-card:focus-within .album-card-play {
+  opacity: 1;
+  transform: none;
+}
+
+.album-card-play:disabled {
+  opacity: 0.75;
+}
+
+.album-card-title {
+  display: block;
+  overflow: hidden;
+  color: var(--text);
+  font-size: calc(13.5px * var(--text-scale));
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.album-card-meta {
+  display: block;
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: calc(11.5px * var(--text-scale));
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artist-card {
+  position: relative;
+  min-width: 0;
+}
+
+.artist-card-main {
+  align-items: center;
+  text-align: center;
+}
+
+.artist-card-art {
+  width: 100%;
+  border-radius: 50%;
+}
+
+.artist-cover {
+  border-radius: 50% !important;
+}
+
+.artist-card-name {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: calc(13.5px * var(--text-scale));
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artist-card-meta {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: calc(11px * var(--text-scale));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playlist-card-cover {
+  display: grid;
+  place-items: center;
+  color: #fff;
+  border-color: transparent;
+}
+
+.playlist-card-cover[data-tone='0'] {
+  background: linear-gradient(140deg, #2d3e73, #6c8cff);
+}
+
+.playlist-card-cover[data-tone='1'] {
+  background: linear-gradient(140deg, #1f5c55, #3fc8b4);
+}
+
+.playlist-card-cover[data-tone='2'] {
+  background: linear-gradient(140deg, #4a356f, #a78bfa);
+}
+
+.playlist-card-cover[data-tone='3'] {
+  background: linear-gradient(140deg, #6d2e50, #f472b6);
+}
+
+.playlist-card-cover[data-tone='4'] {
+  background: linear-gradient(140deg, #684d1e, #f2b84b);
+}
+
+.playlist-card-initial {
+  font-size: calc(38px * var(--text-scale));
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  opacity: 0.9;
+}
+
+/* ---------- album grid ---------- */
+
+.album-grid-section {
+  scroll-margin-top: 18px;
+}
+
+.album-grid-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.album-grid-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: calc(17px * var(--text-scale));
+  letter-spacing: -0.015em;
+}
+
+.album-grid-head h2 svg {
+  color: var(--accent);
+}
+
+.album-grid-head p {
+  margin: 3px 0 0;
+  color: var(--text-faint);
+  font-size: calc(11.5px * var(--text-scale));
+}
+
+.album-grid-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.album-search input {
+  width: 168px;
+}
+
+.album-artist-chip {
+  color: var(--text);
+  border-color: var(--choice-selected-border);
+  background: var(--choice-selected-bg);
+}
+
+.album-sort {
+  display: inline-flex;
+}
+
+.album-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(146px, 1fr));
+  gap: 20px 16px;
+}
+
+.album-grid-more {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0 8px;
+}
+
+.album-grid-end {
+  margin: 0;
+  padding: 4px 0;
+  color: var(--text-faint);
+  font-size: calc(11.5px * var(--text-scale));
+  text-align: center;
+}
+
+.album-grid-empty {
+  min-height: 200px;
+}
+
+/* ---------- album detail ---------- */
+
+.home-back {
+  align-self: flex-start;
+  padding: 5px 9px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-dim);
+}
+
+.home-back:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.album-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.album-detail-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 24px;
+  padding: 22px 24px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 6px);
+  background:
+    linear-gradient(135deg, rgb(var(--accent-rgb) / 14%), transparent 62%),
+    var(--bg-panel);
+}
+
+.album-detail-art {
+  display: block;
+  flex: none;
+  width: clamp(140px, 22vw, 200px);
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-art);
+  box-shadow: 0 16px 38px rgb(0 0 0 / 0.22);
+}
+
+.album-detail-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  min-width: 0;
+}
+
+.album-detail-copy h2 {
+  margin: 0;
+  font-size: clamp(
+    calc(26px * var(--text-scale)),
+    3.8vw,
+    calc(42px * var(--text-scale))
+  );
+  line-height: 1.04;
+  letter-spacing: -0.035em;
+  overflow-wrap: anywhere;
+}
+
+.album-detail-artist {
+  margin: 2px 0 0;
+  color: var(--text);
+  font-size: calc(14px * var(--text-scale));
+  font-weight: 600;
+}
+
+.album-detail-meta {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: calc(12px * var(--text-scale));
+}
+
+.album-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.album-detail-tracks {
+  display: flex;
+  height: clamp(300px, 52vh, 640px);
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+}
+
+.album-detail-tracks > * {
+  flex: 1;
+}
+
+.album-detail-loading {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  color: var(--text-faint);
+}
+
+.album-detail-empty {
+  border: 0;
+  border-radius: 0;
+}
+
+.album-selection-bar {
+  padding: 0 4px;
+}
+
+@container home (max-width: 780px) {
+  .home-hero {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 22px;
+  }
+
+  .home-hero h2 {
+    font-size: calc(25px * var(--text-scale));
+  }
+
+  .home-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .home-stat {
+    padding: 10px;
+  }
+
+  .home-stat strong {
+    font-size: calc(17px * var(--text-scale));
+  }
+
+  .album-detail-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .album-detail-art {
+    width: min(52%, 200px);
+  }
+}
+
+@container home (max-width: 560px) {
+  .home-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-shelf {
+    grid-auto-columns: minmax(116px, 138px);
+  }
+
+  .album-grid {
+    grid-template-columns: repeat(auto-fill, minmax(122px, 1fr));
+    gap: 16px 12px;
+  }
+
+  .album-grid-tools,
+  .album-search,
+  .album-search input {
+    width: 100%;
+  }
+
+  .album-grid-tools {
+    align-items: stretch;
+  }
+
+  .album-sort {
+    flex: 1;
+  }
+
+  .album-sort button {
+    flex: 1;
+  }
+}
+
+/* A quiet accent edge makes the current destination easier to find than a
+   slightly different rectangle. It is the only visual change to the sidebar. */
+.nav-item {
+  border-radius: var(--radius-sm);
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.nav-item.active {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+::selection {
+  background: rgb(var(--accent-rgb) / 30%);
+}
+
 
 /* ---------- track list (virtualized) ---------- */
 

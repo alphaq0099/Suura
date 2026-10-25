@@ -553,6 +553,64 @@ async function main(): Promise<void> {
       checkEqual('the recent count follows the same window', library.stats().recentTracks, 3)
     }
 
+    // --- album and artist summaries ---------------------------------------
+    // Home groups by album title plus the album artist fallback, so these checks
+    // cover the same rule the artwork cache already uses.
+    const albumPage = library.listAlbums({ sort: 'title' })
+    checkEqual('album summaries count distinct albums', albumPage.total, 3)
+    checkEqual('album summaries return every album on one page', albumPage.albums.length, 3)
+    checkEqual('the library album count uses the grid’s grouping', library.stats().albums, albumPage.total)
+    const fixturesAlbum = albumPage.albums.find((album) => album.album === 'Fixtures Vol 1')
+    checkEqual('album summaries fall back to the track artist', fixturesAlbum?.albumArtist, 'Smoke Artist')
+    checkEqual('album summaries count their tracks', fixturesAlbum?.trackCount, 2)
+    check(
+      'album summaries carry a representative track',
+      Number.isInteger(fixturesAlbum?.trackId) && repo.getById(fixturesAlbum?.trackId ?? -1)?.album === 'Fixtures Vol 1'
+    )
+    check(
+      'album summaries sum the album duration',
+      (fixturesAlbum?.durationMs ?? 0) > 0
+    )
+    checkEqual('album search matches a title', library.listAlbums({ search: 'Assorted' }).total, 1)
+    checkEqual(
+      'album search matches the album artist',
+      library.listAlbums({ search: 'Smoke' }).total,
+      1
+    )
+    checkEqual(
+      'the artist filter keeps that artist’s albums',
+      library.listAlbums({ artist: 'Another Artist' }).total,
+      2
+    )
+    checkEqual('album pages honour the offset', library.listAlbums({ limit: 2, offset: 2 }).albums.length, 1)
+
+    const artistRows = library.listArtists(10)
+    checkEqual('artist summaries group by artist', artistRows.length, 2)
+    const smokeArtist = artistRows.find((artist) => artist.artist === 'Smoke Artist')
+    checkEqual('artist summaries count tracks', smokeArtist?.trackCount, 2)
+    checkEqual('artist summaries count distinct albums', smokeArtist?.albumCount, 1)
+    check(
+      'artist summaries carry a representative track',
+      Number.isInteger(smokeArtist?.trackId) && repo.getById(smokeArtist?.trackId ?? -1)?.artist === 'Smoke Artist'
+    )
+
+    const albumTracks = library.list({
+      album: 'Fixtures Vol 1',
+      albumArtist: 'Smoke Artist',
+      sort: 'album',
+      direction: 'asc'
+    })
+    checkEqual('album detail returns only that album', albumTracks.total, 2)
+    check(
+      'album detail is ordered by track number',
+      albumTracks.tracks[0]?.trackNo === 1 && albumTracks.tracks[1]?.trackNo === 2
+    )
+    checkEqual(
+      'an exact artist query returns that artist’s tracks',
+      library.list({ artist: 'Another Artist' }).total,
+      2
+    )
+
     // --- allowlist --------------------------------------------------------
     check('a file inside a library folder is allowed', library.isPathAllowed(join(musicDir, 'x.flac')))
     check('a file outside every library folder is denied', !library.isPathAllowed(join(root, 'elsewhere.flac')))

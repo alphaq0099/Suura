@@ -3,6 +3,7 @@ import { formatCount } from '@shared/format'
 import {
   BrandMarkIcon,
   CogIcon,
+  HomeIcon,
   LibraryIcon,
   LinkIcon,
   ListMusicIcon,
@@ -15,7 +16,14 @@ import {
   YouTubeIcon
 } from './Icons'
 
-export type ViewName = 'library' | 'search' | 'online' | 'playlists' | 'queue' | 'settings'
+export type ViewName =
+  | 'home'
+  | 'library'
+  | 'search'
+  | 'online'
+  | 'playlists'
+  | 'queue'
+  | 'settings'
 
 export interface SidebarProps {
   view: ViewName
@@ -50,6 +58,16 @@ export function Sidebar({
         {modern ? <BrandMarkIcon size={20} /> : <MusicIcon size={18} />}
         <span>Player</span>
       </div>
+
+      <button
+        type="button"
+        className={view === 'home' ? 'nav-item active' : 'nav-item'}
+        onClick={() => onSelect('home')}
+        title="Recently added albums, artists and your whole collection"
+      >
+        <HomeIcon />
+        <span>Home</span>
+      </button>
 
       <button
         type="button"

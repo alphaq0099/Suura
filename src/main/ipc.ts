@@ -18,6 +18,7 @@ import { isImportedPlaylistTrackId } from '@shared/online'
 import { clampPlaylistIndexWidth } from '@shared/playlists'
 import type {
   AccentName,
+  AlbumSortField,
   AppSettings,
   ArtworkFit,
   ArtworkShape,
@@ -34,6 +35,7 @@ import type {
   StartupView,
   LibraryClickAction,
   LibrarySettings,
+  ListAlbumsQuery,
   ListTracksQuery,
   MotionPreference,
   PlaybackSnapshot,
@@ -50,7 +52,7 @@ import type {
   TrackSortField,
   VisualSettings
 } from '@shared/types'
-import { STARTUP_VIEWS } from '@shared/types'
+import { ALBUM_SORT_FIELDS, STARTUP_VIEWS } from '@shared/types'
 import {
   createBackupBundle,
   inspectBackupBundle,
@@ -447,6 +449,15 @@ function sanitizeListQuery(input: unknown): ListTracksQuery {
   if (input.direction === 'asc' || input.direction === 'desc') {
     query.direction = input.direction
   }
+  if (typeof input.album === 'string' && input.album.length > 0) {
+    query.album = input.album.slice(0, 500)
+  }
+  if (typeof input.albumArtist === 'string') {
+    query.albumArtist = input.albumArtist.slice(0, 500)
+  }
+  if (typeof input.artist === 'string' && input.artist.trim().length > 0) {
+    query.artist = input.artist.slice(0, 500)
+  }
   if (typeof input.limit === 'number' && Number.isFinite(input.limit)) {
     query.limit = Math.round(clamp(input.limit, 1, 50000))
   }
@@ -454,6 +465,35 @@ function sanitizeListQuery(input: unknown): ListTracksQuery {
     query.offset = Math.max(0, Math.round(input.offset))
   }
   return query
+}
+
+function sanitizeAlbumListQuery(input: unknown): ListAlbumsQuery {
+  if (!isPlainObject(input)) return {}
+  const query: ListAlbumsQuery = {}
+  if (typeof input.search === 'string' && input.search.trim().length > 0) {
+    query.search = input.search.trim().slice(0, 200)
+  }
+  if (typeof input.artist === 'string' && input.artist.trim().length > 0) {
+    query.artist = input.artist.slice(0, 500)
+  }
+  if (typeof input.sort === 'string' && ALBUM_SORT_FIELDS.includes(input.sort as AlbumSortField)) {
+    query.sort = input.sort as AlbumSortField
+  }
+  if (input.direction === 'asc' || input.direction === 'desc') {
+    query.direction = input.direction
+  }
+  if (typeof input.limit === 'number' && Number.isFinite(input.limit)) {
+    query.limit = Math.round(clamp(input.limit, 1, 1000))
+  }
+  if (typeof input.offset === 'number' && Number.isFinite(input.offset)) {
+    query.offset = Math.max(0, Math.round(input.offset))
+  }
+  return query
+}
+
+function sanitizeArtistLimit(input: unknown): number {
+  if (typeof input !== 'number' || !Number.isFinite(input)) return 24
+  return Math.round(clamp(input, 1, 500))
 }
 
 export function registerIpcHandlers(container: AppContainer): void {
@@ -696,6 +736,14 @@ export function registerIpcHandlers(container: AppContainer): void {
   })
 
   ipcMain.handle(IPC.libraryListTracks, (_event, query: unknown) => library.list(sanitizeListQuery(query)))
+
+  ipcMain.handle(IPC.libraryListAlbums, (_event, query: unknown) =>
+    library.listAlbums(sanitizeAlbumListQuery(query))
+  )
+
+  ipcMain.handle(IPC.libraryListArtists, (_event, limit: unknown) =>
+    library.listArtists(sanitizeArtistLimit(limit))
+  )
 
   ipcMain.handle(IPC.libraryStats, () => library.stats())
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
+import type { ArtworkRequest } from '@shared/ipc'
 import type { Track } from '@shared/types'
 import { buildArtworkUrl } from '@shared/artwork-url'
 import { useArtwork } from '../hooks/useArtwork'
@@ -23,6 +24,11 @@ export interface ArtworkImageProps {
    * disagree about which cover is showing.
    */
   artworkKey?: string | null
+  /**
+   * A representative track to ask about when the caller has no `Track` object.
+   * Album and artist cards use this; it is ignored once `artworkKey` is known.
+   */
+  request?: ArtworkRequest | null
   className?: string
   /**
    * How the element is sized.
@@ -52,11 +58,16 @@ export function ArtworkImage({
   size = 26,
   iconSize,
   artworkKey,
+  request,
   className,
   sizing = 'square'
 }: ArtworkImageProps) {
-  const resolvedKey = useArtwork(track)
-  const key = artworkKey !== undefined ? artworkKey : resolvedKey
+  // An explicit non-empty key wins and needs no lookup. A null, absent or empty
+  // one falls back to the track, or to the card's representative-track request,
+  // so opening Home does not extract a cover for every album at once.
+  const hasKey = Boolean(artworkKey)
+  const resolvedKey = useArtwork(hasKey ? null : track, hasKey ? null : (request ?? null))
+  const key = artworkKey ? artworkKey : resolvedKey
 
   // The cover's width / height, as a bare number so CSS can use it for both
   // `aspect-ratio` and a `calc()`. Unknown until the image decodes, which is the

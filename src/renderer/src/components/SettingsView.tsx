@@ -145,6 +145,7 @@ const CLICK_CHOICES: Array<{ value: LibraryClickAction; label: string }> = [
 
 const STARTUP_VIEW_CHOICES: Array<{ value: StartupView; label: string }> = [
   { value: 'last', label: 'Last used' },
+  { value: 'home', label: 'Home' },
   { value: 'library', label: 'Library' },
   { value: 'online', label: 'YouTube' },
   { value: 'search', label: 'Search' },

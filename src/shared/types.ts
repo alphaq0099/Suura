@@ -169,6 +169,7 @@ export type ResolvableTrack = Pick<Track, 'id' | 'sourceKind' | 'sourceId' | 'fi
 export interface LibraryStats {
   tracks: number
   artists: number
+  /** Grouped by album title and the album-artist fallback, as Home does. */
   albums: number
   totalBytes: number
   lastScanAt: number | null
@@ -719,7 +720,7 @@ export interface InteractionSettings {
 }
 
 /** A view the app can open at launch. `last` restores the last non-settings view. */
-export const STARTUP_VIEWS = ['last', 'library', 'search', 'online', 'playlists', 'queue'] as const
+export const STARTUP_VIEWS = ['last', 'home', 'library', 'search', 'online', 'playlists', 'queue'] as const
 export type StartupView = (typeof STARTUP_VIEWS)[number]
 
 export function isStartupView(value: unknown): value is StartupView {
@@ -822,6 +823,15 @@ export interface ListTracksQuery {
   /** Sort field. Anything else falls back to the default artist/album/track order. */
   sort?: TrackSortField
   direction?: SortDirection
+  /**
+   * Exact album title and its grouping artist, used by the album detail view.
+   * Album summaries group by the album artist with a fallback to the track
+   * artist, so the pair has to travel together.
+   */
+  album?: string
+  albumArtist?: string
+  /** Exact track artist, used by an artist card's quick play. */
+  artist?: string
   limit?: number
   offset?: number
 }
@@ -841,6 +851,62 @@ export interface TrackPage {
   tracks: Track[]
   /** Rows matching the query, ignoring limit/offset. */
   total: number
+}
+
+/**
+ * One album, grouped by album title and album artist.
+ *
+ * The grouping artist falls back to the track artist when a file has no
+ * `album_artist` tag, which is the same rule the artwork cache uses. `trackId`
+ * is a representative row so a cover can be extracted lazily without pulling
+ * every track in the album into the renderer.
+ */
+export interface AlbumSummary {
+  album: string
+  /** Grouping artist: album artist, then track artist, then `''`. */
+  albumArtist: string
+  trackCount: number
+  durationMs: number
+  year: number | null
+  trackId: number
+  artworkKey: string | null
+  addedAt: number
+  lastPlayedAt: number | null
+}
+
+export const ALBUM_SORT_FIELDS = ['recent', 'played', 'title', 'artist'] as const
+export type AlbumSortField = (typeof ALBUM_SORT_FIELDS)[number]
+
+export interface ListAlbumsQuery {
+  /** Matches the album title or the grouping artist. */
+  search?: string
+  /**
+   * Restricts the grid to the artist's own grouping; a compilation still
+   * matches any artist on it.
+   */
+  artist?: string
+  sort?: AlbumSortField
+  direction?: SortDirection
+  limit?: number
+  offset?: number
+}
+
+export interface AlbumPage {
+  albums: AlbumSummary[]
+  /** Albums matching the query, ignoring limit/offset. */
+  total: number
+}
+
+/** One artist, for the Home shelf. */
+export interface ArtistSummary {
+  artist: string
+  trackCount: number
+  albumCount: number
+  /** A representative row, used to extract a portrait lazily. */
+  trackId: number
+  artworkKey: string | null
+  addedAt: number
+  lastPlayedAt: number | null
 }
 
 export interface ResolvedSource {

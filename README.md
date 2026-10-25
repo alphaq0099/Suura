@@ -7,7 +7,7 @@ The full plan lives in [`ROADMAP.md`](./ROADMAP.md). This README covers what is 
 
 ---
 
-## Status: M1 complete, M3 measured, M4-lite saving, M5 discovery complete, M6 Settings complete; M7 data care complete
+## Status: M1 complete, M2 complete, M3 measured, M4-lite saving, M5 discovery complete, M6 Settings complete, M7 data care complete, M12a offline cache complete; Home and the album grid are in
 
 Working today:
 
@@ -28,6 +28,12 @@ Working today:
   instead of sending the user to a separate screen: those rows support Play, multi-select, Add to queue, Save to
   library, and a row menu with Details and Remove from history. They stay marked as the current row and remain links
   until saved — they are not counted as local tracks or included in the local filters.
+- **Home** (visual revamp): a dashboard over the same library, with a cover-led hero and track/album/artist/disk totals,
+  **Recently played** and **Recently added** shelves, artist cards (click one to filter the album grid; its play button
+  plays everything by that artist) and playlist cards. Below it, **All albums** is a searchable, sortable artwork grid
+  grouped by album title and album artist; an album opens in place with its tracks, selection bar, context menu,
+  Play/Queue and a Back button. Covers are requested only as cards approach the viewport. A fresh install starts on Home;
+  Settings → General can choose it explicitly or pick another launch view.
 - **Cover art** is extracted from embedded tags, resized, and cached content-addressed; rows and the player bar show it,
   with a placeholder when a file has none. **Settings → Appearance** chooses the theme (Midnight, Cream or Follow Windows),
   one of five contrast-checked accents, Compact/Comfortable/Spacious density, four text sizes for the whole interface,
@@ -179,10 +185,10 @@ Working today:
   cover-art shape, and independent switches for the player's large cover and its cover-colour ambience. Accented adds an
   accent wash and a CSS blur over the app's own background rather than native acrylic/Mica, so it behaves the same on
   every Windows build; it deliberately does not claim to be an album-art frost. Reset appearance restores every choice on
-  the tab. **General** chooses the launch view (last used by default, or Library, YouTube, Search, Playlists or Queue;
-  Settings itself is never restored), whether a full scan runs at launch, what a single or double click does, the
-  volume-wheel step (5% by default, configurable 1–15, with Shift still 1%) and whether the restored local queue starts
-  automatically; with that off, restored playback stays paused. Misc has a separate **Reset preferences** action: it
+  the tab. **General** chooses the launch view (last used by default, or Home, Library, YouTube, Search, Playlists or Queue;
+  a fresh install opens on Home; Settings itself is never restored), whether a full scan runs at launch, what a single or
+  double click does, the volume-wheel step (5% by default, configurable 1–15, with Shift still 1%) and whether the
+  restored local queue starts automatically; with that off, restored playback stays paused. Misc has a separate **Reset preferences** action: it
   restores playback, appearance, click behaviour, startup, backup retention, import limits, retention mode,
   cache budget and age, saving quality and request-budget choices, but keeps the library, the engine and download
   folders and the provider command. Each of
@@ -664,6 +670,11 @@ docs/notes/             spike and measurement records, with raw JSON
 - **The library list is virtualized.** Only the visible rows plus an overscan are in the DOM, the grid container is a
   single tab stop owning `aria-activedescendant`, and sorting is applied in SQL over the whole library (not the loaded
   page) with `id` always appended so paging is a total order.
+- **Home is a lens over the library, not a second store.** Album summaries group in SQL by title and the same
+  album-artist fallback the artwork cache uses. The artist filter is correlated to that grouping so two same-titled
+  releases do not leak into each other, while a compilation still matches any artist on it. Cards request a
+  representative track's cover through an `IntersectionObserver`, so opening Home does not trigger an extraction burst
+  for every album. The hero stats, shelves and grid share that grouping; there is no separate Home index.
 - **The player window covers the app rather than replacing it.** The views behind it stay mounted, so opening and closing
   it does not reset the list's scroll position and cannot remount the `<audio>` element mid-track. Closing is a two-step
   state (`nowPlaying` + `nowPlayingClosing`) rather than a plain toggle, because the element has to survive the length of

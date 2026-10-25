@@ -1,8 +1,11 @@
 import { stat } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type {
+  AlbumPage,
+  ArtistSummary,
   DroppedPathsResult,
   LibraryStats,
+  ListAlbumsQuery,
   ListTracksQuery,
   ScanProgress,
   Track,
@@ -52,6 +55,14 @@ export class LibraryService {
 
   list(query: ListTracksQuery = {}): TrackPage {
     return this.repo.list(query)
+  }
+
+  listAlbums(query: ListAlbumsQuery = {}): AlbumPage {
+    return this.repo.listAlbums(query)
+  }
+
+  listArtists(limit = 24): ArtistSummary[] {
+    return this.repo.listArtists(limit)
   }
 
   stats(): LibraryStats {

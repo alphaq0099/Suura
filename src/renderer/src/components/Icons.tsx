@@ -115,6 +115,47 @@ export function LinkIcon({ size = 16 }: IconProps) {
   )
 }
 
+/** Home: the dashboard above the library views. */
+export function HomeIcon({ size = 18 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <path d="m3.8 10.4 7.4-6.1a1.3 1.3 0 0 1 1.6 0l7.4 6.1" />
+      <path d="M5.8 9.2V19a1.2 1.2 0 0 0 1.2 1.2h10a1.2 1.2 0 0 0 1.2-1.2V9.2" />
+      <path d="M9.8 20.2v-5.4h4.4v5.4" />
+    </svg>
+  )
+}
+
+/** A disc, used beside album counts and in album cards. */
+export function DiscIcon({ size = 18 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <circle cx="12" cy="12" r="8.5" />
+      <circle cx="12" cy="12" r="2.2" />
+      <path d="M12 3.5a8.5 8.5 0 0 1 8.5 8.5" opacity=".45" />
+    </svg>
+  )
+}
+
+/** An artist: a head and shoulders. */
+export function ArtistIcon({ size = 18 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <circle cx="12" cy="8" r="3.6" />
+      <path d="M4.8 20c.5-3.6 3.4-6 7.2-6s6.7 2.4 7.2 6" />
+    </svg>
+  )
+}
+
+export function ArrowLeftIcon({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <path d="M19 12H5" />
+      <path d="m11 6-6 6 6 6" />
+    </svg>
+  )
+}
+
 /**
  * Speaker outline plus stroked waves.
  *

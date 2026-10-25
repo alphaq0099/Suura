@@ -23,6 +23,7 @@ import {
 import { youtubeWatchUrl } from '@shared/youtube'
 import { api, messageOf } from './api'
 import { FolderIcon } from './components/Icons'
+import { HomeView } from './components/HomeView'
 import { LibraryView } from './components/LibraryView'
 import { MiniPlayer } from './components/MiniPlayer'
 import { NowPlayingView } from './components/NowPlayingView'
@@ -53,14 +54,14 @@ const NOW_PLAYING_EXIT_MS = 180
 
 /** Settings is deliberately not a restorable "last view". */
 const LAST_VIEW_KEY = 'player:last-view'
-const SAVED_VIEWS: ViewName[] = ['library', 'search', 'online', 'playlists', 'queue']
+const SAVED_VIEWS: ViewName[] = ['home', 'library', 'search', 'online', 'playlists', 'queue']
 
 function isSavedView(value: string | null): value is ViewName {
   return value !== null && SAVED_VIEWS.includes(value as ViewName)
 }
 
 export function App() {
-  const [view, setView] = useState<ViewName>('library')
+  const [view, setView] = useState<ViewName>('home')
   /** Whether the full-window player is covering the app. */
   const [nowPlaying, setNowPlaying] = useState(false)
   /** Set while the player window's exit animation plays, before it unmounts. */
@@ -605,6 +606,24 @@ export function App() {
     player.playQueue(tagQueueTracks(selected, source), 0)
   }, [player, selectedIds, showingStreams, visibleTracks])
 
+  /** Home plays a specific local list (an album or an artist), not the library list. */
+  const playLocalTracks = useCallback(
+    (tracks: Track[], index: number): void => {
+      if (tracks.length === 0) return
+      setPlayingList(null)
+      player.playQueue(tagQueueTracks(tracks, LIBRARY_QUEUE_SOURCE), index)
+    },
+    [player]
+  )
+
+  const queueLocalTracks = useCallback(
+    (tracks: Track[]): void => {
+      if (tracks.length === 0) return
+      player.enqueue(tagQueueTracks(tracks, LIBRARY_QUEUE_SOURCE))
+    },
+    [player]
+  )
+
   const selectAllVisible = useCallback((): void => {
     if (showingStreams) {
       selectMany(streamTracks.map((track) => track.id))
@@ -857,7 +876,33 @@ export function App() {
         onSelect={setView}
       />
 
-      {view === 'library' ? (
+      {view === 'home' ? (
+        <HomeView
+          stats={stats}
+          progress={progress}
+          scanning={scanning}
+          error={combinedError}
+          playlists={playlists.playlists}
+          currentTrackId={player.current?.id ?? null}
+          isPlaying={player.isPlaying}
+          rowHeight={DENSITY_ROW_HEIGHT[settings.visuals.density]}
+          singleClick={settings.interaction.librarySingleClick}
+          doubleClick={settings.interaction.libraryDoubleClick}
+          onAddFolder={() => void addFolder()}
+          onScan={() => void scan()}
+          onCancelScan={() => void api.cancelScan()}
+          onOpenLibrary={() => setView('library')}
+          onOpenPlaylist={(playlistId) => {
+            playlists.select(playlistId)
+            setView('playlists')
+          }}
+          onPlayLocal={playLocalTracks}
+          onQueueLocal={queueLocalTracks}
+          onReveal={(trackId) => void revealTrack(trackId)}
+          onAddTracksToPlaylist={playlists.addTracks}
+          onCreatePlaylist={playlists.create}
+        />
+      ) : view === 'library' ? (
         <LibraryView
           tracks={visibleTracks}
           total={visibleTotal}

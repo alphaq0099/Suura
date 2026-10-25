@@ -1,4 +1,16 @@
-import type { LibraryStats, ListTracksQuery, SourceKind, Track, TrackPage, TrackSortField } from '@shared/types'
+import type {
+  AlbumPage,
+  AlbumSortField,
+  AlbumSummary,
+  ArtistSummary,
+  LibraryStats,
+  ListAlbumsQuery,
+  ListTracksQuery,
+  SourceKind,
+  Track,
+  TrackPage,
+  TrackSortField
+} from '@shared/types'
 import { recentlyAddedCutoff } from '@shared/library'
 import { isPathInside, localContentKey, normalizePath } from './content-key'
 import type { SqlDatabase, SqlParam } from '../db/driver'
@@ -238,10 +250,92 @@ function buildFilter(query: ListTracksQuery): { where: string; params: SqlParam[
       break
   }
 
+  if (query.album) {
+    // The pair is exact: two different albums with the same title (a self-titled
+    // release, a soundtrack) must not leak into each other's track list.
+    conditions.push(`album = ? AND ${ALBUM_ARTIST} = ?`)
+    params.push(query.album, query.albumArtist ?? '')
+  }
+  if (query.artist) {
+    conditions.push('artist = ?')
+    params.push(query.artist)
+  }
+
   return {
     where: conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
     params
   }
+}
+
+/**
+ * Who owns an album.
+ *
+ * Most files carry `album_artist`; for the rest the track artist is the closest
+ * honest answer. The same expression is used by the album grid, the album detail
+ * query and the artwork cache, so a title can never land in one grouping on the
+ * way in and another on the way out.
+ */
+function albumArtistExpr(alias = ''): string {
+  const prefix = alias.length > 0 ? `${alias}.` : ''
+  return `COALESCE(NULLIF(${prefix}album_artist, ''), NULLIF(${prefix}artist, ''), '')`
+}
+
+const ALBUM_ARTIST = albumArtistExpr()
+
+/** Escapes the wildcard characters in a user's search term for a LIKE query. */
+function likeTerm(input: string): string {
+  return `%${input.replace(/[\\%_]/g, '\\$&')}%`
+}
+
+const ALBUM_SORT_COLUMNS: Record<AlbumSortField, string> = {
+  recent: 'MAX(added_at)',
+  played: 'MAX(last_played_at)',
+  title: `album COLLATE NOCASE`,
+  artist: `${ALBUM_ARTIST} COLLATE NOCASE`
+}
+
+/**
+ * Builds the ORDER BY clause for an album query.
+ *
+ * Recent and played have an obvious direction of their own, so an omitted
+ * direction means "newest first" for those and A-Z for the two label sorts.
+ * The direction is still explicit in the query when the UI sends one.
+ */
+function buildAlbumOrder(query: ListAlbumsQuery): string {
+  const field = query.sort ?? 'recent'
+  const fallback = field === 'recent' || field === 'played' ? 'desc' : 'asc'
+  const direction = (query.direction ?? fallback) === 'desc' ? 'DESC' : 'ASC'
+  const column = ALBUM_SORT_COLUMNS[field] ?? ALBUM_SORT_COLUMNS.recent
+  // An unplayed album must sort below every played one, even though SQLite puts
+  // NULL first in a DESC order by default.
+  const nulls = field === 'played' ? '(MAX(last_played_at) IS NULL) ASC, ' : ''
+  return `${nulls}${column} ${direction}, album COLLATE NOCASE ASC, ${ALBUM_ARTIST} COLLATE NOCASE ASC`
+}
+
+function buildAlbumFilter(query: ListAlbumsQuery): { where: string; params: SqlParam[] } {
+  const conditions: string[] = ["missing_at IS NULL", "album IS NOT NULL", "album <> ''"]
+  const params: SqlParam[] = []
+
+  if (query.search) {
+    const term = likeTerm(query.search)
+    conditions.push(`(album LIKE ? ESCAPE '\\' OR ${ALBUM_ARTIST} LIKE ? ESCAPE '\\')`)
+    params.push(term, term)
+  }
+  if (query.artist) {
+    // A track makes the album belong to its artist inside the same grouping.
+    // Correlating the grouping artist as well keeps two releases that happen to
+    // share a title apart, while a compilation still matches any artist on it.
+    conditions.push(
+      `EXISTS (SELECT 1 FROM tracks a
+         WHERE a.album = tracks.album
+           AND ${albumArtistExpr('a')} = ${albumArtistExpr('tracks')}
+           AND a.artist = ?
+           AND a.missing_at IS NULL)`
+    )
+    params.push(query.artist)
+  }
+
+  return { where: `WHERE ${conditions.join(' AND ')}`, params }
 }
 
 /**
@@ -428,7 +522,7 @@ export class TrackRepository {
            COUNT(*) AS tracks,
            COUNT(DISTINCT CASE WHEN artist IS NOT NULL AND artist <> '' THEN artist END) AS artists,
            COUNT(DISTINCT CASE WHEN album IS NOT NULL AND album <> ''
-             THEN artist || char(31) || album END) AS albums,
+             THEN album || char(31) || ${ALBUM_ARTIST} END) AS albums,
            COALESCE(SUM(file_size), 0) AS totalBytes,
            COALESCE(SUM(CASE WHEN added_at >= ? THEN 1 ELSE 0 END), 0) AS recentTracks,
            COALESCE(SUM(CASE WHEN play_count > 0 THEN 1 ELSE 0 END), 0) AS playedTracks,
@@ -459,6 +553,132 @@ export class TrackRepository {
       unplayedTracks: row?.unplayedTracks ?? 0,
       missingTracks: row?.missingTracks ?? 0
     }
+  }
+
+  /**
+   * Albums for Home: one row per album title and grouping artist.
+   *
+   * Counting through a grouped subquery rather than `COUNT(DISTINCT ...)` keeps
+   * the total and the page using exactly the same predicate, including search and
+   * the artist filter.
+   */
+  listAlbums(query: ListAlbumsQuery = {}): AlbumPage {
+    const limit = Math.min(Math.max(query.limit ?? 120, 1), 1000)
+    const offset = Math.max(query.offset ?? 0, 0)
+    const { where, params } = buildAlbumFilter(query)
+    const order = buildAlbumOrder(query)
+
+    const rows = this.db
+      .prepare(
+        `SELECT
+           album,
+           ${ALBUM_ARTIST} AS album_artist,
+           COUNT(*) AS track_count,
+           COALESCE(SUM(duration_ms), 0) AS duration_ms,
+           MAX(year) AS year,
+           MIN(id) AS track_id,
+           MAX(added_at) AS added_at,
+           MAX(last_played_at) AS last_played_at,
+           (SELECT a.artwork_key FROM tracks a
+             WHERE a.album = tracks.album
+               AND ${albumArtistExpr('a')} = ${albumArtistExpr('tracks')}
+               AND a.artwork_key IS NOT NULL AND a.artwork_key <> ''
+             ORDER BY a.id ASC
+             LIMIT 1) AS artwork_key
+         FROM tracks
+         ${where}
+         GROUP BY album, ${ALBUM_ARTIST}
+         ORDER BY ${order}
+         LIMIT ? OFFSET ?`
+      )
+      .all<{
+        album: string
+        album_artist: string
+        track_count: number
+        duration_ms: number
+        year: number | null
+        track_id: number
+        added_at: number
+        last_played_at: number | null
+        artwork_key: string | null
+      }>(...params, limit, offset)
+
+    const totalRow = this.db
+      .prepare(
+        `SELECT COUNT(*) AS total FROM (
+           SELECT 1 FROM tracks ${where}
+           GROUP BY album, ${ALBUM_ARTIST}
+         )`
+      )
+      .get<{ total: number }>(...params)
+
+    const albums: AlbumSummary[] = rows.map((row) => ({
+      album: row.album,
+      albumArtist: row.album_artist,
+      trackCount: row.track_count,
+      durationMs: row.duration_ms,
+      year: row.year,
+      trackId: row.track_id,
+      artworkKey: row.artwork_key && row.artwork_key.length > 0 ? row.artwork_key : null,
+      addedAt: row.added_at,
+      lastPlayedAt: row.last_played_at
+    }))
+
+    return { albums, total: totalRow?.total ?? 0 }
+  }
+
+  /**
+   * Artists for Home, most recently played first.
+   *
+   * `MIN(id)` is a stable representative row for lazy artwork extraction. The
+   * artwork subquery is separate from it because the first track by an artist is
+   * not necessarily the one with a cover.
+   */
+  listArtists(limit = 24): ArtistSummary[] {
+    const safeLimit = Math.min(Math.max(Math.round(limit), 1), 500)
+    return this.db
+      .prepare(
+        `SELECT
+           artist,
+           COUNT(*) AS track_count,
+           COUNT(DISTINCT CASE WHEN album IS NOT NULL AND album <> ''
+             THEN album || char(31) || ${ALBUM_ARTIST} END) AS album_count,
+           MIN(id) AS track_id,
+           MAX(added_at) AS added_at,
+           MAX(last_played_at) AS last_played_at,
+           (SELECT a.artwork_key FROM tracks a
+             WHERE a.artist = tracks.artist
+               AND a.artwork_key IS NOT NULL AND a.artwork_key <> ''
+             ORDER BY a.id ASC
+             LIMIT 1) AS artwork_key
+         FROM tracks
+         WHERE missing_at IS NULL AND artist IS NOT NULL AND artist <> ''
+         GROUP BY artist
+         ORDER BY (MAX(last_played_at) IS NULL) ASC,
+                  MAX(last_played_at) DESC,
+                  MAX(added_at) DESC,
+                  SUM(play_count) DESC,
+                  artist COLLATE NOCASE ASC
+         LIMIT ?`
+      )
+      .all<{
+        artist: string
+        track_count: number
+        album_count: number
+        track_id: number
+        added_at: number
+        last_played_at: number | null
+        artwork_key: string | null
+      }>(safeLimit)
+      .map((row) => ({
+        artist: row.artist,
+        trackCount: row.track_count,
+        albumCount: row.album_count,
+        trackId: row.track_id,
+        artworkKey: row.artwork_key && row.artwork_key.length > 0 ? row.artwork_key : null,
+        addedAt: row.added_at,
+        lastPlayedAt: row.last_played_at
+      }))
   }
 
   /**

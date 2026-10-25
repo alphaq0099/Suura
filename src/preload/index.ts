@@ -10,6 +10,7 @@ import {
 import type {
   AppSettings,
   DeepPartial,
+  ListAlbumsQuery,
   ListTracksQuery,
   PlaybackSnapshot,
   ResolvedSource
@@ -54,6 +55,10 @@ const api: PlayerApi = {
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
 
   listTracks: (query?: ListTracksQuery) => ipcRenderer.invoke(IPC.libraryListTracks, query),
+
+  listAlbums: (query?: ListAlbumsQuery) => ipcRenderer.invoke(IPC.libraryListAlbums, query),
+
+  listArtists: (limit?: number) => ipcRenderer.invoke(IPC.libraryListArtists, limit),
 
   getStats: () => ipcRenderer.invoke(IPC.libraryStats),
 
