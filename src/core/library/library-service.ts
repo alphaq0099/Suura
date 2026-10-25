@@ -21,6 +21,11 @@ import type { Logger } from '../logging/logger'
 export interface LibraryServiceEvents {
   onScanProgress?: (progress: ScanProgress) => void
   onLibraryChanged?: () => void
+  /**
+   * A listen crossed the threshold. Kept separate from `onLibraryChanged` so
+   * play-count-dependent views can refresh without reloading every table.
+   */
+  onPlayHistoryChanged?: () => void
 }
 
 /** A track counts as played once it is finished or has been listened to this long. */
@@ -276,6 +281,7 @@ export class LibraryService {
   reportPlayback(trackId: number, playedMs: number, completed: boolean): void {
     if (!completed && playedMs < PLAY_THRESHOLD_MS) return
     this.repo.incrementPlayCount(trackId, Date.now())
+    this.events.onPlayHistoryChanged?.()
   }
 
   /** True when `filePath` is inside a configured library folder. */

@@ -2522,10 +2522,73 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       downloadsUi
     )
 
-    await evaluate<void>(window, `window.player.dismissDownload('selftestvid')`)
+    // Re-entering the view must read persisted history, not the slice that
+    // happened to be loaded when the app started. This is the relaunch symptom
+    // reduced to a remount, plus the layout regression: Downloads scrolls like
+    // every other main view and keeps its top padding.
+    container.downloadHistory.record(
+      {
+        videoId: 'selftest002',
+        status: 'saved',
+        percent: 100,
+        error: null,
+        trackId: null
+      },
+      { videoId: 'selftest002', title: 'Selftest saved track', artist: 'Night', album: 'Offline' }
+    )
+    broadcast(IPC_EVENTS.downloadChanged, {
+      videoId: 'selftest002',
+      status: 'saved',
+      percent: 100,
+      error: null,
+      trackId: null,
+      speedBytesPerSecond: null,
+      etaSeconds: null
+    })
+    const persistedLayout = await evaluate<{
+      savedFound: boolean
+      mainView: boolean
+      topPadding: number
+    }>(
+      window,
+      `(async () => {
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const nav = (label) =>
+           [...document.querySelectorAll('.nav-item')].find((el) =>
+             (el.textContent || '').trim().startsWith(label)
+           )
+         nav('Home')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await sleep(250)
+         nav('Downloads')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await sleep(500)
+         const view = document.querySelector('.downloads-view')
+         const saved = [...document.querySelectorAll('.download-item')].find((row) =>
+           (row.textContent || '').includes('Selftest saved track')
+         )
+         return {
+           savedFound: Boolean(saved),
+           mainView: Boolean(view && view.classList.contains('main-view')),
+           topPadding: view ? parseFloat(getComputedStyle(view).paddingTop) : -1
+         }
+       })()`
+    )
     record(
-      container.downloadHistory.get('selftestvid') === null,
-      'downloads: dismissing a history row removes it from disk'
+      persistedLayout.savedFound,
+      'downloads: a saved row is still listed after leaving and reopening the view',
+      persistedLayout
+    )
+    record(
+      persistedLayout.mainView && persistedLayout.topPadding >= 16,
+      'downloads: the view uses the shared main-view scroll container and top padding',
+      persistedLayout
+    )
+
+    await evaluate<void>(window, `window.player.dismissDownload('selftestvid')`)
+    await evaluate<void>(window, `window.player.dismissDownload('selftest002')`)
+    record(
+      container.downloadHistory.get('selftestvid') === null &&
+        container.downloadHistory.get('selftest002') === null,
+      'downloads: dismissing history rows removes them from disk'
     )
 
     // ---- 12. artwork preferences, bar ambience, volume -----------------

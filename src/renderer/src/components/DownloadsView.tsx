@@ -110,6 +110,14 @@ function rowFromHistory(row: DownloadHistoryItem): DownloadRow {
 export function DownloadsView({ downloads, onRevealTrack, onOpenLibrary, onError }: DownloadsViewProps) {
   const [tab, setTab] = useState<Tab>('downloads')
 
+  // `useDownloads` loads history once for the whole app. Loading it again when
+  // this screen mounts makes the list honest after a relaunch or after a row was
+  // written while this view was closed, instead of relying on one early request.
+  const { refreshHistory } = downloads
+  useEffect(() => {
+    void refreshHistory()
+  }, [refreshHistory])
+
   const rows = useMemo(() => {
     const merged = new Map<string, DownloadRow>()
     for (const item of downloads.history) merged.set(item.videoId, rowFromHistory(item))
@@ -179,7 +187,7 @@ export function DownloadsView({ downloads, onRevealTrack, onOpenLibrary, onError
   )
 
   return (
-    <div className="downloads-view">
+    <section className="main-view downloads-view">
       <header className="view-header downloads-header">
         <div className="view-heading">
           <span className="downloads-kicker">Library &amp; offline</span>
@@ -226,7 +234,7 @@ export function DownloadsView({ downloads, onRevealTrack, onOpenLibrary, onError
       ) : (
         <CacheManager onError={onError} />
       )}
-    </div>
+    </section>
   )
 }
 

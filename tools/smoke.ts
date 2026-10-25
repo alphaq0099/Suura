@@ -505,6 +505,21 @@ async function main(): Promise<void> {
       library.reportPlayback(toneA.id, 31_000, false)
       checkEqual('listening past the threshold counts as played', repo.getById(toneA.id)?.playCount ?? -1, 2)
       check('the last-played timestamp was recorded', Boolean(repo.getById(toneA.id)?.lastPlayedAt))
+
+      let playHistoryEvents = 0
+      const watchedLibrary = new LibraryService(repo, settings, silentLogger, {
+        onPlayHistoryChanged: () => {
+          playHistoryEvents += 1
+        }
+      })
+      // Use an id that cannot exist so the event assertions do not perturb the
+      // library-wide play counts checked below.
+      watchedLibrary.reportPlayback(-1, 1000, false)
+      checkEqual('a skipped listen sends no play-history change', playHistoryEvents, 0)
+      watchedLibrary.reportPlayback(-1, 1000, true)
+      checkEqual('a completed listen sends one play-history change', playHistoryEvents, 1)
+      watchedLibrary.reportPlayback(-1, 31_000, false)
+      checkEqual('a threshold listen sends one play-history change', playHistoryEvents, 2)
     }
 
     // --- smart library views ----------------------------------------------
@@ -1487,6 +1502,37 @@ async function main(): Promise<void> {
     )
     downloadHistory.remove('9bZkp7q19f0')
     check('download: dismissing a history row removes it', downloadHistory.get('9bZkp7q19f0') === null)
+
+    // A relaunch is a fresh database handle. The Downloads screen is allowed to
+    // be empty only when this row is genuinely gone, not when the in-memory hook
+    // forgot it.
+    const relaunchPaths = resolveAppPaths(join(root, 'relaunch-userData'))
+    ensureAppDirectories(relaunchPaths)
+    const beforeRelaunch = openLibraryDatabase(relaunchPaths.database, silentLogger)
+    new DownloadHistoryRepository(beforeRelaunch.db).record(
+      {
+        videoId: 'aqz-KE-bpKQ',
+        status: 'saved',
+        percent: 100,
+        error: null,
+        trackId: 42
+      },
+      { videoId: 'aqz-KE-bpKQ', title: 'Survives a relaunch', artist: 'Night', album: 'Offline' }
+    )
+    beforeRelaunch.close()
+    const afterRelaunch = openLibraryDatabase(relaunchPaths.database, silentLogger)
+    const persistedHistory = new DownloadHistoryRepository(afterRelaunch.db).list()
+    check(
+      'download: a saved history row survives reopening the database',
+      persistedHistory.some(
+        (row) =>
+          row.videoId === 'aqz-KE-bpKQ' &&
+          row.status === 'saved' &&
+          row.title === 'Survives a relaunch' &&
+          row.trackId === 42
+      )
+    )
+    afterRelaunch.close()
     cancellable.dispose()
 
     const originDir = join(root, 'saved')
@@ -1781,8 +1827,24 @@ async function main(): Promise<void> {
       check('cache: a removed entry cannot be revealed', cache.filePath('dQw4w9WgXcQ') === null)
       check('cache: removing an unknown entry is a no-op', !cache.remove('M7lc1UVf-VE'))
 
-      // `clear` removes everything, pinned included.
+      // A normal restart must not look like a cache wipe: a complete entry
+      // inside the age and size policy survives start-up reconciliation.
       await cache.warm('dQw4w9WgXcQ', source('/ok'))
+      const bytesBeforeRestart = cache.stats().bytes
+      const restarted = new StreamCache({
+        db: database.db,
+        root: cacheRoot,
+        settings: cacheSettings,
+        log: silentLogger,
+        freeBytes: async () => free,
+        now: () => now.value
+      })
+      restarted.init()
+      checkEqual('cache: a restart keeps a valid entry', restarted.stats().entries, 1)
+      checkEqual('cache: a restart keeps its bytes', restarted.stats().bytes, bytesBeforeRestart)
+      restarted.dispose()
+
+      // `clear` removes everything, pinned included.
       cache.setPinned('dQw4w9WgXcQ', true)
       cache.clear()
       checkEqual('cache: clearing removes every entry', cache.stats().entries, 0)

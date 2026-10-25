@@ -328,10 +328,16 @@ export function HomeView(props: HomeViewProps) {
   }, [loadShelves])
 
   useEffect(() => {
-    const token = api.on('libraryChanged', () => {
+    const libraryToken = api.on('libraryChanged', () => {
       void loadShelves()
     })
-    return () => api.off(token)
+    const playToken = api.on('playHistoryChanged', () => {
+      void loadShelves()
+    })
+    return () => {
+      api.off(libraryToken)
+      api.off(playToken)
+    }
   }, [loadShelves])
 
   const heroAlbum = playedAlbums[0] ?? recentAlbums[0] ?? null

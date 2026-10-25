@@ -171,7 +171,8 @@ export function createContainer(): AppContainer {
 
   const library = new LibraryService(repo, settings, log.child('library'), {
     onScanProgress: (progress) => broadcast(IPC_EVENTS.scanProgress, progress),
-    onLibraryChanged: () => broadcast(IPC_EVENTS.libraryChanged, null)
+    onLibraryChanged: () => broadcast(IPC_EVENTS.libraryChanged, null),
+    onPlayHistoryChanged: () => broadcast(IPC_EVENTS.playHistoryChanged, null)
   })
 
   // A crash or a force-quit never runs the download's `finally`, so sweep the
@@ -187,7 +188,14 @@ export function createContainer(): AppContainer {
     ytDlp,
     musicDir: app.getPath('music'),
     log: log.child('downloads'),
-    onChange: (progress) => broadcast(IPC_EVENTS.downloadChanged, progress),
+    onChange: (progress) => {
+      broadcast(IPC_EVENTS.downloadChanged, progress)
+      // A finished save is a new library row, and Home's recent shelf is built
+      // from it. The scan normally announces this first; sending it again when
+      // the row is fully indexed makes the shelf correct even if the scan event
+      // and the save event raced.
+      if (progress.status === 'saved') broadcast(IPC_EVENTS.libraryChanged, null)
+    },
     fileSizeHint: (videoId) => youtube.resolver.cachedFileSize(videoId)
   })
 

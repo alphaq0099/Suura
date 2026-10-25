@@ -142,6 +142,7 @@ export const IPC_EVENTS = {
   libraryChanged: 'event:library-changed',
   onlineChanged: 'event:online-changed',
   downloadChanged: 'event:download-changed',
+  playHistoryChanged: 'event:play-history-changed',
   playerCommand: 'event:player-command',
   replayGainProgress: 'event:replay-gain-progress'
 } as const
@@ -176,6 +177,8 @@ export interface PlayerEvents {
   onlineChanged: null
   /** A save started, advanced, finished or failed. */
   downloadChanged: DownloadProgress
+  /** A listen was counted, so recent-play shelves and history are stale. */
+  playHistoryChanged: null
   playerCommand: PlayerCommand
   /** A loudness scan started, advanced or finished. */
   replayGainProgress: ReplayGainStatus
@@ -189,6 +192,7 @@ export const EVENT_CHANNELS: Record<PlayerEventName, IpcEventChannel> = {
   libraryChanged: IPC_EVENTS.libraryChanged,
   onlineChanged: IPC_EVENTS.onlineChanged,
   downloadChanged: IPC_EVENTS.downloadChanged,
+  playHistoryChanged: IPC_EVENTS.playHistoryChanged,
   playerCommand: IPC_EVENTS.playerCommand,
   replayGainProgress: IPC_EVENTS.replayGainProgress
 }
