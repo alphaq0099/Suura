@@ -55,6 +55,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       hasReactRoot: boolean
       hasSidebar: boolean
       hasPlayerBar: boolean
+      fileBridge: { ok: boolean; detail: string }
       title: string
     }>(
       window,
@@ -63,6 +64,15 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          hasReactRoot: Boolean(document.querySelector('.app, .boot-screen')),
          hasSidebar: Boolean(document.querySelector('.sidebar')),
          hasPlayerBar: Boolean(document.querySelector('.player-bar')),
+         fileBridge: (() => {
+           try {
+             const file = new File(['selftest'], 'selftest.txt', { type: 'text/plain' })
+             const path = window.player.getPathForFile(file)
+             return { ok: typeof path === 'string', detail: 'type ' + typeof path }
+           } catch (error) {
+             return { ok: false, detail: String(error) }
+           }
+         })(),
          title: document.title
        }))()`
     )
@@ -70,6 +80,27 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     record(boot.hasReactRoot, 'React mounted a view')
     record(boot.hasSidebar, 'sidebar rendered')
     record(boot.hasPlayerBar, 'player bar rendered')
+    record(
+      boot.fileBridge.ok,
+      'preload can reach webUtils for dropped files under the renderer sandbox',
+      boot.fileBridge.detail
+    )
+    const webPreferences = (
+      window.webContents as unknown as {
+        getLastWebPreferences?: () => Electron.WebPreferences
+      }
+    ).getLastWebPreferences?.()
+    record(
+      webPreferences?.sandbox === true &&
+        webPreferences?.contextIsolation === true &&
+        webPreferences?.nodeIntegration === false,
+      'renderer keeps context isolation, no Node and the sandbox',
+      {
+        sandbox: webPreferences?.sandbox,
+        contextIsolation: webPreferences?.contextIsolation,
+        nodeIntegration: webPreferences?.nodeIntegration
+      }
+    )
     record(boot.title === 'Player', 'document title is set', boot.title)
 
     // ---- 2. the engine layer can find ffmpeg ---------------------------

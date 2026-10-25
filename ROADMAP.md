@@ -511,14 +511,16 @@ restore, migration guard, and id-preserving relocation were exercised in the smo
 - [x] Manual log export: Settings → About → Save diagnostics writes the app/path snapshot plus the last 256 KB of the
       log to a user-chosen text file. The renderer → preload → IPC → write path is covered by the self-test; nothing is
       uploaded.
+- [x] Renderer sandbox enabled. The preload imports only `electron` and shared constants; the self-test proves the
+      bridge and `webUtils.getPathForFile` still work under `sandbox: true` in dev and packaged builds.
 - [ ] Opt-in crash reporting (no remote service is configured; diagnostics remain local/export-only)
 - [ ] Windows 10/11 compatibility matrix, HiDPI, multi-monitor, 4K scaling
 - [ ] Performance budget tests in CI: cold start, scan 10k files, memory under playback
 - [ ] Accessibility pass: keyboard-only navigation, screen-reader labels, contrast
 **Exit:** a stranger can install, use and uninstall it without instructions.
-**Status:** packaging and manual diagnostics export are the completed slices. The installer is unsigned and the app
-still expects externally installed sidecars, so the exit is not met until signing/update, crash reporting,
-compatibility and sidecar packaging are resolved.
+**Status:** packaging, manual diagnostics export and renderer sandboxing are the completed slices. The installer is
+unsigned and the app still expects externally installed sidecars, so the exit is not met until signing/update, crash
+reporting, compatibility and sidecar packaging are resolved.
 
 ### M9 — Android Port  *(~4–6 weeks)*
 **Goal:** reuse the core, replace the platform-specific layers.
@@ -614,8 +616,9 @@ and its tabs.
 
 **Critical path:** M0 → M1 → M3 → M4 → M5 → M6 → M8 → M9. M2 can be interleaved, M7 is data-care hygiene, and M12 is
 complete (data layer plus manager and Downloads screens). The visual revamp landed as Home plus the album grid, and
-**Windows release engineering (M8) is in progress**: the per-user NSIS installer and manual diagnostics export are
-built and verified; the update channel, crash reporting, compatibility pass and sidecar packaging are still open.
+**Windows release engineering (M8) is in progress**: the per-user NSIS installer, manual diagnostics export and
+renderer sandbox are built and verified; the update channel, crash reporting, compatibility pass and sidecar packaging
+are still open.
 
 ---
 
@@ -711,6 +714,6 @@ the bounded stream cache, offline replay, retention modes, download history, dis
 full Downloads screen are in place, including pause/resume, remove-download with stream fallback, and per-entry keep.
 **The visual revamp is done**: Home opens on a cover-led dashboard with library totals, recently played/added shelves,
 artist and playlist cards, and a searchable/sortable album grid whose album cards open an in-place track list.
-**Windows release engineering (M8) is in progress**: the per-user NSIS installer, icon and uninstall data prompt are in
-place and the packaged app passes its self-test; signing is documented but not configured, and update, crash reporting
-and sidecar packaging remain.
+**Windows release engineering (M8) is in progress**: the per-user NSIS installer, icon, uninstall data prompt and
+renderer sandbox are in place and the packaged app passes its self-test; signing is documented but not configured, and
+update, crash reporting and sidecar packaging remain.

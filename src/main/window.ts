@@ -5,9 +5,9 @@ import type { Logger } from '@core/logging/logger'
 /**
  * The single application window.
  *
- * Renderer security posture: context isolation on, node integration off. The
- * preload bridge is the only way the UI can reach the main process. `sandbox` is
- * off because the preload bundle is CommonJS; revisit in M7 as a hardening item.
+ * Renderer security posture: context isolation on, node integration off and the
+ * renderer sandboxed. The preload bridge is the only way the UI can reach the
+ * main process, and it only pulls `electron` plus the shared channel constants.
  */
 export function createMainWindow(log: Logger): BrowserWindow {
   const window = new BrowserWindow({
@@ -26,7 +26,7 @@ export function createMainWindow(log: Logger): BrowserWindow {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
       // Playback is always click-initiated today, but this keeps a future
       // "resume on launch" or tray-triggered play from being blocked.
       autoplayPolicy: 'no-user-gesture-required'
