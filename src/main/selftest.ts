@@ -4714,9 +4714,16 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            (el) => ((el.textContent || '').trim().indexOf('Settings') === 0)
          )
          press(settingsNav)
-         await sleep(400)
-         if (resume() && !resume().checked) resume().click()
-         await sleep(900)
+         // Settings loads its snapshot asynchronously. Wait for the control to
+         // exist instead of assuming one paint, then wait for React to commit
+         // the checked state. A fixed 400 ms wait made this check flaky on a
+         // cold packaged launch.
+         const appearDeadline = Date.now() + 10000
+         while (Date.now() < appearDeadline && !resume()) await sleep(100)
+         if (!resume()) return false
+         if (!resume().checked) resume().click()
+         const checkedDeadline = Date.now() + 5000
+         while (Date.now() < checkedDeadline && resume()?.checked !== true) await sleep(100)
          return resume()?.checked === true
        })()`
     )

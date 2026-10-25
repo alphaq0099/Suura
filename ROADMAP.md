@@ -498,9 +498,13 @@ visible effect. **Met.**
 restore, migration guard, and id-preserving relocation were exercised in the smoke test and the UI self-test.
 **Status:** complete.
 
-### M8 — Windows Release Engineering  *(~2 weeks; next)*
-- [ ] Installer (per-user, no admin): MSIX or NSIS; clean uninstall; opt-in "also delete cache/library DB"
-- [ ] Code signing (or at least a documented SmartScreen workaround plan)
+### M8 — Windows Release Engineering  *(~2 weeks; in progress)*
+- [x] Installer (per-user, no admin): electron-builder NSIS x64, clean uninstall and an opt-in prompt to delete
+      `%APPDATA%\Player`. Silent install, the installed build's `--selftest`, and silent uninstall were verified; app
+      data survived by default.
+- [x] Code signing path documented (or at least a documented SmartScreen workaround plan): certificate environment
+      variables, checksum publishing and the unsigned-build warning are in `docs/release/windows.md`. No certificate is
+      configured on this machine.
 - [x] Daily yt-dlp self-update, throttled to once per 24 h and recorded in `engine.lastUpdateCheckAt`
 - [ ] App auto-update channel (stable/beta) and engine rollback
 - [ ] Crash reporting (opt-in) and log export ("Send diagnostics" button)
@@ -508,6 +512,9 @@ restore, migration guard, and id-preserving relocation were exercised in the smo
 - [ ] Performance budget tests in CI: cold start, scan 10k files, memory under playback
 - [ ] Accessibility pass: keyboard-only navigation, screen-reader labels, contrast
 **Exit:** a stranger can install, use and uninstall it without instructions.
+**Status:** packaging is the first completed slice. The installer is unsigned and the app still expects externally
+installed sidecars, so the exit is not met until signing/update, diagnostics, compatibility and sidecar packaging are
+resolved.
 
 ### M9 — Android Port  *(~4–6 weeks)*
 **Goal:** reuse the core, replace the platform-specific layers.
@@ -595,7 +602,7 @@ and its tabs.
 | M5 | Discovery & YouTube Surface | Unified search, channels, smart Library views | 2–3 w | M4 |
 | M6 | Settings Revamp | Hierarchy, grouping, honest controls | 1–2 w | M5 |
 | M7 | Playlists, Sync & Data Care | Import/export, migrations, dedupe | 2 w | M6 |
-| M8 | Windows Release Engineering | Installer, update, telemetry, a11y | 2 w | M7 |
+| M8 | Windows Release Engineering *(in progress)* | Installer, update, telemetry, a11y | 2 w | M7 |
 | M9 | Android Port | New engine + player + UI | 4–6 w | M8 |
 | M10 | Two-Device Continuity *(optional)* | LAN companion server | 2–4 w | M9 |
 | M11 | Long-term extras | Scrobbling, lyrics, hi-res | continuous | — |
@@ -603,7 +610,8 @@ and its tabs.
 
 **Critical path:** M0 → M1 → M3 → M4 → M5 → M6 → M8 → M9. M2 can be interleaved, M7 is data-care hygiene, and M12 is
 complete (data layer plus manager and Downloads screens). The visual revamp landed as Home plus the album grid, and
-**Windows release engineering (M8) is next**.
+**Windows release engineering (M8) is in progress**: the per-user NSIS installer is built and verified; the update
+channel, diagnostics export, compatibility pass and sidecar packaging are still open.
 
 ---
 
@@ -698,5 +706,7 @@ favour of Channel plus an optional Artist, and keeps Duration/Actions fixed when
 the bounded stream cache, offline replay, retention modes, download history, disk pre-flight, the cache manager and the
 full Downloads screen are in place, including pause/resume, remove-download with stream fallback, and per-entry keep.
 **The visual revamp is done**: Home opens on a cover-led dashboard with library totals, recently played/added shelves,
-artist and playlist cards, and a searchable/sortable album grid whose album cards open an in-place track list. **Windows
-release engineering (M8) is next.**
+artist and playlist cards, and a searchable/sortable album grid whose album cards open an in-place track list.
+**Windows release engineering (M8) is in progress**: the per-user NSIS installer, icon and uninstall data prompt are in
+place and the packaged app passes its self-test; signing is documented but not configured, and update, diagnostics and
+sidecar packaging remain.
