@@ -8,7 +8,7 @@
  */
 import { execFile } from 'node:child_process'
 import { copyFileSync, existsSync, readdirSync } from 'node:fs'
-import { copyFile, mkdir, mkdtemp, rename, rm, unlink, utimes, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, rename, rm, unlink, utimes, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
@@ -37,6 +37,13 @@ import {
 import { DEFAULT_PREFERENCE_PATCH } from '@shared/settings-defaults'
 import { isLocalLibraryFilter, recentlyAddedCutoff, streamFallbackFor } from '@shared/library'
 import { serializeDetails, silentLogger } from '@core/logging/logger'
+import {
+  DIAGNOSTICS_SUMMARY_LIMIT,
+  buildDiagnosticsBundle,
+  readLogTail,
+  sanitizeDiagnosticsSummary,
+  writeDiagnosticsFile
+} from '../src/main/diagnostics'
 import { resolveAppPaths, ensureAppDirectories } from '@core/paths'
 import { DEFAULT_SETTINGS, mergeSettings, normalizeRetention, SettingsService } from '@core/settings/settings-service'
 import { DatabaseSchemaTooNewError, latestVersion, openLibraryDatabase } from '@core/db/database'
@@ -3026,6 +3033,85 @@ async function main(): Promise<void> {
     circular.self = circular
     check('logging: circular details are serialized safely', serializeDetails(circular).includes('circular boom'))
     checkEqual('logging: no details adds no suffix', serializeDetails(undefined), '')
+
+    const diagnosticsDir = join(root, 'diagnostics')
+    await mkdir(diagnosticsDir, { recursive: true })
+    const diagnosticsLog = join(diagnosticsDir, 'player.log')
+    await writeFile(diagnosticsLog, 'first line\nsecond line\nthird line\n', 'utf8')
+    const smallTail = readLogTail(diagnosticsLog, 4096)
+    check(
+      'diagnostics: a small log is read whole',
+      smallTail.text.includes('third line') && !smallTail.truncated && smallTail.size > 0
+    )
+    const missingTail = readLogTail(join(diagnosticsDir, 'missing.log'))
+    check(
+      'diagnostics: a missing log is reported without throwing',
+      missingTail.missing && missingTail.text === ''
+    )
+    const longLog = Array.from(
+      { length: 80 },
+      (_, index) => `line ${index.toString().padStart(2, '0')} ${'x'.repeat(40)}`
+    ).join('\n')
+    await writeFile(diagnosticsLog, `${longLog}\n`, 'utf8')
+    const tail = readLogTail(diagnosticsLog, 240)
+    check(
+      'diagnostics: a large log is cut to its tail',
+      tail.truncated && tail.text.includes('line 79') && !tail.text.includes('line 00')
+    )
+    check(
+      'diagnostics: a truncated tail starts on a line boundary',
+      tail.text.startsWith('line ')
+    )
+    const diagnosticsBundle = buildDiagnosticsBundle({
+      summary: 'Player 1.2.3\r\nOS Windows',
+      logPath: diagnosticsLog,
+      log: tail,
+      generatedAt: new Date('2026-10-25T00:00:00Z')
+    })
+    check(
+      'diagnostics: the bundle carries the summary, log path and timestamp',
+      diagnosticsBundle.includes('Player 1.2.3\nOS Windows') &&
+        diagnosticsBundle.includes(diagnosticsLog) &&
+        diagnosticsBundle.includes('2026-10-25T00:00:00.000Z')
+    )
+    check(
+      'diagnostics: the bundle says when the log was truncated',
+      diagnosticsBundle.includes(`last ${tail.included} of ${tail.size} bytes`)
+    )
+    check(
+      'diagnostics: a missing log is called out in the bundle',
+      buildDiagnosticsBundle({
+        summary: '',
+        logPath: diagnosticsLog,
+        log: missingTail
+      }).includes('not available')
+    )
+    const diagnosticsFile = join(diagnosticsDir, 'bundle.txt')
+    const written = await writeDiagnosticsFile(diagnosticsFile, {
+      summary: 'Player 1.2.3\nOS Windows',
+      logPath: diagnosticsLog,
+      log: tail,
+      generatedAt: new Date('2026-10-25T00:00:00Z')
+    })
+    checkEqual(
+      'diagnostics: the bundle is written as the text that was returned',
+      await readFile(diagnosticsFile, 'utf8'),
+      written.content
+    )
+    check(
+      'diagnostics: the written bundle reports its byte length',
+      written.bytes === Buffer.byteLength(written.content, 'utf8')
+    )
+    checkEqual(
+      'diagnostics: the renderer summary is capped',
+      sanitizeDiagnosticsSummary('a'.repeat(DIAGNOSTICS_SUMMARY_LIMIT + 100)).length,
+      DIAGNOSTICS_SUMMARY_LIMIT
+    )
+    checkEqual(
+      'diagnostics: the renderer summary is normalised',
+      sanitizeDiagnosticsSummary('a\r\nb\0c'),
+      'a\nbc'
+    )
 
     checkEqual('recovery: the first retry is quick', recoveryDelayMs(0), PLAYBACK_RECOVERY_DELAYS_MS[0])
     checkEqual('recovery: the retry delay grows', recoveryDelayMs(4), 8_000)

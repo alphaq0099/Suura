@@ -52,6 +52,18 @@ publish the SHA-256 checksum of the installer beside it and document the
 SmartScreen “More info → Run anyway” path; this is a temporary workaround, not
 a substitute for signing.
 
+## Diagnostics
+
+**Settings → About → Save diagnostics** writes a plain-text bundle to a
+user-chosen file. It contains the app and runtime versions, platform, app paths,
+library-folder count, user agent, and the last 256 KB of
+`%APPDATA%\Player\logs\player.log`. It is local and user-initiated: no crash
+reporting service is configured and nothing is uploaded. Ask users to review the
+file before sharing it, because log lines can contain local library paths.
+
+**Copy diagnostics** remains the shorter clipboard-only snapshot without log
+lines.
+
 ## Sidecars
 
 The packaged app does **not** bundle `yt-dlp` or `ffmpeg` yet. The engine probes
@@ -67,6 +79,9 @@ them.
 - Confirm the installed app opens a library and plays a local file.
 - Confirm **Settings → About** shows the packaged version and Copy diagnostics
   includes the log path.
+- Confirm **Save diagnostics** writes a text file and that it includes the recent
+  log lines. The file may include local library paths; do not attach it without
+  reviewing it.
 - Confirm the installer's uninstall entry resolves and that uninstall defaults
   to keeping app data.
 - Run the packaged self-test and require exit code 0:

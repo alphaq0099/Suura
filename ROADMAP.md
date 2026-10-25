@@ -465,8 +465,9 @@ works, but it has no hierarchy and no way to find a single option.
       YouTube, Search, Playlists or Queue), can scan on launch, sets click behaviour, the wheel step (5% default, 1–15,
       Shift 1%) and whether the restored queue plays or stays paused; Misc sets automatic-backup retention
       (10 default, 3–50) and prunes immediately; General, Playback, Streaming and Appearance each reset without
-      touching folders or the other sections; About shows the app, Electron, Chromium and Node versions plus Copy diagnostics
-      (versions, paths, folder count and user agent, never cookies or library files)
+      touching folders or the other sections; About shows the app, Electron, Chromium and Node versions plus Copy
+      diagnostics (versions, paths, folder count and user agent, never cookies or library files); M8 adds Save
+      diagnostics, which writes the same snapshot plus the recent log to a local text file
 - [x] Accessibility and keyboard pass: tablist arrow/Home/End movement with roving focus, focusable scrollable panels,
       real `<label>` elements around every field, `aria-pressed` on the choice buttons, a live error banner and a
       two-step reset confirmation with a status message
@@ -507,14 +508,17 @@ restore, migration guard, and id-preserving relocation were exercised in the smo
       configured on this machine.
 - [x] Daily yt-dlp self-update, throttled to once per 24 h and recorded in `engine.lastUpdateCheckAt`
 - [ ] App auto-update channel (stable/beta) and engine rollback
-- [ ] Crash reporting (opt-in) and log export ("Send diagnostics" button)
+- [x] Manual log export: Settings → About → Save diagnostics writes the app/path snapshot plus the last 256 KB of the
+      log to a user-chosen text file. The renderer → preload → IPC → write path is covered by the self-test; nothing is
+      uploaded.
+- [ ] Opt-in crash reporting (no remote service is configured; diagnostics remain local/export-only)
 - [ ] Windows 10/11 compatibility matrix, HiDPI, multi-monitor, 4K scaling
 - [ ] Performance budget tests in CI: cold start, scan 10k files, memory under playback
 - [ ] Accessibility pass: keyboard-only navigation, screen-reader labels, contrast
 **Exit:** a stranger can install, use and uninstall it without instructions.
-**Status:** packaging is the first completed slice. The installer is unsigned and the app still expects externally
-installed sidecars, so the exit is not met until signing/update, diagnostics, compatibility and sidecar packaging are
-resolved.
+**Status:** packaging and manual diagnostics export are the completed slices. The installer is unsigned and the app
+still expects externally installed sidecars, so the exit is not met until signing/update, crash reporting,
+compatibility and sidecar packaging are resolved.
 
 ### M9 — Android Port  *(~4–6 weeks)*
 **Goal:** reuse the core, replace the platform-specific layers.
@@ -610,8 +614,8 @@ and its tabs.
 
 **Critical path:** M0 → M1 → M3 → M4 → M5 → M6 → M8 → M9. M2 can be interleaved, M7 is data-care hygiene, and M12 is
 complete (data layer plus manager and Downloads screens). The visual revamp landed as Home plus the album grid, and
-**Windows release engineering (M8) is in progress**: the per-user NSIS installer is built and verified; the update
-channel, diagnostics export, compatibility pass and sidecar packaging are still open.
+**Windows release engineering (M8) is in progress**: the per-user NSIS installer and manual diagnostics export are
+built and verified; the update channel, crash reporting, compatibility pass and sidecar packaging are still open.
 
 ---
 
@@ -708,5 +712,5 @@ full Downloads screen are in place, including pause/resume, remove-download with
 **The visual revamp is done**: Home opens on a cover-led dashboard with library totals, recently played/added shelves,
 artist and playlist cards, and a searchable/sortable album grid whose album cards open an in-place track list.
 **Windows release engineering (M8) is in progress**: the per-user NSIS installer, icon and uninstall data prompt are in
-place and the packaged app passes its self-test; signing is documented but not configured, and update, diagnostics and
-sidecar packaging remain.
+place and the packaged app passes its self-test; signing is documented but not configured, and update, crash reporting
+and sidecar packaging remain.

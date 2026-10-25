@@ -65,6 +65,7 @@ export interface SettingsViewProps {
   onStopPoToken: () => Promise<PoTokenStatus>
   onOpenPath: (target: string) => void
   onCopyDiagnostics: () => Promise<void>
+  onSaveDiagnostics: () => Promise<string | null>
   onBackupData: () => Promise<string | null>
   onRestoreData: () => Promise<boolean>
   onExportLibrary: () => Promise<string | null>
@@ -322,6 +323,7 @@ export function SettingsView(props: SettingsViewProps) {
     onStopPoToken,
     onOpenPath,
     onCopyDiagnostics,
+    onSaveDiagnostics,
     onBackupData,
     onRestoreData,
     onExportLibrary,
@@ -343,7 +345,7 @@ export function SettingsView(props: SettingsViewProps) {
   const [providerBusy, setProviderBusy] = useState<'start' | 'stop' | null>(null)
   const [providerNote, setProviderNote] = useState<string | null>(null)
   const [providerError, setProviderError] = useState<string | null>(null)
-  const [diagnosticsBusy, setDiagnosticsBusy] = useState(false)
+  const [diagnosticsBusy, setDiagnosticsBusy] = useState<'copy' | 'save' | null>(null)
   const [diagnosticsNote, setDiagnosticsNote] = useState<string | null>(null)
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
   const resetButtonRef = useRef<HTMLButtonElement | null>(null)
@@ -498,7 +500,7 @@ export function SettingsView(props: SettingsViewProps) {
   const providerCommandMissing = providerCommand.length === 0
 
   const copyDiagnostics = async (): Promise<void> => {
-    setDiagnosticsBusy(true)
+    setDiagnosticsBusy('copy')
     setDiagnosticsNote(null)
     try {
       await onCopyDiagnostics()
@@ -506,7 +508,20 @@ export function SettingsView(props: SettingsViewProps) {
     } catch (cause) {
       setDiagnosticsNote(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      setDiagnosticsBusy(false)
+      setDiagnosticsBusy(null)
+    }
+  }
+
+  const saveDiagnostics = async (): Promise<void> => {
+    setDiagnosticsBusy('save')
+    setDiagnosticsNote(null)
+    try {
+      const file = await onSaveDiagnostics()
+      setDiagnosticsNote(file ? `Diagnostics saved to ${file}` : 'Save cancelled.')
+    } catch (cause) {
+      setDiagnosticsNote(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setDiagnosticsBusy(null)
     }
   }
 
@@ -1941,12 +1956,12 @@ export function SettingsView(props: SettingsViewProps) {
                 <h2>
                   About
                   <InfoHint label="About this build">
-                    Unified search, channel pages, metadata cleanup and the five-tab Settings page are in, including the
-                    bounded Appearance choices and a preference reset. Offline caching and the full Downloads screen
-                    are deferred to M12. The roadmap in ROADMAP.md is the source of truth for what comes next.
+                    Unified search, channel pages, metadata cleanup, the five-tab Settings page, offline caching and the
+                    Downloads screen are in. Windows release engineering is in progress; the roadmap in ROADMAP.md is
+                    the source of truth for what comes next.
                   </InfoHint>
                 </h2>
-                <span className="badge">M6 · settings</span>
+                <span className="badge">M8 · diagnostics</span>
               </header>
               <p className="card-hint">
                 Local library, playlists, queue and YouTube playback. Streams can be saved with tags and cover.
@@ -1981,10 +1996,26 @@ export function SettingsView(props: SettingsViewProps) {
                   </span>
                 </li>
               </ul>
+              <p className="card-hint">
+                Save diagnostics writes this snapshot and the recent log to a text file you choose. Review it before
+                sharing: log lines can contain local file paths.
+              </p>
               <div className="field-row">
-                <button type="button" onClick={() => void copyDiagnostics()} disabled={diagnosticsBusy}>
-                  {diagnosticsBusy ? <SpinnerIcon /> : null}
+                <button
+                  type="button"
+                  onClick={() => void copyDiagnostics()}
+                  disabled={diagnosticsBusy !== null}
+                >
+                  {diagnosticsBusy === 'copy' ? <SpinnerIcon /> : null}
                   <span>Copy diagnostics</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void saveDiagnostics()}
+                  disabled={diagnosticsBusy !== null}
+                >
+                  {diagnosticsBusy === 'save' ? <SpinnerIcon /> : null}
+                  <span>Save diagnostics...</span>
                 </button>
                 {paths ? (
                   <button type="button" onClick={() => onOpenPath(paths.logs)}>

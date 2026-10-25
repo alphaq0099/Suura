@@ -61,6 +61,32 @@ function isSavedView(value: string | null): value is ViewName {
   return value !== null && SAVED_VIEWS.includes(value as ViewName)
 }
 
+/**
+ * The short, support-friendly half of the diagnostics bundle. Cookies, history,
+ * account details and library file paths are deliberately absent; the main
+ * process adds the platform information and the recent log.
+ */
+function diagnosticsSummary(
+  runtimeInfo: RuntimeInfo | null,
+  engineStatus: EngineStatus | null,
+  paths: AppPaths | null,
+  settings: AppSettings | null
+): string {
+  return [
+    `Player ${runtimeInfo?.appVersion ?? 'unknown'}`,
+    `Electron ${runtimeInfo?.electron ?? 'unknown'}`,
+    `Chromium ${runtimeInfo?.chromium ?? 'unknown'}`,
+    `Node ${runtimeInfo?.node ?? 'unknown'}`,
+    `yt-dlp ${engineStatus?.ytDlp.version ?? 'not checked'}`,
+    `ffmpeg ${engineStatus?.ffmpeg.version ?? 'not checked'}`,
+    `Database ${paths?.database ?? 'unknown'}`,
+    `Config ${paths?.config ?? 'unknown'}`,
+    `Logs ${paths?.logs ?? 'unknown'}`,
+    `Library folders ${settings?.libraryFolders.length ?? 0}`,
+    `User agent ${navigator.userAgent}`
+  ].join('\n')
+}
+
 export function App() {
   const [view, setView] = useState<ViewName>('home')
   /** Whether the full-window player is covering the app. */
@@ -776,29 +802,23 @@ export function App() {
     }
   }, [])
 
-  // A support-friendly snapshot: versions and locations, never cookies,
-  // history, account details or file paths inside the library.
   const copyDiagnostics = useCallback(async (): Promise<void> => {
-    const lines = [
-      `Player ${runtimeInfo?.appVersion ?? 'unknown'}`,
-      `Electron ${runtimeInfo?.electron ?? 'unknown'}`,
-      `Chromium ${runtimeInfo?.chromium ?? 'unknown'}`,
-      `Node ${runtimeInfo?.node ?? 'unknown'}`,
-      `yt-dlp ${engineStatus?.ytDlp.version ?? 'not checked'}`,
-      `ffmpeg ${engineStatus?.ffmpeg.version ?? 'not checked'}`,
-      `Database ${paths?.database ?? 'unknown'}`,
-      `Config ${paths?.config ?? 'unknown'}`,
-      `Logs ${paths?.logs ?? 'unknown'}`,
-      `Library folders ${settings?.libraryFolders.length ?? 0}`,
-      `User agent ${navigator.userAgent}`
-    ]
     try {
-      await api.writeClipboardText(lines.join('\n'))
+      await api.writeClipboardText(diagnosticsSummary(runtimeInfo, engineStatus, paths, settings))
     } catch (cause) {
       setActionError(messageOf(cause))
       throw cause
     }
-  }, [runtimeInfo, engineStatus, paths, settings?.libraryFolders.length])
+  }, [runtimeInfo, engineStatus, paths, settings])
+
+  const saveDiagnostics = useCallback(async (): Promise<string | null> => {
+    try {
+      return await api.saveDiagnostics(diagnosticsSummary(runtimeInfo, engineStatus, paths, settings))
+    } catch (cause) {
+      setActionError(messageOf(cause))
+      throw cause
+    }
+  }, [runtimeInfo, engineStatus, paths, settings])
 
   // The data-care dialogs own their own error presentation. Letting the rejected
   // IPC promise reach Settings is what puts the message next to the buttons that
@@ -1065,6 +1085,7 @@ export function App() {
           onStopPoToken={stopPoToken}
           onOpenPath={(target) => void openPath(target)}
           onCopyDiagnostics={copyDiagnostics}
+          onSaveDiagnostics={saveDiagnostics}
           onBackupData={backupData}
           onRestoreData={restoreData}
           onExportLibrary={exportLibrary}

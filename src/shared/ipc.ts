@@ -59,6 +59,7 @@ export const IPC = {
   settingsUpdate: 'settings:update',
   pathsGet: 'app:paths',
   runtimeInfo: 'app:runtime-info',
+  diagnosticsSave: 'app:save-diagnostics',
   pickFolder: 'dialogs:pick-folder',
   openPath: 'shell:open-path',
   dataBackup: 'data:backup',
@@ -206,6 +207,11 @@ export interface PlayerApi {
   getPaths(): Promise<AppPaths>
   /** App and runtime versions for About; no machine or account details. */
   getRuntimeInfo(): Promise<RuntimeInfo>
+  /**
+   * Asks where to write a diagnostics bundle, then writes the renderer summary
+   * plus the recent log. Resolves to the file path, or null when cancelled.
+   */
+  saveDiagnostics(summary: string): Promise<string | null>
   /** Opens the native folder picker. Resolves to null if the user cancels. */
   pickFolder(): Promise<string | null>
   openPath(target: string): Promise<void>

@@ -36,6 +36,9 @@ const api: PlayerApi = {
 
   getRuntimeInfo: () => ipcRenderer.invoke(IPC.runtimeInfo),
 
+  saveDiagnostics: (summary: string) =>
+    ipcRenderer.invoke(IPC.diagnosticsSave, summary) as Promise<string | null>,
+
   pickFolder: () => ipcRenderer.invoke(IPC.pickFolder) as Promise<string | null>,
 
   openPath: (target: string) => ipcRenderer.invoke(IPC.openPath, target) as Promise<void>,

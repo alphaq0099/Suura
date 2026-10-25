@@ -4,7 +4,7 @@ import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { app, BrowserWindow, clipboard, net } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, net } from 'electron'
 import { probeExecutable } from '@engine/sidecar/locate'
 import { IPC_EVENTS } from '@shared/ipc'
 import { buildMediaUrl } from '@shared/media-url'
@@ -1921,6 +1921,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       sectionResetRestored: boolean
       aboutRuntime: boolean
       diagnosticsCopied: boolean
+      saveDiagnosticsButton: boolean
       backupCard: boolean
       exportButton: boolean
       backupsPath: boolean
@@ -1937,8 +1938,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            startupRestored: false, wheelRestored: false, resumeRestored: false,
            retentionRestored: false, foldersKept: false, sectionKeptOther: false,
            sectionResetRestored: false, aboutRuntime: false, diagnosticsCopied: false,
-           backupCard: false, exportButton: false, backupsPath: false,
-           healthCard: false, healthActions: false
+           saveDiagnosticsButton: false, backupCard: false, exportButton: false,
+           backupsPath: false, healthCard: false, healthActions: false
          }
          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
          const press = (element) => { if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
@@ -2148,6 +2149,12 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            await sleep(800)
            out.diagnosticsCopied = Boolean(aboutCard.querySelector('[role="status"]'))
          }
+         const saveButton = aboutCard
+           ? [...aboutCard.querySelectorAll('button')].find((el) =>
+               (el.textContent || '').trim().startsWith('Save diagnostics')
+             )
+           : null
+         out.saveDiagnosticsButton = Boolean(saveButton && !saveButton.disabled)
          return out
        })()`
     )
@@ -2222,6 +2229,48 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         !/cookie/i.test(diagnosticsText),
       'settings: Copy diagnostics puts versions and paths on the clipboard without cookies',
       diagnosticsText.slice(0, 160)
+    )
+    record(
+      settingsSafety.saveDiagnosticsButton,
+      'settings: About offers a local log-bundle save',
+      `button ${settingsSafety.saveDiagnosticsButton ? 'enabled' : 'missing'}`
+    )
+    const diagnosticsTarget = join(app.getPath('userData'), 'diagnostics-selftest.txt')
+    const originalShowSaveDialog = dialog.showSaveDialog
+    let diagnosticsSaved = false
+    let diagnosticsSavedDetail = 'not attempted'
+    try {
+      dialog.showSaveDialog = (async () => ({
+        canceled: false,
+        filePath: diagnosticsTarget
+      })) as unknown as typeof dialog.showSaveDialog
+      const savedPath = await evaluate<string | null>(
+        window,
+        `window.player.saveDiagnostics(${JSON.stringify('Selftest diagnostics\nLibrary folders 2')})`
+      )
+      const savedText = await readFile(diagnosticsTarget, 'utf8')
+      const expectedPackaged = `Packaged: ${app.isPackaged ? 'yes' : 'no'}`
+      const checks = {
+        path: savedPath === diagnosticsTarget,
+        summary: savedText.includes('Selftest diagnostics'),
+        folders: savedText.includes('Library folders 2'),
+        log: savedText.includes('--- log ---'),
+        packaged: savedText.includes(expectedPackaged)
+      }
+      diagnosticsSaved = Object.values(checks).every(Boolean)
+      diagnosticsSavedDetail = `${savedPath ?? 'cancelled'} (${Object.entries(checks)
+        .map(([name, ok]) => `${name} ${ok ? 'ok' : 'missing'}`)
+        .join(', ')})`
+    } catch (cause) {
+      diagnosticsSavedDetail = cause instanceof Error ? cause.message : String(cause)
+    } finally {
+      dialog.showSaveDialog = originalShowSaveDialog
+      await rm(diagnosticsTarget, { force: true })
+    }
+    record(
+      diagnosticsSaved,
+      'settings: Save diagnostics writes the snapshot and the recent log',
+      diagnosticsSavedDetail
     )
 
     // ---- 11b. retention mode, cache IPC and save history ----------------

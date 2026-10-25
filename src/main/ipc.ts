@@ -78,6 +78,7 @@ import {
 } from '@shared/youtube'
 import type { AppContainer } from './services/container'
 import { broadcast } from './broadcast'
+import { readLogTail, sanitizeDiagnosticsSummary, writeDiagnosticsFile } from './diagnostics'
 import { isMiniPlayer, setMiniPlayer } from './window-mode'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -607,6 +608,49 @@ export function registerIpcHandlers(container: AppContainer): void {
     chromium: process.versions.chrome ?? 'unknown',
     node: process.versions.node
   }))
+
+  // Diagnostics stay local. The renderer's summary already leaves out cookies,
+  // history and library file paths; the log tail is appended here because only
+  // the main process knows where the log lives.
+  ipcMain.handle(IPC.diagnosticsSave, async (_event, summary: unknown) => {
+    const parent = BrowserWindow.getFocusedWindow()
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const options: Electron.SaveDialogOptions = {
+      title: 'Save Player diagnostics',
+      buttonLabel: 'Save',
+      defaultPath: join(app.getPath('documents'), `Player diagnostics ${stamp}.txt`),
+      filters: [{ name: 'Text file', extensions: ['txt'] }]
+    }
+    const result = parent
+      ? await dialog.showSaveDialog(parent, options)
+      : await dialog.showSaveDialog(options)
+    if (result.canceled || !result.filePath) return null
+
+    const target =
+      extname(result.filePath).toLowerCase() === '.txt'
+        ? result.filePath
+        : `${result.filePath}.txt`
+    const logTail = readLogTail(container.paths.logs)
+    const appSummary = [
+      `Packaged: ${app.isPackaged ? 'yes' : 'no'}`,
+      `Platform: ${process.platform} ${process.arch}`,
+      `OS: ${process.getSystemVersion()}`,
+      `Locale: ${app.getLocale()}`,
+      '',
+      sanitizeDiagnosticsSummary(summary)
+    ].join('\n')
+    const written = await writeDiagnosticsFile(target, {
+      summary: appSummary,
+      logPath: container.paths.logs,
+      log: logTail
+    })
+    log.info('diagnostics saved', {
+      file: target,
+      bytes: written.bytes,
+      logTruncated: logTail.truncated
+    })
+    return target
+  })
 
   ipcMain.handle(IPC.pickFolder, async () => {
     const parent = BrowserWindow.getFocusedWindow()
