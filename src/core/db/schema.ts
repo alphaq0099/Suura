@@ -368,6 +368,54 @@ export const MIGRATIONS: readonly Migration[] = [
         CREATE INDEX idx_tracks_replay_gain ON tracks(source_kind, missing_at, replay_gain_db);
       `)
     }
+  },
+  {
+    version: 12,
+    name: 'offline cache and download history',
+    up: (db) => {
+      // `cache_entries` was created in v1 as a sketch keyed by a local track id.
+      // A cache entry belongs to a *video*, not to a library row: a stream has
+      // no row until it is saved, and one video can be reached from history, an
+      // imported playlist or search. Nothing ever wrote to the old table, so
+      // replacing it is safe and removes the misleading foreign key.
+      db.exec(`
+        DROP TABLE IF EXISTS cache_entries;
+
+        CREATE TABLE cache_entries (
+          video_id     TEXT    PRIMARY KEY,
+          path         TEXT    NOT NULL,
+          size_bytes   INTEGER NOT NULL,
+          complete     INTEGER NOT NULL DEFAULT 0,
+          pinned       INTEGER NOT NULL DEFAULT 0,
+          mime_type    TEXT    NOT NULL,
+          created_at   INTEGER NOT NULL,
+          last_used_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX idx_cache_entries_used
+          ON cache_entries(complete, pinned, last_used_at);
+
+        -- A save outlives the window that started it and the view that showed
+        -- it. track_id is deliberately not a foreign key: the history keeps
+        -- the failure reason even when indexing never produced a row, and an
+        -- explicit save can be retried after the row is gone.
+        CREATE TABLE download_history (
+          video_id   TEXT    PRIMARY KEY,
+          title      TEXT    NOT NULL,
+          artist     TEXT,
+          album      TEXT,
+          status     TEXT    NOT NULL,
+          percent    REAL,
+          error      TEXT,
+          track_id   INTEGER,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX idx_download_history_updated
+          ON download_history(updated_at DESC);
+      `)
+    }
   }
 ]
 

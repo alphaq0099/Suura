@@ -934,6 +934,10 @@ input[type='radio'] {
   background: var(--bg-elevated);
   border-bottom: 1px solid var(--border);
   flex: none;
+  /* Rows scroll inside `.list-scroll`, whose classic scrollbar shortens their
+     grid. The header lives outside that scroller, so mirror the exact width
+     TrackList measures instead of letting Duration drift by a scrollbar. */
+  padding-right: var(--list-scrollbar, 0px);
 }
 
 .head-cell {

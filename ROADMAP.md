@@ -4,7 +4,7 @@ A music player that manages a **local music library** and can also **search, str
 
 - **Platform order:** Windows desktop first → Android later
 - **Streaming first:** play immediately, no waiting for a full download
-- **User's choice:** decide per-track / per-playlist whether downloaded audio is kept on disk, cached temporarily, or never written to disk at all. **Offline caching is deferred to M12**; stream-only and explicit saving are what ship today.
+- **User's choice:** decide per-track / per-playlist whether downloaded audio is kept on disk, cached temporarily, or never written to disk at all. **The bounded cache and offline replay landed in M12a**; its manager screen and the full Downloads screen remain M12b.
 - **Status of this document:** the plan. Implementation has started — see [`README.md`](./README.md) for what actually
   works today, and the milestone checkboxes below for progress.
 
@@ -39,8 +39,8 @@ A single app where a user's music lives in one place:
 - Playing a local file: < 300 ms to first audio
 - Playing a YouTube track already resolved this session (or prefetched): < 3 s to first audio; a cold paste has a
   ≤ 10 s median display target while it resolves
-- Cache/download manager never exceeds the configured disk budget *(cache arrives in M12; explicit saves are bounded by
-  the queue and reported in the Saves dock)*
+- Cache/download manager never exceeds the configured disk budget *(the cache budget, eviction and free-space refusal are
+  enforced in M12a; the manager screen is M12b; explicit saves are bounded by the queue and reported in the Saves dock)*
 - Crash-free sessions > 99%; no orphaned yt-dlp processes after exit
 
 ---
@@ -260,7 +260,7 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
 - [x] Choose the stack (§3) and record it in an ADR (Architecture Decision Record)
 - [x] Decide the player engine and the primary streaming approach (A/B/C above)
 - [ ] Wireframe the 6 core screens: Library, Now Playing, Queue, Search, Downloads, Settings — all but Downloads are
-      built; a compact Saves dock covers the download case until the full screen arrives with M12
+      built; a compact Saves dock covers the download case until the full screen arrives with M12b
 - [x] Write the `IMediaResolver` interface and the IPC event schema (as a spec, not code) — built, not just specified:
       `src/engine/resolver.ts` and `src/shared/ipc.ts`
 - [ ] Verify yt-dlp + ffmpeg work as sidecars on a clean Windows machine; measure resolve latency and success rate on 20
@@ -358,12 +358,12 @@ and the CDN's first 2 KB arrived in a median **0.46 s** (176–1263 ms), so the 
 `< 3 s` target is therefore adopted for **warm playback**: pressing play on a track whose URL is already in the session
 cache, or moving to a prefetched next track, starts audio in well under a second. A **cold paste** has a display target
 of **≤ 10 s median** and shows *Resolving…* while it waits; making cold start `< 3 s` would require a resident sidecar
-(and a larger install), which is deliberately not this milestone. The remaining M3 buffering state is open. Evidence:
+(and a larger install), which is deliberately not this milestone. The M3 buffering state shipped in `e4ab1ba`. Evidence:
 [`docs/notes/yt-dlp-50.md`](./docs/notes/yt-dlp-50.md).*
 
-### M4 — Save to Library (lite)  *(done; full cache moved to M12)*
-**Goal:** keep the "save it explicitly" half of §2.2; **offline caching is switched off for now**, because it is not
-needed for the current use and was making Settings promise behaviour that did not exist.
+### M4 — Save to Library (lite)  *(done; automatic cache split into M12)*
+**Goal:** keep the "save it explicitly" half of §2.2. Saving stays a deliberate action; the automatic cache is a
+separate layer with its own budget, and the two never pretend to be the same thing.
 - [x] **Keep** action: download → tag → embed cover → move into the library → scanned row appears (default Opus, or
       MP3/M4A; folder, quality and format are settings). Verified live: 12 s for a 4.9 MB Opus, tags and JPEG cover intact.
 - [x] **Keep an imported entry**: the same path from the imported playlist pane — a per-entry *Save to library* button and
@@ -375,12 +375,14 @@ needed for the current use and was making Settings promise behaviour that did no
       folders and orphaned `.part` files. Unrelated folders in `downloads/` are left alone.
 - [x] **Saves dock**: one compact panel mounted by the app, visible from every view, with cancel while running, retry
       after a failure or cancel, and reveal-in-Explorer once the row is indexed. No permanent Downloads screen yet.
-- [x] Settings honest: *stream only* is pinned on load (an older config saying `cache` is rewritten to `stream`), the
-      cache-budget/age controls are gone, and the page says plainly that offline replay is a later phase.
-- [ ] **Remove download**, **pin in cache**, per-item retention, pause/resume, speed + ETA, disk pre-flight and a
-      full Downloads history — all deferred with the cache to **M12**.
+- [x] Settings honest (M12a): **Stream only**, **Save played tracks** and **Keep after play** are all real modes; the
+      cache budget and max-age fields appear only when the cache is selected, and disk pre-flight plus the download
+      history are implemented behind them.
+- [ ] **Remove download**, per-item pin/retention UI, pause/resume, speed + ETA and the full Downloads screen — the
+      remaining half of the old M12 scope, now **M12b**.
 **Exit:** saving a history row or imported entry round-trips into an ordinary tagged library track; a killed process
-leaves no temp folder; cancel and retry work from the dock. The disk-budget/offline half of the old exit moves to M12.
+leaves no temp folder; cancel and retry work from the dock. The disk-budget/offline half is M12a; the remaining screens
+are M12b.
 
 ### M5 — Discovery & YouTube Library Surface  *(complete)*
 - [x] Unified search: local results **and** YouTube results in one list, clearly badged. The new **Search** view queries
@@ -437,8 +439,8 @@ works, but it has no hierarchy and no way to find a single option.
       one scrollable panel at a time. The heading and tab strip stay put; the panel owns the scrollbar.
 - [x] Make every control state what it changes and whether it applies now or on restart; no dead or duplicate controls
 - [x] Move diagnostics (engine status, paths, logs, database location) behind **Misc** rather than the main flow
-- [x] Give saving one honest home: folder, quality, format and concurrency, plus the deferred offline-cache note in one
-      place under **Streaming**
+- [x] Give saving one honest home: folder, quality, format and concurrency, plus the retention modes and bounded-cache
+      controls in one place under **Streaming**
 - [x] Streaming controls for the request budget: next-track prefetch, daily yt-dlp self-update, an optional external PO
       Token provider (URL, command, auto-start, status), and a three-mode browser-cookie fallback with its privacy caveat
 - [x] Bounded Appearance: Midnight/Cream/Follow Windows, five contrast-checked accents, Compact/Comfortable/Spacious
@@ -486,7 +488,7 @@ visible effect. **Met.**
       is hidden from normal lists. Relocation scans a chosen folder and matches by stored hash first, then by exact
       size and modification time, folding any already-indexed target into the retained row.
 - [x] Bulk operations: multi-select play, queue, add-to-playlist and remove-from-library. Removing rows never deletes
-      files. Tag writing needs a tag writer, and keep/remove-download belongs to the M12 cache, so both remain deferred.
+      files. Tag writing needs a tag writer, and remove-download belongs to the M12b screens, so both remain deferred.
 **Exit:** data survives a crash, a reinstall and a folder move. **Met:** manual and rotating automatic backups, staged
 restore, migration guard, and id-preserving relocation were exercised in the smoke test and the UI self-test.
 **Status:** complete.
@@ -532,18 +534,39 @@ restore, migration guard, and id-preserving relocation were exercised in the smo
       explicit tags. YouTube itself only supplies `artist` for Music/Topic uploads; for ordinary videos the channel is
       the only reliable identity, so this is a parser/database problem rather than a missing field.
 
-### M12 — Offline Cache & Downloads *(deferred to the end, ~2–3 weeks)*
-**Goal:** the other half of the original M4, deliberately postponed until the library, discovery and Settings work is
-settled. Nothing here is needed for the current use of the app.
+### M12 — Offline Cache & Downloads *(M12a done; M12b screens next)*
+**Goal:** the other half of the original M4, split so the risky data layer could land before the screens. M12a
+(cache engine, offline detection, download history data, disk pre-flight and honest Settings) is complete. M12b is the
+cache-manager and Downloads UI, held until after the visual revamp and M8.
 
-- [ ] Cache manager: write-while-playing, LRU eviction, size/age budgets, janitor task, manual "empty cache"
-- [ ] Pin in cache (never evict) and "keep after this play" quick action
+**M12a — data layer and offline playback (done)**
+- [x] Cache engine: background full fetch of the resolved URL into `cache/stream/<videoId>.<ext>.part`, rename on
+      completion, one shared download per video, janitor, LRU eviction and size/age budgets. Manual `clear()` exists at
+      the service/IPC layer; its screen is M12b.
+- [x] Pinning: `pinned` entries count toward the budget but are never evicted automatically; the IPC can pin/unpin, and
+      the per-row control waits for M12b.
+- [x] Offline detection: a cached track resolves to `player-media://` and plays with no network; an uncached YouTube
+      track fails up front with "not available offline" instead of a spinner. Local files and saved library tracks are
+      never blocked.
+- [x] Retention modes re-enabled in Settings: **Stream only** (default), **Save played tracks** (cache) and **Keep
+      after play** (auto-save through the existing download path). Budget and age are editable and validated.
+- [x] Disk pre-flight: a cache copy is skipped when free space is below its size hint plus the cache reserve; a save
+      checks both the temp and target volumes against the resolver's size hint (or a conservative fallback) plus the
+      save reserve.
+- [x] Download history: `download_history` persists status, progress, error and request metadata; startup marks
+      interrupted rows failed; the Saves dock hydrates only unfinished/failed/cancelled rows and can dismiss one.
+- [x] Startup integrity: `reconcile()` deletes orphan files and `.part` leftovers, and a stale row is never offered as
+      a cached source. File deletion is restricted to the cache root.
+
+**M12b — manager and Downloads screens (open)**
+- [ ] Cache manager screen: real usage against the budget, entry list, pin/unpin, reveal and empty-cache actions
+- [ ] Full Downloads screen over `download_history`: active/completed/failed, pause/resume, speed + ETA
 - [ ] Remove download: delete the file, keep the track in playlists/queue, fall back to streaming
-- [ ] Offline detection: stream-only rows show as unavailable; cached/downloaded ones still play
-- [ ] Full Downloads history: active/completed/failed, pause/resume, speed + ETA, disk pre-flight
-- [ ] Re-enable the cache controls in Settings only when the manager behind them exists
+- [ ] Per-item retention and bulk keep/remove actions
+
 **Exit:** disk usage never exceeds a budget; killing the app mid-cache leaves no corruption; offline replay works for
-cached tracks; "keep" → "remove" round-trips cleanly.
+cached tracks; "keep" ↔ "remove" round-trips cleanly. The first three are covered by M12a; the remove/round-trip half
+needs M12b.
 
 ---
 
@@ -555,7 +578,7 @@ cached tracks; "keep" → "remove" round-trips cleanly.
 | M1 | Local Library MVP | Scan, index, play, queue | 2–3 w | M0 |
 | M2 | Player Quality & System Integration | Gapless, EQ, SMTC, tray | 2 w | M1 |
 | M3 | Engine Skeleton | Resolve + **stream** | 2–3 w | M0, M1 |
-| M4 | Save to Library (lite) | Stream-only / explicit keep / saves dock | 1–2 w | M3 |
+| M4 | Save to Library (lite) | Explicit save / saves dock / retention modes | 1–2 w | M3 |
 | M5 | Discovery & YouTube Surface | Unified search, channels, smart Library views | 2–3 w | M4 |
 | M6 | Settings Revamp | Hierarchy, grouping, honest controls | 1–2 w | M5 |
 | M7 | Playlists, Sync & Data Care | Import/export, migrations, dedupe | 2 w | M6 |
@@ -563,11 +586,11 @@ cached tracks; "keep" → "remove" round-trips cleanly.
 | M9 | Android Port | New engine + player + UI | 4–6 w | M8 |
 | M10 | Two-Device Continuity *(optional)* | LAN companion server | 2–4 w | M9 |
 | M11 | Long-term extras | Scrobbling, lyrics, hi-res | continuous | — |
-| M12 | Offline Cache & Downloads *(deferred)* | Cache, pin, remove, offline replay | 2–3 w | M4, M6 |
+| M12 | Offline Cache & Downloads *(M12a done)* | Cache engine, offline replay, history; screens | 2–3 w | M4, M6 |
 
-**Critical path:** M0 → M1 → M3 → M4 → M5 → M6 → M8 → M9. M2 can be interleaved, M7 is data-care hygiene, and M12
-stays at the end until offline listening is actually wanted; it touches M4 and M6, so it should follow them rather than
-run beside them.
+**Critical path:** M0 → M1 → M3 → M4 → M5 → M6 → M8 → M9. M2 can be interleaved, M7 is data-care hygiene, and M12a's
+data layer is complete; its manager and Downloads screens (M12b) wait until after the visual revamp and M8, because
+they touch M4 and M6 and should follow them rather than run beside them.
 
 ---
 
@@ -640,10 +663,10 @@ player/
    measurement in `docs/notes/yt-dlp-50.md`. yt-dlp + ffmpeg resolve, seek, download and tag on this machine.
 2. ~~**Decide the stack** (§3) once the spike has told you what the engine actually needs. Write it down as an ADR.~~ Done: `docs/adr/0001-stack-and-storage.md` (Electron + TypeScript + React, `node:sqlite`, no native build tools).
 3. ~~**Wireframe the 6 core screens**~~ Done, and built: Library, YouTube, Search, Playlists, Queue, Settings and Now
-   Playing all exist; the full Downloads screen is deferred to M12.
+   Playing all exist; the full Downloads screen is deferred to M12b.
 4. ~~**Write the two specs**~~ Done: `IMediaResolver` is `src/engine/resolver.ts`; the IPC event schema is `src/shared/ipc.ts`.
-5. ~~**Pick the retention defaults**~~ Done: stream-only is the default and is currently the only accepted mode; the
-   5 GB / 30-day cache fields remain dormant for M12, and saving is always explicit.
+5. ~~**Pick the retention defaults**~~ Done: stream-only is the default; all three modes are now accepted, the cache
+   defaults to 5 GB / 30 days, and saving remains explicit unless *Keep after play* is chosen.
 
 Where things stand: the stack and storage decisions are recorded (ADR 0001). YouTube playback has a real surface — the
 **YouTube** view with a persistent link history and a separate **Imported** box, one card per list — and playlist,
@@ -657,6 +680,7 @@ display target. **M5's core is in**: a unified **Search** view over the local li
 title/artist cleanup. Every track list shares the same **#, Title, …metadata, Duration, Action** priorities, with
 Format in a row's **Details** sheet, and the Queue has a header aligned with its rows. The current consistency pass
 keeps Title as the only flexible track, gives Artist/Album equal bounded widths, removes Album from YouTube Links in
-favour of Channel plus an optional Artist, and keeps Duration/Actions fixed when a column is hidden. Next is the
-**Settings revamp (M6)**, whose design is still to be agreed, then data care (M7), which is now complete. Offline
-caching and the full Downloads screen stay deferred to M12.
+favour of Channel plus an optional Artist, and keeps Duration/Actions fixed when a column is hidden. **M12a is done**:
+the bounded stream cache, offline replay, retention modes, download history and disk pre-flight are in place. Next is
+the visual revamp, then the M12b manager/Downloads screens, then Windows release engineering (M8). Offline caching is
+no longer deferred; only its screens are.

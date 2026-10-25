@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { app, nativeTheme } from 'electron'
 import { ensureAppDirectories, resolveAppPaths } from '@core/paths'
 import { createLogger, type Logger } from '@core/logging/logger'
@@ -6,6 +7,7 @@ import { SettingsService } from '@core/settings/settings-service'
 import { applyPendingRestore, ensureDailyBackup, pruneDatabaseBackups } from '@core/db/backups'
 import { openLibraryDatabase, type DatabaseHandle } from '@core/db/database'
 import { TrackRepository } from '@core/library/track-repository'
+import { DownloadHistoryRepository } from '@core/library/download-history-repository'
 import { LibraryService } from '@core/library/library-service'
 import { FolderWatcher } from '@core/library/folder-watcher'
 import { PlaylistRepository } from '@core/library/playlist-repository'
@@ -26,6 +28,7 @@ import type { AppPaths, AppSettings } from '@shared/types'
 import { createArtworkService, type ArtworkService } from '../artwork-service'
 import { broadcast } from '../broadcast'
 import { cleanupAbandonedDownloads, DownloadService } from '../download-service'
+import { StreamCache } from '../stream-cache'
 import { createOnlineService, type OnlineService } from '../online-service'
 import { ReplayGainService } from '../replay-gain-service'
 import { createYoutubeService, type YoutubeService } from '../youtube-service'
@@ -46,6 +49,10 @@ export interface AppContainer {
   watcher: FolderWatcher
   /** Downloads a stream into the library (keep). */
   downloads: DownloadService
+  /** Persisted save history, including failures that outlive the window. */
+  downloadHistory: DownloadHistoryRepository
+  /** Bounded copies of played streams, for offline playback. */
+  streamCache: StreamCache
   playlists: PlaylistService
   /** Duplicate detection, safe merges and moved-file repair. */
   dataCare: DataCareService
@@ -106,6 +113,11 @@ export function createContainer(): AppContainer {
   }
   if (restored) log.info('started from a restored backup', { database: paths.database })
   const repo = new TrackRepository(database.db)
+  const downloadHistory = new DownloadHistoryRepository(database.db)
+  // Must run before this run can queue a save: any row still marked in-flight
+  // belongs to a process that no longer exists.
+  const interrupted = downloadHistory.markInterrupted()
+  if (interrupted > 0) log.info('marked interrupted saves as failed', { count: interrupted })
 
   // Settings are the source of truth for the folder list, so make sure the
   // bookkeeping table matches them after a config file is edited by hand.
@@ -131,6 +143,14 @@ export function createContainer(): AppContainer {
     })
   )
   resolvers.register(youtube.resolver)
+
+  const streamCache = new StreamCache({
+    db: database.db,
+    root: join(paths.cache, 'stream'),
+    settings,
+    log: log.child('cache')
+  })
+  streamCache.init()
 
   const onlineRepo = new OnlineRepository(database.db)
   const onlinePlaylists = new OnlinePlaylistRepository(database.db)
@@ -163,10 +183,12 @@ export function createContainer(): AppContainer {
     paths,
     repo,
     library,
+    history: downloadHistory,
     ytDlp,
     musicDir: app.getPath('music'),
     log: log.child('downloads'),
-    onChange: (progress) => broadcast(IPC_EVENTS.downloadChanged, progress)
+    onChange: (progress) => broadcast(IPC_EVENTS.downloadChanged, progress),
+    fileSizeHint: (videoId) => youtube.resolver.cachedFileSize(videoId)
   })
 
   // Playlists read tracks, so they take the same repository the library writes
@@ -246,6 +268,8 @@ export function createContainer(): AppContainer {
     library,
     watcher,
     downloads,
+    downloadHistory,
+    streamCache,
     playlists,
     dataCare,
     playback,
@@ -265,6 +289,7 @@ export function createContainer(): AppContainer {
       poToken.dispose()
       replayGain.dispose()
       downloads.dispose()
+      streamCache.dispose()
       watcher.stop()
       database.close()
       log.info('shutdown complete')

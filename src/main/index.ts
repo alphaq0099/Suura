@@ -70,7 +70,9 @@ function start(): void {
       container = appContainer
 
       installMediaProtocolHandler({
-        isPathAllowed: (filePath) => appContainer.library.isPathAllowed(filePath),
+        isPathAllowed: (filePath) =>
+          appContainer.library.isPathAllowed(filePath) ||
+          appContainer.streamCache.isPathAllowed(filePath),
         log: appContainer.log.child('media')
       })
 

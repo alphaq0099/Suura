@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { DENSITY_ROW_HEIGHT } from '@shared/appearance'
 import type { DownloadStatus, LibraryClickAction, SortDirection, Track, TrackSortField } from '@shared/types'
 import { formatDuration } from '@shared/format'
@@ -190,6 +190,8 @@ export function TrackList(props: TrackListProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewport, setViewport] = useState(480)
+  /** Width the vertical scrollbar takes from the row grid, mirrored by the header. */
+  const [scrollbarWidth, setScrollbarWidth] = useState(0)
   const [activeIndex, setActiveIndex] = useState(0)
   const selectionAnchorRef = useRef<number | null>(null)
 
@@ -271,7 +273,15 @@ export function TrackList(props: TrackListProps) {
   useEffect(() => {
     const element = scrollerRef.current
     if (!element) return
-    const measure = (): void => setViewport(element.clientHeight)
+    const measure = (): void => {
+      setViewport(element.clientHeight)
+      // `offsetWidth - clientWidth` is the classic scrollbar's share. With an
+      // overlay scrollbar it is zero, which is exactly what the header should
+      // mirror. Rows live inside the scroller; the header sits above it, so
+      // without this the two grids disagree by a scrollbar whenever the list
+      // actually scrolls.
+      setScrollbarWidth(Math.max(0, element.offsetWidth - element.clientWidth))
+    }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(element)
@@ -448,6 +458,7 @@ export function TrackList(props: TrackListProps) {
       data-artist-column={showArtistColumn ? 'show' : 'hide'}
       data-album-column={showAlbumColumn ? 'show' : 'hide'}
       data-artist-label={artistLabel}
+      style={{ '--list-scrollbar': `${scrollbarWidth}px` } as CSSProperties}
     >
       <div className="track-head" role="row">
         {columns.map((column) => (

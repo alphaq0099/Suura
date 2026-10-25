@@ -85,6 +85,45 @@ export function useDownloads(): UseDownloadsResult {
     return () => api.off(token)
   }, [])
 
+  // A failed save from the last session must still be retryable. Only rows that
+  // need attention are hydrated: the full list belongs on the downloads screen,
+  // and showing every successful save would bury the one that failed. Live
+  // events win over the snapshot, so a save started while this was in flight is
+  // not rolled back.
+  useEffect(() => {
+    let alive = true
+    void api
+      .listDownloadHistory()
+      .then((rows) => {
+        if (!alive) return
+        setStates((current) => {
+          let next: Record<string, DownloadState> | null = null
+          for (const row of rows) {
+            if (row.status === 'saved' || current[row.videoId]) continue
+            next ??= { ...current }
+            next[row.videoId] = {
+              status: row.status,
+              percent: row.percent,
+              error: row.error,
+              request: {
+                videoId: row.videoId,
+                title: row.title,
+                artist: row.artist,
+                album: row.album
+              },
+              trackId: row.trackId,
+              updatedAt: row.updatedAt
+            }
+          }
+          return next ?? current
+        })
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [])
+
   const save = useCallback(async (request: SaveToLibraryRequest): Promise<number> => {
     setStates((current) => ({
       ...current,
@@ -171,20 +210,30 @@ export function useDownloads(): UseDownloadsResult {
     [save, states]
   )
 
-  const dismiss = useCallback((videoId: string): void => {
-    setStates((current) => {
-      const previous = current[videoId]
-      if (!previous) return current
+  const dismiss = useCallback(
+    (videoId: string): void => {
+      const previous = states[videoId]
+      if (!previous) return
       // An active save stays in the panel; dismissing it would hide work that is
       // still writing to disk. Cancel is the action for that row.
-      if (previous.status === 'queued' || previous.status === 'downloading' || previous.status === 'finishing' || previous.status === 'indexing') {
-        return current
+      if (
+        previous.status === 'queued' ||
+        previous.status === 'downloading' ||
+        previous.status === 'finishing' ||
+        previous.status === 'indexing'
+      ) {
+        return
       }
-      const next = { ...current }
-      delete next[videoId]
-      return next
-    })
-  }, [])
+      setStates((current) => {
+        const next = { ...current }
+        delete next[videoId]
+        return next
+      })
+      // Without this the row would be hydrated again after a restart.
+      void api.dismissDownload(videoId).catch(() => undefined)
+    },
+    [states]
+  )
 
   const refreshSaved = useCallback(async (videoIds: string[]): Promise<void> => {
     if (videoIds.length === 0) return

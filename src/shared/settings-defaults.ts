@@ -1,8 +1,19 @@
 import { DEFAULT_APPEARANCE } from './appearance'
 import { DEFAULT_AUDIO_SETTINGS } from './audio'
 import { DEFAULT_PLAYLIST_INDEX_WIDTH } from './playlists'
-import type { AppSettings, DeepPartial } from './types'
+import type {
+  AppSettings,
+  DeepPartial,
+  DownloadFormat,
+  QualityTier,
+  RetentionMode
+} from './types'
 import { DEFAULT_PO_TOKEN_PROVIDER_URL } from './youtube'
+
+/** The retention modes the app actually implements, for IPC and config checks. */
+export const RETENTION_MODES: readonly RetentionMode[] = ['stream', 'cache', 'keep']
+export const QUALITY_TIERS: readonly QualityTier[] = ['best', 'high', 'balanced', 'data-saver']
+export const DOWNLOAD_FORMATS: readonly DownloadFormat[] = ['opus', 'mp3', 'm4a']
 
 /**
  * Defaults matter more than they look: `retention.mode: 'stream'` and a bounded

@@ -8,7 +8,10 @@ import type {
   AddTracksOutcome,
   AppPaths,
   AppSettings,
+  CacheEntry,
+  CacheStats,
   DeepPartial,
+  DownloadHistoryItem,
   DownloadProgress,
   DroppedPathsResult,
   DuplicateMergeOutcome,
@@ -104,6 +107,12 @@ export const IPC = {
   downloadSave: 'download:save',
   downloadCancel: 'download:cancel',
   downloadSavedIds: 'download:saved-ids',
+  downloadHistory: 'download:history',
+  downloadDismiss: 'download:dismiss',
+  cacheStats: 'cache:stats',
+  cacheList: 'cache:list',
+  cacheClear: 'cache:clear',
+  cachePin: 'cache:pin',
   clipboardRead: 'clipboard:read-text',
   clipboardWrite: 'clipboard:write-text',
   mediaReportPlay: 'media:report-play',
@@ -376,6 +385,24 @@ export interface PlayerApi {
   cancelSave(videoId: string): Promise<void>
   /** Which video ids already have a library row, for "already saved" badges. */
   savedVideoIds(videoIds: string[]): Promise<string[]>
+  /**
+   * Saves that outlived their window: unfinished, failed or cancelled.
+   *
+   * Successful rows are included too (newest first) so the future downloads
+   * screen can show recent history. The saves dock filters to rows that need
+   * attention.
+   */
+  listDownloadHistory(): Promise<DownloadHistoryItem[]>
+  /** Removes one history row, so a dismissed failure does not return. */
+  dismissDownload(videoId: string): Promise<void>
+  /** Cache usage against the current budget. */
+  getCacheStats(): Promise<CacheStats>
+  /** Completed cache entries, most recently used first. */
+  listCacheEntries(limit?: number): Promise<CacheEntry[]>
+  /** Deletes every cache file that is not currently open by the player. */
+  clearCache(): Promise<CacheStats>
+  /** Pins or unpins an entry; pinned entries are never evicted automatically. */
+  setCachePinned(videoId: string, pinned: boolean): Promise<CacheStats>
   /** The system clipboard text, so the paste button needs no select-all. */
   readClipboardText(): Promise<string>
   writeClipboardText(text: string): Promise<void>

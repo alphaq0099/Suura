@@ -3,13 +3,22 @@ import { dirname } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { ARTWORK_SIZES, ICON_SETS, TEXT_SIZES } from '@shared/appearance'
 import { normalizeAudioSettings } from '@shared/audio'
-import { DEFAULT_SETTINGS } from '@shared/settings-defaults'
+import {
+  DEFAULT_SETTINGS,
+  DOWNLOAD_FORMATS,
+  QUALITY_TIERS,
+  RETENTION_MODES
+} from '@shared/settings-defaults'
 import {
   isStartupView,
   type AppSettings,
   type ArtworkSize,
   type DeepPartial,
+  type DownloadFormat,
   type IconSet,
+  type QualityTier,
+  type RetentionMode,
+  type RetentionSettings,
   type TextSize
 } from '@shared/types'
 import {
@@ -46,6 +55,42 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function clampInt(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(value)))
+}
+
+/**
+ * Keeps the retention block in the shape the downloader and cache rely on.
+ *
+ * A config file is external input: it can be hand-edited, brought from another
+ * machine, or written by a build that had a different set of modes. Reading it
+ * defensively here means no caller needs a second guard.
+ */
+export function normalizeRetention(input: unknown): RetentionSettings {
+  const source = isPlainObject(input) ? input : {}
+  const defaults = DEFAULT_SETTINGS.retention
+  const mode = RETENTION_MODES.includes(source.mode as RetentionMode)
+    ? (source.mode as RetentionMode)
+    : defaults.mode
+  const downloadFormat = DOWNLOAD_FORMATS.includes(source.downloadFormat as DownloadFormat)
+    ? (source.downloadFormat as DownloadFormat)
+    : defaults.downloadFormat
+  const qualityTier = QUALITY_TIERS.includes(source.qualityTier as QualityTier)
+    ? (source.qualityTier as QualityTier)
+    : defaults.qualityTier
+  const folder = typeof source.downloadFolder === 'string' ? source.downloadFolder.trim() : ''
+  return {
+    mode,
+    cacheBudgetMb:
+      typeof source.cacheBudgetMb === 'number' && Number.isFinite(source.cacheBudgetMb)
+        ? clampInt(source.cacheBudgetMb, 128, 1_000_000)
+        : defaults.cacheBudgetMb,
+    cacheMaxAgeDays:
+      typeof source.cacheMaxAgeDays === 'number' && Number.isFinite(source.cacheMaxAgeDays)
+        ? clampInt(source.cacheMaxAgeDays, 1, 3650)
+        : defaults.cacheMaxAgeDays,
+    downloadFolder: folder.length > 0 ? folder : null,
+    downloadFormat,
+    qualityTier
+  }
 }
 
 export class SettingsService {
@@ -111,14 +156,11 @@ export class SettingsService {
       settings = { ...settings, engine: { ...settings.engine, cookieFallback: 'always' } }
     }
 
-    // Offline caching is deliberately disabled until its own phase. A config
-    // written by an earlier build may still say `cache`; keeping it would make
-    // the app claim a behaviour it does not have, so the mode is pinned to
-    // stream-only on every read. The budget fields stay in the file untouched,
-    // ready for the phase that implements them.
-    if (settings.retention.mode !== 'stream') {
-      settings = { ...settings, retention: { ...settings.retention, mode: 'stream' } }
-    }
+    // All three retention modes now have an implementation, so the stored value
+    // is honoured. Normalising it still matters: a hand-edited config, or one
+    // written before a mode existed, must not reach the downloader or cache
+    // with a value outside the contract.
+    settings = { ...settings, retention: normalizeRetention(settings.retention) }
 
     // The old surface value described the CSS blur as "frosted", but it is an
     // accent tint rather than an album-art frost. Accept the old spelling from

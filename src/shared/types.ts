@@ -412,16 +412,25 @@ export interface YouTubeChannel {
   entries: YouTubeSearchResult[]
 }
 
+/**
+ * Every state a save can be in.
+ *
+ * The array is the runtime form of the union so that the download history can
+ * reject a status read back from disk instead of trusting a column. The union
+ * is derived from it, which keeps the two from drifting.
+ */
+export const DOWNLOAD_STATUSES = [
+  'queued',
+  'downloading',
+  'finishing',
+  'indexing',
+  'saved',
+  'failed',
+  'cancelled'
+] as const
+
 /** Where a saved track is in its journey from YouTube to the library. */
-export type DownloadStatus =
-  | 'queued'
-  | 'downloading'
-  | 'finishing'
-  | 'indexing'
-  | 'saved'
-  | 'failed'
-  /** The user stopped it, so it is not an error to retry or explain. */
-  | 'cancelled'
+export type DownloadStatus = (typeof DOWNLOAD_STATUSES)[number]
 
 /**
  * One track's download, as the main process reports it.
@@ -440,6 +449,26 @@ export interface DownloadProgress {
   trackId: number | null
 }
 
+/**
+ * One save, as it survives a restart.
+ *
+ * This is `DownloadProgress` plus the request metadata needed to retry it. The
+ * saves panel only hydrates unfinished and failed rows; the full list is for
+ * the downloads screen.
+ */
+export interface DownloadHistoryItem {
+  videoId: string
+  title: string
+  artist: string | null
+  album: string | null
+  status: DownloadStatus
+  percent: number | null
+  error: string | null
+  trackId: number | null
+  createdAt: number
+  updatedAt: number
+}
+
 /** What the renderer knows about a stream it wants to keep. */
 export interface SaveToLibraryRequest {
   videoId: string
@@ -447,6 +476,31 @@ export interface SaveToLibraryRequest {
   title: string
   artist: string | null
   album: string | null
+}
+
+/**
+ * One completed offline-cache entry.
+ *
+ * `videoId` is the identity rather than a library row: a cached stream may never
+ * have been saved, and the same video can be reached from several views. The
+ * renderer never receives `path`; playback goes through the media protocol.
+ */
+export interface CacheEntry {
+  videoId: string
+  sizeBytes: number
+  mimeType: string
+  pinned: boolean
+  complete: boolean
+  createdAt: number
+  lastUsedAt: number
+}
+
+/** Cache usage against the current settings budget. */
+export interface CacheStats {
+  entries: number
+  pinnedEntries: number
+  bytes: number
+  budgetBytes: number
 }
 
 export interface ScanProgress {

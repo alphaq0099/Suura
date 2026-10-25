@@ -5,10 +5,13 @@ import type { Logger } from '@core/logging/logger'
 import type { SettingsService } from '@core/settings/settings-service'
 import type { LibraryService } from '@core/library/library-service'
 import type { TrackRepository } from '@core/library/track-repository'
+import type { DownloadHistoryRepository } from '@core/library/download-history-repository'
 import { localContentKey, normalizePath } from '@core/library/content-key'
+import { freeBytesFor } from '@core/disk-space'
 import type { YtDlpClient } from '@engine/sidecar/yt-dlp'
 import { isYouTubeVideoId } from '@shared/youtube'
 import { savePathParts } from '@shared/files'
+import { formatBytes } from '@shared/format'
 import type { AppPaths, DownloadProgress, SaveToLibraryRequest } from '@shared/types'
 
 export interface DownloadServiceDeps {
@@ -16,16 +19,33 @@ export interface DownloadServiceDeps {
   paths: AppPaths
   repo: TrackRepository
   library: LibraryService
+  history: DownloadHistoryRepository
   ytDlp: Pick<YtDlpClient, 'download'>
   /** `app.getPath('music')`, so core never has to know about Electron. */
   musicDir: string
   log: Logger
   onChange: (progress: DownloadProgress) => void
+  /** The last resolved size for a video, or null. See `YouTubeResolver.cachedFileSize`. */
+  fileSizeHint?: (videoId: string) => number | null
+  /** Injected by the smoke tests so a full disk can be simulated. */
+  freeBytes?: (path: string) => Promise<number | null>
 }
 
 /** How long to wait for a scan that was already running when the file landed. */
 const INDEX_WAIT_MS = 45_000
 const INDEX_POLL_MS = 500
+
+/**
+ * Space kept free on both the temporary and target volumes.
+ *
+ * A track's size is known only when the resolver happened to cache it. The
+ * reserve covers conversion, tag writing and the cover image, and keeps a save
+ * from filling the disk so completely that the library scan cannot run.
+ */
+const SPACE_RESERVE_BYTES = 256 * 1024 * 1024
+
+/** Used when no sidecar size is cached; a long Opus track is well under this. */
+const FALLBACK_TRACK_BYTES = 24 * 1024 * 1024
 
 /**
  * Saves a stream to the library.
@@ -50,6 +70,8 @@ export class DownloadService {
   private readonly jobs = new Map<string, Promise<number>>()
   /** One controller per video, so Cancel stops that save and not the app. */
   private readonly controllers = new Map<string, AbortController>()
+  /** Metadata for the history row, kept while a save is queued or running. */
+  private readonly requests = new Map<string, SaveToLibraryRequest>()
   private running = 0
   private readonly abort = new AbortController()
 
@@ -68,6 +90,7 @@ export class DownloadService {
     if (pending) return pending
 
     const controller = new AbortController()
+    this.requests.set(request.videoId, request)
     const promise = new Promise<number>((resolve, reject) => {
       this.queue.push({ request, controller, resolve, reject })
       this.emit(request.videoId, 'queued', null)
@@ -75,6 +98,7 @@ export class DownloadService {
     }).finally(() => {
       this.jobs.delete(request.videoId)
       this.controllers.delete(request.videoId)
+      this.requests.delete(request.videoId)
     })
 
     this.jobs.set(request.videoId, promise)
@@ -150,6 +174,7 @@ export class DownloadService {
     let moved = false
 
     try {
+      await this.assertDiskSpace(request.videoId, root)
       mkdirSync(tempDir, { recursive: true })
       const format = settings.get().retention.downloadFormat
       this.emit(request.videoId, 'downloading', 0)
@@ -231,6 +256,34 @@ export class DownloadService {
   }
 
   /**
+   * Refuses a save that cannot fit on both volumes it touches.
+   *
+   * The temporary file and the final file may be on different volumes, so both
+   * are checked. `fileSizeHint` is the resolver's cached estimate; when there is
+   * none the fallback is deliberately generous. A platform that cannot report
+   * free space (null) is allowed through rather than blocked.
+   */
+  private async assertDiskSpace(videoId: string, targetRoot: string): Promise<void> {
+    const hint = this.deps.fileSizeHint?.(videoId) ?? null
+    const needed = (hint !== null && hint > 0 ? hint : FALLBACK_TRACK_BYTES) + SPACE_RESERVE_BYTES
+    const free = this.deps.freeBytes ?? freeBytesFor
+    const [tempFree, targetFree] = await Promise.all([
+      free(this.deps.paths.downloads),
+      free(targetRoot)
+    ])
+
+    const short = (label: string, bytes: number): Error =>
+      new Error(
+        `Not enough free space on the ${label} volume to save this track: ` +
+          `${formatBytes(bytes)} available, about ${formatBytes(needed)} needed. ` +
+          'Free up some space and try again.'
+      )
+
+    if (tempFree !== null && tempFree < needed) throw short('temporary', tempFree)
+    if (targetFree !== null && targetFree < needed) throw short('library', targetFree)
+  }
+
+  /**
    * Waits for a scan that was already in flight to index the new file.
    *
    * `scanWhenIdle` queues a rescan when one is running, so the row is coming —
@@ -253,7 +306,15 @@ export class DownloadService {
     error: string | null = null,
     trackId: number | null = null
   ): void {
-    this.deps.onChange({ videoId, status, percent, error, trackId })
+    const progress: DownloadProgress = { videoId, status, percent, error, trackId }
+    this.deps.onChange(progress)
+    try {
+      this.deps.history.record(progress, this.requests.get(videoId) ?? null)
+    } catch (historyError) {
+      // The screen is still correct if persistence fails; losing the save
+      // because its history row could not be written is not an acceptable trade.
+      this.deps.log.warn('could not record download history', { videoId, error: historyError })
+    }
   }
 }
 

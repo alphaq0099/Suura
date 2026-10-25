@@ -33,6 +33,18 @@ export interface ResolvedLink {
   source: ResolvedSource
 }
 
+/** Everything a cache warm or an auto-save needs, from one sidecar result. */
+export interface YouTubeStreamDetails {
+  videoId: string
+  upstream: UpstreamMedia
+  fileSize: number | null
+  mimeType: string
+  title: string
+  artist: string | null
+  channel: string | null
+  album: string | null
+}
+
 /** A resolved URL is re-resolved this long before it expires. */
 const EXPIRY_MARGIN_MS = 60_000
 
@@ -113,6 +125,39 @@ export class YouTubeResolver implements MediaResolver {
   async prefetch(track: ResolvableTrack): Promise<void> {
     if (!track.sourceId) return
     await this.infoFor(track.sourceId)
+  }
+
+  /**
+   * The upstream and metadata behind a video, reusing the resolve cache.
+   *
+   * The cache warm and an auto-save run immediately after a play, so this is
+   * normally a map lookup. It is public rather than exposing `infoFor` because
+   * the caller needs the signed upstream, not another proxy token.
+   */
+  async streamDetails(videoId: string): Promise<YouTubeStreamDetails> {
+    if (!isYouTubeVideoId(videoId)) throw new Error('This stream has no video id.')
+    const info = await this.infoFor(videoId)
+    return {
+      videoId: info.videoId,
+      upstream: upstreamOf(info),
+      fileSize: info.fileSize,
+      mimeType: info.mimeType,
+      title: info.title,
+      artist: info.artist,
+      channel: info.channel,
+      album: null
+    }
+  }
+
+  /**
+   * The size yt-dlp reported, when a resolve already happened.
+   *
+   * Deliberately synchronous: disk pre-flight runs before a save starts, and
+   * launching a sidecar just to ask a size would make every Save wait for a
+   * resolve. The caller falls back to a conservative estimate when this is null.
+   */
+  cachedFileSize(videoId: string): number | null {
+    return this.cache.get(videoId)?.info.fileSize ?? null
   }
 
   private sourceFor(info: YtMediaInfo): ResolvedSource {

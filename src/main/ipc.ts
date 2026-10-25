@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, net, shell } from 'electron'
 import { writeFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 import {
@@ -62,6 +62,11 @@ import { libraryCsv } from '@core/library/library-csv'
 import { sanitizeTaskbarState } from '@shared/taskbar'
 import { applyTaskbarControls } from './taskbar'
 import { DEFAULT_SETTINGS, mergeSettings } from '@core/settings/settings-service'
+import {
+  DOWNLOAD_FORMATS,
+  QUALITY_TIERS,
+  RETENTION_MODES
+} from '@shared/settings-defaults'
 import { getEngineStatus } from '@engine/sidecar/engine-status'
 import {
   isCookieFallbackMode,
@@ -178,12 +183,9 @@ function sanitizeSnapshot(value: unknown): PlaybackSnapshot | null {
   return { trackIds: candidate.trackIds, index, positionMs }
 }
 
-// Offline caching is deferred to its own phase. Only `stream` is accepted from
-// the renderer, so a stale config or a hand-crafted patch cannot switch on a
-// mode that has no implementation behind it.
-const RETENTION_MODES: RetentionMode[] = ['stream']
-const QUALITY_TIERS: QualityTier[] = ['best', 'high', 'balanced', 'data-saver']
-const DOWNLOAD_FORMATS: DownloadFormat[] = ['opus', 'mp3', 'm4a']
+// All three modes are implemented now. The allowlist still matters: a stale
+// renderer or a hand-crafted patch must not store a mode the main process has no
+// branch for.
 const REPEAT_MODES: RepeatMode[] = ['off', 'all', 'one']
 const ARTWORK_SHAPES: ArtworkShape[] = ['square', 'circle']
 const ARTWORK_FITS: ArtworkFit[] = ['cover', 'contain']
@@ -461,9 +463,40 @@ export function registerIpcHandlers(container: AppContainer): void {
    * Resolves a queue entry without recording a play. The local branch attaches
    * ReplayGain here rather than in the resolver: gain belongs to the file, and a
    * cached source must never carry a value from a file that has since changed.
+   *
+   * `warm` separates an actual play from a prefetch. Only a play starts a cache
+   * copy or an auto-save; a prefetch may still *read* an existing cache entry,
+   * which is what makes the track handoff instant without writing anything.
    */
-  async function resolveSource(request: ResolvableTrack): Promise<ResolvedSource> {
-    if (request.sourceKind === 'youtube') return container.resolvers.resolve(request)
+  async function resolveSource(
+    request: ResolvableTrack,
+    options: { warm: boolean } = { warm: false }
+  ): Promise<ResolvedSource> {
+    if (request.sourceKind === 'youtube') {
+      const videoId = request.sourceId
+      if (videoId && isYouTubeVideoId(videoId)) {
+        const cached = container.streamCache.cachedSource(videoId)
+        if (cached) return cached
+
+        // `net.isOnline` is a network-interface check, not a reachability test.
+        // It is deliberately conservative: saying "not available offline" when
+        // the user has a connection would be a lie, so only a definite offline
+        // state short-circuits here. A connected but broken network still goes
+        // through the resolver and gets the engine's own error.
+        if (!net.isOnline()) {
+          throw new Error(
+            'This track is not cached and the computer is offline. Reconnect, or save it to your library while online.'
+          )
+        }
+      }
+
+      const source = await container.resolvers.resolve(request)
+      if (options.warm && videoId && isYouTubeVideoId(videoId)) {
+        void applyRetention(videoId)
+      }
+      return source
+    }
+
     const track = library.trackById(request.id)
     if (!track) throw new Error('Unknown track.')
     const source = await container.resolvers.resolve(track)
@@ -471,6 +504,43 @@ export function registerIpcHandlers(container: AppContainer): void {
       ...source,
       replayGainDb: track.replayGainDb,
       replayGainPeak: track.replayGainPeak
+    }
+  }
+
+  /**
+   * The side effect of a play, according to the retention mode.
+   *
+   * Fire-and-forget: playback must never wait for a copy, and both paths are
+   * resumable if they fail. `streamDetails` is normally a cache hit because the
+   * resolver just ran for this video.
+   */
+  async function applyRetention(videoId: string): Promise<void> {
+    const mode = settings.get().retention.mode
+    if (mode === 'stream') return
+
+    try {
+      const details = await container.youtube.resolver.streamDetails(videoId)
+      if (mode === 'cache') {
+        await container.streamCache.warm(videoId, {
+          url: details.upstream.url,
+          headers: details.upstream.headers,
+          mimeType: details.upstream.mimeType,
+          sizeHint: details.fileSize
+        })
+        return
+      }
+
+      if (mode === 'keep') {
+        if (container.repo.findByOrigin('youtube', videoId)) return
+        await container.downloads.save({
+          videoId,
+          title: details.title,
+          artist: details.artist,
+          album: null
+        })
+      }
+    } catch (error) {
+      log.debug('retention step failed', { videoId, mode, error })
     }
   }
 
@@ -673,7 +743,7 @@ export function registerIpcHandlers(container: AppContainer): void {
         container.online.rememberPlay(request.sourceId)
       }
     }
-    return resolveSource(request)
+    return resolveSource(request, { warm: true })
   })
 
   // The next track's resolve, run while the current one plays. Deliberately not
@@ -681,7 +751,7 @@ export function registerIpcHandlers(container: AppContainer): void {
   // history row. The renderer attaches the returned source to its idle element.
   ipcMain.handle(IPC.mediaPrefetch, async (_event, input: unknown) => {
     const request = toResolvableTrack(input)
-    return resolveSource(request)
+    return resolveSource(request, { warm: false })
   })
 
   // Loudness analysis is a long job with its own progress event. The renderer
@@ -777,6 +847,26 @@ export function registerIpcHandlers(container: AppContainer): void {
   ipcMain.handle(IPC.downloadSavedIds, (_event, input: unknown) =>
     [...container.repo.savedOrigins('youtube', toVideoIdList(input))]
   )
+
+  ipcMain.handle(IPC.downloadHistory, () => container.downloadHistory.list())
+  ipcMain.handle(IPC.downloadDismiss, (_event, videoId: unknown) => {
+    if (typeof videoId !== 'string' || !isYouTubeVideoId(videoId)) return
+    container.downloadHistory.remove(videoId)
+  })
+
+  ipcMain.handle(IPC.cacheStats, () => container.streamCache.stats())
+  ipcMain.handle(IPC.cacheList, (_event, limit: unknown) =>
+    container.streamCache.list(
+      typeof limit === 'number' && Number.isFinite(limit) ? Math.round(limit) : 200
+    )
+  )
+  ipcMain.handle(IPC.cacheClear, () => container.streamCache.clear())
+  ipcMain.handle(IPC.cachePin, (_event, videoId: unknown, pinned: unknown) => {
+    if (typeof videoId !== 'string' || !isYouTubeVideoId(videoId)) {
+      throw new Error('Invalid video id.')
+    }
+    return container.streamCache.setPinned(videoId, pinned === true)
+  })
 
   ipcMain.handle(IPC.clipboardRead, () => clipboard.readText())
 

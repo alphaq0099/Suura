@@ -156,6 +156,20 @@ const api: PlayerApi = {
   savedVideoIds: (videoIds: string[]) =>
     ipcRenderer.invoke(IPC.downloadSavedIds, videoIds) as Promise<string[]>,
 
+  listDownloadHistory: () => ipcRenderer.invoke(IPC.downloadHistory),
+
+  dismissDownload: (videoId: string) =>
+    ipcRenderer.invoke(IPC.downloadDismiss, videoId) as Promise<void>,
+
+  getCacheStats: () => ipcRenderer.invoke(IPC.cacheStats),
+
+  listCacheEntries: (limit?: number) => ipcRenderer.invoke(IPC.cacheList, limit),
+
+  clearCache: () => ipcRenderer.invoke(IPC.cacheClear),
+
+  setCachePinned: (videoId: string, pinned: boolean) =>
+    ipcRenderer.invoke(IPC.cachePin, videoId, pinned),
+
   readClipboardText: () => ipcRenderer.invoke(IPC.clipboardRead) as Promise<string>,
 
   writeClipboardText: (text: string) => ipcRenderer.invoke(IPC.clipboardWrite, text) as Promise<void>,

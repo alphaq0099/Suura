@@ -33,6 +33,7 @@ import type {
   QualityTier,
   RelocateReport,
   ReplayGainStatus,
+  RetentionMode,
   RuntimeInfo,
   StartupView,
   SurfaceStyle,
@@ -78,6 +79,24 @@ const QUALITY_CHOICES: Array<{ value: QualityTier; label: string }> = [
   { value: 'high', label: 'High (~256 kbps)' },
   { value: 'balanced', label: 'Balanced (~128 kbps)' },
   { value: 'data-saver', label: 'Data saver (~64 kbps)' }
+]
+
+const RETENTION_CHOICES: Array<{ value: RetentionMode; label: string; hint: string }> = [
+  {
+    value: 'stream',
+    label: 'Stream only',
+    hint: 'Nothing is written while you listen. Every play uses YouTube again, and nothing is available offline.'
+  },
+  {
+    value: 'cache',
+    label: 'Cache played tracks',
+    hint: 'A played track is copied into a bounded cache, so it keeps playing offline until the budget or age limit evicts it.'
+  },
+  {
+    value: 'keep',
+    label: 'Save every played track',
+    hint: 'Each YouTube track you start is saved into your library like a manual Save, tagged and available offline.'
+  }
 ]
 
 const FORMAT_CHOICES: Array<{ value: DownloadFormat; label: string }> = [
@@ -1520,15 +1539,92 @@ export function SettingsView(props: SettingsViewProps) {
               <article className="card">
                 <header className="card-header">
                   <h2>
-                    Saving to your library <span className="badge">stream only</span>
-                    <InfoHint label="About saving streams">
-                      Streams play straight from YouTube and nothing is written while you listen. Save to library
-                      downloads once, writes its tags and cover, and moves the file into your music folder. Offline
-                      caching is deliberately deferred to a later phase.
+                    How streams are kept
+                    <InfoHint label="About offline streaming">
+                      The player never changes this for you. Stream only writes nothing, Cache keeps a copy that
+                      offline playback can use, and Keep saves the track into your library. Cached tracks are copies,
+                      not library rows: clearing the cache never deletes a file you saved.
                     </InfoHint>
                   </h2>
                 </header>
-                <p className="card-hint">Streams stay on YouTube until you press Save to library.</p>
+                <p className="card-hint">
+                  {RETENTION_CHOICES.find((choice) => choice.value === settings.retention.mode)?.hint}
+                </p>
+
+                <div className="field-grid">
+                  <label className="field wide">
+                    <span>When a YouTube track plays</span>
+                    <select
+                      value={settings.retention.mode}
+                      onChange={(event) =>
+                        onUpdate({ retention: { mode: event.target.value as RetentionMode } })
+                      }
+                    >
+                      {RETENTION_CHOICES.map((choice) => (
+                        <option key={choice.value} value={choice.value}>
+                          {choice.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {settings.retention.mode === 'cache' ? (
+                    <>
+                      <label className="field">
+                        <span>
+                          Cache budget (MB)
+                          <InfoHint label="About the cache budget">
+                            The cache deletes its least recently used copy once it passes this size. Pinned tracks
+                            still count but are never chosen for deletion. 5 GB is the default.
+                          </InfoHint>
+                        </span>
+                        <input
+                          type="number"
+                          min={128}
+                          max={1000000}
+                          step={128}
+                          value={settings.retention.cacheBudgetMb}
+                          onChange={(event) =>
+                            onUpdate({ retention: { cacheBudgetMb: Number(event.target.value) } })
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        <span>
+                          Keep cached tracks for (days)
+                          <InfoHint label="About cache age">
+                            A cached track that has not been played for this many days is deleted, even when the
+                            budget has room. Pinned tracks are exempt.
+                          </InfoHint>
+                        </span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={3650}
+                          value={settings.retention.cacheMaxAgeDays}
+                          onChange={(event) =>
+                            onUpdate({ retention: { cacheMaxAgeDays: Number(event.target.value) } })
+                          }
+                        />
+                      </label>
+                    </>
+                  ) : null}
+                </div>
+              </article>
+
+              <article className="card">
+                <header className="card-header">
+                  <h2>
+                    Saving to your library
+                    <InfoHint label="About saving streams">
+                      Save to library downloads once, writes its tags and cover, and moves the file into your music
+                      folder. Keep mode uses the same path automatically for each track you play.
+                    </InfoHint>
+                  </h2>
+                </header>
+                <p className="card-hint">
+                  These settings apply to a manual Save and to Keep mode. A saved file plays offline and survives a
+                  cache wipe.
+                </p>
 
                 <div className="field-grid">
                   <label className="field">

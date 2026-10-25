@@ -1357,7 +1357,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     // are visible and the hidden-column checks measure the setting, not the
     // responsive breakpoint.
     window.setSize(1200, 780)
-    await delay(250)
+    await delay(600)
     const appearance = await evaluate<{
       themeReachedRoot: boolean
       themeButtonPressed: string
@@ -1377,6 +1377,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       classicSidebarIconSet: string
       albumHidden: boolean
       albumColumnDisplay: string
+      baseAlbumSetting: string
+      baseAlbumDisplay: string
+      trackListClientWidth: number
       artistWidth: number
       albumWidth: number
       timeWidth: number
@@ -1416,6 +1419,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            textSizeReachedRoot: false, xlargeBodyPx: -1,
            iconSetReachedRoot: false, classicSidebarIconSet: '',
            albumHidden: false, albumColumnDisplay: '',
+           baseAlbumSetting: '', baseAlbumDisplay: '', trackListClientWidth: -1,
            artistWidth: -1, albumWidth: -1, timeWidth: -1, titleWidth: -1,
            timeFits: false, timeAligned: false, actionsAligned: false,
            hiddenTimeWidth: -1, hiddenTimeFits: false, hiddenTimeAligned: false, hiddenActionsAligned: false,
@@ -1512,6 +1516,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          const baseActionsRect = rect(baseRow?.querySelector('.col-actions'))
          const baseHeadTimeRect = rect(baseHead?.querySelector('.col-time'))
          const baseTimeCell = baseRow?.querySelector('.col-time')
+         const baseAlbumCell = baseRow?.querySelector('.col-album')
+         const baseList = baseRow?.closest('.track-list')
+         out.baseAlbumSetting = document.querySelector('.app')?.dataset.albumColumn || ''
+         out.baseAlbumDisplay = baseAlbumCell ? getComputedStyle(baseAlbumCell).display : ''
+         out.trackListClientWidth = baseList ? baseList.clientWidth : -1
          out.artistWidth = baseArtistRect ? Math.round(baseArtistRect.width) : -1
          out.albumWidth = baseAlbumRect ? Math.round(baseAlbumRect.width) : -1
          out.timeWidth = baseTimeRect ? Math.round(baseTimeRect.width) : -1
@@ -1647,9 +1656,20 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       'appearance: text size, sidebar icons and the Album/Channel columns reach the app',
       appearance
     )
+    const albumWidthsMatch =
+      appearance.artistWidth > 0 && Math.abs(appearance.artistWidth - appearance.albumWidth) <= 1
+    // At Extra Large text a narrow viewport can be inside the list's own 820px
+    // container query, which drops Album before the setting is touched. That is
+    // a responsive layout, not a broken hidden-column rule: require the
+    // setting to still say "show" and the list to actually be at or below the
+    // breakpoint before accepting the narrow case.
+    const albumDroppedByWidth =
+      appearance.baseAlbumSetting === 'show' &&
+      appearance.baseAlbumDisplay === 'none' &&
+      appearance.trackListClientWidth > 0 &&
+      appearance.trackListClientWidth <= 820
     record(
-      appearance.artistWidth > 0 &&
-        Math.abs(appearance.artistWidth - appearance.albumWidth) <= 1 &&
+      (albumWidthsMatch || albumDroppedByWidth) &&
         appearance.titleWidth > appearance.artistWidth &&
         appearance.timeWidth > 0 &&
         appearance.timeFits &&
@@ -2032,6 +2052,139 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         !/cookie/i.test(diagnosticsText),
       'settings: Copy diagnostics puts versions and paths on the clipboard without cookies',
       diagnosticsText.slice(0, 160)
+    )
+
+    // ---- 11b. retention mode, cache IPC and save history ----------------
+    // The mode control drives the same settings block the resolver reads. The
+    // budget and age fields only exist in `cache` mode, so their presence is the
+    // proof that the UI is following the mode rather than always rendering them.
+    const retentionUi = await evaluate<{
+      modeBefore: string
+      cacheFieldsShown: boolean
+      modeAfter: string
+      budget: string
+      age: string
+      badgeGone: boolean
+      restored: string
+    }>(
+      window,
+      `(async () => {
+         const out = { modeBefore: '', cacheFieldsShown: false, modeAfter: '', budget: '', age: '', badgeGone: false, restored: '' }
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const press = (element) => { if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
+         const nav = (label) => {
+           const button = [...document.querySelectorAll('.nav-item')].find((el) => (el.textContent || '').trim().startsWith(label))
+           if (button) press(button)
+         }
+         const tab = (label) => {
+           const button = [...document.querySelectorAll('.settings-tab')].find((el) => (el.textContent || '').trim() === label)
+           if (button) press(button)
+         }
+         const field = (label) => {
+           for (const candidate of document.querySelectorAll('.field')) {
+             const title = candidate.querySelector('span')
+             if (title && (title.textContent || '').trim().startsWith(label)) return candidate
+           }
+           return null
+         }
+         const modeSelect = () => {
+           const candidate = field('When a YouTube track plays')
+           return candidate ? candidate.querySelector('select') : null
+         }
+
+         nav('Settings')
+         await sleep(300)
+         tab('Streaming')
+         await sleep(300)
+
+         out.modeBefore = modeSelect() ? modeSelect().value : ''
+         out.badgeGone = ![...document.querySelectorAll('.badge')].some(
+           (el) => (el.textContent || '').trim() === 'stream only'
+         )
+         const select = modeSelect()
+         if (select) {
+           select.value = 'cache'
+           select.dispatchEvent(new Event('change', { bubbles: true }))
+         }
+         await sleep(700)
+         out.modeAfter = modeSelect() ? modeSelect().value : ''
+         const budgetField = field('Cache budget')
+         const ageField = field('Keep cached tracks for')
+         out.budget = budgetField?.querySelector('input')?.value || ''
+         out.age = ageField?.querySelector('input')?.value || ''
+         out.cacheFieldsShown = Boolean(out.budget && out.age)
+
+         // Leave the app on the default before anything later reads a source.
+         const restore = modeSelect()
+         if (restore) {
+           restore.value = 'stream'
+           restore.dispatchEvent(new Event('change', { bubbles: true }))
+         }
+         await sleep(700)
+         out.restored = modeSelect() ? modeSelect().value : ''
+         return out
+       })()`
+    )
+    record(retentionUi.modeBefore === 'stream', 'streaming: the retention control starts on Stream only', retentionUi)
+    record(
+      retentionUi.modeAfter === 'cache' && retentionUi.cacheFieldsShown,
+      'streaming: choosing Cache reveals its budget and age controls',
+      retentionUi
+    )
+    record(retentionUi.badgeGone, 'streaming: the old stream-only badge is gone', retentionUi)
+    record(
+      retentionUi.restored === 'stream' && container.settings.get().retention.mode === 'stream',
+      'streaming: the retention mode is written back and can be restored',
+      container.settings.get().retention
+    )
+
+    container.downloadHistory.record(
+      {
+        videoId: 'selftestvid',
+        status: 'failed',
+        percent: null,
+        error: 'Selftest save failure',
+        trackId: null
+      },
+      { videoId: 'selftestvid', title: 'Selftest failed save', artist: null, album: null }
+    )
+    const cacheApi = await evaluate<{
+      budgetBytes: number
+      entries: number
+      listed: number
+      historyFound: boolean
+      historyTitle: string
+    }>(
+      window,
+      `(async () => {
+         const stats = await window.player.getCacheStats()
+         const entries = await window.player.listCacheEntries()
+         const history = await window.player.listDownloadHistory()
+         const row = history.find((item) => item.videoId === 'selftestvid')
+         return {
+           budgetBytes: stats.budgetBytes,
+           entries: stats.entries,
+           listed: entries.length,
+           historyFound: Boolean(row),
+           historyTitle: row ? row.title : ''
+         }
+       })()`
+    )
+    const expectedBudget = container.settings.get().retention.cacheBudgetMb * 1024 * 1024
+    record(
+      cacheApi.budgetBytes === expectedBudget && cacheApi.entries === 0 && cacheApi.listed === 0,
+      'cache: the IPC reports the configured budget and an empty cache',
+      cacheApi
+    )
+    record(
+      cacheApi.historyFound && cacheApi.historyTitle === 'Selftest failed save',
+      'downloads: a failed save is listed by the history API',
+      cacheApi
+    )
+    await evaluate<void>(window, `window.player.dismissDownload('selftestvid')`)
+    record(
+      container.downloadHistory.get('selftestvid') === null,
+      'downloads: dismissing a history row removes it from disk'
     )
 
     // ---- 12. artwork preferences, bar ambience, volume -----------------
@@ -3894,10 +4047,12 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       channelTimeAligned: boolean
       channelActionsAligned: boolean
       channelTimeFits: boolean
+      channelTimeOffset: number
+      channelScrollbarWidth: number
     }>(
       window,
       `(async () => {
-         const out = { groupTitles: '', onlineRows: -1, kind: '', paneTitle: '', titles: '', note: '', hasReimport: false, hasClear: false, hasSaveAll: false, rowSaveButtons: 0, rowRevealButtons: 0, indexCount: '', rowsAfterRemove: -1, playedTitle: '', hasCover: false, playingCard: false, separateStrip: false, playingCardAfterTrip: false, onlineCardCover: false, importedScrolls: false, cardsAfterDelete: -1, groupEmpty: false, emptyAfterDelete: false, hasListId: false, reimportCount: '', renamedTitle: '', renamedIndex: '', onlineCards: -1, onlineCardTitle: '', onlineCardMeta: '', historyRows: -1, channelColumnHidden: false, channelTimeAligned: false, channelActionsAligned: false, channelTimeFits: false }
+         const out = { groupTitles: '', onlineRows: -1, kind: '', paneTitle: '', titles: '', note: '', hasReimport: false, hasClear: false, hasSaveAll: false, rowSaveButtons: 0, rowRevealButtons: 0, indexCount: '', rowsAfterRemove: -1, playedTitle: '', hasCover: false, playingCard: false, separateStrip: false, playingCardAfterTrip: false, onlineCardCover: false, importedScrolls: false, cardsAfterDelete: -1, groupEmpty: false, emptyAfterDelete: false, hasListId: false, reimportCount: '', renamedTitle: '', renamedIndex: '', onlineCards: -1, onlineCardTitle: '', onlineCardMeta: '', historyRows: -1, channelColumnHidden: false, channelTimeAligned: false, channelActionsAligned: false, channelTimeFits: false, channelTimeOffset: -99, channelScrollbarWidth: -1 }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (s) => document.querySelector(s)
          const pickAll = (s) => [...document.querySelectorAll(s)]
@@ -3994,6 +4149,14 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          const channelHeadTimeRect = rect(channelHeadTime)
          const channelActionsRect = rect(channelActions)
          const channelRowRect = rect(channelRow)
+         const channelScroller = channelRow ? channelRow.closest('.list-scroll') : null
+         out.channelTimeOffset =
+           channelTimeRect && channelHeadTimeRect
+             ? Math.round((channelTimeRect.left - channelHeadTimeRect.left) * 10) / 10
+             : -99
+         out.channelScrollbarWidth = channelScroller
+           ? channelScroller.offsetWidth - channelScroller.clientWidth
+           : -1
          out.channelColumnHidden = Boolean(hiddenChannel && getComputedStyle(hiddenChannel).display === 'none')
          out.channelTimeAligned = Boolean(
            channelTimeRect && channelHeadTimeRect && Math.abs(channelTimeRect.left - channelHeadTimeRect.left) <= 1

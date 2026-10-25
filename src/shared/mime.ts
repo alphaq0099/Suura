@@ -32,6 +32,10 @@ const MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
   '.spx': 'audio/ogg',
   '.wav': 'audio/wav',
   '.wave': 'audio/wav',
+  // Cached YouTube audio keeps the container the CDN delivered. It is not a
+  // library extension (scanner lists do not include it), only a media-protocol
+  // content type, because the cache is app-owned and never scanned.
+  '.webm': 'audio/webm',
   '.wma': 'audio/x-ms-wma',
   '.aiff': 'audio/aiff',
   '.aif': 'audio/aiff',

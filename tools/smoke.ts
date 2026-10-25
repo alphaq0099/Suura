@@ -38,7 +38,7 @@ import { DEFAULT_PREFERENCE_PATCH } from '@shared/settings-defaults'
 import { isLocalLibraryFilter, recentlyAddedCutoff } from '@shared/library'
 import { serializeDetails, silentLogger } from '@core/logging/logger'
 import { resolveAppPaths, ensureAppDirectories } from '@core/paths'
-import { DEFAULT_SETTINGS, mergeSettings, SettingsService } from '@core/settings/settings-service'
+import { DEFAULT_SETTINGS, mergeSettings, normalizeRetention, SettingsService } from '@core/settings/settings-service'
 import { DatabaseSchemaTooNewError, latestVersion, openLibraryDatabase } from '@core/db/database'
 import {
   applyPendingRestore,
@@ -52,6 +52,7 @@ import {
 } from '@core/db/backups'
 import { openDatabase } from '@core/db/driver'
 import { TrackRepository, buildFtsQuery, type ScanRunSummary } from '@core/library/track-repository'
+import { DownloadHistoryRepository } from '@core/library/download-history-repository'
 import { LibraryService } from '@core/library/library-service'
 import { DataCareService } from '@core/library/data-care-service'
 import { FolderWatcher, isLibraryEvent, type FolderWatchEvent } from '@core/library/folder-watcher'
@@ -101,6 +102,7 @@ import {
 import { RemoteStreamProxy, type UpstreamMedia } from '@engine/stream-proxy'
 import { ResolverRegistry } from '@engine/resolver'
 import { YouTubeResolver } from '@engine/youtube-resolver'
+import { StreamCache } from '../src/main/stream-cache'
 import { PLAYLIST_INDEX_MAX, PLAYLIST_INDEX_MIN, clampPlaylistIndexWidth } from '@shared/playlists'
 import { parseMediaUrl } from '@shared/media-url'
 import { buildStreamUrl, parseStreamUrl } from '@shared/stream-url'
@@ -1171,12 +1173,28 @@ async function main(): Promise<void> {
       null
     )
 
-    // Offline caching is deferred, so a config written by an older build (or a
-    // hand edit) cannot leave the app claiming a cache that is not implemented.
+    // All three retention modes are implemented. A stored value must survive a
+    // reload, while a hand-edited value outside the contract still falls back to
+    // the default instead of reaching the cache or downloader.
     settings.update({ retention: { mode: 'cache' } })
-    const rereadMode = new SettingsService(paths.config, silentLogger)
-    checkEqual('offline cache is pinned off on load', rereadMode.get().retention.mode, 'stream')
-    settings.update({ retention: { mode: 'stream' } })
+    checkEqual(
+      'an offline cache mode survives a reload',
+      new SettingsService(paths.config, silentLogger).get().retention.mode,
+      'cache'
+    )
+    settings.update({ retention: { mode: 'keep' } })
+    checkEqual(
+      'a keep mode survives a reload',
+      new SettingsService(paths.config, silentLogger).get().retention.mode,
+      'keep'
+    )
+    checkEqual('an unknown retention mode falls back to stream', normalizeRetention({ mode: 'someday' }).mode, 'stream')
+    checkEqual('an unknown download format falls back', normalizeRetention({ downloadFormat: 'aiff' }).downloadFormat, 'opus')
+    checkEqual('a tiny cache budget is clamped up', normalizeRetention({ cacheBudgetMb: 8 }).cacheBudgetMb, 128)
+    checkEqual('a huge cache budget is clamped down', normalizeRetention({ cacheBudgetMb: 9_000_000 }).cacheBudgetMb, 1_000_000)
+    checkEqual('a zero cache age is clamped up', normalizeRetention({ cacheMaxAgeDays: 0 }).cacheMaxAgeDays, 1)
+    checkEqual('a huge cache age is clamped down', normalizeRetention({ cacheMaxAgeDays: 99_999 }).cacheMaxAgeDays, 3650)
+    settings.update({ retention: { mode: 'stream', cacheBudgetMb: DEFAULT_SETTINGS.retention.cacheBudgetMb, cacheMaxAgeDays: DEFAULT_SETTINGS.retention.cacheMaxAgeDays } })
 
     // A killed process never runs the download's cleanup. The next start sweeps
     // only this service's own UUID folders and partial files, never a folder the
@@ -1196,12 +1214,14 @@ async function main(): Promise<void> {
     // --- cancelling a save ------------------------------------------------
     // The fake sidecar never finishes on its own, so the only way out is the
     // controller. That is what Cancel does after a real download has started.
+    const downloadHistory = new DownloadHistoryRepository(database.db)
     const seen: Array<{ status: string }> = []
     const cancellable = new DownloadService({
       settings,
       paths,
       repo,
       library,
+      history: downloadHistory,
       musicDir,
       log: silentLogger,
       ytDlp: {
@@ -1214,7 +1234,8 @@ async function main(): Promise<void> {
             )
           })
       },
-      onChange: (progress) => seen.push(progress)
+      onChange: (progress) => seen.push(progress),
+      freeBytes: async () => 50 * 1024 ** 3
     })
     const pendingSave = cancellable.save({
       videoId: 'dQw4w9WgXcQ',
@@ -1239,6 +1260,23 @@ async function main(): Promise<void> {
       'download: a cancelled save leaves no temp folder',
       readdirSync(paths.downloads).filter((name) => name.length === 36).length === 0
     )
+    const cancelledRow = downloadHistory.get('dQw4w9WgXcQ')
+    checkEqual('download: the cancelled save is persisted', cancelledRow?.status, 'cancelled')
+    checkEqual('download: the persisted row keeps the request title', cancelledRow?.title, 'Cancel this save')
+
+    downloadHistory.record(
+      { videoId: '9bZkp7q19f0', status: 'downloading', percent: 41, error: null, trackId: null },
+      { videoId: '9bZkp7q19f0', title: 'Interrupted', artist: 'Night', album: null }
+    )
+    checkEqual('download: an in-flight row is turned into a failure at startup', downloadHistory.markInterrupted(), 1)
+    const interruptedRow = downloadHistory.get('9bZkp7q19f0')
+    checkEqual('download: the interrupted row is failed', interruptedRow?.status, 'failed')
+    check(
+      'download: the interrupted row explains itself',
+      typeof interruptedRow?.error === 'string' && interruptedRow.error.length > 0 && interruptedRow.percent === null
+    )
+    downloadHistory.remove('9bZkp7q19f0')
+    check('download: dismissing a history row removes it', downloadHistory.get('9bZkp7q19f0') === null)
     cancellable.dispose()
 
     const originDir = join(root, 'saved')
@@ -1391,6 +1429,164 @@ async function main(): Promise<void> {
     check('the database file exists on disk', existsSync(paths.database))
   } finally {
     await rm(root, { recursive: true, force: true }).catch(() => undefined)
+  }
+
+  // --- M12a: bounded stream cache ------------------------------------------
+  // A local HTTP server stands in for the CDN. The cache is the one component
+  // whose failure mode is invisible until the network is gone, so it is tested
+  // with real files and a real fetch instead of a fake.
+  {
+    const root = await mkdtemp(join(tmpdir(), 'player-cache-'))
+    const paths = resolveAppPaths(join(root, 'userData'))
+    ensureAppDirectories(paths)
+    const database = openLibraryDatabase(paths.database, silentLogger)
+    const settings = new SettingsService(paths.config, silentLogger)
+    const cacheRoot = join(paths.cache, 'stream')
+    const payload = Buffer.alloc(64 * 1024, 7)
+    let hits = 0
+    const server = createServer((request, response) => {
+      hits += 1
+      if (request.url === '/fail') {
+        response.writeHead(500, { 'content-type': 'text/plain' })
+        response.end('nope')
+        return
+      }
+      response.writeHead(200, {
+        'content-type': 'audio/webm',
+        'content-length': payload.length
+      })
+      response.end(payload)
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    const port = typeof address === 'object' && address ? address.port : 0
+    const base = `http://127.0.0.1:${port}`
+    const now = { value: 1_000_000 }
+    let budgetMb = 64
+    let free = 10 * 1024 ** 3
+    const cacheSettings = {
+      get: () => {
+        const current = settings.get()
+        return { ...current, retention: { ...current.retention, cacheBudgetMb: budgetMb } }
+      }
+    }
+    const cache = new StreamCache({
+      db: database.db,
+      root: cacheRoot,
+      settings: cacheSettings,
+      log: silentLogger,
+      freeBytes: async () => free,
+      now: () => now.value
+    })
+    cache.init()
+
+    const source = (path: string, sizeHint: number | null = payload.length) => ({
+      url: `${base}${path}`,
+      headers: {},
+      mimeType: 'audio/webm',
+      sizeHint
+    })
+
+    try {
+      checkEqual('cache: starts empty', cache.stats().entries, 0)
+      checkEqual('cache: an invalid video id is never fetched', await cache.warm('not a video', source('/ok')), null)
+      checkEqual('cache: an invalid id makes no request', hits, 0)
+
+      const first = await cache.warm('dQw4w9WgXcQ', source('/ok'))
+      check('cache: a completed warm stores the entry', first !== null && first.sizeBytes === payload.length)
+      checkEqual('cache: the completed entry is counted', cache.stats().entries, 1)
+      const files = readdirSync(cacheRoot)
+      check(
+        'cache: the file is renamed to its MIME extension',
+        files.length === 1 && files[0]?.endsWith('.webm') === true,
+        files.join(',')
+      )
+      check('cache: no partial file survives', !files.some((name) => name.endsWith('.part')))
+      const cachedSource = cache.cachedSource('dQw4w9WgXcQ')
+      check('cache: a cached video resolves to player-media', cachedSource?.url.startsWith('player-media://') === true)
+      checkEqual('cache: the cached source keeps the MIME type', cachedSource?.mimeType, 'audio/webm')
+      check('cache: the cache root is allowlisted', cache.isPathAllowed(join(cacheRoot, files[0] ?? 'x.webm')))
+      check('cache: a path outside the cache is refused', !cache.isPathAllowed(join(root, 'outside.webm')))
+
+      let before = hits
+      await cache.warm('dQw4w9WgXcQ', source('/ok'))
+      checkEqual('cache: warming a stored video does not fetch again', hits, before)
+
+      before = hits
+      const [a, b] = await Promise.all([
+        cache.warm('9bZkp7q19f0', source('/ok')),
+        cache.warm('9bZkp7q19f0', source('/ok'))
+      ])
+      check('cache: concurrent warms share one download', hits - before === 1 && a !== null && b !== null)
+      checkEqual('cache: the second entry is counted', cache.stats().entries, 2)
+
+      const failed = await cache.warm('kJQP7kiw5Fk', source('/fail'))
+      check('cache: a failed download stores nothing', failed === null)
+      checkEqual('cache: a failed download leaves the entry count alone', cache.stats().entries, 2)
+      check(
+        'cache: a failed download leaves no partial file',
+        !readdirSync(cacheRoot).some((name) => name.endsWith('.part'))
+      )
+
+      // A cache copy must never fill the disk. The play itself already works.
+      free = 1024 * 1024
+      before = hits
+      checkEqual('cache: a low-disk warm is skipped', await cache.warm('3JZ_D3ELwOQ', source('/ok')), null)
+      checkEqual('cache: a skipped warm makes no request', hits, before)
+      free = 10 * 1024 ** 3
+
+      cache.setPinned('dQw4w9WgXcQ', true)
+      checkEqual('cache: pinning is reflected in the stats', cache.stats().pinnedEntries, 1)
+
+      // A tiny budget evicts unpinned copies but never a pinned one.
+      budgetMb = 0.01
+      const overBudget = await cache.warm('3JZ_D3ELwOQ', source('/ok'))
+      check('cache: a copy over budget is evicted immediately', overBudget === null)
+      checkEqual('cache: the pinned copy survives budget eviction', cache.stats().pinnedEntries, 1)
+      check('cache: the pinned copy is still listed', cache.get('dQw4w9WgXcQ') !== null)
+      checkEqual('cache: only the pinned bytes remain', cache.stats().bytes, payload.length)
+      budgetMb = 64
+
+      cache.setPinned('dQw4w9WgXcQ', false)
+      now.value += 31 * 24 * 60 * 60_000
+      await cache.warm('3JZ_D3ELwOQ', source('/ok'))
+      check('cache: an entry past the age limit is evicted', cache.get('dQw4w9WgXcQ') === null)
+      check('cache: the newly played entry survives the age sweep', cache.get('3JZ_D3ELwOQ') !== null)
+
+      const staleName = readdirSync(cacheRoot).find((name) => name.endsWith('.webm'))
+      if (staleName) await rm(join(cacheRoot, staleName), { force: true })
+      check('cache: a missing file is not offered as a cached source', cache.cachedSource('3JZ_D3ELwOQ') === null)
+      check('cache: a stale row is dropped', cache.get('3JZ_D3ELwOQ') === null)
+
+      // `clear` removes everything, pinned included.
+      await cache.warm('dQw4w9WgXcQ', source('/ok'))
+      cache.setPinned('dQw4w9WgXcQ', true)
+      cache.clear()
+      checkEqual('cache: clearing removes every entry', cache.stats().entries, 0)
+      checkEqual('cache: clearing removes the files', readdirSync(cacheRoot).length, 0)
+
+      // An unclean shutdown leaves a partial and an orphan. The next start-up
+      // deletes both without touching a row whose file is intact.
+      await writeFile(join(cacheRoot, 'orphan.webm'), 'leftover')
+      await writeFile(join(cacheRoot, '9bZkp7q19f0.webm.part'), 'half')
+      const reopened = new StreamCache({
+        db: database.db,
+        root: cacheRoot,
+        settings: cacheSettings,
+        log: silentLogger,
+        freeBytes: async () => free,
+        now: () => now.value
+      })
+      reopened.init()
+      checkEqual('cache: start-up removes leftovers', readdirSync(cacheRoot).length, 0)
+      reopened.dispose()
+    } finally {
+      cache.dispose()
+      server.closeAllConnections()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+      database.close()
+      await rm(root, { recursive: true, force: true }).catch(() => undefined)
+    }
   }
 
   // --- M7: duplicate detection and moved files ----------------------------
