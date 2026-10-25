@@ -2351,6 +2351,97 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       'downloads: a failed save is listed by the history API',
       cacheApi
     )
+
+    // The Downloads view merges live progress with the persisted history. A
+    // direct history write in this test does not produce a download event, so
+    // announce the same failure the service would. This checks the real route:
+    // nav -> Downloads -> failed row -> cache tab, not just the IPC contract.
+    broadcast(IPC_EVENTS.downloadChanged, {
+      videoId: 'selftestvid',
+      status: 'failed',
+      percent: null,
+      error: 'Selftest save failure',
+      trackId: null,
+      speedBytesPerSecond: null,
+      etaSeconds: null
+    })
+    const downloadsUi = await evaluate<{
+      opened: boolean
+      activeNav: string
+      tabs: string
+      rows: number
+      failedTitle: string
+      failedStatus: string
+      retry: boolean
+      cacheTabActive: boolean
+      cacheEmpty: string
+    }>(
+      window,
+      `(async () => {
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const nav = [...document.querySelectorAll('.nav-item')].find((el) =>
+           (el.textContent || '').trim().startsWith('Downloads')
+         )
+         nav?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await sleep(500)
+         const view = document.querySelector('.downloads-view')
+         const rows = [...document.querySelectorAll('.download-item')]
+         const failed = rows.find((row) =>
+           (row.textContent || '').includes('Selftest failed save')
+         )
+         const out = {
+           opened: Boolean(view) && Boolean(nav),
+           activeNav: (document.querySelector('.nav-item.active')?.textContent || '').trim(),
+           tabs: [...document.querySelectorAll('.downloads-tab')]
+             .map((el) => (el.textContent || '').trim())
+             .join('|'),
+           rows: rows.length,
+           failedTitle: (failed?.querySelector('.download-title')?.textContent || '').trim(),
+           failedStatus: (failed?.querySelector('.download-status')?.textContent || '').trim(),
+           retry: Boolean(
+             failed &&
+               [...failed.querySelectorAll('button')].some(
+                 (button) => button.getAttribute('title') === 'Try this save again'
+               )
+           ),
+           cacheTabActive: false,
+           cacheEmpty: ''
+         }
+         const cacheTab = [...document.querySelectorAll('.downloads-tab')].find((el) =>
+           (el.textContent || '').includes('Offline cache')
+         )
+         cacheTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await sleep(400)
+         out.cacheTabActive = cacheTab?.getAttribute('aria-selected') === 'true'
+         out.cacheEmpty =
+           (document.querySelector('.cache-panel .downloads-empty')?.textContent || '').trim()
+         return out
+       })()`
+    )
+    record(
+      downloadsUi.opened && downloadsUi.activeNav.startsWith('Downloads'),
+      'downloads: the sidebar opens the Downloads screen',
+      downloadsUi
+    )
+    record(
+      downloadsUi.tabs.includes('Saved') && downloadsUi.tabs.includes('Offline cache'),
+      'downloads: the screen offers Saved and Offline cache tabs',
+      downloadsUi
+    )
+    record(
+      downloadsUi.rows === 1 &&
+        downloadsUi.failedTitle === 'Selftest failed save' &&
+        downloadsUi.failedStatus === 'Selftest save failure' &&
+        downloadsUi.retry,
+      'downloads: a failed save appears with its error and retry action',
+      downloadsUi
+    )
+    record(
+      downloadsUi.cacheTabActive && downloadsUi.cacheEmpty.includes('The cache is empty'),
+      'downloads: the cache tab reports an empty cache',
+      downloadsUi
+    )
+
     await evaluate<void>(window, `window.player.dismissDownload('selftestvid')`)
     record(
       container.downloadHistory.get('selftestvid') === null,

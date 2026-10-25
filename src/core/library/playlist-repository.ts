@@ -28,10 +28,22 @@ export interface PositionedItem {
   position: number
 }
 
+/**
+ * An entry that can still be played.
+ *
+ * A downloaded YouTube track whose file was removed keeps its row and its
+ * playlist entry, and plays from the stream through `origin_id`. Other missing
+ * rows stay hidden: they have no source to fall back to.
+ */
+const PLAYABLE_ROW = `(
+  t.missing_at IS NULL OR
+  (t.source_kind = 'local' AND t.origin_kind = 'youtube' AND t.origin_id IS NOT NULL AND length(t.origin_id) = 11)
+)`
+
 const PLAYLIST_COLUMNS = `
   p.id, p.name, p.created_at, p.updated_at, p.sort_order,
   (SELECT COUNT(*) FROM playlist_items i
-   JOIN tracks t ON t.id = i.track_id AND t.missing_at IS NULL
+   JOIN tracks t ON t.id = i.track_id AND ${PLAYABLE_ROW}
    WHERE i.playlist_id = p.id) AS track_count
 `
 
@@ -114,7 +126,7 @@ export class PlaylistRepository {
         `SELECT i.id AS item_id, ${trackColumns('t')}
          FROM playlist_items i
          JOIN tracks t ON t.id = i.track_id
-         WHERE i.playlist_id = ? AND t.missing_at IS NULL
+         WHERE i.playlist_id = ? AND ${PLAYABLE_ROW}
          ORDER BY i.position, i.id`
       )
       .all<TrackRow & { item_id: number }>(playlistId)

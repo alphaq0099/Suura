@@ -1,4 +1,5 @@
-import type { LibraryFilter, LocalLibraryFilter } from './types'
+import type { LibraryFilter, LocalLibraryFilter, ResolvableTrack, Track } from './types'
+import { isYouTubeVideoId } from './youtube'
 
 /**
  * How far back "Recently added" looks.
@@ -26,6 +27,30 @@ export const LOCAL_LIBRARY_FILTERS: readonly LocalLibraryFilter[] = [
  */
 export function isLocalLibraryFilter(value: unknown): value is LocalLibraryFilter {
   return typeof value === 'string' && (LOCAL_LIBRARY_FILTERS as readonly string[]).includes(value)
+}
+
+/**
+ * The stream that replaces a local track whose file is gone.
+ *
+ * A removed download keeps its row so playlists and the queue do not lose an
+ * entry. Resolving playback through the YouTube origin is the only honest
+ * fallback: pretending the missing file still exists would fail every time,
+ * while falling back to a live stream keeps the item playable. A local row
+ * without a valid origin has no fallback and is left to report the missing
+ * file.
+ */
+export function streamFallbackFor(track: Track): ResolvableTrack | null {
+  if (track.missingAt === null && track.filePath) return null
+  if (
+    track.sourceKind === 'youtube' &&
+    track.sourceId &&
+    isYouTubeVideoId(track.sourceId)
+  ) {
+    return { id: track.id, sourceKind: 'youtube', sourceId: track.sourceId, filePath: null }
+  }
+  const originId = track.originKind === 'youtube' ? track.originId : null
+  if (!originId || !isYouTubeVideoId(originId)) return null
+  return { id: track.id, sourceKind: 'youtube', sourceId: originId, filePath: null }
 }
 
 export interface LibraryFilterOption {

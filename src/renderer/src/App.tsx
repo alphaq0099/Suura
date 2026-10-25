@@ -23,6 +23,7 @@ import {
 import { youtubeWatchUrl } from '@shared/youtube'
 import { api, messageOf } from './api'
 import { FolderIcon } from './components/Icons'
+import { DownloadsView } from './components/DownloadsView'
 import { HomeView } from './components/HomeView'
 import { LibraryView } from './components/LibraryView'
 import { MiniPlayer } from './components/MiniPlayer'
@@ -1012,6 +1013,13 @@ export function App() {
           onPlayingListChange={setPlayingList}
           onReveal={(trackId) => void revealTrack(trackId)}
           downloads={downloads}
+        />
+      ) : view === 'downloads' ? (
+        <DownloadsView
+          downloads={downloads}
+          onRevealTrack={(trackId) => void revealTrack(trackId)}
+          onOpenLibrary={() => setView('library')}
+          onError={setActionError}
         />
       ) : view === 'queue' ? (
         <QueueView

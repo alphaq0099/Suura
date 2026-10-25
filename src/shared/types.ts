@@ -423,9 +423,11 @@ export interface YouTubeChannel {
 export const DOWNLOAD_STATUSES = [
   'queued',
   'downloading',
+  'paused',
   'finishing',
   'indexing',
   'saved',
+  'removed',
   'failed',
   'cancelled'
 ] as const
@@ -448,6 +450,10 @@ export interface DownloadProgress {
   error: string | null
   /** The library row, once it exists. */
   trackId: number | null
+  /** Live transfer rate. Null when yt-dlp has not reported one. */
+  speedBytesPerSecond?: number | null
+  /** Seconds yt-dlp estimates are left. Null when it has not reported one. */
+  etaSeconds?: number | null
 }
 
 /**
@@ -720,7 +726,16 @@ export interface InteractionSettings {
 }
 
 /** A view the app can open at launch. `last` restores the last non-settings view. */
-export const STARTUP_VIEWS = ['last', 'home', 'library', 'search', 'online', 'playlists', 'queue'] as const
+export const STARTUP_VIEWS = [
+  'last',
+  'home',
+  'library',
+  'search',
+  'online',
+  'playlists',
+  'downloads',
+  'queue'
+] as const
 export type StartupView = (typeof STARTUP_VIEWS)[number]
 
 export function isStartupView(value: unknown): value is StartupView {

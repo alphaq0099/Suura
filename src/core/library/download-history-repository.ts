@@ -125,7 +125,7 @@ export class DownloadHistoryRepository {
              error = COALESCE(error, 'The app closed before this save finished.'),
              percent = NULL,
              updated_at = ?
-         WHERE status IN ('queued', 'downloading', 'finishing', 'indexing')`
+         WHERE status IN ('queued', 'downloading', 'paused', 'finishing', 'indexing')`
       )
       .run(now).changes
   }

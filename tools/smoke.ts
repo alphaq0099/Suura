@@ -11,7 +11,7 @@ import { copyFileSync, existsSync, readdirSync } from 'node:fs'
 import { copyFile, mkdir, mkdtemp, rename, rm, unlink, utimes, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
-import { join, relative } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import { promisify } from 'node:util'
 
 import {
@@ -35,7 +35,7 @@ import {
   sanitizeAudioPatch
 } from '@shared/audio'
 import { DEFAULT_PREFERENCE_PATCH } from '@shared/settings-defaults'
-import { isLocalLibraryFilter, recentlyAddedCutoff } from '@shared/library'
+import { isLocalLibraryFilter, recentlyAddedCutoff, streamFallbackFor } from '@shared/library'
 import { serializeDetails, silentLogger } from '@core/logging/logger'
 import { resolveAppPaths, ensureAppDirectories } from '@core/paths'
 import { DEFAULT_SETTINGS, mergeSettings, normalizeRetention, SettingsService } from '@core/settings/settings-service'
@@ -95,6 +95,7 @@ import {
   buildPlaylistArgs,
   buildSearchArgs,
   parseChannel,
+  parseDownloadProgressLine,
   parsePlaylist,
   parseSearchResults,
   withNetworkTransport
@@ -1322,6 +1323,150 @@ async function main(): Promise<void> {
     checkEqual('download: the cancelled save is persisted', cancelledRow?.status, 'cancelled')
     checkEqual('download: the persisted row keeps the request title', cancelledRow?.title, 'Cancel this save')
 
+    // --- pausing and resuming a save -------------------------------------
+    // Pause aborts the sidecar but keeps the UUID folder. Resume must reuse that
+    // exact folder; starting a second transfer in a fresh one would quietly lose
+    // the partial file the pause was meant to preserve.
+    const resumeSourceDir = join(root, 'resume-source')
+    await mkdir(resumeSourceDir, { recursive: true })
+    const resumeSource = await generateFlac(
+      ffmpegPath,
+      resumeSourceDir,
+      'resume-source.flac',
+      { title: 'Resume me', artist: 'Test Artist', album: 'Test Album', track: 1, year: 2026 },
+      200
+    )
+    const pauseSeen: Array<{ status: string }> = []
+    let pauseCalls = 0
+    let firstTempDir = ''
+    let secondTempDir = ''
+    const resumable = new DownloadService({
+      settings,
+      paths,
+      repo,
+      library,
+      history: downloadHistory,
+      musicDir,
+      log: silentLogger,
+      ytDlp: {
+        download: async (videoId, options) => {
+          pauseCalls += 1
+          const temp = dirname(options.outputTemplate)
+          if (pauseCalls === 1) {
+            firstTempDir = temp
+            await mkdir(temp, { recursive: true })
+            await writeFile(join(temp, 'partial.part'), 'x')
+            return new Promise<string>((_resolve, reject) => {
+              options.signal?.addEventListener(
+                'abort',
+                () => reject(new Error('Saving the track was cancelled.')),
+                { once: true }
+              )
+            })
+          }
+          secondTempDir = temp
+          const target = join(temp, `${videoId}.flac`)
+          copyFileSync(resumeSource, target)
+          return target
+        }
+      },
+      onChange: (progress) => pauseSeen.push(progress),
+      freeBytes: async () => 50 * 1024 ** 3
+    })
+    const pausedRequest = {
+      videoId: 'M7lc1UVf-VE',
+      title: 'Pause and resume',
+      artist: 'Test Artist',
+      album: 'Test Album'
+    }
+    const pendingPause = resumable.save(pausedRequest)
+    await delay(80)
+    const didPause = resumable.pause('M7lc1UVf-VE')
+    // Press Resume immediately: the aborted job may still be unwinding, and the
+    // service must defer the restart rather than drop the click.
+    const didResume = resumable.resume('M7lc1UVf-VE')
+    let pauseRejected = false
+    try {
+      await pendingPause
+    } catch {
+      pauseRejected = true
+    }
+    check('download: pause stops the save', didPause && pauseRejected)
+    check('download: resume is accepted while pause unwinds', didResume)
+    check(
+      'download: pause is reported as paused, not failed',
+      pauseSeen.some((progress) => progress.status === 'paused') &&
+        !pauseSeen.some((progress) => progress.status === 'failed')
+    )
+    check(
+      'download: pause keeps its UUID temp folder',
+      firstTempDir.length > 0 && existsSync(firstTempDir)
+    )
+
+    let resumedRow = downloadHistory.get('M7lc1UVf-VE')
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      if (resumedRow?.status === 'saved' || resumedRow?.status === 'failed') break
+      await delay(25)
+      resumedRow = downloadHistory.get('M7lc1UVf-VE')
+    }
+    checkEqual('download: the resumed save finishes', resumedRow?.status, 'saved')
+    check('download: resume reuses the paused temp folder', secondTempDir === firstTempDir)
+    check('download: resume really started a second sidecar call', pauseCalls === 2)
+
+    const resumedTrackId = resumedRow?.trackId ?? null
+    const resumedTrack = resumedTrackId === null ? null : repo.getById(resumedTrackId)
+    const resumedFile = resumedTrack?.filePath ?? null
+    check('download: the resumed save made a local track', resumedTrack?.sourceKind === 'local')
+
+    const removalPlaylists = new PlaylistService(
+      new PlaylistRepository(database.db),
+      repo,
+      silentLogger
+    )
+    const removalPlaylist = removalPlaylists.create('Removed download')
+    if (resumedTrackId !== null) removalPlaylists.addTracks(removalPlaylist.id, [resumedTrackId])
+    checkEqual(
+      'download: the tracked save is in a playlist before removal',
+      removalPlaylists.detail(removalPlaylist.id)?.items.length,
+      1
+    )
+
+    const didRemove = resumable.removeDownload('M7lc1UVf-VE')
+    check('download: removing a saved file reports success', didRemove)
+    check('download: removing a saved file deletes it', resumedFile !== null && !existsSync(resumedFile))
+    checkEqual(
+      'download: removal records the removed status',
+      downloadHistory.get('M7lc1UVf-VE')?.status,
+      'removed'
+    )
+    const removedTrack = resumedTrackId === null ? null : repo.getById(resumedTrackId)
+    checkEqual('download: the removed row becomes a stream track', removedTrack?.sourceKind, 'youtube')
+    check('download: the removed row hides its old path', removedTrack?.filePath === null)
+    check('download: the removed row keeps its video id', removedTrack?.sourceId === 'M7lc1UVf-VE')
+    check('download: the removed row is still marked missing', removedTrack?.missingAt !== null)
+    check(
+      'download: the "already saved" lookup no longer offers it',
+      !repo.savedOrigins('youtube', ['M7lc1UVf-VE']).has('M7lc1UVf-VE')
+    )
+    const fallback = removedTrack ? streamFallbackFor(removedTrack) : null
+    check(
+      'download: playback resolves a removed download from YouTube',
+      fallback?.sourceKind === 'youtube' && fallback.sourceId === 'M7lc1UVf-VE'
+    )
+    const removalDetail = removalPlaylists.detail(removalPlaylist.id)
+    checkEqual('download: the playlist keeps the removed item', removalDetail?.items.length, 1)
+    checkEqual(
+      'download: the playlist maps the removed item to YouTube',
+      removalDetail?.items[0]?.track.sourceKind,
+      'youtube'
+    )
+    checkEqual(
+      'download: the playlist item still names its row',
+      removalDetail?.items[0]?.track.id,
+      resumedTrackId
+    )
+    resumable.dispose()
+
     downloadHistory.record(
       { videoId: '9bZkp7q19f0', status: 'downloading', percent: 41, error: null, trackId: null },
       { videoId: '9bZkp7q19f0', title: 'Interrupted', artist: 'Night', album: null }
@@ -1615,6 +1760,19 @@ async function main(): Promise<void> {
       if (staleName) await rm(join(cacheRoot, staleName), { force: true })
       check('cache: a missing file is not offered as a cached source', cache.cachedSource('3JZ_D3ELwOQ') === null)
       check('cache: a stale row is dropped', cache.get('3JZ_D3ELwOQ') === null)
+
+      // One entry can be revealed or removed without touching the rest. The
+      // renderer never receives the path; `filePath` exists for main-only
+      // actions such as Explorer's Show in folder.
+      await cache.warm('dQw4w9WgXcQ', source('/ok'))
+      const revealPath = cache.filePath('dQw4w9WgXcQ')
+      check('cache: one entry exposes its path to main', revealPath !== null && existsSync(revealPath))
+      check('cache: revealing an unknown entry reports nothing', cache.filePath('M7lc1UVf-VE') === null)
+      check('cache: removing one entry reports success', cache.remove('dQw4w9WgXcQ'))
+      check('cache: removing one entry deletes its file', revealPath !== null && !existsSync(revealPath))
+      checkEqual('cache: removing one entry drops its row', cache.stats().entries, 0)
+      check('cache: a removed entry cannot be revealed', cache.filePath('dQw4w9WgXcQ') === null)
+      check('cache: removing an unknown entry is a no-op', !cache.remove('M7lc1UVf-VE'))
 
       // `clear` removes everything, pinned included.
       await cache.warm('dQw4w9WgXcQ', source('/ok'))
@@ -2265,6 +2423,31 @@ async function main(): Promise<void> {
     check(
       'download: progress is not suppressed',
       !downloadArgs.includes('--no-progress') && !downloadArgs.includes('--quiet')
+    )
+    check(
+      'download: --continue resumes a paused transfer',
+      downloadArgs.includes('--continue')
+    )
+
+    const midProgress = parseDownloadProgressLine(
+      '[download]  42.3% of 4.10MiB at 1.25MiB/s ETA 00:12'
+    )
+    checkEqual('download: progress parses its percentage', midProgress?.percent, 42.3)
+    checkEqual(
+      'download: progress parses its transfer rate',
+      midProgress?.speedBytesPerSecond,
+      1_310_720
+    )
+    checkEqual('download: progress parses its ETA', midProgress?.etaSeconds, 12)
+    const finalProgress = parseDownloadProgressLine('[download] 100% of 4.10MiB in 00:03')
+    check('download: the final progress line is complete', finalProgress?.percent === 100)
+    check('download: the final line has no transfer rate', finalProgress?.speedBytesPerSecond === null)
+    checkEqual('download: the final line has no time left', finalProgress?.etaSeconds, 0)
+    const longEta = parseDownloadProgressLine('[download]  5.0% of 1.00GiB at 2.00MiB/s ETA 01:02:03')
+    checkEqual('download: a long ETA includes hours', longEta?.etaSeconds, 3723)
+    check(
+      'download: a non-progress line is ignored',
+      parseDownloadProgressLine('[info] Downloading video') === null
     )
 
     // --- file names for saved tracks --------------------------------------

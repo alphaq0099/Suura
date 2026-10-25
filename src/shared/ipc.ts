@@ -111,6 +111,9 @@ export const IPC = {
   onlinePlaylistRemoveItem: 'online:playlist-remove-item',
   downloadSave: 'download:save',
   downloadCancel: 'download:cancel',
+  downloadPause: 'download:pause',
+  downloadResume: 'download:resume',
+  downloadRemove: 'download:remove',
   downloadSavedIds: 'download:saved-ids',
   downloadHistory: 'download:history',
   downloadDismiss: 'download:dismiss',
@@ -118,6 +121,8 @@ export const IPC = {
   cacheList: 'cache:list',
   cacheClear: 'cache:clear',
   cachePin: 'cache:pin',
+  cacheReveal: 'cache:reveal',
+  cacheRemove: 'cache:remove',
   clipboardRead: 'clipboard:read-text',
   clipboardWrite: 'clipboard:write-text',
   mediaReportPlay: 'media:report-play',
@@ -392,6 +397,20 @@ export interface PlayerApi {
    * without treating the user's own decision as an error.
    */
   cancelSave(videoId: string): Promise<void>
+  /**
+   * Pauses one actively downloading save, keeping its partial file for a later
+   * resume. Queued saves are cancelled instead; resolves false when there was
+   * nothing to pause.
+   */
+  pauseSave(videoId: string): Promise<boolean>
+  /** Resumes a paused save from the same temporary folder. */
+  resumeSave(videoId: string): Promise<boolean>
+  /**
+   * Deletes a saved download's file and turns its history row into `removed`.
+   * The library row and any playlist/queue reference stay, falling back to the
+   * YouTube stream.
+   */
+  removeDownload(videoId: string): Promise<boolean>
   /** Which video ids already have a library row, for "already saved" badges. */
   savedVideoIds(videoIds: string[]): Promise<string[]>
   /**
@@ -412,6 +431,10 @@ export interface PlayerApi {
   clearCache(): Promise<CacheStats>
   /** Pins or unpins an entry; pinned entries are never evicted automatically. */
   setCachePinned(videoId: string, pinned: boolean): Promise<CacheStats>
+  /** Shows a cached file in Explorer. The renderer never learns its path. */
+  revealCacheEntry(videoId: string): Promise<void>
+  /** Deletes one cache file. Resolves false when a lock kept it in place. */
+  removeCacheEntry(videoId: string): Promise<boolean>
   /** The system clipboard text, so the paste button needs no select-all. */
   readClipboardText(): Promise<string>
   writeClipboardText(text: string): Promise<void>

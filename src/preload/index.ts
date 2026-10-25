@@ -158,6 +158,15 @@ const api: PlayerApi = {
   cancelSave: (videoId: string) =>
     ipcRenderer.invoke(IPC.downloadCancel, videoId) as Promise<void>,
 
+  pauseSave: (videoId: string) =>
+    ipcRenderer.invoke(IPC.downloadPause, videoId) as Promise<boolean>,
+
+  resumeSave: (videoId: string) =>
+    ipcRenderer.invoke(IPC.downloadResume, videoId) as Promise<boolean>,
+
+  removeDownload: (videoId: string) =>
+    ipcRenderer.invoke(IPC.downloadRemove, videoId) as Promise<boolean>,
+
   savedVideoIds: (videoIds: string[]) =>
     ipcRenderer.invoke(IPC.downloadSavedIds, videoIds) as Promise<string[]>,
 
@@ -174,6 +183,12 @@ const api: PlayerApi = {
 
   setCachePinned: (videoId: string, pinned: boolean) =>
     ipcRenderer.invoke(IPC.cachePin, videoId, pinned),
+
+  revealCacheEntry: (videoId: string) =>
+    ipcRenderer.invoke(IPC.cacheReveal, videoId) as Promise<void>,
+
+  removeCacheEntry: (videoId: string) =>
+    ipcRenderer.invoke(IPC.cacheRemove, videoId) as Promise<boolean>,
 
   readClipboardText: () => ipcRenderer.invoke(IPC.clipboardRead) as Promise<string>,
 

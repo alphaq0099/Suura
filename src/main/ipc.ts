@@ -12,8 +12,8 @@ import {
 } from '@shared/appearance'
 import { sanitizeAudioPatch } from '@shared/audio'
 import { sanitizeFilePart } from '@shared/files'
-import { IPC } from '@shared/ipc'
-import { isLocalLibraryFilter } from '@shared/library'
+import { IPC, IPC_EVENTS } from '@shared/ipc'
+import { isLocalLibraryFilter, streamFallbackFor } from '@shared/library'
 import { isImportedPlaylistTrackId } from '@shared/online'
 import { clampPlaylistIndexWidth } from '@shared/playlists'
 import type {
@@ -77,6 +77,7 @@ import {
   normalizeCookieBrowserProfile
 } from '@shared/youtube'
 import type { AppContainer } from './services/container'
+import { broadcast } from './broadcast'
 import { isMiniPlayer, setMiniPlayer } from './window-mode'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -539,6 +540,16 @@ export function registerIpcHandlers(container: AppContainer): void {
 
     const track = library.trackById(request.id)
     if (!track) throw new Error('Unknown track.')
+
+    // A saved download can be removed while its row stays in a playlist or a
+    // restored queue. The row keeps the YouTube origin, so playback re-resolves
+    // the stream instead of reporting a missing file.
+    const fallback = streamFallbackFor(track)
+    if (fallback) return resolveSource(fallback, options)
+    if (track.missingAt !== null || !track.filePath) {
+      throw new Error('This track’s file is missing. Scan the library or restore the file.')
+    }
+
     const source = await container.resolvers.resolve(track)
     return {
       ...source,
@@ -892,6 +903,23 @@ export function registerIpcHandlers(container: AppContainer): void {
     container.downloads.cancel(videoId)
   })
 
+  ipcMain.handle(IPC.downloadPause, (_event, videoId: unknown) => {
+    if (typeof videoId !== 'string' || !isYouTubeVideoId(videoId)) return false
+    return container.downloads.pause(videoId)
+  })
+
+  ipcMain.handle(IPC.downloadResume, (_event, videoId: unknown) => {
+    if (typeof videoId !== 'string' || !isYouTubeVideoId(videoId)) return false
+    return container.downloads.resume(videoId)
+  })
+
+  ipcMain.handle(IPC.downloadRemove, (_event, videoId: unknown) => {
+    if (typeof videoId !== 'string' || !isYouTubeVideoId(videoId)) return false
+    const removed = container.downloads.removeDownload(videoId)
+    if (removed) broadcast(IPC_EVENTS.libraryChanged, null)
+    return removed
+  })
+
   ipcMain.handle(IPC.downloadSavedIds, (_event, input: unknown) =>
     [...container.repo.savedOrigins('youtube', toVideoIdList(input))]
   )
@@ -914,6 +942,20 @@ export function registerIpcHandlers(container: AppContainer): void {
       throw new Error('Invalid video id.')
     }
     return container.streamCache.setPinned(videoId, pinned === true)
+  })
+  ipcMain.handle(IPC.cacheReveal, (_event, videoId: unknown) => {
+    if (typeof videoId !== 'string' || !isYouTubeVideoId(videoId)) {
+      throw new Error('Invalid video id.')
+    }
+    const path = container.streamCache.filePath(videoId)
+    if (!path) throw new Error('That cache entry is no longer on disk.')
+    shell.showItemInFolder(path)
+  })
+  ipcMain.handle(IPC.cacheRemove, (_event, videoId: unknown) => {
+    if (typeof videoId !== 'string' || !isYouTubeVideoId(videoId)) {
+      throw new Error('Invalid video id.')
+    }
+    return container.streamCache.remove(videoId)
   })
 
   ipcMain.handle(IPC.clipboardRead, () => clipboard.readText())

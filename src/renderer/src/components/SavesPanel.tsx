@@ -1,5 +1,15 @@
+import { formatBytes } from '@shared/format'
 import type { SaveItem, UseDownloadsResult } from '../hooks/useDownloads'
-import { CheckIcon, CloseIcon, DownloadIcon, FolderIcon, RefreshIcon, SpinnerIcon } from './Icons'
+import {
+  CheckIcon,
+  CloseIcon,
+  DownloadIcon,
+  FolderIcon,
+  PauseIcon,
+  PlayIcon,
+  RefreshIcon,
+  SpinnerIcon
+} from './Icons'
 
 export interface SavesPanelProps {
   downloads: UseDownloadsResult
@@ -10,6 +20,7 @@ function isActive(item: SaveItem): boolean {
   return (
     item.status === 'queued' ||
     item.status === 'downloading' ||
+    item.status === 'paused' ||
     item.status === 'finishing' ||
     item.status === 'indexing'
   )
@@ -19,14 +30,30 @@ function statusText(item: SaveItem): string {
   switch (item.status) {
     case 'queued':
       return 'Waiting for a slot'
-    case 'downloading':
-      return `${Math.round(item.percent ?? 0)}% downloaded`
+    case 'downloading': {
+      const parts = [`${Math.round(item.percent ?? 0)}%`]
+      if (item.speedBytesPerSecond && item.speedBytesPerSecond > 0) {
+        parts.push(`${formatBytes(item.speedBytesPerSecond)}/s`)
+      }
+      if (item.etaSeconds !== null && item.etaSeconds >= 0) {
+        parts.push(
+          item.etaSeconds < 60
+            ? `${Math.max(1, Math.round(item.etaSeconds))}s left`
+            : `${Math.floor(item.etaSeconds / 60)}m left`
+        )
+      }
+      return parts.join(' · ')
+    }
+    case 'paused':
+      return 'Paused'
     case 'finishing':
       return 'Tagging and adding cover'
     case 'indexing':
       return 'Adding to the library'
     case 'saved':
       return 'Saved to your library'
+    case 'removed':
+      return 'File removed; streams from YouTube'
     case 'cancelled':
       return 'Cancelled'
     default:
@@ -101,6 +128,28 @@ export function SavesPanel({ downloads, onReveal }: SavesPanelProps) {
                 ) : null}
               </span>
               <span className="saves-actions">
+                {item.status === 'downloading' ? (
+                  <button
+                    type="button"
+                    className="icon-button subtle"
+                    title="Pause this save"
+                    aria-label={`Pause saving ${item.request?.title ?? item.videoId}`}
+                    onClick={() => downloads.pause(item.videoId)}
+                  >
+                    <PauseIcon size={15} />
+                  </button>
+                ) : null}
+                {item.status === 'paused' ? (
+                  <button
+                    type="button"
+                    className="icon-button subtle"
+                    title="Resume this save"
+                    aria-label={`Resume saving ${item.request?.title ?? item.videoId}`}
+                    onClick={() => downloads.resume(item.videoId)}
+                  >
+                    <PlayIcon size={15} />
+                  </button>
+                ) : null}
                 {running ? (
                   <button
                     type="button"

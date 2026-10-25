@@ -292,6 +292,44 @@ export class StreamCache {
     return this.isCacheFile(filePath)
   }
 
+  /**
+   * The file behind a complete entry, for main-only actions such as Reveal.
+   *
+   * The renderer never receives this path: it is resolved here, checked against
+   * the cache root and the file system, and handed straight to Explorer.
+   */
+  filePath(videoId: string): string | null {
+    const entry = this.get(videoId)
+    if (!entry?.complete) return null
+    const path = this.storedPath(videoId)
+    if (!path || !this.isCacheFile(path) || !existsSync(path)) {
+      this.deleteEntry(videoId, path)
+      return null
+    }
+    return path
+  }
+
+  /**
+   * Deletes one cache entry.
+   *
+   * This is the same safety rule as `clear`: only a file inside the cache root
+   * may be unlinked. A file the player still holds open cannot be removed on
+   * Windows, so its row stays and the call resolves false rather than pretending
+   * the space was freed.
+   */
+  remove(videoId: string): boolean {
+    const entry = this.get(videoId)
+    if (!entry) return false
+    const path = this.storedPath(videoId)
+    if (!path || !this.isCacheFile(path)) {
+      this.deleteEntry(videoId, null)
+      return true
+    }
+    if (!this.removeFile(path)) return false
+    this.db.prepare('DELETE FROM cache_entries WHERE video_id = ?').run(videoId)
+    return true
+  }
+
   private async download(videoId: string, source: CacheSource): Promise<CacheEntry | null> {
     const epoch = this.epoch
     const controller = new AbortController()

@@ -12,6 +12,7 @@ import type {
   TrackSortField
 } from '@shared/types'
 import { recentlyAddedCutoff } from '@shared/library'
+import { isYouTubeVideoId } from '@shared/youtube'
 import { isPathInside, localContentKey, normalizePath } from './content-key'
 import type { SqlDatabase, SqlParam } from '../db/driver'
 
@@ -354,10 +355,19 @@ export function buildFtsQuery(input: string): string | null {
 
 /** Maps a joined `tracks` row into the shape the rest of the app speaks. */
 export function mapTrackRow(row: TrackRow): Track {
+  // A removed download keeps its row and its playlist references. Presenting it
+  // as a YouTube track is what lets every play path fall back to the stream
+  // without inventing a second row or losing the item's identity.
+  const streamFallback =
+    row.source_kind === 'local' &&
+    row.missing_at !== null &&
+    row.origin_kind === 'youtube' &&
+    !!row.origin_id &&
+    isYouTubeVideoId(row.origin_id)
   return {
     id: row.id,
-    sourceKind: row.source_kind === 'youtube' ? 'youtube' : 'local',
-    sourceId: row.source_id,
+    sourceKind: streamFallback ? 'youtube' : row.source_kind === 'youtube' ? 'youtube' : 'local',
+    sourceId: streamFallback ? row.origin_id : row.source_id,
     originKind: row.origin_kind === 'youtube' ? 'youtube' : null,
     originId: row.origin_id,
     title: row.title,
@@ -375,7 +385,7 @@ export function mapTrackRow(row: TrackRow): Track {
     channels: row.channels,
     fileSize: row.file_size,
     missingAt: row.missing_at,
-    filePath: row.file_path,
+    filePath: streamFallback ? null : row.file_path,
     // The '' sentinel is an implementation detail of the artwork cache; the rest
     // of the app only needs to know whether there is something to display.
     artworkKey: row.artwork_key && row.artwork_key.length > 0 ? row.artwork_key : null,
@@ -417,6 +427,24 @@ export class TrackRepository {
         `SELECT ${TRACK_COLUMNS} FROM tracks
          WHERE origin_kind = ? AND origin_id = ? AND missing_at IS NULL
          ORDER BY id ASC LIMIT 1`
+      )
+      .get<TrackRow>(originKind, originId)
+    return row ? mapTrackRow(row) : null
+  }
+
+  /**
+   * The row a saved video left behind, even after its file was removed.
+   *
+   * Downloads uses this to find the playlist-visible identity that must be
+   * marked missing. It is deliberately separate from `findByOrigin`: a missing
+   * row must not make Save believe the track is still on disk.
+   */
+  findByOriginIncludingMissing(originKind: SourceKind, originId: string): Track | null {
+    const row = this.db
+      .prepare(
+        `SELECT ${TRACK_COLUMNS} FROM tracks
+         WHERE origin_kind = ? AND origin_id = ?
+         ORDER BY missing_at IS NULL DESC, id ASC LIMIT 1`
       )
       .get<TrackRow>(originKind, originId)
     return row ? mapTrackRow(row) : null
@@ -890,6 +918,21 @@ export class TrackRepository {
       }
     })
     return newlyMissing.length
+  }
+
+  /**
+   * Marks one row missing without deleting it.
+   *
+   * Removing a download is not the same as forgetting a library row: playlist
+   * entries point at the row, and the YouTube origin is the fallback that keeps
+   * them playable. A scan can restore the same id if the file ever comes back.
+   */
+  markMissingById(id: number, now: number): boolean {
+    return (
+      this.db
+        .prepare(`UPDATE tracks SET missing_at = ? WHERE id = ? AND source_kind = 'local'`)
+        .run(now, id).changes > 0
+    )
   }
 
   /** Rows the user explicitly discarded by removing their library folder. */

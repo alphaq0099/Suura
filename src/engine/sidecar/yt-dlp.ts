@@ -285,15 +285,71 @@ export function buildChannelArgs(url: string, limit: number, offset = 0): string
   ]
 }
 
+export interface YtDownloadProgress {
+  percent: number
+  /** Transfer rate, when yt-dlp printed one. */
+  speedBytesPerSecond: number | null
+  /** Estimated seconds left, when yt-dlp printed one. */
+  etaSeconds: number | null
+}
+
 export interface YtDownloadOptions {
   quality: QualityTier
   /** `opus`, `mp3` or `m4a`: the ext yt-dlp extracts to. */
   format: string
   /** Must contain `%(ext)s`; the downloader replaces it with the real extension. */
   outputTemplate: string
-  onProgress?: (percent: number) => void
+  onProgress?: (progress: YtDownloadProgress) => void
   signal?: AbortSignal
   timeoutMs?: number
+}
+
+const SPEED_UNITS: Readonly<Record<string, number>> = {
+  b: 1,
+  kb: 1_000,
+  kib: 1_024,
+  mb: 1_000_000,
+  mib: 1_048_576,
+  gb: 1_000_000_000,
+  gib: 1_073_741_824
+}
+
+/**
+ * One `[download]` line from yt-dlp.
+ *
+ * The percentage is the only field a save must have; speed and ETA are nice to
+ * have and are absent for the final line and for some extractors. Parsing them
+ * here keeps the process runner free of formatting details and makes the maths
+ * testable without spawning anything.
+ */
+export function parseDownloadProgressLine(line: string): YtDownloadProgress | null {
+  if (!line.includes('[download]')) return null
+  const percentMatch = /\[download\]\s+(\d+(?:\.\d+)?)%/.exec(line)
+  if (!percentMatch?.[1]) return null
+  const percent = Math.max(0, Math.min(100, Number(percentMatch[1])))
+
+  let speedBytesPerSecond: number | null = null
+  const speedMatch = /at\s+([\d.]+)\s*(B|kB|KB|KiB|MB|MiB|GB|GiB)\/s/i.exec(line)
+  if (speedMatch?.[1] && speedMatch[2]) {
+    const value = Number(speedMatch[1])
+    const multiplier = SPEED_UNITS[speedMatch[2].toLowerCase()] ?? null
+    if (Number.isFinite(value) && value >= 0 && multiplier !== null) {
+      speedBytesPerSecond = Math.round(value * multiplier)
+    }
+  }
+
+  let etaSeconds: number | null = null
+  const etaMatch = /ETA\s+(\d+):(\d+)(?::(\d+))?/i.exec(line)
+  if (etaMatch) {
+    const first = Number(etaMatch[1])
+    const second = Number(etaMatch[2])
+    const third = etaMatch[3] === undefined ? null : Number(etaMatch[3])
+    etaSeconds = third === null ? first * 60 + second : first * 3600 + second * 60 + third
+  } else if (percent >= 100) {
+    etaSeconds = 0
+  }
+
+  return { percent, speedBytesPerSecond, etaSeconds }
 }
 
 /**
@@ -346,6 +402,10 @@ export function buildDownloadArgs(
     '--socket-timeout',
     '15',
     '--newline',
+    // Pausing aborts the process but keeps its UUID temp folder. A resumed save
+    // reuses that folder, and yt-dlp must continue its `.part` file rather than
+    // starting the transfer again.
+    '--continue',
     '-f',
     youtubeFormatSelector(quality),
     '-x',
@@ -580,21 +640,26 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
 
       // Progress arrives on stdout as `[download]  42.3% of 4.10MiB at ...`.
       // Both streams are watched because yt-dlp has moved it between them.
+      // Chunks do not respect line boundaries, so bytes are accumulated and only
+      // complete lines are parsed.
+      let progressBuffer = ''
+      const emitProgress = (line: string): void => {
+        const progress = parseDownloadProgressLine(line)
+        if (!progress || !options.onProgress) return
+        const now = Date.now()
+        if (progress.percent >= 100 || now - lastEmit >= PROGRESS_INTERVAL_MS) {
+          lastEmit = now
+          options.onProgress(progress)
+        }
+      }
       const watch = (chunk: Buffer): void => {
         if (settled) return
-        const text = chunk.toString('utf8')
-        if (options.onProgress) {
-          const matches = [...text.matchAll(/\[download\]\s+(\d+(?:\.\d+)?)%/g)]
-          const last = matches[matches.length - 1]
-          if (last?.[1]) {
-            const percent = Math.max(0, Math.min(100, Number(last[1])))
-            const now = Date.now()
-            if (percent >= 100 || now - lastEmit >= PROGRESS_INTERVAL_MS) {
-              lastEmit = now
-              options.onProgress(percent)
-            }
-          }
-        }
+        progressBuffer += chunk.toString('utf8')
+        const lines = progressBuffer.split(/\r?\n/)
+        progressBuffer = lines.pop() ?? ''
+        for (const line of lines) emitProgress(line)
+        // A pathological line must not grow this buffer for the whole download.
+        if (progressBuffer.length > 8_192) progressBuffer = progressBuffer.slice(-8_192)
       }
 
       child.stdout?.on('data', watch)
@@ -610,6 +675,7 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
 
       child.on('close', (code) => {
         if (settled) return
+        if (progressBuffer.length > 0) emitProgress(progressBuffer)
         settled = true
         cleanup()
 

@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { DownloadStatus, SaveToLibraryRequest } from '@shared/types'
+import type {
+  DownloadHistoryItem,
+  DownloadStatus,
+  SaveToLibraryRequest
+} from '@shared/types'
 import { api, messageOf } from '../api'
 
 export interface DownloadState {
@@ -11,6 +15,10 @@ export interface DownloadState {
   request: SaveToLibraryRequest | null
   /** The library row once the save finished, used by the panel's Reveal action. */
   trackId: number | null
+  /** Live transfer rate while downloading. */
+  speedBytesPerSecond: number | null
+  /** Live time remaining while downloading. */
+  etaSeconds: number | null
   /** Last change, so the panel can put the newest save at the top. */
   updatedAt: number
 }
@@ -32,16 +40,30 @@ export interface UseDownloadsResult {
   saveMany: (requests: SaveToLibraryRequest[]) => void
   /** Stops a queued or running save. Its promise rejects. */
   cancel: (videoId: string) => void
+  /** Pauses a running transfer, keeping its partial file. */
+  pause: (videoId: string) => void
+  /** Resumes the paused transfer from the same temporary folder. */
+  resume: (videoId: string) => void
+  /** Deletes a saved file and leaves a streamable history/library row. */
+  remove: (videoId: string) => Promise<boolean>
   /** Runs a failed or cancelled save again with the same metadata. */
   retry: (videoId: string) => void
   /** Takes a finished or failed row out of the panel. */
   dismiss: (videoId: string) => void
   /** Asks which of these videos are already in the library. */
   refreshSaved: (videoIds: string[]) => Promise<void>
+  /** Persisted save history, newest first. */
+  history: DownloadHistoryItem[]
+  /** Reloads the history after the Downloads screen changes something. */
+  refreshHistory: () => Promise<void>
 }
 
 function isCancellation(message: string): boolean {
   return /cancel/i.test(message)
+}
+
+function isPause(message: string): boolean {
+  return /paused/i.test(message)
 }
 
 /**
@@ -56,6 +78,20 @@ function isCancellation(message: string): boolean {
 export function useDownloads(): UseDownloadsResult {
   const [states, setStates] = useState<Record<string, DownloadState>>({})
   const [saved, setSaved] = useState<ReadonlySet<string>>(() => new Set<string>())
+  const [history, setHistory] = useState<DownloadHistoryItem[]>([])
+
+  const refreshHistory = useCallback(async (): Promise<void> => {
+    try {
+      setHistory(await api.listDownloadHistory())
+    } catch {
+      // The Downloads screen still renders from live states; a history refresh
+      // failure must not break saving.
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshHistory()
+  }, [refreshHistory])
 
   useEffect(() => {
     const token = api.on('downloadChanged', (progress) => {
@@ -69,6 +105,8 @@ export function useDownloads(): UseDownloadsResult {
             error: progress.error,
             request: previous?.request ?? null,
             trackId: progress.trackId ?? previous?.trackId ?? null,
+            speedBytesPerSecond: progress.speedBytesPerSecond ?? null,
+            etaSeconds: progress.etaSeconds ?? null,
             updatedAt: Date.now()
           }
         }
@@ -81,9 +119,26 @@ export function useDownloads(): UseDownloadsResult {
           return next
         })
       }
+      if (progress.status === 'removed') {
+        setSaved((current) => {
+          if (!current.has(progress.videoId)) return current
+          const next = new Set(current)
+          next.delete(progress.videoId)
+          return next
+        })
+      }
+      if (
+        progress.status === 'saved' ||
+        progress.status === 'removed' ||
+        progress.status === 'paused' ||
+        progress.status === 'failed' ||
+        progress.status === 'cancelled'
+      ) {
+        void refreshHistory()
+      }
     })
     return () => api.off(token)
-  }, [])
+  }, [refreshHistory])
 
   // A failed save from the last session must still be retryable. Only rows that
   // need attention are hydrated: the full list belongs on the downloads screen,
@@ -112,6 +167,8 @@ export function useDownloads(): UseDownloadsResult {
                 album: row.album
               },
               trackId: row.trackId,
+              speedBytesPerSecond: null,
+              etaSeconds: null,
               updatedAt: row.updatedAt
             }
           }
@@ -133,6 +190,8 @@ export function useDownloads(): UseDownloadsResult {
         error: null,
         request,
         trackId: null,
+        speedBytesPerSecond: null,
+        etaSeconds: null,
         updatedAt: Date.now()
       }
     }))
@@ -157,17 +216,21 @@ export function useDownloads(): UseDownloadsResult {
       const message = messageOf(cause)
       setStates((current) => {
         const previous = current[request.videoId]
-        // A cancel is a decision, not a failure: it keeps its own status so the
-        // panel offers Retry rather than showing an error the user did not make.
-        const cancelled = previous?.status === 'cancelled' || isCancellation(message)
+        // A cancel or pause is a decision, not a failure: it keeps its own status
+        // so the panel offers Resume/Retry rather than an error the user did not
+        // make.
+        const paused = previous?.status === 'paused' || isPause(message)
+        const cancelled = !paused && (previous?.status === 'cancelled' || isCancellation(message))
         return {
           ...current,
           [request.videoId]: {
-            status: cancelled ? 'cancelled' : 'failed',
-            percent: null,
-            error: cancelled ? null : message,
+            status: paused ? 'paused' : cancelled ? 'cancelled' : 'failed',
+            percent: paused ? previous?.percent ?? null : null,
+            error: cancelled || paused ? null : message,
             request: previous?.request ?? request,
             trackId: previous?.trackId ?? null,
+            speedBytesPerSecond: null,
+            etaSeconds: null,
             updatedAt: Date.now()
           }
         }
@@ -201,6 +264,69 @@ export function useDownloads(): UseDownloadsResult {
     void api.cancelSave(videoId).catch(() => undefined)
   }, [])
 
+  const pause = useCallback((videoId: string): void => {
+    setStates((current) => {
+      const previous = current[videoId]
+      if (!previous) return current
+      return {
+        ...current,
+        [videoId]: { ...previous, status: 'paused', updatedAt: Date.now() }
+      }
+    })
+    void api.pauseSave(videoId).catch(() => undefined)
+  }, [])
+
+  const resume = useCallback((videoId: string): void => {
+    setStates((current) => {
+      const previous = current[videoId]
+      if (!previous) return current
+      return {
+        ...current,
+        [videoId]: {
+          ...previous,
+          status: 'queued',
+          error: null,
+          speedBytesPerSecond: null,
+          etaSeconds: null,
+          updatedAt: Date.now()
+        }
+      }
+    })
+    void api.resumeSave(videoId).catch(() => undefined)
+  }, [])
+
+  const remove = useCallback(
+    async (videoId: string): Promise<boolean> => {
+      const removed = await api.removeDownload(videoId)
+      if (!removed) return false
+      setSaved((current) => {
+        if (!current.has(videoId)) return current
+        const next = new Set(current)
+        next.delete(videoId)
+        return next
+      })
+      setStates((current) => {
+        const previous = current[videoId]
+        if (!previous) return current
+        return {
+          ...current,
+          [videoId]: {
+            ...previous,
+            status: 'removed',
+            percent: null,
+            error: null,
+            speedBytesPerSecond: null,
+            etaSeconds: null,
+            updatedAt: Date.now()
+          }
+        }
+      })
+      await refreshHistory()
+      return true
+    },
+    [refreshHistory]
+  )
+
   const retry = useCallback(
     (videoId: string): void => {
       const request = states[videoId]?.request
@@ -219,6 +345,7 @@ export function useDownloads(): UseDownloadsResult {
       if (
         previous.status === 'queued' ||
         previous.status === 'downloading' ||
+        previous.status === 'paused' ||
         previous.status === 'finishing' ||
         previous.status === 'indexing'
       ) {
@@ -260,5 +387,20 @@ export function useDownloads(): UseDownloadsResult {
     .map(([videoId, state]) => ({ videoId, ...state }))
     .sort((left, right) => right.updatedAt - left.updatedAt)
 
-  return { states, items, saved, save, saveMany, cancel, retry, dismiss, refreshSaved }
+  return {
+    states,
+    items,
+    saved,
+    save,
+    saveMany,
+    cancel,
+    pause,
+    resume,
+    remove,
+    retry,
+    dismiss,
+    refreshSaved,
+    history,
+    refreshHistory
+  }
 }

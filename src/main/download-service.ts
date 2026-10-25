@@ -6,7 +6,7 @@ import type { SettingsService } from '@core/settings/settings-service'
 import type { LibraryService } from '@core/library/library-service'
 import type { TrackRepository } from '@core/library/track-repository'
 import type { DownloadHistoryRepository } from '@core/library/download-history-repository'
-import { localContentKey, normalizePath } from '@core/library/content-key'
+import { isPathInside, localContentKey, normalizePath } from '@core/library/content-key'
 import { freeBytesFor } from '@core/disk-space'
 import type { YtDlpClient } from '@engine/sidecar/yt-dlp'
 import { isYouTubeVideoId } from '@shared/youtube'
@@ -59,19 +59,45 @@ const FALLBACK_TRACK_BYTES = 24 * 1024 * 1024
  * the ordinary scanner. Keeping the final file a normal local file is the point:
  * it plays offline, works with every existing view, and survives a cache wipe.
  */
+interface QueuedSave {
+  request: SaveToLibraryRequest
+  controller: AbortController
+  /** Created once and reused by a pause/resume, so the `.part` file survives. */
+  tempDir: string
+  resolve: (trackId: number) => void
+  reject: (error: Error) => void
+}
+
+interface ActiveSave {
+  request: SaveToLibraryRequest
+  controller: AbortController
+  tempDir: string
+  status: DownloadProgress['status']
+  percent: number | null
+}
+
+interface PausedSave {
+  request: SaveToLibraryRequest
+  tempDir: string
+  percent: number | null
+}
+
 export class DownloadService {
-  private readonly queue: Array<{
-    request: SaveToLibraryRequest
-    controller: AbortController
-    resolve: (trackId: number) => void
-    reject: (error: Error) => void
-  }> = []
+  private readonly queue: QueuedSave[] = []
   /** In-flight or queued saves, so two clicks on one row download it once. */
   private readonly jobs = new Map<string, Promise<number>>()
   /** One controller per video, so Cancel stops that save and not the app. */
   private readonly controllers = new Map<string, AbortController>()
   /** Metadata for the history row, kept while a save is queued or running. */
   private readonly requests = new Map<string, SaveToLibraryRequest>()
+  /** The save currently holding a download slot. */
+  private readonly active = new Map<string, ActiveSave>()
+  /** Paused saves whose UUID temp folder is deliberately kept. */
+  private readonly paused = new Map<string, PausedSave>()
+  /** Distinguishes a user pause from a cancel/close when the abort arrives. */
+  private readonly pauseRequests = new Set<string>()
+  /** Resume pressed before the paused job's abort finished unwinding. */
+  private readonly pendingResume = new Set<string>()
   private running = 0
   private readonly abort = new AbortController()
 
@@ -89,20 +115,45 @@ export class DownloadService {
     const pending = this.jobs.get(request.videoId)
     if (pending) return pending
 
+    // Retrying a paused row goes through Save in some views. Reusing its folder
+    // is what turns that into a resume rather than a second transfer.
+    const paused = this.paused.get(request.videoId)
+    if (paused) {
+      this.paused.delete(request.videoId)
+      this.pauseRequests.delete(request.videoId)
+      return this.start(request, paused.tempDir)
+    }
+
+    return this.start(request, join(this.deps.paths.downloads, randomUUID()))
+  }
+
+  private start(request: SaveToLibraryRequest, tempDir: string): Promise<number> {
+    const videoId = request.videoId
     const controller = new AbortController()
-    this.requests.set(request.videoId, request)
+    this.requests.set(videoId, request)
     const promise = new Promise<number>((resolve, reject) => {
-      this.queue.push({ request, controller, resolve, reject })
-      this.emit(request.videoId, 'queued', null)
+      this.queue.push({ request, controller, tempDir, resolve, reject })
+      this.emit(videoId, 'queued', null)
       this.pump()
     }).finally(() => {
-      this.jobs.delete(request.videoId)
-      this.controllers.delete(request.videoId)
-      this.requests.delete(request.videoId)
+      if (this.jobs.get(videoId) === promise) this.jobs.delete(videoId)
+      if (this.controllers.get(videoId) === controller) this.controllers.delete(videoId)
+      this.requests.delete(videoId)
+      // Resume can be pressed between Pause's event and the aborted job's
+      // promise settling. Deferring it here is what keeps that click from being
+      // silently dropped.
+      if (this.pendingResume.delete(videoId)) {
+        const paused = this.paused.get(videoId)
+        if (paused && !this.jobs.has(videoId)) {
+          this.paused.delete(videoId)
+          this.pauseRequests.delete(videoId)
+          void this.start(paused.request, paused.tempDir).catch(() => undefined)
+        }
+      }
     })
 
-    this.jobs.set(request.videoId, promise)
-    this.controllers.set(request.videoId, controller)
+    this.jobs.set(videoId, promise)
+    this.controllers.set(videoId, controller)
     return promise
   }
 
@@ -112,9 +163,22 @@ export class DownloadService {
    * A queued job has no process to kill, so it is taken out of the queue and
    * rejected at once. A running one is aborted through the controller the
    * download path already accepts; its `run` reports the cancellation and lets
-   * the next queued save start.
+   * the next queued save start. A paused save is discarded along with its
+   * partial file, because there is no process left to stop.
    */
   cancel(videoId: string): void {
+    const paused = this.paused.get(videoId)
+    if (paused) {
+      this.paused.delete(videoId)
+      this.pauseRequests.delete(videoId)
+      this.pendingResume.delete(videoId)
+      this.removeTemp(paused.tempDir)
+      this.requests.set(videoId, paused.request)
+      this.emit(videoId, 'cancelled', null)
+      this.requests.delete(videoId)
+      return
+    }
+
     const controller = this.controllers.get(videoId)
     if (!controller) return
 
@@ -129,7 +193,95 @@ export class DownloadService {
     }
 
     // In flight: the rejection is produced by the download's abort listener.
+    this.pauseRequests.delete(videoId)
     controller.abort()
+  }
+
+  /**
+   * Pauses a running transfer and keeps its UUID folder.
+   *
+   * Only an actively downloading save can pause: a queued one has nothing to
+   * continue, and a file already being indexed must not be abandoned. The abort
+   * is the same mechanism Cancel uses, so `run` decides from `pauseRequests`
+   * whether to delete the partial file.
+   */
+  pause(videoId: string): boolean {
+    const active = this.active.get(videoId)
+    if (!active || active.status !== 'downloading') return false
+    this.paused.set(videoId, {
+      request: active.request,
+      tempDir: active.tempDir,
+      percent: active.percent
+    })
+    this.pauseRequests.add(videoId)
+    this.emit(videoId, 'paused', active.percent)
+    active.controller.abort()
+    return true
+  }
+
+  /** Starts a paused save again from the folder its first attempt kept. */
+  resume(videoId: string): boolean {
+    const paused = this.paused.get(videoId)
+    if (!paused) return false
+    if (this.jobs.has(videoId)) {
+      // The abort is still unwinding; `start`'s finally picks this up.
+      this.pendingResume.add(videoId)
+      return true
+    }
+    this.paused.delete(videoId)
+    this.pauseRequests.delete(videoId)
+    void this.start(paused.request, paused.tempDir).catch(() => undefined)
+    return true
+  }
+
+  /**
+   * Deletes a saved download and leaves a streaming library row behind.
+   *
+   * The row is marked missing rather than deleted: playlists and the restored
+   * queue hold foreign keys to it, and its YouTube origin is what lets playback
+   * fall back to the stream. The history row becomes `removed`, so the Downloads
+   * screen can offer Save again after the file is gone. Deletion is restricted
+   * to a configured library folder; a corrupt or hand-edited path must not turn
+   * this into an arbitrary file delete.
+   */
+  removeDownload(videoId: string): boolean {
+    if (this.active.has(videoId) || this.queue.some((job) => job.request.videoId === videoId)) {
+      throw new Error('Pause or cancel this download before removing it.')
+    }
+
+    const paused = this.paused.get(videoId)
+    if (paused) {
+      this.paused.delete(videoId)
+      this.pauseRequests.delete(videoId)
+      this.pendingResume.delete(videoId)
+      this.removeTemp(paused.tempDir)
+    }
+
+    const track = this.deps.repo.findByOriginIncludingMissing('youtube', videoId)
+    const history = this.deps.history.get(videoId)
+    if (!track && !history) return false
+
+    if (track?.filePath) {
+      const filePath = normalizePath(track.filePath)
+      const folders = this.deps.settings.get().libraryFolders
+      const allowed = folders.some((folder) => isPathInside(normalizePath(folder), filePath))
+      if (!allowed) {
+        throw new Error('That file is outside the library folders, so it was not deleted.')
+      }
+      if (existsSync(filePath)) {
+        try {
+          unlinkSync(filePath)
+        } catch (error) {
+          throw new Error(
+            `Could not delete the saved file: ${error instanceof Error ? error.message : String(error)}`
+          )
+        }
+      }
+    }
+
+    if (track) this.deps.repo.markMissingById(track.id, Date.now())
+    this.emitRemoved(videoId, track?.id ?? history?.trackId ?? null)
+    return true
   }
 
   dispose(): void {
@@ -137,6 +289,17 @@ export class DownloadService {
     for (const controller of this.controllers.values()) controller.abort()
     for (const job of this.queue.splice(0)) {
       job.reject(new Error('Saving was cancelled because the app is closing.'))
+    }
+    for (const paused of this.paused.values()) this.removeTemp(paused.tempDir)
+    this.paused.clear()
+    this.pendingResume.clear()
+  }
+
+  private removeTemp(tempDir: string): void {
+    try {
+      rmSync(tempDir, { recursive: true, force: true })
+    } catch {
+      // The start-up janitor removes a UUID folder that could not be deleted.
     }
   }
 
@@ -146,7 +309,7 @@ export class DownloadService {
       const job = this.queue.shift()
       if (!job) return
       this.running += 1
-      void this.run(job.request, job.controller)
+      void this.run(job)
         .then(job.resolve, job.reject)
         .finally(() => {
           this.running -= 1
@@ -155,23 +318,33 @@ export class DownloadService {
     }
   }
 
-  private async run(request: SaveToLibraryRequest, controller: AbortController): Promise<number> {
-    const { repo, library, paths, settings, log } = this.deps
+  private async run(job: QueuedSave): Promise<number> {
+    const { request, controller, tempDir } = job
+    const { repo, library, settings, log } = this.deps
+    const active: ActiveSave = {
+      request,
+      controller,
+      tempDir,
+      status: 'queued',
+      percent: null
+    }
+    this.active.set(request.videoId, active)
 
     const already = repo.findByOrigin('youtube', request.videoId)
     if (already) {
+      this.active.delete(request.videoId)
       this.emit(request.videoId, 'saved', 100, null, already.id)
       return already.id
     }
 
     const root = this.downloadRoot()
-    const tempDir = join(paths.downloads, randomUUID())
     // Closing the app and pressing Cancel are different reasons but the same
     // mechanism, so one signal covers both for the sidecar process.
     const signal = AbortSignal.any([this.abort.signal, controller.signal])
     // Once the file is inside the library it is no longer cancellable: deleting
     // a finished download because indexing was slow would lose the user's work.
     let moved = false
+    let keepTemp = false
 
     try {
       await this.assertDiskSpace(request.videoId, root)
@@ -184,7 +357,16 @@ export class DownloadService {
         format,
         outputTemplate: join(tempDir, `${request.videoId}.%(ext)s`),
         signal,
-        onProgress: (percent) => this.emit(request.videoId, 'downloading', percent)
+        onProgress: (progress) =>
+          this.emit(
+            request.videoId,
+            'downloading',
+            progress.percent,
+            null,
+            null,
+            progress.speedBytesPerSecond,
+            progress.etaSeconds
+          )
       })
 
       if (signal.aborted) throw new Error('Saving was cancelled.')
@@ -229,6 +411,15 @@ export class DownloadService {
       return trackId
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not save this track.'
+      const paused =
+        signal.aborted && !moved && !this.abort.signal.aborted && this.pauseRequests.has(request.videoId)
+      if (paused) {
+        // `pause` already emitted this status and kept the folder; this branch
+        // must not turn the user's decision into a cancellation.
+        keepTemp = true
+        log.info('save paused', { videoId: request.videoId })
+        throw new Error('Saving was paused.')
+      }
       if (signal.aborted && !moved) {
         log.info('save cancelled', { videoId: request.videoId, closing: this.abort.signal.aborted })
         this.emit(request.videoId, 'cancelled', null, null, null)
@@ -241,11 +432,9 @@ export class DownloadService {
       // because a scan was slow would lose work the user asked for.
       throw error instanceof Error ? error : new Error(message)
     } finally {
-      try {
-        rmSync(tempDir, { recursive: true, force: true })
-      } catch {
-        // The next start-up's janitor can clean the temp folder.
-      }
+      this.pauseRequests.delete(request.videoId)
+      this.active.delete(request.videoId)
+      if (!keepTemp) this.removeTemp(tempDir)
     }
   }
 
@@ -304,9 +493,24 @@ export class DownloadService {
     status: DownloadProgress['status'],
     percent: number | null,
     error: string | null = null,
-    trackId: number | null = null
+    trackId: number | null = null,
+    speedBytesPerSecond: number | null = null,
+    etaSeconds: number | null = null
   ): void {
-    const progress: DownloadProgress = { videoId, status, percent, error, trackId }
+    const progress: DownloadProgress = {
+      videoId,
+      status,
+      percent,
+      error,
+      trackId,
+      speedBytesPerSecond,
+      etaSeconds
+    }
+    const active = this.active.get(videoId)
+    if (active) {
+      active.status = status
+      active.percent = percent
+    }
     this.deps.onChange(progress)
     try {
       this.deps.history.record(progress, this.requests.get(videoId) ?? null)
@@ -314,6 +518,25 @@ export class DownloadService {
       // The screen is still correct if persistence fails; losing the save
       // because its history row could not be written is not an acceptable trade.
       this.deps.log.warn('could not record download history', { videoId, error: historyError })
+    }
+  }
+
+  /** Records a file removal without inventing a save request or a percentage. */
+  private emitRemoved(videoId: string, trackId: number | null): void {
+    const progress: DownloadProgress = {
+      videoId,
+      status: 'removed',
+      percent: null,
+      error: null,
+      trackId,
+      speedBytesPerSecond: null,
+      etaSeconds: null
+    }
+    this.deps.onChange(progress)
+    try {
+      this.deps.history.record(progress, null)
+    } catch (historyError) {
+      this.deps.log.warn('could not record removed download', { videoId, error: historyError })
     }
   }
 }
