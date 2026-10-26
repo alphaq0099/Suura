@@ -628,9 +628,7 @@ export function SettingsView(props: SettingsViewProps) {
                   <span>
                     Watch folders for changes
                     <InfoHint label="About folder watching">
-                      A change starts an incremental scan; only files whose size or timestamp moved are reopened. Turn
-                      it off for a library on a network or removable drive, where watching can cost more than a manual
-                      scan.
+                      Rescans files that change. Turn it off for network or removable drives.
                     </InfoHint>
                   </span>
                 </label>
@@ -641,12 +639,6 @@ export function SettingsView(props: SettingsViewProps) {
               <header className="card-header">
                 <h2>
                   Startup, window &amp; resume
-                  <InfoHint label="About startup and window behaviour">
-                    Last used returns to the view you left open; Settings is never restored. The first launch after
-                    adding a folder always scans, even when the launch scan is off. Resuming brings back the last
-                    local queue; with the option off the queue still returns, but paused. Closing to the tray keeps
-                    playback alive and leaves the tray icon as the way back.
-                  </InfoHint>
                 </h2>
               </header>
               <p className="card-hint">
@@ -676,8 +668,7 @@ export function SettingsView(props: SettingsViewProps) {
                   <span>
                     Scan library on launch
                     <InfoHint label="About scanning on launch">
-                      An incremental scan compares size and timestamp, so unchanged files are not reopened. Turn it off
-                      for a large library on a slow or network drive and scan manually instead.
+                      Only new or changed files are read.
                     </InfoHint>
                   </span>
                 </label>
@@ -690,8 +681,7 @@ export function SettingsView(props: SettingsViewProps) {
                   <span>
                     Resume playback automatically
                     <InfoHint label="About automatic resume">
-                      Restores the last local queue, seeks to the saved position and starts playing. With this off the
-                      queue still returns, but paused, so opening the app is quiet.
+                      Starts the last queue where it stopped; off restores it paused.
                     </InfoHint>
                   </span>
                 </label>
@@ -704,8 +694,7 @@ export function SettingsView(props: SettingsViewProps) {
                   <span>
                     Close to tray
                     <InfoHint label="About closing to the tray">
-                      Closing the window hides it and keeps playback running. Use the tray icon to show Player again or
-                      to quit. With this off, closing the last window exits the app.
+                      Hides the window; the tray icon brings it back.
                     </InfoHint>
                   </span>
                 </label>
@@ -717,10 +706,7 @@ export function SettingsView(props: SettingsViewProps) {
                 <h2>
                   Click behaviour
                   <InfoHint label="About click behaviour">
-                    Two conventions are in wide use - select on click, or play on click - and whichever one you are
-                    used to, the other feels broken. A double click always arrives as two single clicks first, so
-                    choosing &quot;play&quot; for both starts the track on the first click and does not restart it on
-                    the second.
+                    A double click always arrives as two single clicks.
                   </InfoHint>
                 </h2>
               </header>
@@ -766,8 +752,7 @@ export function SettingsView(props: SettingsViewProps) {
                 <h2>
                   Playback &amp; volume
                   <InfoHint label="About playback and volume">
-                    The wheel step applies to the volume control in the player bar and the full-window player. Holding
-                    Shift always uses one percent. Volume itself is remembered between launches.
+                    Shift always moves one percent. Volume is remembered.
                   </InfoHint>
                 </h2>
               </header>
@@ -817,8 +802,7 @@ export function SettingsView(props: SettingsViewProps) {
                   <h2>
                     Theme
                     <InfoHint label="About themes">
-                      Midnight is the deep blue-black default. Cream is a warm off-white. Follow Windows switches live
-                      with the operating system.
+                      Midnight is dark; Cream is light.
                     </InfoHint>
                   </h2>
                 </header>
@@ -873,8 +857,7 @@ export function SettingsView(props: SettingsViewProps) {
                   <span>
                     Density
                     <InfoHint label="About density">
-                      Compact fits more rows on screen, Comfortable is the default balance, and Spacious gives titles
-                      and artwork more air.
+                      How much space each row uses.
                     </InfoHint>
                   </span>
                   <div className="segmented" role="group" aria-label="Density">
@@ -897,8 +880,7 @@ export function SettingsView(props: SettingsViewProps) {
                   <span>
                     Surface
                     <InfoHint label="About surfaces">
-                      Solid uses flat panels. Accented adds an accent-coloured wash and a translucent blur. It is not
-                      Windows acrylic, and it does not sample the current cover art.
+                      Solid is flat; Accented adds an accent-tinted blur.
                     </InfoHint>
                   </span>
                   <div className="segmented" role="group" aria-label="Surface">
@@ -921,8 +903,7 @@ export function SettingsView(props: SettingsViewProps) {
                   <span>
                     Motion
                     <InfoHint label="About motion">
-                      Follow Windows uses the system animation setting. Reduced removes most transitions but keeps a
-                      slow spinner. Full always animates.
+                      Skip most motion, or animate always.
                     </InfoHint>
                   </span>
                   <div className="segmented" role="group" aria-label="Motion">
@@ -964,7 +945,7 @@ export function SettingsView(props: SettingsViewProps) {
                   <h2>
                     Text &amp; icons
                     <InfoHint label="About text and icons">
-                      Text size scales every label, heading and hint together. The icon choice applies to the sidebar.
+                      Text size scales everything; icons change the sidebar.
                     </InfoHint>
                   </h2>
                 </header>
@@ -989,10 +970,6 @@ export function SettingsView(props: SettingsViewProps) {
                 <div className="field">
                   <span>
                     Sidebar icons
-                    <InfoHint label="About sidebar icons">
-                      Modern uses rounder, more distinct silhouettes for Library, YouTube, Playlists, Queue and Settings.
-                      Classic keeps the original outline set.
-                    </InfoHint>
                   </span>
                   <div className="segmented" role="group" aria-label="Sidebar icons">
                     {ICON_SET_CHOICES.map((choice) => (
@@ -1017,9 +994,7 @@ export function SettingsView(props: SettingsViewProps) {
                   <h2>
                     Cover art
                     <InfoHint label="About cover art">
-                      Shape and fit apply to library rows, the player bar and the full-window player. A circle is always
-                      cropped. Artwork size applies to the full-window player; playlist cover size applies to the
-                      selected playlist&apos;s header. Ambience takes its colour from the current cover.
+                      Shape and fit apply everywhere; ambience tints from the cover.
                     </InfoHint>
                   </h2>
                 </header>
@@ -1106,9 +1081,7 @@ export function SettingsView(props: SettingsViewProps) {
                   <h2>
                     List columns
                     <InfoHint label="About list columns">
-                      The Album and Channel checkboxes hide those columns where they exist; a very narrow pane still
-                      drops them automatically. Channel applies to YouTube links and imported lists; local rows keep
-                      Artist.
+                      Narrow panes may hide columns regardless.
                     </InfoHint>
                   </h2>
                 </header>
@@ -1159,8 +1132,7 @@ export function SettingsView(props: SettingsViewProps) {
                   <h2>
                     YouTube engine <span className="badge">yt-dlp</span>
                     <InfoHint label="About the YouTube engine">
-                      Playback, importing lists and saving tracks all shell out to yt-dlp. ffmpeg handles transcoding,
-                      tags and covers.
+                      Playback and saving need yt-dlp and ffmpeg.
                     </InfoHint>
                   </h2>
                   <button type="button" onClick={onRefreshEngine} disabled={engineLoading}>
@@ -1190,8 +1162,7 @@ export function SettingsView(props: SettingsViewProps) {
                     <span>
                       Engine folder (optional)
                       <InfoHint label="About the engine folder">
-                        A folder containing yt-dlp.exe and ffmpeg.exe. Leave it empty to search PATH and the usual
-                        install locations.
+                        Folder holding yt-dlp and ffmpeg. Empty searches PATH.
                       </InfoHint>
                     </span>
                     <div className="field-row">
@@ -1215,8 +1186,7 @@ export function SettingsView(props: SettingsViewProps) {
                     <span>
                       Keep yt-dlp up to date automatically
                       <InfoHint label="About automatic updates">
-                        Checks at most once a day, after the window settles. A failed update is only logged, because
-                        installs managed by winget or pip may not allow self-updates.
+                        Checks daily; a failed self-update is only logged.
                       </InfoHint>
                     </span>
                   </label>
@@ -1228,9 +1198,7 @@ export function SettingsView(props: SettingsViewProps) {
                   <h2>
                     PO Token provider
                     <InfoHint label="About the PO Token provider">
-                      YouTube sometimes asks for proof that a request comes from a real browser. This optional
-                      external server and its yt-dlp plugin are third-party pieces; neither is bundled or required for
-                      normal playback.
+                      Optional third-party server for YouTube bot checks.
                     </InfoHint>
                   </h2>
                   <button type="button" onClick={onRefreshEngine} disabled={engineLoading}>
@@ -1260,8 +1228,7 @@ export function SettingsView(props: SettingsViewProps) {
                     <span>
                       Use a PO Token provider
                       <InfoHint label="About PO Tokens">
-                        PO Tokens are short-lived proofs attached to a YouTube request. This app does not bundle a
-                        provider or the yt-dlp plugin; point this at the HTTP server you installed separately.
+                        Short-lived proofs sent with a YouTube request.
                       </InfoHint>
                     </span>
                   </label>
@@ -1269,9 +1236,7 @@ export function SettingsView(props: SettingsViewProps) {
                     <span>
                       Provider URL
                       <InfoHint label="About the provider URL">
-                        The base URL yt-dlp's bgutil plugin calls. The standard local server listens on
-                        127.0.0.1:4416. A remote provider sees every token request, so keep this on your machine
-                        unless you trust the network.
+                        Where the bgutil plugin calls. Keep it on this PC.
                       </InfoHint>
                     </span>
                     <input
@@ -1285,10 +1250,7 @@ export function SettingsView(props: SettingsViewProps) {
                     <span>
                       Provider command (optional; needed for Start and auto-start)
                       <InfoHint label="About the provider command">
-                        A command this app can start and stop for you, for example{' '}
-                        <code>node &quot;C:\path\to\bgutil\server\build\main.js&quot;</code>. It is split into
-                        arguments without a shell, so quoted paths work but pipes and variables do not. Leave it blank
-                        if you run the server yourself.
+                        Command the app can start and stop. Leave it blank to run the server yourself.
                       </InfoHint>
                     </span>
                     <input
@@ -1306,7 +1268,7 @@ export function SettingsView(props: SettingsViewProps) {
                       checked={settings.engine.poTokenAutoStart}
                       title={
                         providerCommandMissing
-                          ? 'Add a provider command above before auto-start can start a provider.'
+                          ? 'Add a provider command first.'
                           : undefined
                       }
                       onChange={(event) => onUpdate({ engine: { poTokenAutoStart: event.target.checked } })}
@@ -1314,9 +1276,7 @@ export function SettingsView(props: SettingsViewProps) {
                     <span>
                       Start the provider automatically
                       <InfoHint label="About automatic provider start">
-                        Runs the command above on launch and when the switch is turned on. The app stops only the
-                        process it started, never a server you launched yourself. Auto-start stays idle until a command
-                        is set.
+                        Runs the command above; stops only the process it started.
                       </InfoHint>
                     </span>
                   </label>
@@ -1344,7 +1304,7 @@ export function SettingsView(props: SettingsViewProps) {
                       !settings.engine.poTokenEnabled
                         ? 'Turn on Use a PO Token provider first.'
                         : providerCommandMissing
-                          ? 'Add a provider command, or run the server yourself and leave this button alone.'
+                          ? 'Add a provider command, or run the server yourself.'
                           : undefined
                     }
                     disabled={!settings.engine.poTokenEnabled || providerCommandMissing || providerBusy !== null}
@@ -1408,8 +1368,7 @@ export function SettingsView(props: SettingsViewProps) {
                   <h2>
                     Cookie fallback
                     <InfoHint label="About cookie fallback">
-                      Off never reads cookies. Only after a bot check tries once with cookies when YouTube challenges
-                      the request, before pausing new requests. Always sends cookies on every yt-dlp call.
+                      Off never reads cookies. The middle option retries once after a bot check.
                     </InfoHint>
                   </h2>
                 </header>
@@ -1434,8 +1393,7 @@ export function SettingsView(props: SettingsViewProps) {
                     <span>
                       Browser
                       <InfoHint label="About browser cookies">
-                        yt-dlp reads YouTube cookies from this browser on this PC. The app never signs in. Cookies can
-                        grant access to the account, so this stays off unless you choose it.
+                        Reads YouTube cookies from this browser. The app never signs in.
                       </InfoHint>
                     </span>
                     <select
@@ -1456,8 +1414,7 @@ export function SettingsView(props: SettingsViewProps) {
                     <span>
                       Browser profile (optional)
                       <InfoHint label="About the browser profile">
-                        A Chrome, Edge or Firefox profile name or path. Leave it blank for the browser's default
-                        profile. Profiles with a separate sign-in keep their own cookies.
+                        Profile name or path. Blank uses the default profile.
                       </InfoHint>
                     </span>
                     <input
@@ -1484,9 +1441,7 @@ export function SettingsView(props: SettingsViewProps) {
                   <h2>
                     Playback &amp; imports
                     <InfoHint label="About playback and imports">
-                      Both caps are applied while listing, so the rest of the list is never fetched or queued.
-                      Download concurrency is separate from resolver concurrency, which stays low so playback remains
-                      responsive.
+                      Caps apply while listing; downloads run separately.
                     </InfoHint>
                   </h2>
                 </header>
@@ -1496,8 +1451,7 @@ export function SettingsView(props: SettingsViewProps) {
                     <span>
                       Concurrent downloads
                       <InfoHint label="About concurrent downloads">
-                        How many saved tracks may download at once. Resolver concurrency is capped separately so
-                        playback stays responsive.
+                        How many saves may download at once.
                       </InfoHint>
                     </span>
                     <input
@@ -1512,8 +1466,7 @@ export function SettingsView(props: SettingsViewProps) {
                     <span>
                       Playlist / album import limit
                       <InfoHint label="About the import limit">
-                        How many tracks an imported playlist or album keeps. The view says “first N of M” when the
-                        cap bites.
+                        Tracks kept per imported playlist or album.
                       </InfoHint>
                     </span>
                     <input
@@ -1528,7 +1481,7 @@ export function SettingsView(props: SettingsViewProps) {
                     <span>
                       Mix length
                       <InfoHint label="About mix length">
-                        A mix never ends, so this is its whole definition: the number of tracks a mix import keeps.
+                        Tracks kept from a mix.
                       </InfoHint>
                     </span>
                     <input
@@ -1548,8 +1501,7 @@ export function SettingsView(props: SettingsViewProps) {
                     <span>
                       Prefetch the next track
                       <InfoHint label="About prefetching">
-                        Resolves the next queued YouTube track while the current one plays. It removes the gap
-                        between songs at the cost of one extra request per track.
+                        Resolves the next track early, at one extra request.
                       </InfoHint>
                     </span>
                   </label>
@@ -1561,9 +1513,7 @@ export function SettingsView(props: SettingsViewProps) {
                   <h2>
                     How streams are kept
                     <InfoHint label="About offline streaming">
-                      The player never changes this for you. Stream only writes nothing, Cache keeps a copy that
-                      offline playback can use, and Keep saves the track into your library. Cached tracks are copies,
-                      not library rows: clearing the cache never deletes a file you saved.
+                      Stream writes nothing; Cache keeps a copy; Keep saves into the library.
                     </InfoHint>
                   </h2>
                 </header>
@@ -1593,8 +1543,7 @@ export function SettingsView(props: SettingsViewProps) {
                         <span>
                           Cache budget (MB)
                           <InfoHint label="About the cache budget">
-                            The cache deletes its least recently used copy once it passes this size. Pinned tracks
-                            still count but are never chosen for deletion. 5 GB is the default.
+                            Least recently used copies are deleted past this size. Pinned copies stay.
                           </InfoHint>
                         </span>
                         <input
@@ -1612,8 +1561,7 @@ export function SettingsView(props: SettingsViewProps) {
                         <span>
                           Keep cached tracks for (days)
                           <InfoHint label="About cache age">
-                            A cached track that has not been played for this many days is deleted, even when the
-                            budget has room. Pinned tracks are exempt.
+                            Unplayed copies older than this are deleted. Pinned copies stay.
                           </InfoHint>
                         </span>
                         <input
@@ -1636,8 +1584,7 @@ export function SettingsView(props: SettingsViewProps) {
                   <h2>
                     Saving to your library
                     <InfoHint label="About saving streams">
-                      Save to library downloads once, writes its tags and cover, and moves the file into your music
-                      folder. Keep mode uses the same path automatically for each track you play.
+                      Downloads once, writes tags and cover, and files it in your music folder.
                     </InfoHint>
                   </h2>
                 </header>
@@ -1714,8 +1661,7 @@ export function SettingsView(props: SettingsViewProps) {
                   <h2>
                     Storage &amp; diagnostics
                   <InfoHint label="About app data">
-                    Everything the app writes lives here. The log file is the first place to look when something goes
-                    wrong; the database and config are the two files not to edit while Player is running.
+                    Everything the app writes; the log is the first place to look.
                   </InfoHint>
                 </h2>
               </header>
@@ -1755,9 +1701,7 @@ export function SettingsView(props: SettingsViewProps) {
                   <h2>
                     Backup &amp; restore
                   <InfoHint label="About backups">
-                    Automatic copies are taken at startup and before a library upgrade; only the newest count you
-                    choose stay in the backups folder. Restore validates the chosen folder, moves current data aside,
-                    then restarts. Export includes paths and play counts.
+                    Startup and pre-upgrade copies. Restore validates, then restarts.
                   </InfoHint>
                 </h2>
               </header>
@@ -1767,8 +1711,7 @@ export function SettingsView(props: SettingsViewProps) {
                   <span>
                     Automatic backups to keep
                     <InfoHint label="About backup retention">
-                      The newest automatic and pre-upgrade copies are kept; older ones are deleted. Manual backups you
-                      created are never touched. Lowering this prunes the folder immediately.
+                      Keeps the newest copies; manual backups are never touched. Lowering prunes now.
                     </InfoHint>
                   </span>
                   <input
@@ -1818,9 +1761,7 @@ export function SettingsView(props: SettingsViewProps) {
                 <h2>
                   Library health
                   <InfoHint label="About library health">
-                    Duplicate detection compares whole files, not tags, so only byte-identical copies are grouped.
-                    Merging keeps the oldest entry, combines playlists and play counts, and deletes the redundant
-                    file. Missing tracks keep their history until they are matched again.
+                    Duplicates are byte-identical files; merging keeps the oldest entry.
                   </InfoHint>
                 </h2>
               </header>
@@ -1878,9 +1819,7 @@ export function SettingsView(props: SettingsViewProps) {
               <h2>
                 Reset preferences
                 <InfoHint label="About resetting preferences">
-                  Resets playback, appearance, click behaviour, import limits, saving quality and request budgets.
-                  Library folders and the engine and download folders you chose are kept: forgetting a folder is not a
-                  preference change. A preference reset is not a data reset.
+                  Resets preferences only; folders and data stay.
                 </InfoHint>
               </h2>
               <p className="card-hint">Puts preferences back to defaults; library folders and data stay.</p>
@@ -1959,9 +1898,7 @@ export function SettingsView(props: SettingsViewProps) {
                 <h2>
                   About
                   <InfoHint label="About this build">
-                    Unified search, channel pages, metadata cleanup, the five-tab Settings page, offline caching and the
-                    Downloads screen are in. Windows release engineering is in progress; the roadmap in ROADMAP.md is
-                    the source of truth for what comes next.
+                    Search, channels, cache and Downloads are in; M8 is in progress.
                   </InfoHint>
                 </h2>
                 <span className="badge">M8 · diagnostics</span>

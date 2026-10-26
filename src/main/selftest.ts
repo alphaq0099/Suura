@@ -1464,6 +1464,36 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         settingsHint
       )
 
+      // A hint is read while hovering the control it describes, so it has to be
+      // short enough not to bury that control. The bubbles are always in the
+      // DOM (only their visibility changes), so every tab can be measured at once.
+      const hintCopy = await evaluate<{
+        count: number
+        longest: number
+        longestText: string
+        over: string[]
+      }>(
+        window,
+        `(() => {
+           const texts = [...document.querySelectorAll('.info-hint-bubble')]
+             .map((el) => ((el.textContent || '').trim()))
+             .filter(Boolean)
+           const over = texts.filter((value) => value.length > 100)
+           const longestText = texts.reduce((longest, value) => (value.length > longest.length ? value : longest), '')
+           return { count: texts.length, longest: longestText.length, longestText, over }
+         })()`
+      )
+      record(
+        hintCopy.count >= 30 && hintCopy.over.length === 0,
+        'settings tooltips stay a sentence long',
+        {
+          count: hintCopy.count,
+          longest: hintCopy.longest,
+          text: hintCopy.longestText,
+          over: hintCopy.over
+        }
+      )
+
       const settingsGrid = await evaluate<{
         appearance: { columns: number; cards: number; scrolls: boolean; content: number; height: number }
         streaming: { columns: number; cards: number; scrolls: boolean; content: number; height: number }
