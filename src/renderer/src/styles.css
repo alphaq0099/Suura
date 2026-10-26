@@ -854,10 +854,15 @@ input[type='radio'] {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  opacity: 0.24;
+  opacity: 0;
   filter: saturate(1.2);
   transform: scale(1.04);
   pointer-events: none;
+  transition: opacity 1100ms ease;
+}
+
+.home-hero-backdrop.active {
+  opacity: 0.24;
 }
 
 .home-hero::after {
@@ -948,8 +953,14 @@ input[type='radio'] {
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: rgb(var(--bg-raised-rgb) / 58%);
-  backdrop-filter: blur(10px);
+  /* The accent wash keeps the boxes part of the hero instead of glass panels
+     floating on top of it. Blur and saturation stay behind the text, which
+     moves from faint to dim so the small uppercase labels keep their contrast. */
+  background:
+    linear-gradient(135deg, rgb(var(--accent-rgb) / 15%), transparent 72%),
+    rgb(var(--bg-raised-rgb) / 62%);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
 }
 
 .home-stat strong {
@@ -960,7 +971,7 @@ input[type='radio'] {
 }
 
 .home-stat span {
-  color: var(--text-faint);
+  color: var(--text-dim);
   font-size: calc(11px * var(--text-scale));
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1186,6 +1197,25 @@ input[type='radio'] {
 .artist-card {
   position: relative;
   min-width: 0;
+}
+
+/* A card lifts a few pixels on hover, or when one of its own controls holds
+   keyboard focus. The movement is the affordance: no extra shadow is drawn and
+   nothing overlays the artwork or the play button. Reduced motion collapses the
+   transition through the global motion rules. */
+.album-card,
+.artist-card,
+.playlist-card {
+  transition: transform 180ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.album-card:hover,
+.album-card:focus-within,
+.artist-card:hover,
+.artist-card:focus-within,
+.playlist-card:hover:not(:disabled),
+.playlist-card:focus-visible {
+  transform: translateY(-4px);
 }
 
 .artist-card-main {

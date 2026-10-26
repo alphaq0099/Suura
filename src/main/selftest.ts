@@ -231,6 +231,17 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       moreFocusedGrid: boolean
       sortOptions: string
       playedSortActive: boolean
+      statBlur: string
+      statTint: string
+      slideCount: number
+      slideLayers: number
+      activeSlides: number
+      slideState: string
+      reducedStops: boolean
+      fullState: string
+      cardFocus: boolean
+      cardLift: number
+      cardRest: number
     }>(
       window,
       `(async () => {
@@ -246,6 +257,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          }
          const gridCards = () => [...document.querySelectorAll('.album-grid .album-card')]
          const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+         const translateY = (element) => {
+           if (!element) return 0
+           const transform = getComputedStyle(element).transform
+           return transform === 'none' ? 0 : new DOMMatrixReadOnly(transform).m42
+         }
 
          const out = {
            isHome: false, activeNav: '', heroTitle: '', stats: '', shelfTitles: '',
@@ -254,12 +270,15 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            artistFiltered: false, artistChip: '', artistCleared: false, onLibrary: false,
            heroAction: '', heroActionCount: 0, heroHasLastScan: false, heroScanNote: false,
            shelfHints: 0, moreLabels: '', moreFocusedGrid: false, sortOptions: '',
-           playedSortActive: false
+           playedSortActive: false, statBlur: '', statTint: '', slideCount: 0,
+           slideLayers: 0, activeSlides: 0, slideState: '', reducedStops: false,
+           fullState: '', cardFocus: false, cardLift: 0, cardRest: 0
          }
 
          nav('Home')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
          await sleep(350)
          await waitFor('.album-grid .album-card')
+         await waitFor('.home-shelf .album-card')
          out.isHome = Boolean(document.querySelector('.home-view'))
          out.activeNav = (document.querySelector('.nav-item.active')?.textContent || '').trim()
          out.heroTitle = (document.querySelector('.home-hero-copy h2')?.textContent || '').trim()
@@ -272,6 +291,30 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.shelfAlbums = document.querySelectorAll('.home-shelf .album-card').length
          out.artistCards = document.querySelectorAll('.artist-card').length
          out.gridCards = gridCards().length
+
+         // The stat boxes are glass over artwork: they need an accent wash and a
+         // real backdrop blur, not a flat panel. The hero keeps one active image
+         // layer at a time, and the motion preference only reaches it through the
+         // root attribute the app already owns.
+         const hero = document.querySelector('.home-hero')
+         const stat = document.querySelector('.home-stat')
+         const statStyle = stat ? getComputedStyle(stat) : null
+         out.statBlur = statStyle ? statStyle.backdropFilter : ''
+         out.statTint = statStyle ? statStyle.backgroundImage : ''
+         out.slideCount = Number(hero?.getAttribute('data-slide-count') || 0)
+         out.slideLayers = document.querySelectorAll('.home-hero > .home-hero-backdrop').length
+         out.activeSlides = document.querySelectorAll('.home-hero > .home-hero-backdrop.active').length
+         out.slideState = hero?.getAttribute('data-slide-state') || ''
+         const root = document.documentElement
+         const previousMotion = root.dataset.motion || 'system'
+         root.dataset.motion = 'reduced'
+         await sleep(160)
+         out.reducedStops = hero?.getAttribute('data-slide-state') === 'still'
+         root.dataset.motion = 'full'
+         await sleep(160)
+         out.fullState = hero?.getAttribute('data-slide-state') || ''
+         root.dataset.motion = previousMotion
+         await sleep(160)
 
          const target = gridCards().find((card) => {
            const title = (card.querySelector('.album-card-title')?.textContent || '').trim()
@@ -346,6 +389,19 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          newestSort?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
          await sleep(350)
 
+         // Hover is not available to a script, so focus the card's own main
+         // control: the same :focus-within state a keyboard user gets. The card
+         // must move up rather than draw a shadow over its artwork.
+         const liftCard = document.querySelector('.album-grid .album-card')
+         const liftMain = liftCard?.querySelector('.album-card-main')
+         liftMain?.focus()
+         await sleep(280)
+         out.cardFocus = document.activeElement === liftMain
+         out.cardLift = translateY(liftCard)
+         liftMain?.blur()
+         await sleep(280)
+         out.cardRest = translateY(liftCard)
+
          nav('Library')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
          await waitFor('.track-row')
          out.onLibrary = Boolean(document.querySelector('.track-row'))
@@ -417,6 +473,31 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         !home.heroScanNote,
       'home: the hero has one contextual action and no scan date',
       { action: home.heroAction, count: home.heroActionCount, lastScan: home.heroHasLastScan }
+    )
+    record(
+      home.statBlur.includes('blur') &&
+        home.statTint.includes('gradient') &&
+        home.slideLayers === home.slideCount &&
+        home.slideCount >= 1 &&
+        home.activeSlides === 1 &&
+        home.reducedStops &&
+        home.fullState === (home.slideCount > 1 ? 'running' : 'still'),
+      'home: stat cards take an accent-tinted blur and the hero crossfades its covers',
+      {
+        blur: home.statBlur,
+        tint: home.statTint.slice(0, 80),
+        slides: home.slideCount,
+        layers: home.slideLayers,
+        active: home.activeSlides,
+        state: home.slideState,
+        reduced: home.reducedStops,
+        full: home.fullState
+      }
+    )
+    record(
+      home.cardFocus && Math.abs(home.cardLift + 4) < 0.5 && Math.abs(home.cardRest) < 0.5,
+      'home: album cards lift on keyboard focus instead of gaining a shadow',
+      { focused: home.cardFocus, lift: home.cardLift, rest: home.cardRest }
     )
     record(home.onLibrary, 'the Home dashboard can hand off to the full library')
 

@@ -59,6 +59,10 @@ export interface HomeViewProps {
 
 const LOCAL_REQUEST = (trackId: number) => ({ id: trackId, sourceKind: 'local' as const, sourceId: null })
 
+/** Slow enough to read the page: the backdrop is atmosphere, not a carousel. */
+const HERO_SLIDE_INTERVAL_MS = 12_000
+const HERO_SLIDE_LIMIT = 8
+
 function albumKeyOf(album: AlbumSummary): string {
   return `${album.album}\u001f${album.albumArtist}`
 }
@@ -99,6 +103,68 @@ function useNearViewport(ref: RefObject<HTMLElement | null>): boolean {
     return () => observer.disconnect()
   }, [ref, visible])
   return visible
+}
+
+/**
+ * A slow crossfade of recent cover art behind the hero.
+ *
+ * The slideshow is decoration, so it has to stay out of the way: it freezes
+ * when the user asks for reduced motion, and it stops advancing while the
+ * window is hidden instead of burning timers in the background. The motion
+ * preference is read from the root data attribute (with the OS setting as the
+ * `system` fallback) so changing it in Settings takes effect immediately.
+ */
+function useHeroSlides(count: number): { index: number; running: boolean } {
+  const [index, setIndex] = useState(0)
+  const [motionAllowed, setMotionAllowed] = useState(() => {
+    const mode = document.documentElement.dataset.motion ?? 'system'
+    return (
+      mode === 'full' ||
+      (mode === 'system' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+    )
+  })
+  const [pageVisible, setPageVisible] = useState(() => !document.hidden)
+
+  useEffect(() => {
+    const root = document.documentElement
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const read = (): void => {
+      const mode = root.dataset.motion ?? 'system'
+      setMotionAllowed(mode === 'full' || (mode === 'system' && !query.matches))
+    }
+    read()
+    const observer = new MutationObserver(read)
+    observer.observe(root, { attributes: true, attributeFilter: ['data-motion'] })
+    query.addEventListener('change', read)
+    return () => {
+      observer.disconnect()
+      query.removeEventListener('change', read)
+    }
+  }, [])
+
+  useEffect(() => {
+    const onVisibility = (): void => setPageVisible(!document.hidden)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [])
+
+  // Keep the state index in range if albums disappear; the render also clamps,
+  // so a shrinking list never briefly shows no backdrop at all.
+  useEffect(() => {
+    setIndex((current) => (count === 0 ? 0 : current % count))
+  }, [count])
+
+  const running = motionAllowed && pageVisible && count > 1
+
+  useEffect(() => {
+    if (!running) return
+    const timer = window.setInterval(() => {
+      setIndex((current) => (current + 1) % count)
+    }, HERO_SLIDE_INTERVAL_MS)
+    return () => window.clearInterval(timer)
+  }, [count, running])
+
+  return { index: count === 0 ? 0 : index % count, running }
 }
 
 function AlbumCard({
@@ -345,7 +411,22 @@ export function HomeView(props: HomeViewProps) {
   const heroAlbum = playedAlbums[0] ?? recentAlbums[0] ?? null
   const heroFallback = heroAlbum && !heroAlbum.artworkKey ? LOCAL_REQUEST(heroAlbum.trackId) : null
   const heroResolved = useArtwork(null, heroFallback)
-  const heroKey = heroAlbum?.artworkKey ?? heroResolved
+
+  // Recent covers, newest first, without repeating an album that appears in
+  // both shelves. The hero falls back to the resolved art of its album when no
+  // shelf row has embedded art yet.
+  const heroSlides = useMemo(() => {
+    const seen = new Set<string>()
+    const slides: string[] = []
+    for (const album of [...playedAlbums, ...recentAlbums]) {
+      if (!album.artworkKey || seen.has(album.artworkKey)) continue
+      seen.add(album.artworkKey)
+      slides.push(album.artworkKey)
+    }
+    if (slides.length === 0 && heroResolved) slides.push(heroResolved)
+    return slides.slice(0, HERO_SLIDE_LIMIT)
+  }, [heroResolved, playedAlbums, recentAlbums])
+  const heroSlide = useHeroSlides(heroSlides.length)
 
   const hasLibrary = (stats?.tracks ?? 0) > 0
   const combinedError = error ?? shelvesError ?? albums.error
@@ -691,8 +772,22 @@ export function HomeView(props: HomeViewProps) {
 
       {combinedError ? <div className="banner error">{combinedError}</div> : null}
 
-      <section className="home-hero">
-        {heroKey ? <img className="home-hero-backdrop" src={buildArtworkUrl(heroKey)} alt="" /> : null}
+      <section
+        className="home-hero"
+        data-slide-state={heroSlide.running ? 'running' : 'still'}
+        data-slide-count={heroSlides.length}
+      >
+        {heroSlides.map((key, index) => (
+          <img
+            key={key}
+            className={index === heroSlide.index ? 'home-hero-backdrop active' : 'home-hero-backdrop'}
+            src={buildArtworkUrl(key)}
+            alt=""
+            aria-hidden="true"
+            decoding="async"
+            draggable={false}
+          />
+        ))}
         <div className="home-hero-copy">
           <span className="home-kicker">{hasLibrary ? 'Your collection' : 'Welcome to Player'}</span>
           <h2>
