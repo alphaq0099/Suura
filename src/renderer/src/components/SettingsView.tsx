@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
   ACCENT_CHOICES,
@@ -56,6 +56,7 @@ export interface SettingsViewProps {
   replayGainStatus: ReplayGainStatus | null
   onScanReplayGain: () => Promise<void>
   onCancelReplayGain: () => void
+  onOpenEqualizer: (event: ReactMouseEvent<HTMLButtonElement>) => void
   onAddFolder: () => void
   onRemoveFolder: (folder: string) => void
   onPickEngineDir: () => void
@@ -314,6 +315,7 @@ export function SettingsView(props: SettingsViewProps) {
     replayGainStatus,
     onScanReplayGain,
     onCancelReplayGain,
+    onOpenEqualizer,
     onAddFolder,
     onRemoveFolder,
     onPickEngineDir,
@@ -795,6 +797,7 @@ export function SettingsView(props: SettingsViewProps) {
               onUpdate={onUpdate}
               onScanReplayGain={onScanReplayGain}
               onCancelReplayGain={onCancelReplayGain}
+              onOpenEqualizer={onOpenEqualizer}
             />
           </div>
         </section>

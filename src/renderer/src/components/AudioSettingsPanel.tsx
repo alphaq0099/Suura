@@ -1,19 +1,6 @@
-import {
-  EQ_BAND_FREQUENCIES,
-  EQ_GAIN_MAX_DB,
-  EQ_GAIN_MIN_DB,
-  EQ_PREAMP_MAX_DB,
-  EQ_PREAMP_MIN_DB,
-  EQ_PRESETS,
-  presetBands
-} from '@shared/audio'
-import type {
-  AppSettings,
-  AudioSettings,
-  DeepPartial,
-  EqualizerPreset,
-  ReplayGainStatus
-} from '@shared/types'
+import type { MouseEvent as ReactMouseEvent } from 'react'
+import type { AppSettings, AudioSettings, DeepPartial, ReplayGainStatus } from '@shared/types'
+import { SlidersIcon } from './Icons'
 
 export interface AudioSettingsPanelProps {
   audio: AudioSettings
@@ -21,19 +8,26 @@ export interface AudioSettingsPanelProps {
   onUpdate: (patch: DeepPartial<AppSettings>) => void
   onScanReplayGain: () => Promise<void>
   onCancelReplayGain: () => void
+  onOpenEqualizer: (event: ReactMouseEvent<HTMLButtonElement>) => void
 }
 
 /**
- * Equaliser and ReplayGain controls.
+ * Equaliser shortcut and ReplayGain controls.
  *
- * Kept in its own file because both controls are dense and neither belongs in
- * the general settings card: the curves need ten labelled sliders, and the scan
- * needs a progress state that would otherwise drown the small reset switches
- * around it.
+ * The curve itself is a playback control and lives on the player bar, where it
+ * can be adjusted without leaving what is playing. This card keeps the way in,
+ * and the scan needs a progress state that would otherwise drown the small reset
+ * switches around it.
  */
 export function AudioSettingsPanel(props: AudioSettingsPanelProps) {
-  const { audio, replayGainStatus, onUpdate, onScanReplayGain, onCancelReplayGain } = props
-  const equalizer = audio.equalizer
+  const {
+    audio,
+    replayGainStatus,
+    onUpdate,
+    onScanReplayGain,
+    onCancelReplayGain,
+    onOpenEqualizer
+  } = props
   const normalization = audio.normalization
   const scanning = replayGainStatus?.phase === 'scanning'
   const total = replayGainStatus?.libraryTotal ?? 0
@@ -42,103 +36,16 @@ export function AudioSettingsPanel(props: AudioSettingsPanelProps) {
   const noLibrary = replayGainStatus !== null && total === 0
   const canScan = !scanning && !noLibrary && (replayGainStatus === null || pending > 0)
 
-  const updateEqualizer = (patch: DeepPartial<AudioSettings['equalizer']>): void => {
-    onUpdate({ audio: { equalizer: patch } })
-  }
-
-  const choosePreset = (preset: EqualizerPreset): void => {
-    const bands = presetBands(preset)
-    updateEqualizer(bands ? { preset, bands } : { preset })
-  }
-
-  const setBand = (index: number, value: number): void => {
-    const bands = [...equalizer.bands]
-    bands[index] = value
-    // Moving any slider makes the curve custom; keeping the old preset name
-    // would make the next visit lie about what is applied.
-    updateEqualizer({ bands, preset: 'custom' })
-  }
-
-  const resetCurve = (): void => {
-    updateEqualizer({ preset: 'flat', bands: [...(presetBands('flat') ?? [])] })
-  }
-
   return (
     <>
       <article className="card audio-card">
         <header className="card-header">
           <h2>Equalizer</h2>
         </header>
-        <p className="card-hint">
-          Ten bands from 31 Hz to 16 kHz. Preamp is applied before the filters; lower it if a boosted
-          curve starts to distort. Changes apply while the track is playing.
-        </p>
-
-        <div className="field-grid">
-          <label className="field checkbox">
-            <input
-              type="checkbox"
-              checked={equalizer.enabled}
-              onChange={(event) => updateEqualizer({ enabled: event.target.checked })}
-            />
-            <span>Enable equalizer</span>
-          </label>
-
-          <label className="field">
-            <span>Preset</span>
-            <select
-              value={equalizer.preset}
-              onChange={(event) => choosePreset(event.target.value as EqualizerPreset)}
-            >
-              {EQ_PRESETS.map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {preset.label}
-                </option>
-              ))}
-              {equalizer.preset === 'custom' ? <option value="custom">Custom</option> : null}
-            </select>
-          </label>
-
-          <label className="field">
-            <span>Preamp</span>
-            <input
-              type="range"
-              min={EQ_PREAMP_MIN_DB}
-              max={EQ_PREAMP_MAX_DB}
-              step={0.5}
-              value={equalizer.preampDb}
-              disabled={!equalizer.enabled}
-              onChange={(event) => updateEqualizer({ preampDb: Number(event.target.value) })}
-            />
-            <span className="eq-readout">{formatDb(equalizer.preampDb)}</span>
-          </label>
-        </div>
-
-        <div className="eq-bands" role="group" aria-label="Equalizer bands">
-          {EQ_BAND_FREQUENCIES.map((frequency, index) => {
-            const gain = equalizer.bands[index] ?? 0
-            return (
-              <label className="eq-band" key={frequency}>
-                <span>{formatFrequency(frequency)}</span>
-                <input
-                  type="range"
-                  min={EQ_GAIN_MIN_DB}
-                  max={EQ_GAIN_MAX_DB}
-                  step={0.5}
-                  value={gain}
-                  disabled={!equalizer.enabled}
-                  aria-label={`${formatFrequency(frequency)} gain`}
-                  onChange={(event) => setBand(index, Number(event.target.value))}
-                />
-                <span className="eq-readout">{formatDb(gain)}</span>
-              </label>
-            )
-          })}
-        </div>
-
-        <div className="card-actions">
-          <button type="button" onClick={resetCurve} disabled={!equalizer.enabled}>
-            Reset curve
+        <p className="card-hint">Ten bands and a preamp, applied while the track is playing.</p>
+        <div className="card-actions start">
+          <button type="button" className="button" onClick={onOpenEqualizer}>
+            <SlidersIcon size={16} /> Open equalizer
           </button>
         </div>
       </article>
@@ -201,7 +108,7 @@ export function AudioSettingsPanel(props: AudioSettingsPanelProps) {
           </p>
         )}
 
-        <div className="card-actions">
+        <div className="card-actions start">
           {scanning ? (
             <button type="button" onClick={onCancelReplayGain}>
               Cancel scan
@@ -212,10 +119,6 @@ export function AudioSettingsPanel(props: AudioSettingsPanelProps) {
             </button>
           )}
         </div>
-        <p className="card-hint">
-          Analysis decodes each file once with ffmpeg. It runs in the background and can be stopped;
-          files that already have a measurement are skipped.
-        </p>
       </article>
     </>
   )
@@ -254,14 +157,4 @@ function statusText(
 function baseName(filePath: string): string {
   const parts = filePath.split(/[\\/]/)
   return parts[parts.length - 1] ?? filePath
-}
-
-function formatFrequency(frequency: number): string {
-  if (frequency >= 1000) return `${frequency / 1000} kHz`
-  return `${frequency} Hz`
-}
-
-function formatDb(value: number): string {
-  const rounded = Math.round(value * 10) / 10
-  return `${rounded > 0 ? '+' : ''}${rounded.toFixed(1)} dB`
 }

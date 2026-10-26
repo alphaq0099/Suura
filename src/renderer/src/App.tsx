@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { MouseEvent as ReactMouseEvent } from 'react'
 import { APPEARANCE_CACHE_KEY, DENSITY_ROW_HEIGHT } from '@shared/appearance'
 import { DEFAULT_AUDIO_SETTINGS } from '@shared/audio'
 import type {
@@ -96,6 +97,9 @@ export function App() {
   /** Compact layout. The window bounds are owned by the main process. */
   const [miniPlayer, setMiniPlayer] = useState(false)
   const miniPlayerRef = useRef(false)
+  /** The playback equalizer, opened from the player bar or Settings. */
+  const [equalizerOpen, setEqualizerOpen] = useState(false)
+  const equalizerOpenerRef = useRef<HTMLElement | null>(null)
   const [paths, setPaths] = useState<AppPaths | null>(null)
   const [runtimeInfo, setRuntimeInfo] = useState<RuntimeInfo | null>(null)
   const [engineStatus, setEngineStatus] = useState<EngineStatus | null>(null)
@@ -858,6 +862,41 @@ export function App() {
     [updateSettings]
   )
 
+  const closeEqualizer = useCallback((): void => {
+    setEqualizerOpen(false)
+    const opener = equalizerOpenerRef.current
+    equalizerOpenerRef.current = null
+    if (opener?.isConnected) opener.focus()
+  }, [])
+
+  /**
+   * One panel, two ways in. The opener is remembered so closing with Escape or
+   * the close button returns focus where it was, while an outside press keeps
+   * the focus the user just moved.
+   *
+   * The element is taken from the click itself rather than from
+   * `document.activeElement`: a button activated by keyboard or a script does
+   * not necessarily hold focus, and focus restoration must land on the control
+   * the user actually used.
+   */
+  const toggleEqualizer = useCallback(
+    (event?: ReactMouseEvent<HTMLElement>): void => {
+      if (equalizerOpen) {
+        closeEqualizer()
+        return
+      }
+      const target = event?.currentTarget
+      equalizerOpenerRef.current =
+        target instanceof HTMLElement
+          ? target
+          : document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null
+      setEqualizerOpen(true)
+    },
+    [closeEqualizer, equalizerOpen]
+  )
+
   if (!settings) {
     return (
       <div className="boot-screen">
@@ -1079,6 +1118,7 @@ export function App() {
           replayGainStatus={replayGainStatus}
           onScanReplayGain={scanReplayGain}
           onCancelReplayGain={cancelReplayGain}
+          onOpenEqualizer={toggleEqualizer}
           onAddFolder={() => void addFolder()}
           onRemoveFolder={(folder) => void removeFolder(folder)}
           onPickEngineDir={() => void pickEngineDir()}
@@ -1135,6 +1175,8 @@ export function App() {
         queueLength={player.queue.length}
         repeat={settings.repeat}
         shuffle={settings.shuffle}
+        audio={settings.audio}
+        equalizerOpen={equalizerOpen}
         onToggle={toggle}
         onNext={next}
         onPrevious={previous}
@@ -1145,6 +1187,9 @@ export function App() {
         onOpenQueue={() => setView('queue')}
         onOpenNowPlaying={openNowPlaying}
         onEnterMiniPlayer={() => setMiniMode(true)}
+        onToggleEqualizer={toggleEqualizer}
+        onCloseEqualizer={closeEqualizer}
+        onUpdateSettings={updateSettings}
       />
 
       {miniPlayer ? (

@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react'
-import type { RepeatMode, Track } from '@shared/types'
+import type { MouseEvent as ReactMouseEvent } from 'react'
+import type { AppSettings, AudioSettings, DeepPartial, RepeatMode, Track } from '@shared/types'
 import { buildArtworkUrl } from '@shared/artwork-url'
 import { useArtwork } from '../hooks/useArtwork'
 import { useWheelVolume } from '../hooks/useWheelVolume'
 import { ArtworkImage } from './ArtworkImage'
+import { EqualizerPanel } from './EqualizerPanel'
 import { SeekBar } from './SeekBar'
 import {
   NextIcon,
@@ -15,6 +17,7 @@ import {
   RepeatIcon,
   RepeatOneIcon,
   ShuffleIcon,
+  SlidersIcon,
   SpinnerIcon,
   VolumeIcon,
   VolumeMuteIcon
@@ -38,6 +41,8 @@ export interface PlayerBarProps {
   queueLength: number
   repeat: RepeatMode
   shuffle: boolean
+  audio: AudioSettings
+  equalizerOpen: boolean
   onToggle: () => void
   onNext: () => void
   onPrevious: () => void
@@ -48,6 +53,9 @@ export interface PlayerBarProps {
   onOpenQueue: () => void
   onOpenNowPlaying: () => void
   onEnterMiniPlayer: () => void
+  onToggleEqualizer: (event: ReactMouseEvent<HTMLButtonElement>) => void
+  onCloseEqualizer: () => void
+  onUpdateSettings: (patch: DeepPartial<AppSettings>) => void
 }
 
 export function PlayerBar(props: PlayerBarProps) {
@@ -66,6 +74,8 @@ export function PlayerBar(props: PlayerBarProps) {
     queueLength,
     repeat,
     shuffle,
+    audio,
+    equalizerOpen,
     onToggle,
     onNext,
     onPrevious,
@@ -75,7 +85,10 @@ export function PlayerBar(props: PlayerBarProps) {
     onToggleShuffle,
     onOpenQueue,
     onOpenNowPlaying,
-    onEnterMiniPlayer
+    onEnterMiniPlayer,
+    onToggleEqualizer,
+    onCloseEqualizer,
+    onUpdateSettings
   } = props
 
   const hasQueue = queueLength > 0 && queueIndex >= 0
@@ -218,6 +231,17 @@ export function PlayerBar(props: PlayerBarProps) {
         </button>
         <button
           type="button"
+          className={equalizerOpen ? 'icon-button eq-toggle toggle-on' : 'icon-button eq-toggle'}
+          onClick={onToggleEqualizer}
+          title="Equalizer"
+          aria-label="Equalizer"
+          aria-expanded={equalizerOpen}
+          aria-controls="equalizer-panel"
+        >
+          <SlidersIcon />
+        </button>
+        <button
+          type="button"
           className={queueLength > 0 ? 'icon-button queue-button' : 'icon-button queue-button muted'}
           onClick={onOpenQueue}
           title={`Queue (${queueLength})`}
@@ -246,6 +270,12 @@ export function PlayerBar(props: PlayerBarProps) {
           aria-label="Volume"
         />
       </div>
+      <EqualizerPanel
+        audio={audio}
+        open={equalizerOpen}
+        onUpdate={onUpdateSettings}
+        onClose={onCloseEqualizer}
+      />
     </footer>
   )
 }

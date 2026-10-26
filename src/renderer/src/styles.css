@@ -2259,6 +2259,111 @@ input[type='radio'] {
 
 /* ---------- equalizer ---------- */
 
+/* A settings card action that belongs to the left edge, such as the scan
+   button: it starts where the card text starts, not under the last control. */
+.card-actions.start {
+  justify-content: flex-start;
+}
+
+/* The curve is a playback control, so its panel hangs off the player bar and
+   leaves the rest of the app usable. Anchored to the bar itself so it still
+   opens from Settings on a narrow window, where the right-hand cluster hides. */
+.eq-panel {
+  position: absolute;
+  right: 18px;
+  bottom: calc(100% + 12px);
+  z-index: 40;
+  display: grid;
+  gap: 12px;
+  width: min(640px, calc(100vw - 36px));
+  max-height: min(72vh, 560px);
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgb(var(--bg-panel-rgb) / 96%);
+  backdrop-filter: blur(18px) saturate(120%);
+  box-shadow: var(--np-panel-shadow);
+  animation: eq-panel-in 160ms ease-out;
+}
+
+@keyframes eq-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.eq-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.eq-panel-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.eq-panel-title > span {
+  color: var(--accent);
+  font-size: calc(10px * var(--text-scale));
+  font-weight: 650;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+}
+
+.eq-panel-title h2 {
+  margin: 2px 0 0;
+  color: var(--text);
+  font-size: calc(16px * var(--text-scale));
+}
+
+.eq-enable {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-dim);
+  font-size: calc(12px * var(--text-scale));
+  cursor: pointer;
+  user-select: none;
+}
+
+.eq-enable input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.eq-panel-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 190px) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.eq-preamp-field > span {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.eq-reset {
+  align-self: end;
+}
+
+.eq-panel .eq-bands {
+  padding: 10px;
+}
+
+@media (max-width: 720px) {
+  .eq-panel-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .eq-bands {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

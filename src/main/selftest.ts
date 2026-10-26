@@ -2389,6 +2389,163 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       container.settings.get().retention
     )
 
+    // The equalizer is a playback control now: Settings keeps a one-line way in,
+    // the panel hangs off the player bar, and the keyboard opens, moves a band,
+    // and closes it with Escape while returning focus to the opener. The long
+    // normalization explanation is gone and its remaining action starts at the
+    // card's own left edge.
+    const audioUi = await evaluate<{
+      openButton: boolean
+      slidersInSettings: number
+      panelOpen: boolean
+      bands: number
+      preamp: boolean
+      focusedPanel: boolean
+      panelTitle: string
+      barOrder: string
+      barEqButton: boolean
+      panelClosedByEscape: boolean
+      focusReturned: boolean
+      normalizationHint: string
+      scanAligned: string
+      eqCardHint: string
+    }>(
+      window,
+      `(async () => {
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const press = (element) => { if (element) element.click() }
+         const text = (element) => ((element && element.textContent) || '').trim()
+         const nav = (label) =>
+           [...document.querySelectorAll('.nav-item')].find((el) => text(el).startsWith(label))
+         const tab = (label) =>
+           [...document.querySelectorAll('.settings-tab')].find((el) => text(el) === label)
+         const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+         const out = {
+           openButton: false, slidersInSettings: 0, panelOpen: false, bands: 0, preamp: false,
+           focusedPanel: false, panelTitle: '', barOrder: '', barEqButton: false,
+           panelClosedByEscape: false, focusReturned: false, normalizationHint: '',
+           scanAligned: '', eqCardHint: ''
+         }
+
+         press(nav('Settings'))
+         await sleep(300)
+         press(tab('General'))
+         await sleep(350)
+
+         const panel = document.querySelector('.settings-panel:not([hidden])')
+         const open = [...(panel || document).querySelectorAll('button')].find(
+           (button) => text(button) === 'Open equalizer'
+         )
+         const eqCard = [...(panel || document).querySelectorAll('.audio-card')].find(
+           (card) => text(card.querySelector('h2')) === 'Equalizer'
+         )
+         const normalCard = [...(panel || document).querySelectorAll('.audio-card')].find(
+           (card) => text(card.querySelector('h2')) === 'Volume normalization'
+         )
+         out.openButton = Boolean(open && eqCard)
+         out.eqCardHint = text(eqCard?.querySelector('.card-hint'))
+         out.slidersInSettings = (panel || document).querySelectorAll('.eq-band').length
+         out.normalizationHint = [...(normalCard?.querySelectorAll('.card-hint') || [])]
+           .map((hint) => text(hint))
+           .join(' | ')
+         const actions = normalCard?.querySelector('.card-actions')
+         out.scanAligned = actions ? getComputedStyle(actions).justifyContent : ''
+
+         press(open)
+         await sleep(350)
+         const eqPanel = document.querySelector('.eq-panel')
+         out.panelOpen = Boolean(eqPanel)
+         out.panelTitle = text(eqPanel?.querySelector('h2'))
+         out.bands = eqPanel?.querySelectorAll('.eq-band').length || 0
+         out.preamp = Boolean(eqPanel?.querySelector('input[aria-label="Preamp"]'))
+         out.focusedPanel = document.activeElement === eqPanel
+
+         const band = [...(eqPanel?.querySelectorAll('.eq-band input') || [])].find(
+           (input) => input.getAttribute('aria-label') === '1 kHz gain'
+         )
+         if (band) {
+           setValue.call(band, '3')
+           band.dispatchEvent(new Event('input', { bubbles: true }))
+           await sleep(600)
+         }
+
+         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+         await sleep(350)
+         out.panelClosedByEscape = !document.querySelector('.eq-panel')
+         out.focusReturned = document.activeElement === open
+
+         const rightButtons = [...document.querySelectorAll('.player-volume > button')]
+         out.barOrder = rightButtons.map((button) => button.getAttribute('aria-label')).join('|')
+         const eqButton = rightButtons.find((button) => button.getAttribute('aria-label') === 'Equalizer')
+         out.barEqButton = Boolean(eqButton)
+         press(eqButton)
+         await sleep(300)
+         out.panelOpen = out.panelOpen && Boolean(document.querySelector('.eq-panel'))
+         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+         await sleep(250)
+         return out
+       })()`
+    )
+    record(
+      audioUi.openButton && audioUi.slidersInSettings === 0 && audioUi.eqCardHint.length > 0,
+      'equalizer: Settings keeps a short shortcut, not the whole curve',
+      audioUi
+    )
+    record(
+      audioUi.panelOpen &&
+        audioUi.panelTitle === 'Equalizer' &&
+        audioUi.bands === 10 &&
+        audioUi.preamp &&
+        audioUi.focusedPanel,
+      'equalizer: the panel opens from its shortcut with every band and the preamp',
+      audioUi
+    )
+    record(
+      audioUi.panelClosedByEscape && audioUi.focusReturned,
+      'equalizer: Escape closes the panel and returns focus to the opener',
+      audioUi
+    )
+    record(
+      audioUi.barOrder.startsWith('Open the mini player|Equalizer|Open queue') && audioUi.barEqButton,
+      'equalizer: the player bar button sits between Mini player and Queue',
+      audioUi
+    )
+    record(
+      container.settings.get().audio.equalizer.bands[5] === 3,
+      'equalizer: moving a band is written to the audio settings'
+    )
+    await evaluate<void>(
+      window,
+      `(async () => {
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const button = [...document.querySelectorAll('.player-volume > button')].find(
+           (candidate) => candidate.getAttribute('aria-label') === 'Equalizer'
+         )
+         if (button) button.click()
+         await sleep(300)
+         const band = [...document.querySelectorAll('.eq-panel .eq-band input')].find(
+           (input) => input.getAttribute('aria-label') === '1 kHz gain'
+         )
+         if (band) {
+           const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+           setValue.call(band, '0')
+           band.dispatchEvent(new Event('input', { bubbles: true }))
+         }
+         await sleep(500)
+         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+         await sleep(250)
+       })()`
+    )
+    record(
+      container.settings.get().audio.equalizer.bands[5] === 0,
+      'equalizer: the test band can be reset'
+    )
+    record(
+      !audioUi.normalizationHint.includes('Analysis decodes') && audioUi.scanAligned === 'flex-start',
+      'normalization: the long analysis paragraph is gone and Analyse missing tracks is left-aligned',
+      audioUi
+    )
+
     container.downloadHistory.record(
       {
         videoId: 'selftestvid',
