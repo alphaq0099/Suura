@@ -3213,6 +3213,7 @@ input[type='radio'] {
 .player-volume {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 9px;
   /* The same colour as shuffle and repeat, in the bar and in the player window
      alike. It used to be the faintest icon on screen, which read as disabled. */
@@ -3221,15 +3222,82 @@ input[type='radio'] {
   width: 100%;
 }
 
-/* Neutral, not accent: stacked directly under the seek bar, a second blue slider
-   reads as a duplicate progress bar. The accent means "playback position" from
-   here on, in both players. */
-.player-volume input[type='range'] {
-  flex: 1;
-  accent-color: var(--text-dim);
+/* The bar keeps the speaker in the icon row and folds the level above it,
+   matching the full-window player. A visible slider in the footer cost width
+   that the transport and seek bar needed. */
+.player-volume-control {
+  position: relative;
+  display: flex;
+  align-items: center;
 }
 
-/* The icon is the mute toggle, matching the full-window player; the slider beside
+.player-volume-pop {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 50%;
+  z-index: 20;
+  width: 36px;
+  height: 128px;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  box-shadow: 0 14px 30px rgb(0 0 0 / 45%);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-50%) translateY(8px);
+  transition: opacity 130ms ease, transform 130ms ease, visibility 130ms;
+}
+
+/* An invisible bridge across the gap, so the pointer on its way up does not
+   cross dead space and close the panel behind itself. */
+.player-volume-pop::before {
+  content: '';
+  position: absolute;
+  inset: -16px 0;
+}
+
+.player-volume-control:hover .player-volume-pop,
+.player-volume-control:focus-within .player-volume-pop {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Rotated rather than written vertically, so the track and thumb stay in the
+   horizontal coordinate space the other sliders use. */
+.player-volume-slider {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  appearance: none;
+  width: 106px;
+  height: 20px;
+  background: transparent;
+  transform: translate(-50%, -50%) rotate(-90deg);
+}
+
+/* Neutral, not accent: the accent means playback position. */
+.player-volume-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--text) var(--volume-progress, 0%),
+    rgb(var(--overlay-rgb) / 12%) var(--volume-progress, 0%)
+  );
+}
+
+.player-volume-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  margin-top: -3.5px;
+  border-radius: 50%;
+  background: var(--text);
+  box-shadow: 0 1px 5px rgb(0 0 0 / 55%);
+}
+
+/* The icon is the mute toggle, matching the full-window player; the slider above
    it stays the level. The button is trimmed to the icon's own footprint so the
    cluster does not get wider for the privilege. */
 .player-volume .volume-toggle {

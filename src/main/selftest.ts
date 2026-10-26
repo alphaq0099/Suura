@@ -3244,6 +3244,14 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       barVolumeMuted: number
       barMutePressed: string
       barVolumeRestored: number
+      barPopHidden: boolean
+      barPopVertical: boolean
+      barPopWithin: boolean
+      barPopShownByFocus: boolean
+      barKeyBefore: number
+      barKeyAfter: number
+      barKeyProgress: string
+      barKeyRestored: number
       panelClosedByOutsidePress: boolean
       panelStayedOpenOnInsidePress: boolean
       popoverHidden: boolean
@@ -3265,7 +3273,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     }>(
       window,
       `(async () => {
-         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, volumeBeforeWheel: -1, volumeAfterWheel: -1, volumeWheelTop: -1, volumeWheelBottom: -1, wheelCancelled: false, barVolumeBefore: -1, barVolumeMuted: -1, barMutePressed: '', barVolumeRestored: -1, panelClosedByOutsidePress: false, panelStayedOpenOnInsidePress: false, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false, panelCloseState: '' }
+         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, volumeBeforeWheel: -1, volumeAfterWheel: -1, volumeWheelTop: -1, volumeWheelBottom: -1, wheelCancelled: false, barVolumeBefore: -1, barVolumeMuted: -1, barMutePressed: '', barVolumeRestored: -1, barPopHidden: false, barPopVertical: false, barPopWithin: false, barPopShownByFocus: false, barKeyBefore: -1, barKeyAfter: -1, barKeyProgress: '', barKeyRestored: -1, panelClosedByOutsidePress: false, panelStayedOpenOnInsidePress: false, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false, panelCloseState: '' }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (selector) => document.querySelector(selector)
          const press = (element) => { if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
@@ -3577,6 +3585,44 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          press(barToggle())
          await sleep(300)
          out.barVolumeRestored = barSlider() ? Number(barSlider().value) : -1
+
+         // The bar's volume folds away like the full-window one, but it opens
+         // from the speaker itself. Focus is the keyboard equivalent of hover:
+         // it must reveal the vertical slider, and the arrows must move it.
+         const barPop = () => pick('.player-volume-pop')
+         out.barPopHidden = barPop() ? getComputedStyle(barPop()).visibility === 'hidden' : false
+         const barPopBox = barPop() ? barPop().getBoundingClientRect() : null
+         out.barPopVertical = Boolean(barPopBox && barPopBox.height > barPopBox.width * 2)
+         out.barPopWithin = Boolean(
+           barPopBox &&
+             barPopBox.top >= 0 &&
+             barPopBox.left >= 0 &&
+             barPopBox.right <= window.innerWidth + 0.5
+         )
+         if (barToggle()) barToggle().focus()
+         await sleep(240)
+         const barPopStyle = barPop() ? getComputedStyle(barPop()) : null
+         out.barPopShownByFocus = Boolean(
+           barPopStyle && barPopStyle.visibility === 'visible' && barPopStyle.opacity === '1'
+         )
+         out.barKeyBefore = barSlider() ? Number(barSlider().value) : -1
+         if (barToggle()) {
+           barToggle().dispatchEvent(
+             new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })
+           )
+         }
+         await sleep(240)
+         out.barKeyAfter = barSlider() ? Number(barSlider().value) : -1
+         out.barKeyProgress = barSlider() ? barSlider().style.getPropertyValue('--volume-progress') : ''
+         if (barToggle()) {
+           barToggle().dispatchEvent(
+             new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true })
+           )
+         }
+         await sleep(240)
+         out.barKeyRestored = barSlider() ? Number(barSlider().value) : -1
+         if (barToggle()) barToggle().blur()
+         await sleep(180)
          return out
        })()`
     )
@@ -3659,6 +3705,26 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         visuals.barVolumeRestored === visuals.barVolumeBefore,
       'the player bar speaker icon mutes and restores like the full-window player',
       `${visuals.barVolumeBefore} -> ${visuals.barVolumeMuted} -> ${visuals.barVolumeRestored} (pressed=${visuals.barMutePressed})`
+    )
+    record(
+      visuals.barPopHidden &&
+        visuals.barPopVertical &&
+        visuals.barPopWithin &&
+        visuals.barPopShownByFocus &&
+        Math.abs(visuals.barKeyBefore - visuals.barKeyAfter - 0.05) < 0.011 &&
+        Math.abs(visuals.barKeyRestored - visuals.barKeyBefore) < 0.011 &&
+        visuals.barKeyProgress === `${Math.round(visuals.barKeyAfter * 100)}%`,
+      'the player bar volume is a vertical popover that opens and moves from the keyboard',
+      {
+        hidden: visuals.barPopHidden,
+        vertical: visuals.barPopVertical,
+        within: visuals.barPopWithin,
+        shown: visuals.barPopShownByFocus,
+        before: visuals.barKeyBefore,
+        after: visuals.barKeyAfter,
+        progress: visuals.barKeyProgress,
+        restored: visuals.barKeyRestored
+      }
     )
 
     // ---- 13. artwork size and click behaviour ---------------------------

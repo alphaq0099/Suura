@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { MouseEvent as ReactMouseEvent } from 'react'
+import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
 import type { AppSettings, AudioSettings, DeepPartial, RepeatMode, Track } from '@shared/types'
 import { buildArtworkUrl } from '@shared/artwork-url'
 import { useArtwork } from '../hooks/useArtwork'
@@ -250,25 +250,46 @@ export function PlayerBar(props: PlayerBarProps) {
           <QueueIcon />
           {queueLength > 0 ? <span className="queue-count">{queueLength}</span> : null}
         </button>
-        <button
-          type="button"
-          className="icon-button volume-toggle"
-          onClick={toggleMute}
-          title={muted ? 'Unmute' : 'Mute'}
-          aria-label={muted ? 'Unmute' : 'Mute'}
-          aria-pressed={muted}
-        >
-          {muted ? <VolumeMuteIcon /> : <VolumeIcon />}
-        </button>
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.01}
-          value={volume}
-          onChange={(event) => onVolume(Number(event.target.value))}
-          aria-label="Volume"
-        />
+        <div className="player-volume-control">
+          <button
+            type="button"
+            className="icon-button volume-toggle"
+            onClick={toggleMute}
+            title={muted ? 'Unmute' : 'Mute'}
+            aria-label={muted ? 'Unmute' : 'Mute'}
+            aria-pressed={muted}
+            onKeyDown={(event) => {
+              // The folded-away slider is one Tab away, but the speaker is where
+              // a keyboard user lands first. Handling the arrows here means the
+              // level moves while the popover it belongs to is already open.
+              const step = event.shiftKey ? 0.01 : 0.05
+              let next: number | null = null
+              if (event.key === 'ArrowUp' || event.key === 'ArrowRight') next = volume + step
+              else if (event.key === 'ArrowDown' || event.key === 'ArrowLeft') next = volume - step
+              else if (event.key === 'Home') next = 0
+              else if (event.key === 'End') next = 1
+              if (next === null) return
+              event.preventDefault()
+              onVolume(Math.min(1, Math.max(0, Math.round(next * 100) / 100)))
+            }}
+          >
+            {muted ? <VolumeMuteIcon /> : <VolumeIcon />}
+          </button>
+          <div className="player-volume-pop">
+            <input
+              className="player-volume-slider"
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={volume}
+              onChange={(event) => onVolume(Number(event.target.value))}
+              aria-label="Volume level"
+              // Published so the fill can paint without a re-render per pointer move.
+              style={{ '--volume-progress': `${volume * 100}%` } as CSSProperties}
+            />
+          </div>
+        </div>
       </div>
       <EqualizerPanel
         audio={audio}
