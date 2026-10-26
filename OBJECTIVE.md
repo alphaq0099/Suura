@@ -103,4 +103,14 @@ The feedback is not one visual-polish pass. It contains:
 
 ## Status
 
-Feedback captured from `1.png`–`4.png`. Implementation starts with P1. The tree also contains an unrelated, uncommitted performance-harness change in `src/main/scale-check.ts`; it is not part of this feedback pass and must not be mixed into these commits.
+All four slices are implemented and verified.
+
+- P1 trust fixes: `79ccbe0`
+- P2 Downloads and offline cache: `626dc14`
+- P2 Equalizer on the player bar: `7c0f1c7`
+- P2 Home More actions and hero cleanup: `af939d4`
+- P2 Settings tooltip copy: `dd978c2`
+- P3 hero slideshow, stat tint and card lift: `da879d8`
+- P13 vertical player-bar volume: `07e44bd`
+
+Each slice passed `npm run typecheck`, `npm run smoke`, `npm run build` and `npm run selftest`. Manual acceptance of the visual slices (P3 and P13) is still required. M8 stays open on signing, updates, crash reporting, sidecars, compatibility and a clean-Windows pass. The tree also contains an unrelated, uncommitted performance-harness change in `src/main/scale-check.ts`; it is not part of this feedback pass and must not be mixed into these commits.
