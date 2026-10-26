@@ -112,5 +112,9 @@ All four slices are implemented and verified.
 - P2 Settings tooltip copy: `dd978c2`
 - P3 hero slideshow, stat tint and card lift: `da879d8`
 - P13 vertical player-bar volume: `07e44bd`
+- Quick check: live play counting and the album-card play badge: `5c01337`
+- Quick check: compact equalizer fader strip and its own trigger icon: `66793f4`
 
-Each slice passed `npm run typecheck`, `npm run smoke`, `npm run build` and `npm run selftest`. Manual acceptance of the visual slices (P3 and P13) is still required. M8 stays open on signing, updates, crash reporting, sidecars, compatibility and a clean-Windows pass. The tree also contains an unrelated, uncommitted performance-harness change in `src/main/scale-check.ts`; it is not part of this feedback pass and must not be mixed into these commits.
+A counted listen (30 seconds or completion) now refreshes **Recently played** while Home is open, and is counted once per listen instead of again when the track ends or changes. The equalizer is one row of upright faders with the preamp apart, hangs above the player bar without covering it, and uses a faders icon that cannot be confused with Settings or Queue. Album-card play badges keep their accent when hovered or focused.
+
+Each slice passed `npm run typecheck`, `npm run smoke`, `npm run build` and `npm run selftest`. Manual acceptance of the visual slices (P3, P13, the equalizer and the play badge) is still required. M8 stays open on signing, updates, crash reporting, sidecars, compatibility and a clean-Windows pass. The tree also contains an unrelated, uncommitted performance-harness change in `src/main/scale-check.ts`; it is not part of this feedback pass and must not be mixed into these commits.
