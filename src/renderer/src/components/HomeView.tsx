@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import type {
   AddTracksOutcome,
+  AlbumSortField,
   AlbumSummary,
   ArtistSummary,
   LibraryClickAction,
@@ -226,13 +227,13 @@ function PlaylistCard({ playlist, onOpen }: { playlist: Playlist; onOpen: (playl
 
 function Shelf({
   title,
-  hint,
   icon,
+  action,
   children
 }: {
   title: string
-  hint?: string
   icon?: ReactNode
+  action?: ReactNode
   children: ReactNode
 }) {
   return (
@@ -242,7 +243,7 @@ function Shelf({
           {icon}
           {title}
         </h2>
-        {hint ? <span>{hint}</span> : null}
+        {action}
       </div>
       <div className="home-shelf">{children}</div>
     </section>
@@ -298,6 +299,7 @@ export function HomeView(props: HomeViewProps) {
 
   const scrollRef = useRef<HTMLElement | null>(null)
   const gridRef = useRef<HTMLElement | null>(null)
+  const gridHeadingRef = useRef<HTMLHeadingElement | null>(null)
   const gridScrollRef = useRef(0)
   /** Bumped per shelf load so a slow scan refresh cannot overwrite a newer one. */
   const shelvesTokenRef = useRef(0)
@@ -445,6 +447,21 @@ export function HomeView(props: HomeViewProps) {
     albums.setArtist(artist.artist)
     requestAnimationFrame(() => {
       gridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }, [albums])
+
+  /**
+   * A shelf's **More** turns the album grid below into the full version of that
+   * shelf instead of opening a second list: the same albums, sorted the same
+   * way, with the paging and search the grid already has. Focus moves to the
+   * grid heading so a keyboard user lands where the page just scrolled.
+   */
+  const showAlbumShelf = useCallback((sort: AlbumSortField): void => {
+    albums.setArtist(null)
+    albums.setSort(sort)
+    requestAnimationFrame(() => {
+      gridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      gridHeadingRef.current?.focus({ preventScroll: true })
     })
   }, [albums])
 
@@ -687,23 +704,28 @@ export function HomeView(props: HomeViewProps) {
               : 'Add a folder of audio files and Player will index everything inside it. Nothing is uploaded or moved.'}
           </p>
           <div className="home-hero-actions">
-            {hasLibrary ? (
-              <button type="button" className="primary" onClick={onOpenLibrary}>
-                <LibraryIcon />
-                <span>Open library</span>
-              </button>
-            ) : (
+            {!hasLibrary ? (
               <button type="button" className="primary" onClick={onAddFolder}>
                 <FolderIcon />
                 <span>Add music folder</span>
               </button>
-            )}
-            {hasLibrary ? (
-              <button type="button" onClick={onAddFolder}>
-                <FolderIcon />
-                <span>Add folder</span>
+            ) : heroAlbum ? (
+              <button
+                type="button"
+                className="primary"
+                onClick={() => void playAlbum(heroAlbum)}
+                disabled={busyAlbum === albumKeyOf(heroAlbum)}
+                title={`Play ${heroAlbum.album}`}
+              >
+                {busyAlbum === albumKeyOf(heroAlbum) ? <SpinnerIcon /> : <PlayIcon size={16} />}
+                <span className="home-hero-action-label">Play {heroAlbum.album}</span>
               </button>
-            ) : null}
+            ) : (
+              <button type="button" className="primary" onClick={onOpenLibrary}>
+                <LibraryIcon />
+                <span>Open library</span>
+              </button>
+            )}
             {scanning ? (
               <button type="button" className="link-button" onClick={onCancelScan}>
                 Cancel scan
@@ -720,10 +742,6 @@ export function HomeView(props: HomeViewProps) {
                   : '…'}
               </span>
             </div>
-          ) : stats?.lastScanAt ? (
-            <span className="home-scan-note">
-              Last scan {new Date(stats.lastScanAt).toLocaleDateString()}
-            </span>
           ) : null}
         </div>
         <div className="home-stats">
@@ -767,7 +785,21 @@ export function HomeView(props: HomeViewProps) {
       ) : (
         <>
           {playedAlbums.length > 0 ? (
-            <Shelf title="Recently played" hint="Back where you left off" icon={<PlayIcon size={15} />}>
+            <Shelf
+              title="Recently played"
+              icon={<PlayIcon size={15} />}
+              action={
+                <button
+                  type="button"
+                  className="home-more"
+                  onClick={() => showAlbumShelf('played')}
+                  title="Show every album, most recently played first"
+                  aria-label="More recently played albums"
+                >
+                  More
+                </button>
+              }
+            >
               {playedAlbums.map((album) => (
                 <AlbumCard
                   key={albumKeyOf(album)}
@@ -781,7 +813,21 @@ export function HomeView(props: HomeViewProps) {
           ) : null}
 
           {recentAlbums.length > 0 ? (
-            <Shelf title="Recently added" hint="Newest albums first" icon={<DiscIcon size={15} />}>
+            <Shelf
+              title="Recently added"
+              icon={<DiscIcon size={15} />}
+              action={
+                <button
+                  type="button"
+                  className="home-more"
+                  onClick={() => showAlbumShelf('recent')}
+                  title="Show every album, newest first"
+                  aria-label="More recently added albums"
+                >
+                  More
+                </button>
+              }
+            >
               {recentAlbums.map((album) => (
                 <AlbumCard
                   key={albumKeyOf(album)}
@@ -795,7 +841,7 @@ export function HomeView(props: HomeViewProps) {
           ) : null}
 
           {artists.length > 0 ? (
-            <Shelf title="Artists" hint="Click one to filter the albums" icon={<ArtistIcon size={15} />}>
+            <Shelf title="Artists" icon={<ArtistIcon size={15} />}>
               {artists.map((artist) => (
                 <ArtistCard
                   key={artist.artist}
@@ -809,7 +855,7 @@ export function HomeView(props: HomeViewProps) {
           ) : null}
 
           {playlists.length > 0 ? (
-            <Shelf title="Playlists" hint="Your hand-made running orders" icon={<PlayIcon size={15} />}>
+            <Shelf title="Playlists" icon={<PlayIcon size={15} />}>
               {playlists.map((playlist) => (
                 <PlaylistCard
                   key={playlist.id}
@@ -825,7 +871,7 @@ export function HomeView(props: HomeViewProps) {
       <section className="home-section album-grid-section" ref={gridRef} hidden={!hasLibrary}>
         <div className="album-grid-head">
           <div>
-            <h2>
+            <h2 ref={gridHeadingRef} tabIndex={-1}>
               <DiscIcon size={16} />
               {albums.artist ? `Albums by ${albums.artist}` : 'All albums'}
             </h2>
@@ -876,6 +922,14 @@ export function HomeView(props: HomeViewProps) {
                 onClick={() => albums.setSort('recent')}
               >
                 Newest
+              </button>
+              <button
+                type="button"
+                className={albums.sort === 'played' ? 'active' : undefined}
+                aria-pressed={albums.sort === 'played'}
+                onClick={() => albums.setSort('played')}
+              >
+                Played
               </button>
               <button
                 type="button"

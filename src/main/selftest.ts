@@ -222,6 +222,15 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       artistChip: string
       artistCleared: boolean
       onLibrary: boolean
+      heroAction: string
+      heroActionCount: number
+      heroHasLastScan: boolean
+      heroScanNote: boolean
+      shelfHints: number
+      moreLabels: string
+      moreFocusedGrid: boolean
+      sortOptions: string
+      playedSortActive: boolean
     }>(
       window,
       `(async () => {
@@ -242,7 +251,10 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            isHome: false, activeNav: '', heroTitle: '', stats: '', shelfTitles: '',
            shelfAlbums: 0, artistCards: 0, gridCards: 0, detailTitle: '', detailRows: 0,
            detailHasTone: false, backWorks: false, searchEmpty: false, searchCleared: false,
-           artistFiltered: false, artistChip: '', artistCleared: false, onLibrary: false
+           artistFiltered: false, artistChip: '', artistCleared: false, onLibrary: false,
+           heroAction: '', heroActionCount: 0, heroHasLastScan: false, heroScanNote: false,
+           shelfHints: 0, moreLabels: '', moreFocusedGrid: false, sortOptions: '',
+           playedSortActive: false
          }
 
          nav('Home')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -303,6 +315,37 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          while (Date.now() < deadline && gridCards().length < 2) await sleep(100)
          out.artistCleared = gridCards().length === 2
 
+         // A shelf's More must lead somewhere real: it turns the grid at the
+         // bottom of Home into the full version of that shelf and moves focus
+         // there. The hero carries one contextual action, never a copy of the
+         // header buttons and never a scan date.
+         const heroText = (document.querySelector('.home-hero-copy')?.textContent || '').trim()
+         out.heroAction = (document.querySelector('.home-hero-actions .primary')?.textContent || '').trim()
+         out.heroActionCount = document.querySelectorAll('.home-hero-actions .primary').length
+         out.heroHasLastScan = heroText.includes('Last scan')
+         out.heroScanNote = Boolean(document.querySelector('.home-scan-note'))
+         out.shelfHints = document.querySelectorAll('.home-section-head > span').length
+         out.moreLabels = [...document.querySelectorAll('.home-more')]
+           .map((el) => el.getAttribute('aria-label'))
+           .join('|')
+         const moreAdded = [...document.querySelectorAll('.home-more')].find(
+           (el) => el.getAttribute('aria-label') === 'More recently added albums'
+         )
+         moreAdded?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await sleep(450)
+         out.moreFocusedGrid = document.activeElement === document.querySelector('.album-grid-head h2')
+         const sortButtons = () => [...document.querySelectorAll('.album-sort button')]
+         out.sortOptions = sortButtons()
+           .map((el) => (el.textContent || '').trim())
+           .join('|')
+         const playedSort = sortButtons().find((el) => (el.textContent || '').trim() === 'Played')
+         playedSort?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await sleep(450)
+         out.playedSortActive = playedSort?.getAttribute('aria-pressed') === 'true'
+         const newestSort = sortButtons().find((el) => (el.textContent || '').trim() === 'Newest')
+         newestSort?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await sleep(350)
+
          nav('Library')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
          await waitFor('.track-row')
          out.onLibrary = Boolean(document.querySelector('.track-row'))
@@ -352,6 +395,28 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       home.artistFiltered && home.artistChip.includes('Selftest') && home.artistCleared,
       'an artist card filters the album grid and the chip removes the filter',
       { filtered: home.artistFiltered, chip: home.artistChip, cleared: home.artistCleared }
+    )
+    record(
+      home.moreLabels.includes('More recently added albums') &&
+        home.shelfHints === 0 &&
+        home.moreFocusedGrid &&
+        home.sortOptions === 'Newest|Played|A–Z' &&
+        home.playedSortActive,
+      'home: shelf hints give way to More actions that open the full list in place',
+      {
+        more: home.moreLabels,
+        hints: home.shelfHints,
+        focusedGrid: home.moreFocusedGrid,
+        sorts: home.sortOptions
+      }
+    )
+    record(
+      home.heroActionCount === 1 &&
+        (home.heroAction.startsWith('Play ') || home.heroAction === 'Open library') &&
+        !home.heroHasLastScan &&
+        !home.heroScanNote,
+      'home: the hero has one contextual action and no scan date',
+      { action: home.heroAction, count: home.heroActionCount, lastScan: home.heroHasLastScan }
     )
     record(home.onLibrary, 'the Home dashboard can hand off to the full library')
 

@@ -918,17 +918,21 @@ input[type='radio'] {
   margin-top: 4px;
 }
 
+/* The primary action names the album it will play, so a long title is clipped
+   rather than allowed to widen the hero. */
+.home-hero-action-label {
+  max-width: 26ch;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .home-scan {
   display: flex;
   align-items: center;
   gap: 7px;
   color: var(--text-faint);
   font-size: calc(12px * var(--text-scale));
-}
-
-.home-scan-note {
-  color: var(--text-faint);
-  font-size: calc(11.5px * var(--text-scale));
 }
 
 .home-stats {
@@ -993,9 +997,29 @@ input[type='radio'] {
   color: var(--accent);
 }
 
-.home-section-head > span {
-  color: var(--text-faint);
+/* A shelf's way into the full list. Text, not a bordered button: it sits on the
+   same baseline as the heading and should not compete with the cards. */
+.home-more {
+  padding: 3px 8px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-dim);
   font-size: calc(11.5px * var(--text-scale));
+  font-weight: 600;
+}
+
+.home-more:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+/* The grid heading takes focus after a shelf's More, so the scroll lands
+   somewhere a screen reader announces. */
+.album-grid-head h2:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
 }
 
 .home-shelf {
