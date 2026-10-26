@@ -8,6 +8,7 @@ import { ArtworkImage } from './ArtworkImage'
 import { EqualizerPanel } from './EqualizerPanel'
 import { SeekBar } from './SeekBar'
 import {
+  EqualizerIcon,
   NextIcon,
   PauseIcon,
   PlayIcon,
@@ -17,7 +18,6 @@ import {
   RepeatIcon,
   RepeatOneIcon,
   ShuffleIcon,
-  SlidersIcon,
   SpinnerIcon,
   VolumeIcon,
   VolumeMuteIcon
@@ -235,10 +235,11 @@ export function PlayerBar(props: PlayerBarProps) {
           onClick={onToggleEqualizer}
           title="Equalizer"
           aria-label="Equalizer"
+          aria-haspopup="dialog"
           aria-expanded={equalizerOpen}
           aria-controls="equalizer-panel"
         >
-          <SlidersIcon />
+          <EqualizerIcon />
         </button>
         <button
           type="button"

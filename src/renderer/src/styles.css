@@ -2330,19 +2330,21 @@ input[type='radio'] {
 }
 
 /* The curve is a playback control, so its panel hangs off the player bar and
-   leaves the rest of the app usable. Anchored to the bar itself so it still
-   opens from Settings on a narrow window, where the right-hand cluster hides. */
+   leaves the rest of the app usable. It is deliberately short: ten upright
+   faders fit in one row above the bar, so opening the equalizer never covers
+   the transport it belongs to. Anchored to the bar itself so it still opens
+   from Settings on a narrow window, where the right-hand cluster hides. */
 .eq-panel {
   position: absolute;
   right: 18px;
-  bottom: calc(100% + 12px);
+  bottom: calc(100% + 10px);
   z-index: 40;
   display: grid;
-  gap: 12px;
-  width: min(640px, calc(100vw - 36px));
-  max-height: min(72vh, 560px);
+  gap: 10px;
+  width: min(580px, calc(100vw - 36px));
+  max-height: min(calc(100vh - 120px), 420px);
   overflow: auto;
-  padding: 14px;
+  padding: 12px 14px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: rgb(var(--bg-panel-rgb) / 96%);
@@ -2400,66 +2402,101 @@ input[type='radio'] {
   accent-color: var(--accent);
 }
 
-.eq-panel-row {
-  display: grid;
-  grid-template-columns: minmax(150px, 190px) minmax(0, 1fr) auto;
+.eq-panel-tools {
+  display: flex;
   align-items: end;
-  gap: 12px;
+  gap: 10px;
 }
 
-.eq-preamp-field > span {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
+.eq-preset-field {
+  flex: 1 1 180px;
+  max-width: 240px;
 }
 
 .eq-reset {
-  align-self: end;
+  flex: none;
 }
 
-.eq-panel .eq-bands {
-  padding: 10px;
-}
-
-@media (max-width: 720px) {
-  .eq-panel-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-.eq-bands {
+/* One strip of upright faders, preamp separated from the ten bands. The whole
+   curve is visible at once; a two-row horizontal grid made the panel tall and
+   read as a form rather than a playback control. */
+.eq-faders {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-  padding: 12px;
+  grid-template-columns: auto 1px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 12px;
+  padding: 10px 12px 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-subtle);
 }
 
+.eq-preamp,
 .eq-band {
   display: grid;
-  gap: 3px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  justify-items: center;
+  gap: 4px;
   min-width: 0;
 }
 
-.eq-band > span:first-child {
-  font-size: calc(10.5px * var(--text-scale));
-  color: var(--text-faint);
-  text-align: center;
+.eq-preamp {
+  min-width: 46px;
 }
 
-.eq-band input[type='range'] {
-  width: 100%;
+.eq-preamp > span:first-child,
+.eq-band > span:first-child {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--text-faint);
+  font-size: calc(10.5px * var(--text-scale));
+  text-align: center;
+  white-space: nowrap;
+}
+
+.eq-fader-divider {
+  width: 1px;
+  background: var(--border);
+}
+
+/* Native range, turned upright. `direction: rtl` puts the top of the travel at
+   the maximum gain, which is how a fader is read. */
+.eq-fader {
+  align-self: center;
+  width: 20px;
+  height: 112px;
+  margin: 0;
+  padding: 0;
+  appearance: auto;
+  accent-color: var(--accent);
+  writing-mode: vertical-lr;
+  direction: rtl;
+}
+
+.eq-bands {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 6px;
   min-width: 0;
 }
 
 .eq-readout {
-  font-size: calc(10.5px * var(--text-scale));
   color: var(--text-dim);
+  font-size: calc(10.5px * var(--text-scale));
   font-variant-numeric: tabular-nums;
   text-align: center;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .eq-panel {
+    right: 12px;
+    width: calc(100vw - 24px);
+  }
+
+  .eq-bands {
+    gap: 3px;
+  }
 }
 
 .card-actions {
@@ -2492,12 +2529,6 @@ input[type='radio'] {
 .replay-gain-run progress::-webkit-progress-value {
   background: var(--accent);
   border-radius: 999px;
-}
-
-@media (max-width: 720px) {
-  .eq-bands {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 .card-hint {
@@ -3068,8 +3099,10 @@ input[type='radio'] {
   background: rgb(var(--bar-scrim-rgb) / var(--bar-scrim-alpha));
 }
 
-/* Everything in the bar paints over the glow. */
-.player-bar > *:not(.player-bar-bg) {
+/* Everything in the bar paints over the glow. The equalizer panel is excluded:
+   it is an absolutely positioned popover, and giving it `position: relative`
+   here made it take a grid cell and stretch the whole player block. */
+.player-bar > *:not(.player-bar-bg):not(.eq-panel) {
   position: relative;
   z-index: 1;
 }

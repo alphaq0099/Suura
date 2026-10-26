@@ -115,8 +115,8 @@ export function EqualizerPanel({ audio, open, onUpdate, onClose }: EqualizerPane
         </button>
       </header>
 
-      <div className="eq-panel-row">
-        <label className="field">
+      <div className="eq-panel-tools">
+        <label className="field eq-preset-field">
           <span>Preset</span>
           <select
             value={equalizer.preset}
@@ -131,11 +131,19 @@ export function EqualizerPanel({ audio, open, onUpdate, onClose }: EqualizerPane
           </select>
         </label>
 
-        <label className="field eq-preamp-field">
-          <span>
-            Preamp <span className="eq-readout">{formatDb(equalizer.preampDb)}</span>
-          </span>
+        <button type="button" className="button secondary eq-reset" onClick={resetCurve} disabled={!equalizer.enabled}>
+          Reset curve
+        </button>
+      </div>
+
+      {/* Upright faders, preamp apart from the ten bands: the curve reads as a
+          row of levels at a glance, and the panel stays short enough to hang
+          above the bar instead of covering the player. */}
+      <div className="eq-faders">
+        <label className="eq-preamp">
+          <span>Preamp</span>
           <input
+            className="eq-fader"
             type="range"
             min={EQ_PREAMP_MIN_DB}
             max={EQ_PREAMP_MAX_DB}
@@ -145,33 +153,33 @@ export function EqualizerPanel({ audio, open, onUpdate, onClose }: EqualizerPane
             aria-label="Preamp"
             onChange={(event) => updateEqualizer({ preampDb: Number(event.target.value) })}
           />
+          <span className="eq-readout">{formatDb(equalizer.preampDb)}</span>
         </label>
 
-        <button type="button" className="button secondary eq-reset" onClick={resetCurve} disabled={!equalizer.enabled}>
-          Reset curve
-        </button>
-      </div>
+        <span className="eq-fader-divider" aria-hidden="true" />
 
-      <div className="eq-bands" role="group" aria-label="Equalizer bands">
-        {EQ_BAND_FREQUENCIES.map((frequency, index) => {
-          const gain = equalizer.bands[index] ?? 0
-          return (
-            <label className="eq-band" key={frequency}>
-              <span>{formatFrequency(frequency)}</span>
-              <input
-                type="range"
-                min={EQ_GAIN_MIN_DB}
-                max={EQ_GAIN_MAX_DB}
-                step={0.5}
-                value={gain}
-                disabled={!equalizer.enabled}
-                aria-label={`${formatFrequency(frequency)} gain`}
-                onChange={(event) => setBand(index, Number(event.target.value))}
-              />
-              <span className="eq-readout">{formatDb(gain)}</span>
-            </label>
-          )
-        })}
+        <div className="eq-bands" role="group" aria-label="Equalizer bands">
+          {EQ_BAND_FREQUENCIES.map((frequency, index) => {
+            const gain = equalizer.bands[index] ?? 0
+            return (
+              <label className="eq-band" key={frequency}>
+                <span>{formatFrequency(frequency)}</span>
+                <input
+                  className="eq-fader"
+                  type="range"
+                  min={EQ_GAIN_MIN_DB}
+                  max={EQ_GAIN_MAX_DB}
+                  step={0.5}
+                  value={gain}
+                  disabled={!equalizer.enabled}
+                  aria-label={`${formatFrequency(frequency)} gain`}
+                  onChange={(event) => setBand(index, Number(event.target.value))}
+                />
+                <span className="eq-readout">{formatBandDb(gain)}</span>
+              </label>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
@@ -185,4 +193,10 @@ function formatFrequency(frequency: number): string {
 function formatDb(value: number): string {
   const rounded = Math.round(value * 10) / 10
   return `${rounded > 0 ? '+' : ''}${rounded.toFixed(1)} dB`
+}
+
+/** The ten bands sit in narrow columns, so their readouts omit the unit. */
+function formatBandDb(value: number): string {
+  const rounded = Math.round(value * 10) / 10
+  return `${rounded > 0 ? '+' : ''}${rounded.toFixed(1)}`
 }

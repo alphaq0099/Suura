@@ -458,6 +458,25 @@ export function SlidersIcon({ size = 18 }: IconProps) {
   )
 }
 
+/**
+ * Upright faders: the equalizer, not the settings sliders.
+ *
+ * The old trigger reused `SlidersIcon`, so it read as a second way into
+ * Settings and sat next to Queue with no identity of its own. Stems with
+ * knobs at different heights match the panel it opens and cannot be mistaken
+ * for either neighbour.
+ */
+export function EqualizerIcon({ size = 18 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M6 4v16M12 4v16M18 4v16" {...STROKE} opacity=".45" />
+      <rect x="4.4" y="12" width="3.2" height="3.2" rx="1" fill="currentColor" />
+      <rect x="10.4" y="6" width="3.2" height="3.2" rx="1" fill="currentColor" />
+      <rect x="16.4" y="14" width="3.2" height="3.2" rx="1" fill="currentColor" />
+    </svg>
+  )
+}
+
 /** The overflow menu on a row. */
 export function MoreIcon({ size = 16 }: IconProps) {
   return (

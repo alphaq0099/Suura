@@ -2693,6 +2693,14 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       normalizationHint: string
       scanAligned: string
       eqCardHint: string
+      panelBottom: number
+      barTop: number
+      barHeight: number
+      panelWidth: number
+      panelHeight: number
+      bandWidth: number
+      bandHeight: number
+      eqIconDistinct: boolean
     }>(
       window,
       `(async () => {
@@ -2708,7 +2716,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            openButton: false, slidersInSettings: 0, panelOpen: false, bands: 0, preamp: false,
            focusedPanel: false, panelTitle: '', barOrder: '', barEqButton: false,
            panelClosedByEscape: false, focusReturned: false, normalizationHint: '',
-           scanAligned: '', eqCardHint: ''
+           scanAligned: '', eqCardHint: '', panelBottom: 0, barTop: 0, barHeight: 0,
+           panelWidth: 0, panelHeight: 0, bandWidth: 0, bandHeight: 0, eqIconDistinct: false
          }
 
          press(nav('Settings'))
@@ -2743,10 +2752,20 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.bands = eqPanel?.querySelectorAll('.eq-band').length || 0
          out.preamp = Boolean(eqPanel?.querySelector('input[aria-label="Preamp"]'))
          out.focusedPanel = document.activeElement === eqPanel
+         const panelBox = eqPanel?.getBoundingClientRect()
+         const barBox = document.querySelector('.player-bar')?.getBoundingClientRect()
+         out.panelBottom = panelBox?.bottom || 0
+         out.barTop = barBox?.top || 0
+         out.barHeight = barBox?.height || 0
+         out.panelWidth = panelBox?.width || 0
+         out.panelHeight = panelBox?.height || 0
 
          const band = [...(eqPanel?.querySelectorAll('.eq-band input') || [])].find(
            (input) => input.getAttribute('aria-label') === '1 kHz gain'
          )
+         const bandBox = band?.getBoundingClientRect()
+         out.bandWidth = bandBox?.width || 0
+         out.bandHeight = bandBox?.height || 0
          if (band) {
            setValue.call(band, '3')
            band.dispatchEvent(new Event('input', { bubbles: true }))
@@ -2762,6 +2781,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.barOrder = rightButtons.map((button) => button.getAttribute('aria-label')).join('|')
          const eqButton = rightButtons.find((button) => button.getAttribute('aria-label') === 'Equalizer')
          out.barEqButton = Boolean(eqButton)
+         const eqIcon = eqButton?.querySelector('svg')?.innerHTML || ''
+         const settingsIcon = nav('Settings')?.querySelector('svg')?.innerHTML || ''
+         const queueIcon = document.querySelector('.queue-button svg')?.innerHTML || ''
+         out.eqIconDistinct =
+           Boolean(eqIcon) && eqIcon !== settingsIcon && eqIcon !== queueIcon
          press(eqButton)
          await sleep(300)
          out.panelOpen = out.panelOpen && Boolean(document.querySelector('.eq-panel'))
@@ -2785,6 +2809,23 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       audioUi
     )
     record(
+      audioUi.panelBottom <= audioUi.barTop - 1 &&
+        audioUi.barHeight < 120 &&
+        audioUi.panelWidth >= 400 &&
+        audioUi.panelWidth <= 620 &&
+        audioUi.panelHeight <= 420 &&
+        audioUi.bandHeight > audioUi.bandWidth * 2,
+      'equalizer: a compact fader strip stays above the player bar',
+      {
+        panelBottom: audioUi.panelBottom,
+        barTop: audioUi.barTop,
+        barHeight: audioUi.barHeight,
+        width: audioUi.panelWidth,
+        height: audioUi.panelHeight,
+        band: `${audioUi.bandWidth}x${audioUi.bandHeight}`
+      }
+    )
+    record(
       audioUi.panelClosedByEscape && audioUi.focusReturned,
       'equalizer: Escape closes the panel and returns focus to the opener',
       audioUi
@@ -2792,6 +2833,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     record(
       audioUi.barOrder.startsWith('Open the mini player|Equalizer|Open queue') && audioUi.barEqButton,
       'equalizer: the player bar button sits between Mini player and Queue',
+      audioUi
+    )
+    record(
+      audioUi.eqIconDistinct,
+      'equalizer: the trigger has its own icon, not the Settings or Queue one',
       audioUi
     )
     record(
