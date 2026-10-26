@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CacheEntry, CacheStats, DownloadHistoryItem, DownloadStatus } from '@shared/types'
+import type {
+  AppSettings,
+  CacheEntryDetails,
+  CacheStats,
+  DownloadHistoryItem,
+  DownloadStatus,
+  Track
+} from '@shared/types'
 import { formatBytes } from '@shared/format'
 import { api, messageOf } from '../api'
 import type { UseDownloadsResult } from '../hooks/useDownloads'
@@ -11,6 +18,7 @@ import {
   FolderIcon,
   PauseIcon,
   PlayIcon,
+  QueueIcon,
   RefreshIcon,
   SpinnerIcon,
   TrashIcon
@@ -21,7 +29,10 @@ type Tab = 'downloads' | 'cache'
 export interface DownloadsViewProps {
   downloads: UseDownloadsResult
   onRevealTrack: (trackId: number) => void
+  onPlayTracks: (tracks: Track[], index: number) => void
+  onQueueTracks: (tracks: Track[]) => void
   onOpenLibrary: () => void
+  onOpenSettings: () => void
   onError: (message: string) => void
 }
 
@@ -107,7 +118,15 @@ function rowFromHistory(row: DownloadHistoryItem): DownloadRow {
  * look like it deletes library tracks; showing them in one view, with explicit
  * Keep/Remove controls, is what the M12b split was for.
  */
-export function DownloadsView({ downloads, onRevealTrack, onOpenLibrary, onError }: DownloadsViewProps) {
+export function DownloadsView({
+  downloads,
+  onRevealTrack,
+  onPlayTracks,
+  onQueueTracks,
+  onOpenLibrary,
+  onOpenSettings,
+  onError
+}: DownloadsViewProps) {
   const [tab, setTab] = useState<Tab>('downloads')
 
   // `useDownloads` loads history once for the whole app. Loading it again when
@@ -141,10 +160,11 @@ export function DownloadsView({ downloads, onRevealTrack, onOpenLibrary, onError
   }, [downloads.history, downloads.items])
 
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set<string>())
-  const [removing, setRemoving] = useState(false)
+  const [working, setWorking] = useState(false)
 
-  const savedRows = rows.filter((row) => row.status === 'saved')
-  const allSavedSelected = savedRows.length > 0 && savedRows.every((row) => selected.has(row.videoId))
+  const selectableRows = rows.filter((row) => !isActive(row.status))
+  const allSelected =
+    selectableRows.length > 0 && selectableRows.every((row) => selected.has(row.videoId))
 
   const toggleSelected = useCallback((videoId: string): void => {
     setSelected((current) => {
@@ -155,32 +175,111 @@ export function DownloadsView({ downloads, onRevealTrack, onOpenLibrary, onError
     })
   }, [])
 
-  const toggleAllSaved = useCallback((): void => {
+  const toggleAll = useCallback((): void => {
     setSelected((current) => {
-      if (savedRows.every((row) => current.has(row.videoId))) return new Set<string>()
-      return new Set(savedRows.map((row) => row.videoId))
+      if (selectableRows.every((row) => current.has(row.videoId))) return new Set<string>()
+      return new Set(selectableRows.map((row) => row.videoId))
     })
-  }, [savedRows])
+  }, [selectableRows])
 
-  const removeRows = useCallback(
+  /** Resolves only saved rows, in visible order, into library tracks. */
+  const tracksFor = useCallback(
+    async (targets: DownloadRow[]): Promise<Track[]> => {
+      const ids = [
+        ...new Set(
+          targets
+            .filter((row) => row.status === 'saved' && row.trackId !== null)
+            .map((row) => row.trackId as number)
+        )
+      ]
+      if (ids.length === 0) {
+        onError('Those downloads are no longer in the library, so there is nothing to play.')
+        return []
+      }
+      const found = await api.getTracks(ids)
+      const byId = new Map(found.map((track) => [track.id, track]))
+      return targets
+        .map((row) => (row.trackId === null ? null : byId.get(row.trackId) ?? null))
+        .filter((track): track is Track => track !== null)
+    },
+    [onError]
+  )
+
+  const playRows = useCallback(
+    async (targets: DownloadRow[]): Promise<void> => {
+      try {
+        const tracks = await tracksFor(targets)
+        if (tracks.length > 0) onPlayTracks(tracks, 0)
+      } catch (cause) {
+        onError(messageOf(cause))
+      }
+    },
+    [onError, onPlayTracks, tracksFor]
+  )
+
+  const queueRows = useCallback(
+    async (targets: DownloadRow[]): Promise<void> => {
+      try {
+        const tracks = await tracksFor(targets)
+        if (tracks.length > 0) onQueueTracks(tracks)
+      } catch (cause) {
+        onError(messageOf(cause))
+      }
+    },
+    [onError, onQueueTracks, tracksFor]
+  )
+
+  /** Forgets history rows only; a saved file on disk is untouched. */
+  const forgetRows = useCallback(
     async (targets: DownloadRow[]): Promise<void> => {
       if (targets.length === 0) return
-      const names = targets.map((row) => row.title).slice(0, 3).join(', ')
-      const more = targets.length > 3 ? ` and ${targets.length - 3} more` : ''
-      if (!window.confirm(`Delete the saved file${targets.length === 1 ? '' : 's'} for ${names}${more}? The track stays in playlists and will stream from YouTube.`)) {
-        return
-      }
-      setRemoving(true)
+      setWorking(true)
+      let failed = 0
       try {
         for (const row of targets) {
+          try {
+            await downloads.forget(row.videoId)
+          } catch {
+            failed += 1
+          }
+        }
+        const removed = new Set(targets.map((row) => row.videoId))
+        setSelected((current) => new Set([...current].filter((id) => !removed.has(id))))
+        if (failed > 0) {
+          onError(`Could not remove ${failed} ${failed === 1 ? 'row' : 'rows'} from this list.`)
+        }
+      } finally {
+        setWorking(false)
+      }
+    },
+    [downloads, onError]
+  )
+
+  const deleteRows = useCallback(
+    async (targets: DownloadRow[]): Promise<void> => {
+      const saved = targets.filter((row) => row.status === 'saved')
+      if (saved.length === 0) return
+      const names = saved.map((row) => row.title).slice(0, 3).join(', ')
+      const more = saved.length > 3 ? ` and ${saved.length - 3} more` : ''
+      if (
+        !window.confirm(
+          `Delete the saved file${saved.length === 1 ? '' : 's'} for ${names}${more}? ` +
+            'The track stays in playlists and will stream from YouTube.'
+        )
+      ) {
+        return
+      }
+      setWorking(true)
+      try {
+        for (const row of saved) {
           const removed = await downloads.remove(row.videoId)
-          if (!removed) onError(`Could not remove ${row.title}.`)
+          if (!removed) onError(`Could not delete the file for ${row.title}.`)
         }
         setSelected(new Set<string>())
       } catch (cause) {
         onError(messageOf(cause))
       } finally {
-        setRemoving(false)
+        setWorking(false)
       }
     },
     [downloads, onError]
@@ -221,18 +320,21 @@ export function DownloadsView({ downloads, onRevealTrack, onOpenLibrary, onError
         <SavedDownloads
           rows={rows}
           selected={selected}
-          allSavedSelected={allSavedSelected}
-          removing={removing}
+          allSelected={allSelected}
+          working={working}
           onToggle={toggleSelected}
-          onToggleAll={toggleAllSaved}
-          onRemove={removeRows}
+          onToggleAll={toggleAll}
+          onPlay={playRows}
+          onQueue={queueRows}
+          onForget={forgetRows}
+          onDelete={deleteRows}
           onRevealTrack={onRevealTrack}
           onOpenLibrary={onOpenLibrary}
           downloads={downloads}
           onError={onError}
         />
       ) : (
-        <CacheManager onError={onError} />
+        <CacheManager onError={onError} onOpenSettings={onOpenSettings} />
       )}
     </section>
   )
@@ -241,11 +343,14 @@ export function DownloadsView({ downloads, onRevealTrack, onOpenLibrary, onError
 interface SavedDownloadsProps {
   rows: DownloadRow[]
   selected: ReadonlySet<string>
-  allSavedSelected: boolean
-  removing: boolean
+  allSelected: boolean
+  working: boolean
   onToggle: (videoId: string) => void
   onToggleAll: () => void
-  onRemove: (rows: DownloadRow[]) => void
+  onPlay: (rows: DownloadRow[]) => Promise<void>
+  onQueue: (rows: DownloadRow[]) => Promise<void>
+  onForget: (rows: DownloadRow[]) => Promise<void>
+  onDelete: (rows: DownloadRow[]) => Promise<void>
   onRevealTrack: (trackId: number) => void
   onOpenLibrary: () => void
   downloads: UseDownloadsResult
@@ -255,11 +360,14 @@ interface SavedDownloadsProps {
 function SavedDownloads({
   rows,
   selected,
-  allSavedSelected,
-  removing,
+  allSelected,
+  working,
   onToggle,
   onToggleAll,
-  onRemove,
+  onPlay,
+  onQueue,
+  onForget,
+  onDelete,
   onRevealTrack,
   onOpenLibrary,
   downloads,
@@ -278,26 +386,57 @@ function SavedDownloads({
     )
   }
 
-  const selectedSaved = rows.filter((row) => row.status === 'saved' && selected.has(row.videoId))
+  const selectable = rows.filter((row) => !isActive(row.status))
+  const selectedRows = selectable.filter((row) => selected.has(row.videoId))
+  const selectedSaved = selectedRows.filter((row) => row.status === 'saved')
+  const savedCount = rows.filter((row) => row.status === 'saved').length
 
   return (
     <section className="downloads-panel" aria-label="Saved downloads">
       <div className="downloads-toolbar">
         <label className="downloads-check">
-          <input type="checkbox" checked={allSavedSelected} onChange={onToggleAll} />
-          <span>Select saved</span>
+          <input type="checkbox" checked={allSelected} onChange={onToggleAll} />
+          <span>Select all</span>
         </label>
         <span className="downloads-toolbar-note">
-          {rows.length} {rows.length === 1 ? 'download' : 'downloads'} · {rows.filter((row) => row.status === 'saved').length} on disk
+          {rows.length} {rows.length === 1 ? 'download' : 'downloads'} · {savedCount} on disk
         </span>
-        <button
-          type="button"
-          className="button secondary danger-quiet"
-          disabled={selectedSaved.length === 0 || removing}
-          onClick={() => void onRemove(selectedSaved)}
-        >
-          <TrashIcon size={14} /> Remove selected
-        </button>
+        <div className="downloads-toolbar-actions">
+          <button
+            type="button"
+            className="button secondary"
+            disabled={selectedSaved.length === 0 || working}
+            onClick={() => void onPlay(selectedSaved)}
+          >
+            <PlayIcon size={14} /> Play selected
+          </button>
+          <button
+            type="button"
+            className="button secondary"
+            disabled={selectedSaved.length === 0 || working}
+            onClick={() => void onQueue(selectedSaved)}
+          >
+            <QueueIcon size={14} /> Queue selected
+          </button>
+          <button
+            type="button"
+            className="text-button danger-quiet"
+            disabled={selectedRows.length === 0 || working}
+            title="Forget these rows here. Files and library tracks are kept."
+            onClick={() => void onForget(selectedRows)}
+          >
+            Remove from list
+          </button>
+          <button
+            type="button"
+            className="button secondary danger-quiet"
+            disabled={selectedSaved.length === 0 || working}
+            title="Delete the saved files. The tracks stay in playlists and stream from YouTube."
+            onClick={() => void onDelete(selectedSaved)}
+          >
+            <TrashIcon size={14} /> Delete files
+          </button>
+        </div>
       </div>
 
       <ul className="downloads-list">
@@ -306,7 +445,7 @@ function SavedDownloads({
           return (
             <li key={row.videoId} className={`download-item ${row.status}`}>
               <span className="download-select">
-                {row.status === 'saved' ? (
+                {!active ? (
                   <input
                     type="checkbox"
                     checked={selected.has(row.videoId)}
@@ -371,8 +510,41 @@ function SavedDownloads({
                   </button>
                 ) : null}
                 {row.status === 'saved' && row.trackId !== null ? (
-                  <button type="button" className="icon-button subtle" title="Show the file in Explorer" onClick={() => onRevealTrack(row.trackId as number)}>
-                    <FolderIcon size={15} />
+                  <>
+                    <button
+                      type="button"
+                      className="icon-button subtle"
+                      title="Play this saved file"
+                      onClick={() => void onPlay([row])}
+                    >
+                      <PlayIcon size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-button subtle"
+                      title="Add this saved file to the queue"
+                      onClick={() => void onQueue([row])}
+                    >
+                      <QueueIcon size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-button subtle"
+                      title="Show the file in Explorer"
+                      onClick={() => onRevealTrack(row.trackId as number)}
+                    >
+                      <FolderIcon size={15} />
+                    </button>
+                  </>
+                ) : null}
+                {!active ? (
+                  <button
+                    type="button"
+                    className="icon-button subtle"
+                    title="Remove from this list; the saved file and library track stay"
+                    onClick={() => void onForget([row])}
+                  >
+                    <CloseIcon />
                   </button>
                 ) : null}
                 {row.status === 'saved' ? (
@@ -380,7 +552,7 @@ function SavedDownloads({
                     type="button"
                     className="icon-button subtle danger-quiet"
                     title="Delete the saved file and stream from YouTube"
-                    onClick={() => void onRemove([row])}
+                    onClick={() => void onDelete([row])}
                   >
                     <TrashIcon size={15} />
                   </button>
@@ -394,18 +566,31 @@ function SavedDownloads({
   )
 }
 
-function CacheManager({ onError }: { onError: (message: string) => void }) {
+function CacheManager({
+  onError,
+  onOpenSettings
+}: {
+  onError: (message: string) => void
+  onOpenSettings: () => void
+}) {
   const [stats, setStats] = useState<CacheStats | null>(null)
-  const [entries, setEntries] = useState<CacheEntry[]>([])
+  const [entries, setEntries] = useState<CacheEntryDetails[]>([])
+  const [settings, setSettings] = useState<AppSettings | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set<string>())
 
   const refresh = useCallback(async (): Promise<void> => {
     try {
-      const [nextStats, nextEntries] = await Promise.all([api.getCacheStats(), api.listCacheEntries(500)])
+      const [nextStats, nextEntries, nextSettings] = await Promise.all([
+        api.getCacheStats(),
+        api.listCacheEntries(500),
+        api.getSettings()
+      ])
       setStats(nextStats)
       setEntries(nextEntries)
+      setSettings(nextSettings)
     } catch (cause) {
       onError(messageOf(cause))
     } finally {
@@ -465,6 +650,7 @@ function CacheManager({ onError }: { onError: (message: string) => void }) {
           }
         }
         setSelected(new Set<string>())
+        setNotice(null)
         await refresh()
       } catch (cause) {
         onError(messageOf(cause))
@@ -475,9 +661,64 @@ function CacheManager({ onError }: { onError: (message: string) => void }) {
     [onError, refresh]
   )
 
+  /** Applies the visible limits; it never clears the cache wholesale. */
+  const cleanNow = useCallback(async (): Promise<void> => {
+    const before = stats?.bytes ?? 0
+    setBusy(true)
+    try {
+      const next = await api.cleanCacheNow()
+      setStats(next)
+      await refresh()
+      const freed = Math.max(0, before - next.bytes)
+      setNotice(
+        freed > 0
+          ? `Cleaned ${formatBytes(freed)} using the age and size limits below.`
+          : 'Nothing to clean: the cache is already within its limits.'
+      )
+    } catch (cause) {
+      onError(messageOf(cause))
+    } finally {
+      setBusy(false)
+    }
+  }, [onError, refresh, stats?.bytes])
+
+  /** Copies cached bytes into the library; no network request is involved. */
+  const promote = useCallback(
+    async (videoIds: string[]): Promise<void> => {
+      const targets = entries.filter((entry) => videoIds.includes(entry.videoId) && !entry.saved)
+      if (targets.length === 0) return
+      setBusy(true)
+      setNotice(null)
+      try {
+        let saved = 0
+        for (const entry of targets) {
+          await api.promoteCacheEntry(entry.videoId)
+          saved += 1
+        }
+        setSelected(new Set<string>())
+        await refresh()
+        setNotice(
+          `Saved ${saved} ${saved === 1 ? 'track' : 'tracks'} to your library without downloading ${
+            saved === 1 ? 'it' : 'them'
+          } again.`
+        )
+      } catch (cause) {
+        await refresh()
+        onError(messageOf(cause))
+      } finally {
+        setBusy(false)
+      }
+    },
+    [entries, onError, refresh]
+  )
+
   const usedPercent =
     stats && stats.budgetBytes > 0 ? Math.min(100, (stats.bytes / stats.budgetBytes) * 100) : 0
   const allSelected = entries.length > 0 && entries.every((entry) => selected.has(entry.videoId))
+  const selectedEntries = entries.filter((entry) => selected.has(entry.videoId))
+  const selectedUnsaved = selectedEntries.filter((entry) => !entry.saved)
+  const days = settings?.retention.cacheMaxAgeDays ?? null
+  const mode = settings?.retention.mode ?? null
 
   return (
     <section className="downloads-panel cache-panel" aria-label="Offline cache">
@@ -496,13 +737,37 @@ function CacheManager({ onError }: { onError: (message: string) => void }) {
             {stats ? `${stats.entries} ${stats.entries === 1 ? 'track' : 'tracks'}` : 'No cache entries'}
             {stats && stats.pinnedEntries > 0 ? ` · ${stats.pinnedEntries} kept` : ''}
           </p>
+          <p className="cache-policy">
+            {days === null
+              ? 'Unused entries expire under the limits in Cache settings.'
+              : `Unused entries are removed after ${days} ${days === 1 ? 'day' : 'days'} and the cache stays under its size limit.`}
+            {mode === 'cache'
+              ? ' Played tracks are copied here for offline playback.'
+              : ' New played tracks are not cached right now.'}
+          </p>
         </div>
         <div className="cache-summary-actions">
+          <button type="button" className="button secondary" disabled={busy || !stats || stats.entries === 0} onClick={() => void cleanNow()}>
+            Clean now
+          </button>
           <button type="button" className="button secondary" disabled={busy || !stats || stats.entries === 0} onClick={() => void remove([], true)}>
             Clear cache
           </button>
+          <button type="button" className="text-button" onClick={onOpenSettings}>
+            Cache settings
+          </button>
         </div>
       </div>
+
+      {notice ? (
+        <p className="cache-notice" role="status">
+          {notice}
+        </p>
+      ) : null}
+      <p className="cache-retention">
+        Keeping entries for {days ?? '—'} {days === 1 ? 'day' : 'days'} · size limit{' '}
+        {stats ? formatBytes(stats.budgetBytes) : '—'}. Pinned entries are never removed automatically.
+      </p>
 
       <div className="downloads-toolbar">
         <label className="downloads-check">
@@ -518,14 +783,25 @@ function CacheManager({ onError }: { onError: (message: string) => void }) {
         <span className="downloads-toolbar-note">
           {entries.length} cached {entries.length === 1 ? 'track' : 'tracks'}
         </span>
-        <button
-          type="button"
-          className="button secondary danger-quiet"
-          disabled={busy || selected.size === 0}
-          onClick={() => void remove([...selected])}
-        >
-          <TrashIcon size={14} /> Remove selected
-        </button>
+        <div className="downloads-toolbar-actions">
+          <button
+            type="button"
+            className="button secondary"
+            disabled={busy || selectedUnsaved.length === 0}
+            title="Copy these cached bytes into the library without downloading them again"
+            onClick={() => void promote(selectedUnsaved.map((entry) => entry.videoId))}
+          >
+            <DownloadIcon size={14} /> Save selected
+          </button>
+          <button
+            type="button"
+            className="button secondary danger-quiet"
+            disabled={busy || selected.size === 0}
+            onClick={() => void remove([...selected])}
+          >
+            <TrashIcon size={14} /> Remove selected
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -548,21 +824,23 @@ function CacheManager({ onError }: { onError: (message: string) => void }) {
                   type="checkbox"
                   checked={selected.has(entry.videoId)}
                   onChange={() => toggle(entry.videoId)}
-                  aria-label={`Select cached video ${entry.videoId}`}
+                  aria-label={`Select cached track ${entry.title}`}
                 />
               </span>
               <span className="download-art" aria-hidden="true">
-                <DiscIcon size={18} />
+                {entry.saved ? <CheckIcon size={18} /> : <DiscIcon size={18} />}
               </span>
               <span className="download-body">
-                <span className="download-title mono" title={entry.videoId}>
-                  {entry.videoId}
+                <span className="download-title" title={entry.title}>
+                  {entry.title}
                 </span>
                 <span className="download-meta">
-                  {formatBytes(entry.sizeBytes)} · {entry.mimeType}
+                  {entry.artist ?? 'Unknown artist'}
+                  {entry.album ? ` · ${entry.album}` : ''}
                 </span>
                 <span className="download-status">
-                  Last used {new Date(entry.lastUsedAt).toLocaleDateString()}
+                  {formatBytes(entry.sizeBytes)} · Last used {new Date(entry.lastUsedAt).toLocaleDateString()}
+                  {entry.saved ? ' · In your library' : ''}
                   {entry.pinned ? ' · Kept offline' : ''}
                 </span>
               </span>
@@ -576,6 +854,21 @@ function CacheManager({ onError }: { onError: (message: string) => void }) {
                 >
                   {entry.pinned ? 'Kept' : 'Keep'}
                 </button>
+                {entry.saved ? (
+                  <span className="text-button active" title="This track is already in your library">
+                    Saved
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className="text-button"
+                    disabled={busy}
+                    title="Save these cached bytes to your library without downloading again"
+                    onClick={() => void promote([entry.videoId])}
+                  >
+                    Save to library
+                  </button>
+                )}
                 <button
                   type="button"
                   className="icon-button subtle"

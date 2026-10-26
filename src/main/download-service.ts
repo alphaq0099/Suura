@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, unlinkSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, unlinkSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { Logger } from '@core/logging/logger'
@@ -12,6 +12,7 @@ import type { YtDlpClient } from '@engine/sidecar/yt-dlp'
 import { isYouTubeVideoId } from '@shared/youtube'
 import { savePathParts } from '@shared/files'
 import { formatBytes } from '@shared/format'
+import { extensionForAudioMime } from './stream-cache'
 import type { AppPaths, DownloadProgress, SaveToLibraryRequest } from '@shared/types'
 
 export interface DownloadServiceDeps {
@@ -64,6 +65,14 @@ interface QueuedSave {
   controller: AbortController
   /** Created once and reused by a pause/resume, so the `.part` file survives. */
   tempDir: string
+  /**
+   * Bytes already on disk, such as a completed stream cache entry.
+   *
+   * A promotion copies these instead of invoking yt-dlp. The copy still goes
+   * through the ordinary temp -> library -> scan path, so the result is an
+   * ordinary local track rather than a special kind of download.
+   */
+  cached?: { sourcePath: string; mimeType: string }
   resolve: (trackId: number) => void
   reject: (error: Error) => void
 }
@@ -105,12 +114,8 @@ export class DownloadService {
 
   /** Saves one track, or returns the row of a video that is already saved. */
   save(request: SaveToLibraryRequest): Promise<number> {
-    if (!isYouTubeVideoId(request.videoId)) {
-      return Promise.reject(new Error('That link has no usable video id.'))
-    }
-    if (request.title.trim().length === 0) {
-      return Promise.reject(new Error('That track has no title to save it under.'))
-    }
+    const invalid = this.invalidRequest(request)
+    if (invalid) return Promise.reject(invalid)
 
     const pending = this.jobs.get(request.videoId)
     if (pending) return pending
@@ -127,12 +132,58 @@ export class DownloadService {
     return this.start(request, join(this.deps.paths.downloads, randomUUID()))
   }
 
-  private start(request: SaveToLibraryRequest, tempDir: string): Promise<number> {
+  /**
+   * Promotes a completed cache file into the library.
+   *
+   * The bytes are copied locally and then follow the same indexing and origin
+   * path as a download, so there is no second network request and no separate
+   * notion of a "downloaded" track. If a normal save for the same video is
+   * already in flight, that promise is reused instead of racing it.
+   */
+  saveFromCache(
+    request: SaveToLibraryRequest,
+    sourcePath: string,
+    mimeType: string
+  ): Promise<number> {
+    const invalid = this.invalidRequest(request)
+    if (invalid) return Promise.reject(invalid)
+    if (!existsSync(sourcePath)) {
+      return Promise.reject(new Error('That cached file is no longer on disk.'))
+    }
+
+    const pending = this.jobs.get(request.videoId)
+    if (pending) return pending
+    // A paused download has a partial file that must be resumed, not replaced
+    // by a cache copy; Save's ordinary path already knows how to do that.
+    if (this.paused.has(request.videoId)) return this.save(request)
+
+    return this.start(
+      request,
+      join(this.deps.paths.downloads, randomUUID()),
+      { sourcePath, mimeType }
+    )
+  }
+
+  private invalidRequest(request: SaveToLibraryRequest): Error | null {
+    if (!isYouTubeVideoId(request.videoId)) {
+      return new Error('That link has no usable video id.')
+    }
+    if (request.title.trim().length === 0) {
+      return new Error('That track has no title to save it under.')
+    }
+    return null
+  }
+
+  private start(
+    request: SaveToLibraryRequest,
+    tempDir: string,
+    cached?: { sourcePath: string; mimeType: string }
+  ): Promise<number> {
     const videoId = request.videoId
     const controller = new AbortController()
     this.requests.set(videoId, request)
     const promise = new Promise<number>((resolve, reject) => {
-      this.queue.push({ request, controller, tempDir, resolve, reject })
+      this.queue.push({ request, controller, tempDir, cached, resolve, reject })
       this.emit(videoId, 'queued', null)
       this.pump()
     }).finally(() => {
@@ -347,27 +398,42 @@ export class DownloadService {
     let keepTemp = false
 
     try {
-      await this.assertDiskSpace(request.videoId, root)
+      const cachedBytes = job.cached
+        ? statSync(job.cached.sourcePath, { throwIfNoEntry: false })?.size ?? null
+        : undefined
+      await this.assertDiskSpace(request.videoId, root, cachedBytes)
       mkdirSync(tempDir, { recursive: true })
       const format = settings.get().retention.downloadFormat
-      this.emit(request.videoId, 'downloading', 0)
-
-      const downloaded = await this.deps.ytDlp.download(request.videoId, {
-        quality: settings.get().retention.qualityTier,
-        format,
-        outputTemplate: join(tempDir, `${request.videoId}.%(ext)s`),
-        signal,
-        onProgress: (progress) =>
-          this.emit(
-            request.videoId,
-            'downloading',
-            progress.percent,
-            null,
-            null,
-            progress.speedBytesPerSecond,
-            progress.etaSeconds
-          )
-      })
+      let downloaded: string
+      if (job.cached) {
+        // No transfer is involved, so this is a finishing step from the first
+        // event. It is deliberately not `downloading`: Pause has no meaning for
+        // a local copy that is already complete.
+        const extension =
+          extname(job.cached.sourcePath).replace(/^\./, '') ||
+          extensionForAudioMime(job.cached.mimeType)
+        downloaded = join(tempDir, `${request.videoId}.${extension}`)
+        copyFileSync(job.cached.sourcePath, downloaded)
+        if (signal.aborted) throw new Error('Saving was cancelled.')
+      } else {
+        this.emit(request.videoId, 'downloading', 0)
+        downloaded = await this.deps.ytDlp.download(request.videoId, {
+          quality: settings.get().retention.qualityTier,
+          format,
+          outputTemplate: join(tempDir, `${request.videoId}.%(ext)s`),
+          signal,
+          onProgress: (progress) =>
+            this.emit(
+              request.videoId,
+              'downloading',
+              progress.percent,
+              null,
+              null,
+              progress.speedBytesPerSecond,
+              progress.etaSeconds
+            )
+        })
+      }
 
       if (signal.aborted) throw new Error('Saving was cancelled.')
       this.emit(request.videoId, 'finishing', 100)
@@ -452,8 +518,13 @@ export class DownloadService {
    * none the fallback is deliberately generous. A platform that cannot report
    * free space (null) is allowed through rather than blocked.
    */
-  private async assertDiskSpace(videoId: string, targetRoot: string): Promise<void> {
-    const hint = this.deps.fileSizeHint?.(videoId) ?? null
+  private async assertDiskSpace(
+    videoId: string,
+    targetRoot: string,
+    knownBytes?: number | null
+  ): Promise<void> {
+    const hint =
+      knownBytes !== undefined ? knownBytes : this.deps.fileSizeHint?.(videoId) ?? null
     const needed = (hint !== null && hint > 0 ? hint : FALLBACK_TRACK_BYTES) + SPACE_RESERVE_BYTES
     const free = this.deps.freeBytes ?? freeBytesFor
     const [tempFree, targetFree] = await Promise.all([

@@ -502,6 +502,22 @@ export interface CacheEntry {
   lastUsedAt: number
 }
 
+/**
+ * A cache entry with the identity the Downloads screen needs.
+ *
+ * The cache itself stores only bytes and MIME type. Title, artist and album come
+ * from the online row or save history, so the same entry can be understood and
+ * promoted into the library without the renderer having to guess from a video
+ * id. `trackId` is set only while that cached track is also saved to the library.
+ */
+export interface CacheEntryDetails extends CacheEntry {
+  title: string
+  artist: string | null
+  album: string | null
+  trackId: number | null
+  saved: boolean
+}
+
 /** Cache usage against the current settings budget. */
 export interface CacheStats {
   entries: number

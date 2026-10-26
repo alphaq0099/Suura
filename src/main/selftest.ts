@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { copyFile, mkdir, readFile, rm, stat } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -2589,6 +2590,294 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       container.downloadHistory.get('selftestvid') === null &&
         container.downloadHistory.get('selftest002') === null,
       'downloads: dismissing history rows removes them from disk'
+    )
+
+    // Saved rows and cache rows are different kinds of thing, and the screen now
+    // makes their actions different too: Remove from list forgets a row, Delete
+    // files removes the file, Clean now applies the visible cache limits, and a
+    // cached track can be saved without downloading it again. These checks drive
+    // the real screen; the destructive delete uses a disposable copy so the
+    // fixture library the rest of the suite relies on is untouched.
+    const playTrack = container.library.list().tracks.find((track) => track.title === 'Selftest Tone')
+    if (!playTrack || !playTrack.filePath) throw new Error('selftest: the playable fixture is missing')
+    const deleteDir = join(container.paths.userData, 'selftest-download-delete')
+    await mkdir(deleteDir, { recursive: true })
+    const deletePath = join(deleteDir, 'Selftest Delete.flac')
+    await copyFile(playTrack.filePath, deletePath)
+    await container.library.scan(deleteDir)
+    const deleteTrack = container.library
+      .list()
+      .tracks.find(
+        (track) => track.filePath !== null && track.filePath.includes('selftest-download-delete')
+      )
+    if (!deleteTrack) throw new Error('selftest: the disposable download was not indexed')
+    // A saved download is a local row that remembers its video; without this
+    // origin the removal code cannot know which file belongs to the history row.
+    container.repo.setOrigin(deleteTrack.id, 'youtube', 'selftestdl2')
+
+    container.downloadHistory.record(
+      { videoId: 'selftestdl1', status: 'saved', percent: 100, error: null, trackId: playTrack.id },
+      { videoId: 'selftestdl1', title: 'Selftest Saved Song', artist: 'Night', album: 'Offline' }
+    )
+    container.downloadHistory.record(
+      { videoId: 'selftestdl2', status: 'saved', percent: 100, error: null, trackId: deleteTrack.id },
+      { videoId: 'selftestdl2', title: 'Selftest Delete Me', artist: 'Night', album: 'Offline' }
+    )
+    broadcast(IPC_EVENTS.downloadChanged, {
+      videoId: 'selftestdl2',
+      status: 'saved',
+      percent: 100,
+      error: null,
+      trackId: deleteTrack.id,
+      speedBytesPerSecond: null,
+      etaSeconds: null
+    })
+
+    const savedActions = await evaluate<{
+      savedRow: boolean
+      meta: string
+      status: string
+      playEnabled: boolean
+      queueEnabled: boolean
+      removeEnabled: boolean
+      deleteEnabled: boolean
+      playedTitle: string
+      queueText: string
+      forgotten: boolean
+      deleteControl: boolean
+      deleteStillListed: boolean
+      deleteStatus: string
+    }>(
+      window,
+      `(async () => {
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const press = (element) => { if (element) element.click() }
+         const text = (element) => ((element && element.textContent) || '').trim()
+         const nav = (label) =>
+           [...document.querySelectorAll('.nav-item')].find((el) => text(el).startsWith(label))
+         const rowBy = (label) =>
+           [...document.querySelectorAll('.download-item')].find((row) => text(row).includes(label))
+         const toolbarButton = (label) =>
+           [...document.querySelectorAll('.downloads-toolbar button')].find((button) =>
+             text(button).includes(label)
+           )
+         const out = {
+           savedRow: false, meta: '', status: '', playEnabled: false, queueEnabled: false,
+           removeEnabled: false, deleteEnabled: false, playedTitle: '', queueText: '',
+           forgotten: false, deleteControl: false, deleteStillListed: false, deleteStatus: ''
+         }
+         nav('Home')?.click()
+         await sleep(200)
+         nav('Downloads')?.click()
+         await sleep(700)
+
+         const row = rowBy('Selftest Saved Song')
+         out.savedRow = Boolean(row)
+         out.meta = text(row?.querySelector('.download-meta'))
+         out.status = text(row?.querySelector('.download-status'))
+         const box = row?.querySelector('.download-select input')
+         press(box)
+         await sleep(250)
+         out.playEnabled = !(toolbarButton('Play selected')?.disabled ?? true)
+         out.queueEnabled = !(toolbarButton('Queue selected')?.disabled ?? true)
+         out.removeEnabled = !(toolbarButton('Remove from list')?.disabled ?? true)
+         out.deleteEnabled = !(toolbarButton('Delete files')?.disabled ?? true)
+
+         press(toolbarButton('Play selected'))
+         await sleep(900)
+         out.playedTitle = text(document.querySelector('.player-title'))
+         press(toolbarButton('Queue selected'))
+         await sleep(600)
+         out.queueText = text(document.querySelector('.player-subtitle'))
+
+         press(toolbarButton('Remove from list'))
+         await sleep(700)
+         out.forgotten = !rowBy('Selftest Saved Song')
+
+         window.confirm = () => true
+         const deleteRow = rowBy('Selftest Delete Me')
+         const trash = deleteRow
+           ? [...deleteRow.querySelectorAll('.download-actions button')].find(
+               (button) => button.getAttribute('title') === 'Delete the saved file and stream from YouTube'
+             )
+           : null
+         out.deleteControl = Boolean(trash)
+         press(trash)
+         await sleep(1200)
+         const after = rowBy('Selftest Delete Me')
+         out.deleteStillListed = Boolean(after)
+         out.deleteStatus = text(after?.querySelector('.download-status'))
+         return out
+       })()`
+    )
+    record(
+      savedActions.savedRow &&
+        savedActions.meta.includes('Night') &&
+        savedActions.status === 'Saved to your library',
+      'downloads: a saved row shows its title, artist and saved state',
+      savedActions
+    )
+    record(
+      savedActions.playEnabled &&
+        savedActions.queueEnabled &&
+        savedActions.removeEnabled &&
+        savedActions.deleteEnabled,
+      'downloads: selecting a saved row enables play, queue, forget and delete',
+      savedActions
+    )
+    record(
+      savedActions.playedTitle === 'Selftest Tone' && savedActions.queueText.includes('(1/2)'),
+      'downloads: Play selected loads the row and Queue selected appends it',
+      savedActions
+    )
+    record(
+      savedActions.forgotten && existsSync(playTrack.filePath),
+      'downloads: Remove from list forgets the history row but keeps the file',
+      savedActions
+    )
+    record(
+      savedActions.deleteControl &&
+        savedActions.deleteStillListed &&
+        savedActions.deleteStatus.includes('File removed') &&
+        !existsSync(deletePath),
+      'downloads: Delete file removes the saved file after confirmation',
+      savedActions
+    )
+    record(
+      container.downloadHistory.get('selftestdl1') === null &&
+        container.downloadHistory.get('selftestdl2')?.status === 'removed' &&
+        container.repo.getById(deleteTrack.id)?.sourceKind === 'youtube',
+      'downloads: a deleted file leaves a streamable row behind'
+    )
+    container.library.removeFolder(deleteDir)
+    await rm(deleteDir, { recursive: true, force: true }).catch(() => undefined)
+    container.downloadHistory.remove('selftestdl1')
+    container.downloadHistory.remove('selftestdl2')
+
+    // The cache tab lists cached bytes with the identity the user saw, not a
+    // video id. Clean now must follow the same age and size limits as the
+    // janitor, and Save to library must be offered without a re-download.
+    const cacheDir = join(container.paths.cache, 'stream')
+    await mkdir(cacheDir, { recursive: true })
+    const freshCachePath = join(cacheDir, 'selftestaa1.flac')
+    const staleCachePath = join(cacheDir, 'selftestbb2.flac')
+    await copyFile(playTrack.filePath, freshCachePath)
+    await copyFile(playTrack.filePath, staleCachePath)
+    const cacheNow = Date.now()
+    const cacheInsert = container.database.db.prepare(
+      `INSERT OR REPLACE INTO cache_entries
+         (video_id, path, size_bytes, complete, pinned, mime_type, created_at, last_used_at)
+       VALUES (?, ?, ?, 1, 0, 'audio/flac', ?, ?)`
+    )
+    cacheInsert.run(
+      'selftestaa1',
+      freshCachePath,
+      (await stat(freshCachePath)).size,
+      cacheNow,
+      cacheNow
+    )
+    cacheInsert.run(
+      'selftestbb2',
+      staleCachePath,
+      (await stat(staleCachePath)).size,
+      cacheNow - 45 * 24 * 60 * 60_000,
+      cacheNow - 45 * 24 * 60 * 60_000
+    )
+
+    const cacheUi = await evaluate<{
+      rowsBefore: number
+      meta: string
+      policy: string
+      retention: string
+      cleanButton: boolean
+      saveControl: boolean
+      bulkSaveEnabled: boolean
+      rowsAfter: number
+      freshSurvived: boolean
+      staleGone: boolean
+      notice: string
+    }>(
+      window,
+      `(async () => {
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const press = (element) => { if (element) element.click() }
+         const text = (element) => ((element && element.textContent) || '').trim()
+         const nav = (label) =>
+           [...document.querySelectorAll('.nav-item')].find((el) => text(el).startsWith(label))
+         const rows = () => [...document.querySelectorAll('.cache-panel .download-item')]
+         const rowBy = (label) => rows().find((row) => text(row).includes(label))
+         const summaryButton = (label) =>
+           [...document.querySelectorAll('.cache-summary-actions button')].find((button) =>
+             text(button).includes(label)
+           )
+         const out = {
+           rowsBefore: 0, meta: '', policy: '', retention: '', cleanButton: false,
+           saveControl: false, bulkSaveEnabled: false, rowsAfter: 0,
+           freshSurvived: false, staleGone: false, notice: ''
+         }
+         nav('Home')?.click()
+         await sleep(200)
+         nav('Downloads')?.click()
+         await sleep(600)
+         const cacheTab = [...document.querySelectorAll('.downloads-tab')].find((el) =>
+           text(el).includes('Offline cache')
+         )
+         press(cacheTab)
+         await sleep(1000)
+
+         out.rowsBefore = rows().length
+         const fresh = rowBy('Online Tone One')
+         out.meta = text(fresh?.querySelector('.download-meta'))
+         out.policy = text(document.querySelector('.cache-policy'))
+         out.retention = text(document.querySelector('.cache-retention'))
+         out.cleanButton = Boolean(summaryButton('Clean now'))
+         out.saveControl = Boolean(
+           fresh && [...fresh.querySelectorAll('button')].some((button) => text(button) === 'Save to library')
+         )
+         press(fresh?.querySelector('.download-select input'))
+         await sleep(250)
+         const bulk = [...document.querySelectorAll('.cache-panel .downloads-toolbar button')].find(
+           (button) => text(button).includes('Save selected')
+         )
+         out.bulkSaveEnabled = Boolean(bulk && !bulk.disabled)
+
+         press(summaryButton('Clean now'))
+         await sleep(1400)
+         out.rowsAfter = rows().length
+         out.freshSurvived = Boolean(rowBy('Online Tone One'))
+         out.staleGone = !rowBy('Online Tone Two')
+         out.notice = text(document.querySelector('.cache-notice'))
+         return out
+       })()`
+    )
+    record(
+      cacheUi.rowsBefore === 2 && cacheUi.meta.includes('Selftest Streamer'),
+      'cache: cached rows show the title and artist from YouTube history',
+      cacheUi
+    )
+    record(
+      cacheUi.policy.includes('30 days') && cacheUi.retention.includes('size limit'),
+      'cache: the screen explains the age and size policy it enforces',
+      cacheUi
+    )
+    record(
+      cacheUi.cleanButton && cacheUi.saveControl && cacheUi.bulkSaveEnabled,
+      'cache: Clean now and Save to library are offered for cached tracks',
+      cacheUi
+    )
+    record(
+      cacheUi.rowsAfter === 1 &&
+        cacheUi.freshSurvived &&
+        cacheUi.staleGone &&
+        cacheUi.notice.includes('Cleaned'),
+      'cache: Clean now removes only entries past the visible limits',
+      cacheUi
+    )
+    container.streamCache.remove('selftestaa1')
+    container.streamCache.remove('selftestbb2')
+    record(
+      container.streamCache.get('selftestaa1') === null && !existsSync(freshCachePath),
+      'cache: removing a seeded test entry cleans up its file'
     )
 
     // ---- 12. artwork preferences, bar ambience, volume -----------------

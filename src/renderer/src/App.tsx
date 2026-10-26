@@ -1038,7 +1038,10 @@ export function App() {
         <DownloadsView
           downloads={downloads}
           onRevealTrack={(trackId) => void revealTrack(trackId)}
+          onPlayTracks={playLocalTracks}
+          onQueueTracks={queueLocalTracks}
           onOpenLibrary={() => setView('library')}
+          onOpenSettings={() => setView('settings')}
           onError={setActionError}
         />
       ) : view === 'queue' ? (

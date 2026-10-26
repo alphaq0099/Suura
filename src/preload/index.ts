@@ -59,6 +59,8 @@ const api: PlayerApi = {
 
   listTracks: (query?: ListTracksQuery) => ipcRenderer.invoke(IPC.libraryListTracks, query),
 
+  getTracks: (trackIds: number[]) => ipcRenderer.invoke(IPC.libraryTracksByIds, trackIds),
+
   listAlbums: (query?: ListAlbumsQuery) => ipcRenderer.invoke(IPC.libraryListAlbums, query),
 
   listArtists: (limit?: number) => ipcRenderer.invoke(IPC.libraryListArtists, limit),
@@ -183,6 +185,11 @@ const api: PlayerApi = {
   listCacheEntries: (limit?: number) => ipcRenderer.invoke(IPC.cacheList, limit),
 
   clearCache: () => ipcRenderer.invoke(IPC.cacheClear),
+
+  cleanCacheNow: () => ipcRenderer.invoke(IPC.cacheClean),
+
+  promoteCacheEntry: (videoId: string) =>
+    ipcRenderer.invoke(IPC.cachePromote, videoId) as Promise<number>,
 
   setCachePinned: (videoId: string, pinned: boolean) =>
     ipcRenderer.invoke(IPC.cachePin, videoId, pinned),

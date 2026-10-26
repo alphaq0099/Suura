@@ -10,7 +10,7 @@ import type {
   AppPaths,
   AppSettings,
   ArtistSummary,
-  CacheEntry,
+  CacheEntryDetails,
   CacheStats,
   DeepPartial,
   DownloadHistoryItem,
@@ -68,6 +68,7 @@ export const IPC = {
   libraryScanCancel: 'library:scan-cancel',
   libraryAddPaths: 'library:add-paths',
   libraryListTracks: 'library:list-tracks',
+  libraryTracksByIds: 'library:tracks-by-ids',
   libraryListAlbums: 'library:list-albums',
   libraryListArtists: 'library:list-artists',
   libraryStats: 'library:stats',
@@ -121,6 +122,8 @@ export const IPC = {
   cacheStats: 'cache:stats',
   cacheList: 'cache:list',
   cacheClear: 'cache:clear',
+  cacheClean: 'cache:clean',
+  cachePromote: 'cache:promote',
   cachePin: 'cache:pin',
   cacheReveal: 'cache:reveal',
   cacheRemove: 'cache:remove',
@@ -248,6 +251,13 @@ export interface PlayerApi {
    */
   getPathForFile(file: File): string
   listTracks(query?: ListTracksQuery): Promise<TrackPage>
+  /**
+   * Looks up specific rows in one request.
+   *
+   * Downloads keeps only video ids and track ids, and restoring a selection of
+   * twenty rows should not become twenty separate IPC round trips.
+   */
+  getTracks(trackIds: number[]): Promise<Track[]>
   /** Album summaries grouped by album title and album artist. */
   listAlbums(query?: ListAlbumsQuery): Promise<AlbumPage>
   /** Artists for the Home shelf, most recently played first. */
@@ -436,9 +446,23 @@ export interface PlayerApi {
   /** Cache usage against the current budget. */
   getCacheStats(): Promise<CacheStats>
   /** Completed cache entries, most recently used first. */
-  listCacheEntries(limit?: number): Promise<CacheEntry[]>
+  listCacheEntries(limit?: number): Promise<CacheEntryDetails[]>
   /** Deletes every cache file that is not currently open by the player. */
   clearCache(): Promise<CacheStats>
+  /**
+   * Applies the age and size policy now and reports the resulting usage.
+   *
+   * This is the same bounded prune the janitor runs, not a clear. It exists so
+   * the user can reclaim space and see exactly what the policy removed.
+   */
+  cleanCacheNow(): Promise<CacheStats>
+  /**
+   * Copies one cached track into the library without downloading it again.
+   *
+   * Resolves to the new track id. The renderer never supplies a file path;
+   * main validates the entry, copies its bytes and indexes the result.
+   */
+  promoteCacheEntry(videoId: string): Promise<number>
   /** Pins or unpins an entry; pinned entries are never evicted automatically. */
   setCachePinned(videoId: string, pinned: boolean): Promise<CacheStats>
   /** Shows a cached file in Explorer. The renderer never learns its path. */

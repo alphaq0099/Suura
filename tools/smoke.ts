@@ -7,7 +7,7 @@
  * test could never give you: that the core is correct on real files.
  */
 import { execFile } from 'node:child_process'
-import { copyFileSync, existsSync, readdirSync } from 'node:fs'
+import { copyFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { copyFile, mkdir, mkdtemp, readFile, rename, rm, unlink, utimes, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -1489,6 +1489,65 @@ async function main(): Promise<void> {
     )
     resumable.dispose()
 
+    // --- promoting a cache file into the library --------------------------
+    // The whole point of promotion is that the bytes already exist: saving it
+    // must not call the sidecar again, yet the result has to be an ordinary
+    // local track with its YouTube origin, so it plays and syncs like any save.
+    let promotedDownloads = 0
+    const promotable = new DownloadService({
+      settings,
+      paths,
+      repo,
+      library,
+      history: downloadHistory,
+      musicDir,
+      log: silentLogger,
+      ytDlp: {
+        download: async () => {
+          promotedDownloads += 1
+          throw new Error('Promotion must not call the sidecar.')
+        }
+      },
+      freeBytes: async () => 50 * 1024 ** 3,
+      onChange: () => undefined
+    })
+    const promotedId = await promotable.saveFromCache(
+      {
+        videoId: 'fJ9rUzIMcZQ',
+        title: 'Promoted from cache',
+        artist: 'Test Artist',
+        album: 'Test Album'
+      },
+      resumeSource,
+      'audio/flac'
+    )
+    const promoted = repo.getById(promotedId)
+    checkEqual('download: promotion makes no sidecar call', promotedDownloads, 0)
+    checkEqual('download: a promoted copy is a local track', promoted?.sourceKind, 'local')
+    checkEqual('download: a promoted copy remembers its video', promoted?.originId, 'fJ9rUzIMcZQ')
+    checkEqual('download: a promoted copy names YouTube as its origin', promoted?.originKind, 'youtube')
+    checkEqual('download: a promoted copy is recorded as saved', downloadHistory.get('fJ9rUzIMcZQ')?.status, 'saved')
+    check('download: the promoted file is on disk', promoted?.filePath != null && existsSync(promoted.filePath))
+    checkEqual(
+      'download: the promoted copy keeps the cached bytes',
+      promoted?.fileSize ?? null,
+      statSync(resumeSource).size
+    )
+    promotedDownloads = 0
+    let missingSourceRejected = false
+    try {
+      await promotable.saveFromCache(
+        { videoId: 'kJQP7kiw5Fk', title: 'Gone', artist: null, album: null },
+        join(root, 'gone.flac'),
+        'audio/flac'
+      )
+    } catch {
+      missingSourceRejected = true
+    }
+    check('download: promoting a vanished cache file is refused', missingSourceRejected)
+    checkEqual('download: a refused promotion makes no sidecar call', promotedDownloads, 0)
+    promotable.dispose()
+
     downloadHistory.record(
       { videoId: '9bZkp7q19f0', status: 'downloading', percent: 41, error: null, trackId: null },
       { videoId: '9bZkp7q19f0', title: 'Interrupted', artist: 'Night', album: null }
@@ -1844,8 +1903,21 @@ async function main(): Promise<void> {
       checkEqual('cache: a restart keeps its bytes', restarted.stats().bytes, bytesBeforeRestart)
       restarted.dispose()
 
+      // "Clean now" is the janitor's bounded policy, not a second clear: an
+      // unpinned entry past the age limit goes, a pinned one stays, and a fresh
+      // entry is untouched. This is what the Downloads button promises.
+      await cache.warm('M7lc1UVf-VE', source('/ok'))
+      cache.setPinned('M7lc1UVf-VE', true)
+      now.value += 31 * 24 * 60 * 60_000
+      await cache.warm('3JZ_D3ELwOQ', source('/ok'))
+      const cleaned = cache.cleanNow()
+      check('cache: clean now removes an unpinned entry past the age limit', cache.get('dQw4w9WgXcQ') === null)
+      check('cache: clean now keeps a pinned entry past the age limit', cache.get('M7lc1UVf-VE') !== null)
+      check('cache: clean now keeps an entry inside the limit', cache.get('3JZ_D3ELwOQ') !== null)
+      checkEqual('cache: clean now reports the surviving bytes', cleaned.bytes, payload.length * 2)
+
       // `clear` removes everything, pinned included.
-      cache.setPinned('dQw4w9WgXcQ', true)
+      cache.setPinned('M7lc1UVf-VE', true)
       cache.clear()
       checkEqual('cache: clearing removes every entry', cache.stats().entries, 0)
       checkEqual('cache: clearing removes the files', readdirSync(cacheRoot).length, 0)

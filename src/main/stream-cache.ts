@@ -259,6 +259,19 @@ export class StreamCache {
   }
 
   /**
+   * Applies the visible age and size policy right now.
+   *
+   * "Clean now" must mean the same thing the hourly janitor does, not a second
+   * implementation with different rules. It is therefore bounded by the user's
+   * settings and leaves pinned entries alone; a full wipe is still `clear`.
+   */
+  cleanNow(): CacheStats {
+    this.reconcile()
+    this.prune()
+    return this.stats()
+  }
+
+  /**
    * Removes every entry and in-flight copy.
    *
    * A file currently open by the player cannot be unlinked on Windows. In that

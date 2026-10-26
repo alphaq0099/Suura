@@ -50,6 +50,13 @@ export interface UseDownloadsResult {
   retry: (videoId: string) => void
   /** Takes a finished or failed row out of the panel. */
   dismiss: (videoId: string) => void
+  /**
+   * Removes a history row without touching a saved file.
+   *
+   * Unlike `dismiss`, this works for a finished row that has no live panel state,
+   * which is how "Remove from list" differs from "Delete file".
+   */
+  forget: (videoId: string) => Promise<void>
   /** Asks which of these videos are already in the library. */
   refreshSaved: (videoIds: string[]) => Promise<void>
   /** Persisted save history, newest first. */
@@ -362,6 +369,20 @@ export function useDownloads(): UseDownloadsResult {
     [states]
   )
 
+  const forget = useCallback(
+    async (videoId: string): Promise<void> => {
+      await api.dismissDownload(videoId)
+      setStates((current) => {
+        if (!(videoId in current)) return current
+        const next = { ...current }
+        delete next[videoId]
+        return next
+      })
+      await refreshHistory()
+    },
+    [refreshHistory]
+  )
+
   const refreshSaved = useCallback(async (videoIds: string[]): Promise<void> => {
     if (videoIds.length === 0) return
     try {
@@ -399,6 +420,7 @@ export function useDownloads(): UseDownloadsResult {
     remove,
     retry,
     dismiss,
+    forget,
     refreshSaved,
     history,
     refreshHistory

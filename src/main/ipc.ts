@@ -24,6 +24,8 @@ import type {
   ArtworkShape,
   ArtworkSize,
   BackupSettings,
+  CacheEntry,
+  CacheEntryDetails,
   DeepPartial,
   Density,
   DesktopSettings,
@@ -157,6 +159,29 @@ function toVideoIdList(value: unknown): string[] {
   if (!Array.isArray(value) || value.length > 1000) throw new Error('Expected a list of video ids.')
   const ids = value.filter((entry): entry is string => typeof entry === 'string' && isYouTubeVideoId(entry))
   return [...new Set(ids)]
+}
+
+/**
+ * Joins a cache row with the identity shown in Downloads.
+ *
+ * The cache deliberately knows only bytes. The online history has the title the
+ * user saw, and the save history may have the URL and metadata even after the
+ * file is gone. Falling back in that order keeps a cached mix from appearing as
+ * a bare video id, and lets the same entry be promoted without a second fetch.
+ */
+function cacheEntryDetails(container: AppContainer, entry: CacheEntry): CacheEntryDetails {
+  const track = container.repo.findByOriginIncludingMissing('youtube', entry.videoId)
+  const history = container.downloadHistory.get(entry.videoId)
+  const online = container.onlineRepo.getByVideoId(entry.videoId)
+  const saved = Boolean(track && track.missingAt === null && track.filePath)
+  return {
+    ...entry,
+    title: online?.title ?? history?.title ?? track?.title ?? entry.videoId,
+    artist: online?.artist ?? history?.artist ?? track?.artist ?? null,
+    album: online?.album ?? history?.album ?? track?.album ?? null,
+    trackId: saved && track ? track.id : null,
+    saved
+  }
 }
 
 /**
@@ -792,6 +817,13 @@ export function registerIpcHandlers(container: AppContainer): void {
 
   ipcMain.handle(IPC.libraryListTracks, (_event, query: unknown) => library.list(sanitizeListQuery(query)))
 
+  ipcMain.handle(IPC.libraryTracksByIds, (_event, input: unknown) => {
+    if (!Array.isArray(input) || input.length > 500) {
+      throw new Error('Expected a list of track ids.')
+    }
+    return container.repo.byIds(input.map(toTrackId))
+  })
+
   ipcMain.handle(IPC.libraryListAlbums, (_event, query: unknown) =>
     library.listAlbums(sanitizeAlbumListQuery(query))
   )
@@ -975,12 +1007,42 @@ export function registerIpcHandlers(container: AppContainer): void {
   })
 
   ipcMain.handle(IPC.cacheStats, () => container.streamCache.stats())
-  ipcMain.handle(IPC.cacheList, (_event, limit: unknown) =>
-    container.streamCache.list(
+  ipcMain.handle(IPC.cacheList, (_event, limit: unknown) => {
+    const rows = container.streamCache.list(
       typeof limit === 'number' && Number.isFinite(limit) ? Math.round(limit) : 200
     )
-  )
+    return rows.map((entry) => cacheEntryDetails(container, entry))
+  })
   ipcMain.handle(IPC.cacheClear, () => container.streamCache.clear())
+  ipcMain.handle(IPC.cacheClean, () => container.streamCache.cleanNow())
+  ipcMain.handle(IPC.cachePromote, async (_event, videoId: unknown) => {
+    if (typeof videoId !== 'string' || !isYouTubeVideoId(videoId)) {
+      throw new Error('Invalid video id.')
+    }
+    // Saving a track that is already in the library is a no-op rather than a
+    // duplicate file: the cache and the saved file are the same recording.
+    const existing = container.repo.findByOrigin('youtube', videoId)
+    if (existing) return existing.id
+
+    const entry = container.streamCache.get(videoId)
+    const path = entry?.complete ? container.streamCache.filePath(videoId) : null
+    if (!entry || !path) throw new Error('That cache entry is no longer on disk.')
+    const details = cacheEntryDetails(container, entry)
+    const trackId = await container.downloads.saveFromCache(
+      {
+        videoId,
+        title: details.title,
+        artist: details.artist,
+        album: details.album
+      },
+      path,
+      entry.mimeType
+    )
+    // The bytes now live in the library. Dropping the cache copy keeps the
+    // promotion from quietly doubling the space the same recording occupies.
+    container.streamCache.remove(videoId)
+    return trackId
+  })
   ipcMain.handle(IPC.cachePin, (_event, videoId: unknown, pinned: unknown) => {
     if (typeof videoId !== 'string' || !isYouTubeVideoId(videoId)) {
       throw new Error('Invalid video id.')
