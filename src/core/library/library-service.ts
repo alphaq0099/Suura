@@ -12,6 +12,7 @@ import type {
   TrackPage
 } from '@shared/types'
 import { isAudioFile } from '@shared/mime'
+import { countsAsPlay } from '@shared/play-count'
 import { isPathInside, normalizePath } from './content-key'
 import { scanLibraryFolders } from './scanner'
 import type { TrackRepository } from './track-repository'
@@ -27,9 +28,6 @@ export interface LibraryServiceEvents {
    */
   onPlayHistoryChanged?: () => void
 }
-
-/** A track counts as played once it is finished or has been listened to this long. */
-const PLAY_THRESHOLD_MS = 30_000
 
 /**
  * Owns everything about the local library: folders, scanning, querying.
@@ -279,7 +277,7 @@ export class LibraryService {
 
   /** Called by the player when a track has been played enough to count. */
   reportPlayback(trackId: number, playedMs: number, completed: boolean): void {
-    if (!completed && playedMs < PLAY_THRESHOLD_MS) return
+    if (!countsAsPlay(playedMs, completed)) return
     this.repo.incrementPlayCount(trackId, Date.now())
     this.events.onPlayHistoryChanged?.()
   }

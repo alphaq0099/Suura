@@ -242,6 +242,10 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       cardFocus: boolean
       cardLift: number
       cardRest: number
+      playHoverX: number
+      playHoverY: number
+      livePlayShelf: boolean
+      livePlayAlbum: boolean
     }>(
       window,
       `(async () => {
@@ -272,7 +276,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            shelfHints: 0, moreLabels: '', moreFocusedGrid: false, sortOptions: '',
            playedSortActive: false, statBlur: '', statTint: '', slideCount: 0,
            slideLayers: 0, activeSlides: 0, slideState: '', reducedStops: false,
-           fullState: '', cardFocus: false, cardLift: 0, cardRest: 0
+           fullState: '', cardFocus: false, cardLift: 0, cardRest: 0,
+           playHoverX: 0, playHoverY: 0,
+           livePlayShelf: false, livePlayAlbum: false
          }
 
          nav('Home')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -398,14 +404,103 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          await sleep(280)
          out.cardFocus = document.activeElement === liftMain
          out.cardLift = translateY(liftCard)
+
          liftMain?.blur()
          await sleep(280)
          out.cardRest = translateY(liftCard)
 
-         nav('Library')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-         await waitFor('.track-row')
-         out.onLibrary = Boolean(document.querySelector('.track-row'))
+         // A counted listen must refresh Recently played while Home is still
+         // mounted. Real playback sends this report as soon as a track crosses
+         // the threshold; the check here proves the shelf reacts without a
+         // navigation or a manual reload.
+         const hadRecentShelf = [...document.querySelectorAll('.home-section-head h2')].some(
+           (el) => (el.textContent || '').trim() === 'Recently played'
+         )
+         const tracksPage = await window.player.listTracks({ limit: 20 })
+         const tone = tracksPage.tracks.find((track) => track.title === 'Selftest Tone')
+         if (tone) await window.player.reportPlayback(tone.id, 31_000, false)
+         deadline = Date.now() + 5000
+         let recentShelf = null
+         while (Date.now() < deadline) {
+           recentShelf = [...document.querySelectorAll('.home-section')].find(
+             (section) =>
+               (section.querySelector('.home-section-head h2')?.textContent || '').trim() ===
+               'Recently played'
+           )
+           if (recentShelf) break
+           await sleep(100)
+         }
+         out.livePlayShelf = !hadRecentShelf && Boolean(recentShelf)
+         out.livePlayAlbum =
+           (recentShelf?.querySelector('.album-card-title')?.textContent || '').trim() ===
+           'Selftest Album'
+
+         // A real hover is the state the feedback is about. The pointer has to
+         // be moved from the main process, so capture where the badge is now;
+         // the shelf above may have just grown, which is why this comes last.
+         const cardPlay = document.querySelector('.album-grid .album-card .album-card-play')
+         if (cardPlay) {
+           cardPlay.scrollIntoView({ block: 'center' })
+           await sleep(180)
+           cardPlay.style.transition = 'none'
+           const box = cardPlay.getBoundingClientRect()
+           out.playHoverX = box.left + box.width / 2
+           out.playHoverY = box.top + box.height / 2
+         }
          return out
+       })()`
+    )
+    // Hover is independent of window focus, unlike :focus, so this is stable
+    // even when the test window sits behind the terminal.
+    let playHover = {
+      hovered: false,
+      background: '',
+      text: '',
+      accent: '',
+      contrast: ''
+    }
+    if (home.playHoverX > 0 && home.playHoverY > 0) {
+      window.webContents.sendInputEvent({
+        type: 'mouseMove',
+        x: Math.round(home.playHoverX),
+        y: Math.round(home.playHoverY)
+      })
+      await delay(220)
+      playHover = await evaluate<typeof playHover>(
+        window,
+        `(() => {
+           const badge = document.querySelector('.album-grid .album-card .album-card-play')
+           const probe = document.createElement('span')
+           probe.style.background = 'var(--accent-strong)'
+           document.body.append(probe)
+           const accent = getComputedStyle(probe).backgroundColor
+           probe.style.background = 'var(--accent-contrast)'
+           const contrast = getComputedStyle(probe).backgroundColor
+           probe.remove()
+           return {
+             hovered: Boolean(badge?.matches(':hover')),
+             background: badge ? getComputedStyle(badge).backgroundColor : '',
+             text: badge ? getComputedStyle(badge).color : '',
+             accent,
+             contrast
+           }
+         })()`
+      )
+      window.webContents.sendInputEvent({ type: 'mouseMove', x: 2, y: 2 })
+      await delay(60)
+    }
+    home.onLibrary = await evaluate<boolean>(
+      window,
+      `(async () => {
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const nav = (label) =>
+           [...document.querySelectorAll('.nav-item')].find((el) =>
+             (el.textContent || '').trim().startsWith(label)
+           )
+         nav('Library')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         const deadline = Date.now() + 6000
+         while (Date.now() < deadline && !document.querySelector('.track-row')) await sleep(100)
+         return Boolean(document.querySelector('.track-row'))
        })()`
     )
     record(
@@ -498,6 +593,19 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       home.cardFocus && Math.abs(home.cardLift + 4) < 0.5 && Math.abs(home.cardRest) < 0.5,
       'home: album cards lift on keyboard focus instead of gaining a shadow',
       { focused: home.cardFocus, lift: home.cardLift, rest: home.cardRest }
+    )
+    record(
+      playHover.hovered &&
+        playHover.background === playHover.accent &&
+        playHover.text === playHover.contrast &&
+        Boolean(playHover.accent),
+      'home: the card play badge keeps its accent on hover',
+      playHover
+    )
+    record(
+      home.livePlayShelf && home.livePlayAlbum,
+      'home: a counted listen refreshes Recently played while the view stays open',
+      { shelf: home.livePlayShelf, album: home.livePlayAlbum }
     )
     record(home.onLibrary, 'the Home dashboard can hand off to the full library')
 

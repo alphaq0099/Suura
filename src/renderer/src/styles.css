@@ -1169,6 +1169,16 @@ input[type='radio'] {
   transform: none;
 }
 
+/* The global button hover would replace the accent with the neutral hover
+   fill, which made the play badge look disabled just as the pointer reached
+   it. Keep the badge accent and only strengthen it. */
+.album-card-play:hover:not(:disabled),
+.album-card-play:focus:not(:disabled) {
+  background: var(--accent-strong);
+  border-color: transparent;
+  color: var(--accent-contrast);
+}
+
 .album-card-play:disabled {
   opacity: 0.75;
 }

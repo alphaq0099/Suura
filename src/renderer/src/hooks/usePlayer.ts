@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AudioSettings, RepeatMode } from '@shared/types'
 import { nextDecision, shuffleFrom, shuffled, type QueueTrack } from '@shared/queue'
 import { recoveryDelayMs, shouldRecoverPlayback } from '@shared/playback-recovery'
+import { PlaySession, countsAsPlay } from '@shared/play-count'
 import { api, messageOf } from '../api'
 import { PlaybackDeck } from '../audio/playback-deck'
 
@@ -175,6 +176,8 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
   const loadTokenRef = useRef(0)
   const currentTrackRef = useRef<QueueTrack | null>(null)
   const onReportRef = useRef(onReport)
+  /** Guards against counting one listen from both the live threshold and the end report. */
+  const playSessionRef = useRef(new PlaySession())
   const onVolumeChangeRef = useRef(onVolumeChange)
   const initialVolumeRef = useRef(initialVolume)
 
@@ -227,6 +230,15 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
   useEffect(() => {
     onReportRef.current = onReport
   }, [onReport])
+
+  /** Sends one report per listen, even though a listen is reported more than once. */
+  const reportListen = useCallback(
+    (trackId: number, playedMs: number, completed: boolean): void => {
+      if (!playSessionRef.current.shouldReport(trackId, playedMs, completed)) return
+      onReportRef.current(trackId, playedMs, completed)
+    },
+    []
+  )
 
   useEffect(() => {
     onVolumeChangeRef.current = onVolumeChange
@@ -432,6 +444,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     // audio, defeat the whole point, and report the previous track twice.
     if (handoffRef.current === current.id) {
       handoffRef.current = null
+      playSessionRef.current.begin()
       currentTrackRef.current = current
       return
     }
@@ -450,7 +463,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
 
     const previous = currentTrackRef.current
     if (previous && previous.id !== current.id) {
-      onReportRef.current(previous.id, Math.round(element.currentTime * 1000), false)
+      reportListen(previous.id, Math.round(element.currentTime * 1000), false)
       // Cut the outgoing track off now. A stream resolve takes seconds, and the
       // old source stays attached until it answers: without this the previous
       // song keeps playing over the spinner, so Next looks like it did nothing.
@@ -461,6 +474,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
       lastFailureRef.current = null
       lastPositionRef.current = 0
     }
+    playSessionRef.current.begin()
     currentTrackRef.current = current
 
     setError(null)
@@ -528,7 +542,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
         if (token === loadTokenRef.current && !reconnectingRef.current) setIsLoading(false)
       }
     })()
-  }, [current, playRequestId, audio, deck, resetRecovery, setBufferingState, setReconnectState])
+  }, [current, playRequestId, audio, deck, resetRecovery, reportListen, setBufferingState, setReconnectState])
 
   // Element events -> React state. Both elements are watched because the idle
   // one becomes active mid-event (on a handoff); anything it emits while idle is
@@ -551,6 +565,19 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
       const at = element.currentTime * 1000
       lastPositionRef.current = at
       setPositionMs(at)
+      // Count the listen as soon as it crosses the threshold instead of waiting
+      // for the track to end: Recently played is a live shelf, and a listener
+      // who is still on the first track should already see it there.
+      const track = currentTrackRef.current
+      if (
+        track &&
+        !element.paused &&
+        wantsPlayRef.current &&
+        countsAsPlay(at, false) &&
+        playSessionRef.current.shouldReport(track.id, Math.round(at), false)
+      ) {
+        onReportRef.current(track.id, Math.round(at), false)
+      }
       clearStallTimer()
       // `timeupdate` is the "data is flowing" signal, but a queued event can
       // still arrive after an error. Never let that cancel a pending retry.
@@ -684,6 +711,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
         const element = audio()
         wantsPlayRef.current = true
         resetRecovery()
+        playSessionRef.current.begin()
         element.currentTime = 0
         deck().active.chain.resume()
         void element.play().catch(() => setIsLoading(false))
@@ -715,8 +743,9 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
           // partial listen has to be reported here instead.
           const previous = currentTrackRef.current
           if (!completed && previous && previous.id !== upcoming.id) {
-            onReportRef.current(previous.id, outgoingPlayed, false)
+            reportListen(previous.id, outgoingPlayed, false)
           }
+          playSessionRef.current.begin()
           preloadedRef.current = null
           if (decision.position !== indexRef.current) handoffRef.current = upcoming.id
           currentTrackRef.current = upcoming
@@ -762,6 +791,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
           const element = audio()
           wantsPlayRef.current = true
           resetRecovery()
+          playSessionRef.current.begin()
           element.currentTime = 0
           deck().active.chain.resume()
           void element.play().catch(() => setIsLoading(false))
@@ -775,7 +805,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
       resetRecovery()
       setIsPlaying(false)
     },
-    [audio, deck, resetRecovery]
+    [audio, deck, reportListen, resetRecovery]
   )
 
   // Auto-advance at the end of a track.
@@ -787,7 +817,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
       const finished = currentTrackRef.current
       if (finished) {
         const played = Number.isFinite(element.duration) ? Math.round(element.duration * 1000) : 0
-        onReportRef.current(finished.id, played, true)
+        reportListen(finished.id, played, true)
       }
       advance(true)
     }
@@ -796,7 +826,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     return () => {
       for (const element of elements) element.removeEventListener('ended', handleEnded)
     }
-  }, [deck, advance])
+  }, [deck, advance, reportListen])
 
   // Prepare the next stream while this one plays.
   //

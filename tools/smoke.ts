@@ -36,6 +36,7 @@ import {
 } from '@shared/audio'
 import { DEFAULT_PREFERENCE_PATCH } from '@shared/settings-defaults'
 import { isLocalLibraryFilter, recentlyAddedCutoff, streamFallbackFor } from '@shared/library'
+import { PLAY_COUNT_THRESHOLD_MS, PlaySession, countsAsPlay } from '@shared/play-count'
 import { serializeDetails, silentLogger } from '@core/logging/logger'
 import {
   DIAGNOSTICS_SUMMARY_LIMIT,
@@ -497,6 +498,24 @@ async function main(): Promise<void> {
     }
 
     // --- play reporting ---------------------------------------------------
+    check(
+      'a listen below the threshold is not a play',
+      !countsAsPlay(PLAY_COUNT_THRESHOLD_MS - 1, false)
+    )
+    check('a listen at the threshold is a play', countsAsPlay(PLAY_COUNT_THRESHOLD_MS, false))
+    check('a completed listen is always a play', countsAsPlay(0, true))
+
+    const session = new PlaySession()
+    check('a fresh listen may be reported', session.shouldReport(1, 1_000, false))
+    check('crossing the threshold is reported live', session.shouldReport(1, 31_000, false))
+    check(
+      'the end report does not count the same listen twice',
+      !session.shouldReport(1, 31_500, true)
+    )
+    session.begin()
+    check('replaying the track starts a new countable listen', session.shouldReport(1, 31_000, false))
+    check('a different track gets its own listen', session.shouldReport(2, 0, true))
+
     if (toneA) {
       library.reportPlayback(toneA.id, 1000, false)
       checkEqual('a skipped listen is not counted as played', repo.getById(toneA.id)?.playCount ?? -1, 0)
