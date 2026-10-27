@@ -395,8 +395,10 @@ leaves no temp folder; pause/resume, cancel, retry and remove work from the dock
       immediately; YouTube stays behind **Search YouTube** (button or Enter) and is never guessed. A device row plays a
       file at once. A YouTube row goes through the same add-link path as a pasted URL, so it is remembered in the
       YouTube history and uses the same resolve cache. Results are cards in Home's visual language, capped at eight
-      per local shelf with **Show all**, and a YouTube answer is one **Best match** plus five alternatives with no
-      pager. Choosing a result still returns metadata only, so nothing is resolved or written until it is chosen. The
+      per local shelf with **Show all**, and a YouTube answer is one **Best match** plus four alternatives with a small
+      **+5 more** control that loads one extra page; ten rows is the ceiling, because past the top ten a text match is
+      a guess rather than a near miss. Choosing a result still returns metadata only, so nothing is resolved or written
+      until it is chosen. The
       view stays mounted for the session, so leaving Search and returning keeps the query, results and open channel; a
       restart clears them.
 - [x] Search may warm the best YouTube match once, and only when the query found nothing on the device or in the
@@ -439,7 +441,8 @@ leaves no temp folder; pause/resume, cancel, retry and remove work from the dock
       local chips do not count them), but the user no longer has to leave the Library to see them.
 **Exit:** a user can go from "no music" to "a 40-track playlist playing" without touching a folder.
 *Status: complete. Search splits local, imported and YouTube answers into three shelves, fills the first two while
-typing, searches YouTube only on request, and warms one best match when the local shelves are empty. Channels open in
+typing, searches YouTube only on request as one best match and four alternatives with one +5 page, and warms one best
+match when the local shelves are empty. Channels open in
 place, smart chips cover recent, played and unplayed views, and the YouTube chip folds stream-only history into the
 Library. Imported lists plus the link history cover the "start from nothing" path. The channel page is a flat
 recent-videos list on purpose — no subscriptions, no channel import, no "download all".*

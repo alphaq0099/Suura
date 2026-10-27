@@ -95,7 +95,7 @@ The feedback is not one visual-polish pass. It contains:
 - An artist with tracks but no albums opens their track list, not an empty album grid.
 - Every shelf has prev/next arrows that disable at its ends.
 - Typing fills **On this device** and **Imported** without a network call; the button or Enter is the only way to ask YouTube.
-- Each local shelf shows at most eight cards with **Show all**, and a YouTube answer is one **Best match** plus five alternatives.
+- Each local shelf shows at most eight cards with **Show all**, and a YouTube answer is one **Best match** plus four alternatives, with one **+5 more** page and a ceiling of ten.
 - Editing the query returns the YouTube shelf to its call to action instead of leaving stale rows under a new query.
 - Search warms the best YouTube match only when both local shelves are empty, once per attempt, and stops when the user plays a card or edits the query.
 - A saved download is still listed in Downloads after a relaunch.
@@ -151,7 +151,7 @@ The Home hero and shelves now point at what the user actually just did:
 Search is now three shelves rather than one mixed list:
 
 - Typing filters **On this device** and **Imported** from the database as it settles; the network is only touched by the button or Enter, whose label is always **Search YouTube** when there is a query.
-- A local shelf shows eight cards, then **Show all**; the YouTube answer is always one **Best match** and five alternatives, so the page shape does not jump between queries.
+- A local shelf shows eight cards, then **Show all**; the YouTube answer is one **Best match** and four alternatives, with one **+5 more** control that fills a second row and stops at ten, so the page shape stays stable and past ten only guesses remain.
 - Imported means remembered, not downloaded: YouTube history entries and imported playlist entries, deduped by video id, with a local copy hiding its remembered twin.
 - Prefetching is a single guarded guess: the best match only, 1.8 s after an answer that found nothing locally, one in flight, a 45 s cooldown, paused by a bot check and cancelled by playing a card or editing the query.
 
