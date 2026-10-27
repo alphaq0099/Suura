@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Children, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import type {
   AddTracksOutcome,
@@ -23,6 +23,8 @@ import { ArtworkImage } from './ArtworkImage'
 import {
   ArrowLeftIcon,
   ArtistIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
   CloseIcon,
   DiscIcon,
   FolderIcon,
@@ -455,6 +457,58 @@ function Shelf({
   scrollRef?: RefObject<HTMLDivElement | null>
   children: ReactNode
 }) {
+  const nodeRef = useRef<HTMLDivElement | null>(null)
+  const [atStart, setAtStart] = useState(true)
+  const [atEnd, setAtEnd] = useState(true)
+  const cardCount = Children.count(children)
+
+  // The caller may already own the node (it scrolls the shelf back to a newly
+  // prepended card), so the same element is written to both refs.
+  const attach = useCallback(
+    (node: HTMLDivElement | null) => {
+      nodeRef.current = node
+      if (scrollRef) scrollRef.current = node
+    },
+    [scrollRef]
+  )
+
+  const measure = useCallback(() => {
+    const node = nodeRef.current
+    if (!node) return
+    const max = node.scrollWidth - node.clientWidth
+    // The shelf is padded 2px and every card snaps to start, so a shelf that
+    // looks untouched can report a couple of pixels of scroll. Treat that as
+    // the edge, or the back arrow is offered at the beginning of the row and
+    // does nothing visible.
+    const edge = 8
+    setAtStart(node.scrollLeft <= edge)
+    // A shelf that fits its pane has no direction to offer; both arrows stay
+    // disabled instead of one of them promising a scroll that cannot happen.
+    setAtEnd(max <= edge || node.scrollLeft >= max - edge)
+  }, [])
+
+  useEffect(() => {
+    const node = nodeRef.current
+    measure()
+    if (!node) return
+    node.addEventListener('scroll', measure, { passive: true })
+    const observer = new ResizeObserver(measure)
+    observer.observe(node)
+    return () => {
+      node.removeEventListener('scroll', measure)
+      observer.disconnect()
+    }
+  }, [measure, cardCount])
+
+  const step = (direction: -1 | 1): void => {
+    const node = nodeRef.current
+    if (!node) return
+    node.scrollBy({
+      left: direction * Math.max(180, node.clientWidth * 0.8),
+      behavior: allowsMotion() ? 'smooth' : 'auto'
+    })
+  }
+
   return (
     <section className="home-section">
       <div className="home-section-head">
@@ -462,9 +516,31 @@ function Shelf({
           {icon}
           {title}
         </h2>
-        {action}
+        <div className="home-section-tools">
+          <button
+            type="button"
+            className="shelf-arrow"
+            onClick={() => step(-1)}
+            disabled={atStart}
+            aria-label={`Scroll ${title} back`}
+            title={`Scroll ${title} back`}
+          >
+            <ChevronLeftIcon size={15} />
+          </button>
+          <button
+            type="button"
+            className="shelf-arrow"
+            onClick={() => step(1)}
+            disabled={atEnd}
+            aria-label={`Scroll ${title} forward`}
+            title={`Scroll ${title} forward`}
+          >
+            <ChevronRightIcon size={15} />
+          </button>
+          {action}
+        </div>
       </div>
-      <div className="home-shelf" ref={scrollRef}>
+      <div className="home-shelf" ref={attach}>
         {children}
       </div>
     </section>
@@ -517,6 +593,8 @@ export function HomeView(props: HomeViewProps) {
   const [busyArtist, setBusyArtist] = useState<string | null>(null)
 
   const [openAlbum, setOpenAlbum] = useState<AlbumSummary | null>(null)
+  /** An artist opened from the shelf. Albums use the same detail shell. */
+  const [openArtist, setOpenArtist] = useState<ArtistSummary | null>(null)
   const [albumTracks, setAlbumTracks] = useState<Track[]>([])
   const [albumLoading, setAlbumLoading] = useState(false)
   const [albumError, setAlbumError] = useState<string | null>(null)
@@ -623,16 +701,52 @@ export function HomeView(props: HomeViewProps) {
   const hasLibrary = (stats?.tracks ?? 0) > 0
   const combinedError = error ?? shelvesError ?? albums.error
 
+  /**
+   * The hero's one action follows the last listen, not a fixed album.
+   *
+   * "Play <latest album>" duplicated the first card of a shelf and never moved
+   * when the user played something else. Resuming the newest entry on Recently
+   * played is the thing a music home can offer that the cards below cannot: it
+   * is the same control as the cards, but named after what the user just heard.
+   * With nothing played yet there is no action, because the albums are one
+   * glance away and the header already links the library.
+   */
+  const heroResume = playedShelf[0] ?? null
+  const heroResumeLabel = heroResume
+    ? heroResume.kind === 'album'
+      ? heroResume.album.album
+      : heroResume.track.title
+    : null
+
   const openAlbumDetail = useCallback((album: AlbumSummary): void => {
     gridScrollRef.current = scrollRef.current?.scrollTop ?? 0
     setAlbumSelection(new Set())
     setAlbumMenu(null)
     setAlbumDetails(null)
+    setOpenArtist(null)
     setOpenAlbum(album)
+  }, [])
+
+  /**
+   * Opens an artist's tracks in the same shell an album uses.
+   *
+   * The Artists shelf is built from track credits, so an artist can have tracks
+   * while owning no album card (a single, a compilation credit). Filtering the
+   * album grid for that artist produced an empty page; the honest view is the
+   * tracks themselves.
+   */
+  const openArtistDetail = useCallback((artist: ArtistSummary): void => {
+    gridScrollRef.current = scrollRef.current?.scrollTop ?? 0
+    setAlbumSelection(new Set())
+    setAlbumMenu(null)
+    setAlbumDetails(null)
+    setOpenAlbum(null)
+    setOpenArtist(artist)
   }, [])
 
   const closeAlbumDetail = useCallback((): void => {
     setOpenAlbum(null)
+    setOpenArtist(null)
     setAlbumTracks([])
     setAlbumError(null)
     setAlbumMenu(null)
@@ -644,23 +758,34 @@ export function HomeView(props: HomeViewProps) {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 })
-  }, [openAlbum])
+  }, [openAlbum, openArtist])
 
   useEffect(() => {
-    if (!openAlbum) return
+    if (!openAlbum && !openArtist) return
     let cancelled = false
     setAlbumLoading(true)
     setAlbumError(null)
     setAlbumTracks([])
     setAlbumSelection(new Set())
     void api
-      .listTracks({
-        album: openAlbum.album,
-        albumArtist: openAlbum.albumArtist,
-        limit: 5000,
-        sort: 'album',
-        direction: 'asc'
-      })
+      .listTracks(
+        openAlbum
+          ? {
+              album: openAlbum.album,
+              albumArtist: openAlbum.albumArtist,
+              limit: 5000,
+              sort: 'album',
+              direction: 'asc'
+            }
+          : {
+              artist: openArtist!.artist,
+              limit: 5000,
+              // Album order groups an artist's singles and album tracks
+              // instead of scattering them by title.
+              sort: 'album',
+              direction: 'asc'
+            }
+      )
       .then((page) => {
         if (!cancelled) setAlbumTracks(page.tracks)
       })
@@ -673,7 +798,7 @@ export function HomeView(props: HomeViewProps) {
     return () => {
       cancelled = true
     }
-  }, [openAlbum])
+  }, [openAlbum, openArtist])
 
   const playAlbum = useCallback(
     async (album: AlbumSummary): Promise<void> => {
@@ -716,12 +841,27 @@ export function HomeView(props: HomeViewProps) {
     [onPlayLocal]
   )
 
+  /** Plays whatever the hero names: the newest played album or track. */
+  const resumeHero = useCallback((): void => {
+    const entry = heroResume
+    if (!entry) return
+    if (entry.kind === 'album') void playAlbum(entry.album)
+    else onPlayTrack(entry.track)
+  }, [heroResume, playAlbum, onPlayTrack])
+
   const filterByArtist = useCallback((artist: ArtistSummary): void => {
+    // An artist can own tracks without owning an album card: a single, or a
+    // credit on someone else's album. Filtering the grid for them would show an
+    // empty page, so those artists open their tracks instead.
+    if (artist.albumCount === 0) {
+      openArtistDetail(artist)
+      return
+    }
     albums.setArtist(artist.artist)
     requestAnimationFrame(() => {
       gridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     })
-  }, [albums])
+  }, [albums, openArtistDetail])
 
   /**
    * A shelf's **More** turns the album grid below into the full version of that
@@ -770,14 +910,32 @@ export function HomeView(props: HomeViewProps) {
     })
   }, [])
 
-  if (openAlbum) {
-    const detailMeta = [
-      openAlbum.year ? String(openAlbum.year) : null,
-      `${formatCount(openAlbum.trackCount)} ${openAlbum.trackCount === 1 ? 'track' : 'tracks'}`,
-      formatDuration(openAlbum.durationMs)
-    ]
-      .filter(Boolean)
-      .join(' · ')
+  if (openAlbum || openArtist) {
+    const isArtistView = openArtist !== null
+    const detailTitle = openArtist ? openArtist.artist : openAlbum!.album
+    const detailSubtitle = openArtist
+      ? null
+      : openAlbum!.albumArtist || 'Unknown artist'
+    const detailMeta = openArtist
+      ? [
+          `${formatCount(openArtist.trackCount)} ${openArtist.trackCount === 1 ? 'track' : 'tracks'}`,
+          // Zero albums is the reason this view exists; saying it adds nothing.
+          openArtist.albumCount > 0
+            ? `${formatCount(openArtist.albumCount)} ${openArtist.albumCount === 1 ? 'album' : 'albums'}`
+            : null
+        ]
+          .filter(Boolean)
+          .join(' · ')
+      : [
+          openAlbum!.year ? String(openAlbum!.year) : null,
+          `${formatCount(openAlbum!.trackCount)} ${openAlbum!.trackCount === 1 ? 'track' : 'tracks'}`,
+          formatDuration(openAlbum!.durationMs)
+        ]
+          .filter(Boolean)
+          .join(' · ')
+    const detailArtworkKey = openArtist ? openArtist.artworkKey : openAlbum!.artworkKey
+    const detailArtworkTrackId = openArtist ? openArtist.trackId : openAlbum!.trackId
+    const detailListKey = openArtist ? `artist:${openArtist.artist}` : albumKeyOf(openAlbum!)
 
     return (
       <section className="main-view home-view" ref={scrollRef}>
@@ -792,15 +950,17 @@ export function HomeView(props: HomeViewProps) {
               <ArtworkImage
                 track={albumTracks[0] ?? null}
                 size="100%"
-                artworkKey={openAlbum.artworkKey ?? undefined}
-                request={openAlbum.artworkKey ? null : LOCAL_REQUEST(openAlbum.trackId)}
+                artworkKey={detailArtworkKey ?? undefined}
+                request={detailArtworkKey ? null : LOCAL_REQUEST(detailArtworkTrackId)}
                 className="album-detail-cover"
               />
             </span>
             <div className="album-detail-copy">
-              <span className="home-kicker">Album</span>
-              <h2>{openAlbum.album}</h2>
-              <p className="album-detail-artist">{openAlbum.albumArtist || 'Unknown artist'}</p>
+              <span className="home-kicker">{isArtistView ? 'Artist' : 'Album'}</span>
+              <h2>{detailTitle}</h2>
+              {detailSubtitle ? (
+                <p className="album-detail-artist">{detailSubtitle}</p>
+              ) : null}
               <p className="album-detail-meta">{detailMeta}</p>
               <div className="album-detail-actions">
                 <button
@@ -862,7 +1022,7 @@ export function HomeView(props: HomeViewProps) {
             {albumLoading ? (
               <div className="album-detail-loading">
                 <SpinnerIcon size={18} />
-                <span>Loading album…</span>
+                <span>{isArtistView ? 'Loading tracks…' : 'Loading album…'}</span>
               </div>
             ) : albumTracks.length > 0 ? (
               <TrackList
@@ -885,15 +1045,21 @@ export function HomeView(props: HomeViewProps) {
                 doubleClick={doubleClick}
                 sortable={false}
                 rowHeight={rowHeight}
-                listKey={albumKeyOf(openAlbum)}
-                showAlbumColumn={false}
+                listKey={detailListKey}
+                // An artist's tracks can span albums, so the album column is
+                // the one column that tells them apart.
+                showAlbumColumn={isArtistView}
                 onRowContextMenu={(track, _index, at) => setAlbumMenu({ track, at })}
               />
             ) : (
               <div className="empty-state album-detail-empty">
                 <DiscIcon size={28} />
-                <h2>No tracks in this album</h2>
-                <p>The files may have moved or been removed since the album was indexed.</p>
+                <h2>{isArtistView ? 'No tracks by this artist' : 'No tracks in this album'}</h2>
+                <p>
+                  {isArtistView
+                    ? 'The files may have moved or been removed since the artist was indexed.'
+                    : 'The files may have moved or been removed since the album was indexed.'}
+                </p>
               </div>
             )}
           </div>
@@ -996,23 +1162,26 @@ export function HomeView(props: HomeViewProps) {
                 <FolderIcon />
                 <span>Add music folder</span>
               </button>
-            ) : heroAlbum ? (
+            ) : heroResume && heroResumeLabel ? (
+              // Resume names what the user heard last. It only appears once
+              // something has been played, so it can never be a stale guess.
               <button
                 type="button"
                 className="primary"
-                onClick={() => void playAlbum(heroAlbum)}
-                disabled={busyAlbum === albumKeyOf(heroAlbum)}
-                title={`Play ${heroAlbum.album}`}
+                onClick={resumeHero}
+                disabled={
+                  heroResume.kind === 'album' && busyAlbum === albumKeyOf(heroResume.album)
+                }
+                title={`Resume ${heroResumeLabel}`}
               >
-                {busyAlbum === albumKeyOf(heroAlbum) ? <SpinnerIcon /> : <PlayIcon size={16} />}
-                <span className="home-hero-action-label">Play {heroAlbum.album}</span>
+                {heroResume.kind === 'album' && busyAlbum === albumKeyOf(heroResume.album) ? (
+                  <SpinnerIcon />
+                ) : (
+                  <PlayIcon size={16} />
+                )}
+                <span className="home-hero-action-label">Resume {heroResumeLabel}</span>
               </button>
-            ) : (
-              <button type="button" className="primary" onClick={onOpenLibrary}>
-                <LibraryIcon />
-                <span>Open library</span>
-              </button>
-            )}
+            ) : null}
             {scanning ? (
               <button type="button" className="link-button" onClick={onCancelScan}>
                 Cancel scan

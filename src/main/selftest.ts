@@ -224,6 +224,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       onLibrary: boolean
       heroAction: string
       heroActionCount: number
+      heroResumeAfter: string
       heroHasLastScan: boolean
       heroScanNote: boolean
       shelfHints: number
@@ -242,8 +243,6 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       cardFocus: boolean
       cardLift: number
       cardRest: number
-      playHoverX: number
-      playHoverY: number
       livePlayShelf: boolean
       livePlayAlbum: boolean
     }>(
@@ -272,12 +271,12 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            shelfAlbums: 0, artistCards: 0, gridCards: 0, detailTitle: '', detailRows: 0,
            detailHasTone: false, backWorks: false, searchEmpty: false, searchCleared: false,
            artistFiltered: false, artistChip: '', artistCleared: false, onLibrary: false,
-           heroAction: '', heroActionCount: 0, heroHasLastScan: false, heroScanNote: false,
+           heroAction: '', heroActionCount: 0, heroResumeAfter: '', heroHasLastScan: false,
+           heroScanNote: false,
            shelfHints: 0, moreLabels: '', moreFocusedGrid: false, sortOptions: '',
            playedSortActive: false, statBlur: '', statTint: '', slideCount: 0,
            slideLayers: 0, activeSlides: 0, slideState: '', reducedStops: false,
            fullState: '', cardFocus: false, cardLift: 0, cardRest: 0,
-           playHoverX: 0, playHoverY: 0,
            livePlayShelf: false, livePlayAlbum: false
          }
 
@@ -434,18 +433,20 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.livePlayAlbum =
            (recentShelf?.querySelector('.album-card-title')?.textContent || '').trim() ===
            'Selftest Album'
+         // The hero action follows that same shelf: it names the newest listen
+         // as a resume instead of replaying a fixed album.
+         out.heroResumeAfter = (
+           document.querySelector('.home-hero-actions .primary')?.textContent || ''
+         ).trim()
 
-         // A real hover is the state the feedback is about. The pointer has to
-         // be moved from the main process, so capture where the badge is now;
-         // the shelf above may have just grown, which is why this comes last.
+         // A real hover is the state the feedback is about. Bring the badge into
+         // view here; its exact box is taken just before the pointer moves, once
+         // any shelf above it has finished appearing.
          const cardPlay = document.querySelector('.album-grid .album-card .album-card-play')
          if (cardPlay) {
            cardPlay.scrollIntoView({ block: 'center' })
            await sleep(180)
            cardPlay.style.transition = 'none'
-           const box = cardPlay.getBoundingClientRect()
-           out.playHoverX = box.left + box.width / 2
-           out.playHoverY = box.top + box.height / 2
          }
          return out
        })()`
@@ -459,11 +460,24 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       accent: '',
       contrast: ''
     }
-    if (home.playHoverX > 0 && home.playHoverY > 0) {
+    // The box captured above can go stale: Home keeps loading shelves in the
+    // background, and a section appearing above the grid moves the badge. Take
+    // the position again once the page has settled, immediately before moving
+    // the pointer, so the check is about the CSS and not about a race.
+    const hoverTarget = await evaluate<{ x: number; y: number }>(
+      window,
+      `(() => {
+         const badge = document.querySelector('.album-grid .album-card .album-card-play')
+         if (!badge) return { x: 0, y: 0 }
+         const box = badge.getBoundingClientRect()
+         return { x: box.left + box.width / 2, y: box.top + box.height / 2 }
+       })()`
+    )
+    if (hoverTarget.x > 0 && hoverTarget.y > 0) {
       window.webContents.sendInputEvent({
         type: 'mouseMove',
-        x: Math.round(home.playHoverX),
-        y: Math.round(home.playHoverY)
+        x: Math.round(hoverTarget.x),
+        y: Math.round(hoverTarget.y)
       })
       await delay(220)
       playHover = await evaluate<typeof playHover>(
@@ -634,11 +648,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       }
     )
     record(
-      home.heroActionCount === 1 &&
-        (home.heroAction.startsWith('Play ') || home.heroAction === 'Open library') &&
-        !home.heroHasLastScan &&
-        !home.heroScanNote,
-      'home: the hero has one contextual action and no scan date',
+      home.heroActionCount === 0 && !home.heroHasLastScan && !home.heroScanNote,
+      'home: the hero offers no action until something has been played',
       { action: home.heroAction, count: home.heroActionCount, lastScan: home.heroHasLastScan }
     )
     record(
@@ -678,6 +689,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       home.livePlayShelf && home.livePlayAlbum,
       'home: a counted listen refreshes Recently played while the view stays open',
       { shelf: home.livePlayShelf, album: home.livePlayAlbum }
+    )
+    record(
+      home.heroResumeAfter === 'Resume Selftest Album',
+      'home: the hero action becomes a resume of the newest played album',
+      home.heroResumeAfter || 'no action'
     )
     record(home.onLibrary, 'the Home dashboard can hand off to the full library')
 
@@ -5686,6 +5702,32 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       ],
       shelfSeed
     )
+    // Enough imported lists that the Playlists shelf has to scroll at the
+    // selftest window width, so the arrows have a direction to offer.
+    const shelfExtras = Array.from({ length: 7 }, (_, index) => {
+      const n = index + 1
+      return container.onlinePlaylists.upsert(
+        {
+          listId: `OLAK5uy_shelfextra${n}`,
+          kind: 'playlist',
+          title: `Shelf Extra ${n}`,
+          owner: 'Shelf Streamer',
+          sourceUrl: `https://www.youtube.com/playlist?list=OLAK5uy_shelfextra${n}`,
+          coverKey: null,
+          totalCount: 1
+        },
+        [
+          {
+            videoId: `shelfextra0${n}`,
+            title: `Shelf Extra Track ${n}`,
+            artist: 'Shelf Streamer',
+            album: null,
+            durationMs: 60_000
+          }
+        ],
+        shelfSeed + n
+      )
+    })
     const shelfHistory = container.onlineRepo.upsert(
       {
         videoId: 'shelftest03',
@@ -5740,6 +5782,20 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       addedTitle: string
       addedMeta: string
       addedInPlayed: boolean
+      arrowCount: number
+      arrowStartScroll: number
+      shelfWidth: number
+      shelfContent: number
+      arrowStartsDisabled: boolean
+      arrowForwardEnabled: boolean
+      shelfScrolled: number
+      arrowBackEnabled: boolean
+      shelfNodeStable: boolean
+      artistKicker: string
+      artistTitle: string
+      artistRows: number
+      artistHasSingle: boolean
+      artistAlbumColumn: string
       onPlaylists: boolean
       paneTitle: string
       paneRows: number
@@ -5761,17 +5817,28 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            [...(shelf(title)?.querySelectorAll('.track-card') || [])].find(
              (card) => text(card.querySelector('.album-card-title')).trim() === name
            )
+         const onlineCard = (name) =>
+           [...document.querySelectorAll('.home-shelf .online-playlist-card')].find(
+             (card) => text(card.querySelector('.album-card-title')).trim() === name
+           )
          const out = {
            playlistTitle: '', playlistMeta: '', streamTitle: '', streamMeta: '',
            addedTitle: '', addedMeta: '', addedInPlayed: false,
+           arrowCount: 0, arrowStartScroll: 0, shelfWidth: 0, shelfContent: 0,
+           arrowStartsDisabled: false, arrowForwardEnabled: false,
+           shelfScrolled: 0, arrowBackEnabled: false, shelfNodeStable: false,
+           artistKicker: '', artistTitle: '', artistRows: 0, artistHasSingle: false,
+           artistAlbumColumn: '',
            onPlaylists: false, paneTitle: '', paneRows: 0
          }
 
          nav('Home')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
          const deadline = Date.now() + 8000
          let card = null
+         let playlistsShelf = null
          while (Date.now() < deadline) {
-           card = document.querySelector('.home-shelf .online-playlist-card')
+           playlistsShelf = shelf('Playlists')
+           card = onlineCard('Shelf Test Album')
            if (card) break
            await sleep(100)
          }
@@ -5789,7 +5856,75 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          // played shelf just because both read the same merged shape.
          out.addedInPlayed = Boolean(trackCard('Recently played', 'Shelf Test Single'))
 
-         if (card) card.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         // One shelf scrolls: the arrows on its heading have to agree with what
+         // it can actually do. At the start back is disabled; forward steps the
+         // shelf and wakes back in the same gesture.
+         const arrows = [...(playlistsShelf?.querySelectorAll('.home-section-tools .shelf-arrow') || [])]
+         const scroller = playlistsShelf?.querySelector('.home-shelf')
+         out.arrowCount = arrows.length
+         out.arrowStartScroll = scroller ? Math.round(scroller.scrollLeft) : -1
+         out.shelfWidth = scroller ? Math.round(scroller.clientWidth) : -1
+         out.shelfContent = scroller ? Math.round(scroller.scrollWidth) : -1
+         out.arrowStartsDisabled = arrows[0]?.disabled === true
+         const arrowDeadline = Date.now() + 3000
+         while (Date.now() < arrowDeadline && arrows[1]?.disabled !== false) await sleep(50)
+         out.arrowForwardEnabled = arrows[1]?.disabled === false
+         const beforeScroll = scroller ? scroller.scrollLeft : 0
+         arrows[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         // The step is smooth when motion is allowed, so wait for the shelf to
+         // stop instead of reading the first frame.
+         let settledAt = beforeScroll
+         let stillFor = 0
+         const scrollDeadline = Date.now() + 3000
+         while (Date.now() < scrollDeadline && scroller) {
+           await sleep(60)
+           if (Math.abs(scroller.scrollLeft - settledAt) < 1) {
+             stillFor += 60
+             if (stillFor >= 240) break
+           } else {
+             stillFor = 0
+             settledAt = scroller.scrollLeft
+           }
+         }
+         out.shelfScrolled = scroller ? Math.round(scroller.scrollLeft) : -1
+         out.arrowBackEnabled = arrows[0]?.disabled === false
+         out.shelfNodeStable = scroller === playlistsShelf?.querySelector('.home-shelf')
+
+         // An artist can have tracks without owning an album card. That card
+         // must open the tracks, not filter the album grid down to nothing.
+         let artistCard = null
+         const artistDeadline = Date.now() + 6000
+         while (Date.now() < artistDeadline) {
+           artistCard = [...document.querySelectorAll('.artist-card')].find(
+             (entry) => text(entry.querySelector('.artist-card-name')).trim() === 'Shelf Shelf Artist'
+           )
+           if (artistCard) break
+           await sleep(100)
+         }
+         artistCard
+           ?.querySelector('.artist-card-main')
+           ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         const detailDeadline = Date.now() + 6000
+         let detail = null
+         while (Date.now() < detailDeadline) {
+           detail = document.querySelector('.album-detail')
+           if (detail && detail.querySelector('.track-row')) break
+           await sleep(100)
+         }
+         out.artistKicker = text(detail?.querySelector('.home-kicker')).trim()
+         out.artistTitle = text(detail?.querySelector('.album-detail-copy h2')).trim()
+         out.artistRows = detail?.querySelectorAll('.track-row').length || 0
+         out.artistHasSingle = [...(detail?.querySelectorAll('.row-title-text') || [])].some(
+           (el) => text(el).trim() === 'Shelf Test Single'
+         )
+         out.artistAlbumColumn =
+           detail?.querySelector('[data-album-column]')?.getAttribute('data-album-column') || ''
+
+         detail?.querySelector('.home-back')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         const backDeadline = Date.now() + 6000
+         while (Date.now() < backDeadline && !document.querySelector('.home-shelf')) await sleep(100)
+
+         onlineCard('Shelf Test Album')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
          // The pane is filled by an IPC round trip, so wait for the title rather
          // than assuming one paint.
          const paneDeadline = Date.now() + 6000
@@ -5839,10 +5974,30 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       'the stream play log records a counted YouTube listen under its video id',
       `${streamPlaysBefore} before, ${container.streamPlays.count()} after`
     )
+    record(
+      homeShelves.arrowCount === 2 &&
+        homeShelves.arrowStartsDisabled &&
+        homeShelves.arrowForwardEnabled &&
+        homeShelves.shelfScrolled > 20 &&
+        homeShelves.arrowBackEnabled &&
+        homeShelves.shelfNodeStable,
+      'home: a shelf has prev/next arrows that agree with its edges and scroll it',
+      `arrows ${homeShelves.arrowCount}, at ${homeShelves.arrowStartScroll}px of ${homeShelves.shelfWidth}/${homeShelves.shelfContent}, back at start ${homeShelves.arrowStartsDisabled}, forward ${homeShelves.arrowForwardEnabled}, scrolled ${homeShelves.shelfScrolled}px, back after ${homeShelves.arrowBackEnabled}, same node ${homeShelves.shelfNodeStable}`
+    )
+    record(
+      homeShelves.artistKicker === 'Artist' &&
+        homeShelves.artistTitle === 'Shelf Shelf Artist' &&
+        homeShelves.artistRows === 1 &&
+        homeShelves.artistHasSingle &&
+        homeShelves.artistAlbumColumn === 'show',
+      'home: an artist with no albums opens their tracks instead of an empty grid',
+      `${homeShelves.artistKicker || '?'} ${homeShelves.artistTitle || 'none'} · ${homeShelves.artistRows} rows · album column ${homeShelves.artistAlbumColumn || 'none'}`
+    )
 
     container.library.removeTracks([shelfSingleId])
     container.onlineRepo.remove(shelfHistory.id)
     container.onlinePlaylists.delete(shelfPlaylist.id)
+    for (const extra of shelfExtras) container.onlinePlaylists.delete(extra.id)
     container.streamPlays.clear()
     broadcast(IPC_EVENTS.onlineChanged, null)
     broadcast(IPC_EVENTS.playHistoryChanged, null)

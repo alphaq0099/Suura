@@ -858,11 +858,22 @@ input[type='radio'] {
   filter: saturate(1.2);
   transform: scale(1.04);
   pointer-events: none;
+  /* The art belongs to the right side of the hero; on the left it would sit
+     under the copy. The mask makes that fade part of the image itself, so the
+     overlay below does not have to wash the whole picture to keep text legible. */
+  mask-image: linear-gradient(90deg, transparent 0%, rgb(0 0 0 / 0.4) 38%, #000 82%);
   transition: opacity 1100ms ease;
 }
 
 .home-hero-backdrop.active {
   opacity: 0.24;
+}
+
+/* Cream mode has less contrast to lose, so the same 0.24 reads as a haze
+   instead of art. The mask keeps the copy side clean; the right can carry more. */
+:root[data-theme='light'] .home-hero-backdrop.active {
+  opacity: 0.68;
+  filter: saturate(1.05);
 }
 
 .home-hero::after {
@@ -1023,6 +1034,41 @@ input[type='radio'] {
   background: var(--bg-hover);
   border-color: var(--border);
   color: var(--text);
+}
+
+/* The arrows live on the heading baseline, at the same weight as More. They are
+   a small affordance for a mouse, never the only way to reach a card. */
+.home-section-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.shelf-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+}
+
+.shelf-arrow:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.shelf-arrow:disabled {
+  opacity: 0.32;
+}
+
+.shelf-arrow svg {
+  display: block;
 }
 
 /* The grid heading takes focus after a shelf's More, so the scroll lands

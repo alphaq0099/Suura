@@ -352,6 +352,24 @@ export function ChevronDownIcon({ size = 18 }: IconProps) {
   )
 }
 
+/** Steps a horizontal shelf one page back. */
+export function ChevronLeftIcon({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <path d="m14.5 6-6 6 6 6" />
+    </svg>
+  )
+}
+
+/** Steps a horizontal shelf one page forward. */
+export function ChevronRightIcon({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <path d="m9.5 6 6 6-6 6" />
+    </svg>
+  )
+}
+
 /** The paste button: a clipboard, so it reads as "take what is copied". */
 export function ClipboardIcon({ size = 16 }: IconProps) {
   return (
