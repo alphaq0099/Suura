@@ -6197,25 +6197,16 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     await delay(300)
     const realSearch = container.online.search
     const realChannel = container.online.channel
-    const searchResults = [
-      {
-        videoId: 'selftestsearch1',
-        title: 'Search Tone One',
-        artist: 'Search Artist',
-        durationMs: 125_000,
-        channelId: 'UCselftest',
-        channelName: 'Search Channel'
-      },
-      {
-        videoId: 'selftestsearch2',
-        title: 'Search Tone Two',
-        artist: null,
-        durationMs: 95_000,
-        channelId: 'UCselftest',
-        channelName: 'Search Channel'
-      }
-    ]
-    container.online.search = async () => searchResults
+    const searchResults = Array.from({ length: 10 }, (_, index) => ({
+      videoId: `selftestsearch${index + 1}`,
+      title: `Search Tone ${index + 1}`,
+      artist: index === 0 ? 'Search Artist' : null,
+      durationMs: 125_000 - index * 1_000,
+      channelId: 'UCselftest',
+      channelName: 'Search Channel'
+    }))
+    container.online.search = async (_query, limit = 10, offset = 0) =>
+      searchResults.slice(offset, offset + limit)
     container.online.channel = async () => ({
       channelId: 'UCselftest',
       name: 'Search Channel',
@@ -6366,6 +6357,12 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         channelLinks: number
         channelLinkText: string
         channelLinkUnderline: string
+        youtubeBeforeMore: number
+        moreLabel: string
+        youtubeAfterMore: number
+        moreGone: boolean
+        bestAfterMore: boolean
+        rowsAfterMore: number
         resetYoutube: number
         resetCta: boolean
         selectedOne: boolean
@@ -6426,7 +6423,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
              localRows: 0, importedRows: 0, youtubeRows: 0, ctaAfterSubmit: false,
              pager: 0, bestCards: 0, bestPillText: '', bestIsFirst: false,
              artSquare: false, rowMenuButton: false, channelLinks: 0, channelLinkText: '',
-             channelLinkUnderline: '', resetYoutube: 0, resetCta: false, selectedOne: false,
+             channelLinkUnderline: '', youtubeBeforeMore: 0, moreLabel: '',
+             youtubeAfterMore: 0, moreGone: false, bestAfterMore: false, rowsAfterMore: 0,
+             resetYoutube: 0, resetCta: false, selectedOne: false,
              checkboxes: 0, selectedTwo: false, menuOpen: false, menuLabels: [],
              playlistMenu: false, menusClosed: false, importedMenu: [], channelTitle: '',
              channelRows: 0, channelHasBack: false, backToSearch: false
@@ -6460,7 +6459,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            out.importSources = pickAll('.discover-import-source').map((el) => text(el).trim())
 
            submitNow()
-           await waitFor(() => count('YouTube') === 2, 8000)
+           await waitFor(() => count('YouTube') === 5, 8000)
            out.rowsAfterSubmit = pickAll('.discover-item').length
            out.localRows = count('On this device')
            out.importedRows = count('Imported')
@@ -6483,6 +6482,22 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            out.channelLinkText = text(channelLink).trim()
            out.channelLinkUnderline = channelLink ? getComputedStyle(channelLink).textDecorationLine : 'missing'
 
+           // Five is the first answer; one +5 request may extend it to ten,
+           // and then the shelf stops offering more.
+           out.youtubeBeforeMore = cards('YouTube').length
+           const more = pick('.discover-more')
+           out.moreLabel = text(more).trim()
+           if (more) more.click()
+           await waitFor(() => count('YouTube') === 10, 8000)
+           out.youtubeAfterMore = cards('YouTube').length
+           out.moreGone = !pick('.discover-more')
+           out.bestAfterMore = Boolean(
+             pickAll('.discover-item.best-match').length === 1 &&
+               cards('YouTube')[0] &&
+               cards('YouTube')[0].classList.contains('best-match')
+           )
+           out.rowsAfterMore = pickAll('.discover-item').length
+
            // Editing the query must take the YouTube answer away with it.
            setInput('Selftest T')
            await waitFor(() => Boolean(pick('.search-youtube-cta')), 4000)
@@ -6493,7 +6508,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            setInput('Selftest')
            await waitFor(() => pickAll('.discover-item').length >= 5, 5000)
            submitNow()
-           await waitFor(() => count('YouTube') === 2, 8000)
+           await waitFor(() => count('YouTube') === 5, 8000)
 
            const rows = pickAll('.discover-item')
            if (rows[0]) rows[0].dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
@@ -6588,14 +6603,14 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         searchUi.importSources
       )
       record(
-        searchUi.rowsAfterSubmit === 14 &&
+        searchUi.rowsAfterSubmit === 17 &&
           searchUi.localRows === 2 &&
           searchUi.importedRows === 10 &&
-          searchUi.youtubeRows === 2 &&
+          searchUi.youtubeRows === 5 &&
           !searchUi.ctaAfterSubmit &&
           searchUi.pager === 0 &&
           searchUi.shelfBadges === 3,
-        'Search YouTube fills the third shelf beside the two local shelves, without a pager',
+        'Search YouTube fills the third shelf beside the two local shelves with five cards, without a pager',
         {
           cards: searchUi.rowsAfterSubmit,
           local: searchUi.localRows,
@@ -6620,7 +6635,22 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         { square: searchUi.artSquare, menu: searchUi.rowMenuButton }
       )
       record(
-        searchUi.channelLinks === 2 &&
+        searchUi.youtubeBeforeMore === 5 &&
+          searchUi.moreLabel === '+5 more' &&
+          searchUi.youtubeAfterMore === 10 &&
+          searchUi.moreGone &&
+          searchUi.bestAfterMore,
+        'Search offers one +5 page on the YouTube shelf and stops at ten',
+        {
+          label: searchUi.moreLabel,
+          before: searchUi.youtubeBeforeMore,
+          after: searchUi.youtubeAfterMore,
+          gone: searchUi.moreGone,
+          best: searchUi.bestAfterMore
+        }
+      )
+      record(
+        searchUi.channelLinks === 5 &&
           searchUi.channelLinkText === 'Search Channel' &&
           searchUi.channelLinkUnderline === 'none',
         'Search puts the channel link on the channel name, with no underline',
@@ -6632,7 +6662,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         { youtube: searchUi.resetYoutube, cta: searchUi.resetCta }
       )
       record(
-        searchUi.selectedOne && searchUi.checkboxes === 12 && searchUi.selectedTwo,
+        searchUi.selectedOne && searchUi.checkboxes === 15 && searchUi.selectedTwo,
         'Search cards select with Ctrl-click and reveal a checkbox per card',
         { first: searchUi.selectedOne, boxes: searchUi.checkboxes, two: searchUi.selectedTwo }
       )
@@ -6723,19 +6753,19 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            await type('Selftest')
            await waitFor(() => count('On this device') === 2, 5000)
            submitNow()
-           await waitFor(() => count('YouTube') === 2, 8000)
+           await waitFor(() => count('YouTube') === 5, 8000)
            await sleep(2600)
 
            // Nothing on the device or in the lists: warm the one best match.
            await type('No Selftest Tune')
            submitNow()
-           await waitFor(() => count('YouTube') === 2, 8000)
+           await waitFor(() => count('YouTube') === 5, 8000)
            await sleep(2800)
 
            // A second query inside the cooldown must not spend another resolve.
            await type('No Selftest Tune Two')
            submitNow()
-           await waitFor(() => count('YouTube') === 2, 8000)
+           await waitFor(() => count('YouTube') === 5, 8000)
            await sleep(2800)
          })()`
       )

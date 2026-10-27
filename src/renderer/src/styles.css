@@ -5934,6 +5934,35 @@ button.online-jump:hover {
   outline-offset: 2px;
 }
 
+/* The YouTube shelf's one extra page. It is a network action, so it reads as
+   the accent rather than as the neutral local Show all. */
+.discover-more {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  padding: 4px 11px;
+  border: 1px solid rgb(var(--accent-rgb) / 38%);
+  border-radius: 999px;
+  background: rgb(var(--accent-rgb) / 8%);
+  color: var(--accent-strong);
+  font-size: calc(11.5px * var(--text-scale));
+}
+
+.discover-more:hover:not(:disabled) {
+  background: rgb(var(--accent-rgb) / 16%);
+  color: var(--text);
+}
+
+.discover-more:disabled {
+  opacity: 0.7;
+}
+
+.discover-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* Before a submit the YouTube shelf has nothing to show, so it offers the one
    action that can fill it instead of an empty grid. */
 .search-youtube-cta {

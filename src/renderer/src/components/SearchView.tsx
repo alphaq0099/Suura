@@ -85,8 +85,13 @@ export interface SearchViewProps {
   prefetchEnabled: boolean
 }
 
-/** Six YouTube results: one best match and five alternatives. */
-const YOUTUBE_RESULT_LIMIT = 6
+/**
+ * The first YouTube answer is five cards: one best match and four alternatives.
+ * A second page of five can be asked for on the shelf, and ten is the ceiling:
+ * past the top ten a text match is a guess, not a miss.
+ */
+const YOUTUBE_PAGE_SIZE = 5
+const YOUTUBE_MAX_RESULTS = 10
 const CHANNEL_PAGE_SIZE = 10
 
 /**
@@ -197,6 +202,8 @@ export function SearchView(props: SearchViewProps) {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [youtubeError, setYoutubeError] = useState<string | null>(null)
+  const [youtubeHasMore, setYoutubeHasMore] = useState(false)
+  const [youtubeMoreBusy, setYoutubeMoreBusy] = useState(false)
   const [busyVideoId, setBusyVideoId] = useState<string | null>(null)
   const [bulkBusy, setBulkBusy] = useState(false)
   const [bulkSaving, setBulkSaving] = useState(false)
@@ -323,6 +330,8 @@ export function SearchView(props: SearchViewProps) {
     setSubmitted('')
     setYoutube([])
     setYoutubeError(null)
+    setYoutubeHasMore(false)
+    setYoutubeMoreBusy(false)
     setLocal([])
     setImported([])
     setShowAllLocal(false)
@@ -543,27 +552,70 @@ export function SearchView(props: SearchViewProps) {
     setChannelHasMore(false)
     setSubmitted(text)
     setYoutube([])
+    setYoutubeHasMore(false)
+    setYoutubeMoreBusy(false)
     // A new question makes any warm-up for the old one pointless.
     prefetchEpochRef.current += 1
 
     youtubeTokenRef.current += 1
     const token = youtubeTokenRef.current
     try {
-      const results = await api.searchYouTube(text, YOUTUBE_RESULT_LIMIT, 0)
+      const results = await api.searchYouTube(text, YOUTUBE_PAGE_SIZE, 0)
       // A newer query owns the shelf now; its own request will fill it.
       if (token !== youtubeTokenRef.current) return
-      // The page shape is one best match and five alternatives. The provider is
-      // asked for exactly that many, and a provider that ignores the limit must
-      // not grow the shelf or displace the empty-CTA layout.
-      setYoutube(results.slice(0, YOUTUBE_RESULT_LIMIT))
+      // The first answer is one best match and four alternatives. The provider
+      // is asked for exactly that many, and a provider that ignores the limit
+      // must not grow the shelf or displace the empty-CTA layout.
+      setYoutube(results.slice(0, YOUTUBE_PAGE_SIZE))
+      setYoutubeHasMore(results.length === YOUTUBE_PAGE_SIZE)
     } catch (cause) {
       if (token !== youtubeTokenRef.current) return
       setYoutube([])
+      setYoutubeHasMore(false)
       setYoutubeError(messageOf(cause))
     } finally {
       if (token === youtubeTokenRef.current) setLoading(false)
     }
   }, [query])
+
+  /**
+   * Fetches the one extra page the YouTube shelf offers.
+   *
+   * The first five fill the shelf; a song the user cannot find among them is
+   * often just below, but past ten a text match stops being a near miss. New
+   * rows are appended, never replace the best match, and a query edit bumps the
+   * token so a slow second page cannot land under a different search.
+   */
+  const loadMoreYouTube = useCallback(async (): Promise<void> => {
+    const text = submitted
+    if (
+      text.length === 0 ||
+      loading ||
+      youtubeMoreBusy ||
+      youtube.length === 0 ||
+      youtube.length >= YOUTUBE_MAX_RESULTS ||
+      !youtubeHasMore
+    ) {
+      return
+    }
+    setYoutubeMoreBusy(true)
+    setError(null)
+    const token = youtubeTokenRef.current
+    try {
+      const results = await api.searchYouTube(text, YOUTUBE_PAGE_SIZE, youtube.length)
+      if (token !== youtubeTokenRef.current) return
+      setYoutube((current) => {
+        const seen = new Set(current.map((row) => row.videoId))
+        const next = [...current, ...results.filter((row) => !seen.has(row.videoId))]
+        return next.slice(0, YOUTUBE_MAX_RESULTS)
+      })
+      setYoutubeHasMore(results.length === YOUTUBE_PAGE_SIZE)
+    } catch (cause) {
+      if (token === youtubeTokenRef.current) setError(messageOf(cause))
+    } finally {
+      if (token === youtubeTokenRef.current) setYoutubeMoreBusy(false)
+    }
+  }, [loading, submitted, youtube.length, youtubeHasMore, youtubeMoreBusy])
 
   const submit = (event: FormEvent): void => {
     event.preventDefault()
@@ -1322,6 +1374,23 @@ export function SearchView(props: SearchViewProps) {
                           />
                         ))}
                       </ul>
+                    ) : null}
+                    {submitted.length > 0 &&
+                    youtubeHasMore &&
+                    youtube.length >= YOUTUBE_PAGE_SIZE &&
+                    youtube.length < YOUTUBE_MAX_RESULTS &&
+                    !loading ? (
+                      <button
+                        type="button"
+                        className="discover-more"
+                        title="Show 5 more YouTube results"
+                        aria-label="Show 5 more YouTube results"
+                        onClick={() => void loadMoreYouTube()}
+                        disabled={youtubeMoreBusy}
+                      >
+                        {youtubeMoreBusy ? <SpinnerIcon size={14} /> : null}
+                        <span>{youtubeMoreBusy ? 'Loading 5 more…' : '+5 more'}</span>
+                      </button>
                     ) : null}
                     {submitted.length > 0 && !loading && youtube.length === 0 ? (
                       <p className="discover-empty-shelf">No YouTube results for this search.</p>
