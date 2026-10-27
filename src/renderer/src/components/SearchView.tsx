@@ -8,7 +8,14 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent
 } from 'react'
-import type { AddTracksOutcome, Playlist, Track, YouTubeChannel, YouTubeSearchResult } from '@shared/types'
+import type {
+  AddTracksOutcome,
+  ImportedSearchResult,
+  Playlist,
+  Track,
+  YouTubeChannel,
+  YouTubeSearchResult
+} from '@shared/types'
 import { youtubeWatchUrl } from '@shared/youtube'
 import { formatCount, formatDuration } from '@shared/format'
 import { api, messageOf } from '../api'
@@ -36,11 +43,18 @@ import {
 /** One item in a multi-row Search action, in the order the rows appear. */
 export type SearchSelectionItem =
   | { kind: 'local'; track: Track }
+  | { kind: 'imported'; track: Track }
   | { kind: 'youtube'; result: YouTubeSearchResult }
 
 type LocalSearchRow = { kind: 'local'; key: string; track: Track }
+type ImportedSearchRow = {
+  kind: 'imported'
+  key: string
+  track: Track
+  source: string
+}
 type YouTubeSearchRow = { kind: 'youtube'; key: string; result: YouTubeSearchResult }
-type SearchRow = LocalSearchRow | YouTubeSearchRow
+type SearchRow = LocalSearchRow | ImportedSearchRow | YouTubeSearchRow
 
 export interface SearchViewProps {
   /**
@@ -68,9 +82,18 @@ export interface SearchViewProps {
   onQueueSearchSelection: (items: SearchSelectionItem[]) => Promise<void>
 }
 
-/** Ten results per page: one screenful, and a smaller first request to YouTube. */
-const YOUTUBE_PAGE_SIZE = 10
+/** Six YouTube results: one best match and five alternatives. */
+const YOUTUBE_PAGE_SIZE = 6
 const CHANNEL_PAGE_SIZE = 10
+
+/**
+ * How many rows each local shelf may fetch. The page shows eight and offers
+ * Show all, so a live search stays cheap without hiding a reasonable result set.
+ */
+const LIVE_SEARCH_LIMIT = 30
+
+/** How long typing has to pause before the local/imported shelves update. */
+const LIVE_SEARCH_DELAY_MS = 180
 
 /** A track-shaped stub, only so the row can borrow the shared artwork lookup. */
 function artworkTrack(result: YouTubeSearchResult): Track {
@@ -110,7 +133,9 @@ function channelNameOf(result: YouTubeSearchResult): string {
 }
 
 function selectionItem(row: SearchRow): SearchSelectionItem {
-  return row.kind === 'local' ? { kind: 'local', track: row.track } : { kind: 'youtube', result: row.result }
+  if (row.kind === 'local') return { kind: 'local', track: row.track }
+  if (row.kind === 'imported') return { kind: 'imported', track: row.track }
+  return { kind: 'youtube', result: row.result }
 }
 
 /**
@@ -148,7 +173,9 @@ export function SearchView(props: SearchViewProps) {
   const [query, setQuery] = useState('')
   const [submitted, setSubmitted] = useState('')
   const [local, setLocal] = useState<Track[]>([])
+  const [imported, setImported] = useState<ImportedSearchResult[]>([])
   const [youtube, setYoutube] = useState<YouTubeSearchResult[]>([])
+  const [liveLoading, setLiveLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -179,11 +206,25 @@ export function SearchView(props: SearchViewProps) {
   } | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const anchorKeyRef = useRef<string | null>(null)
+  /** The newest live-search request; older answers are ignored. */
+  const liveTokenRef = useRef(0)
+  /** The newest YouTube request; a query edit invalidates paging too. */
+  const youtubeTokenRef = useRef(0)
   const fieldMenu = useFieldContextMenu(inputRef)
 
   const localRows = useMemo<LocalSearchRow[]>(
     () => local.map((track) => ({ kind: 'local', key: `local:${track.id}`, track })),
     [local]
+  )
+  const importedRows = useMemo<ImportedSearchRow[]>(
+    () =>
+      imported.map((match) => ({
+        kind: 'imported',
+        key: `imported:${match.track.id}`,
+        track: match.track,
+        source: match.source
+      })),
+    [imported]
   )
   const youtubeRows = useMemo<YouTubeSearchRow[]>(
     () => youtube.map((result) => ({ kind: 'youtube', key: `youtube:${result.videoId}`, result })),
@@ -198,7 +239,10 @@ export function SearchView(props: SearchViewProps) {
       })),
     [channel]
   )
-  const resultRows = useMemo<SearchRow[]>(() => [...localRows, ...youtubeRows], [localRows, youtubeRows])
+  const resultRows = useMemo<SearchRow[]>(
+    () => [...localRows, ...importedRows, ...youtubeRows],
+    [localRows, importedRows, youtubeRows]
+  )
   const activeRows = channel ? channelRows : resultRows
   const activeRowsKey = activeRows.map((row) => row.key).join('|')
   const selectedRows = useMemo(
@@ -218,6 +262,9 @@ export function SearchView(props: SearchViewProps) {
         ids.add(row.track.id)
         continue
       }
+      // An imported row has no library row until it is downloaded, so there is
+      // nothing a custom playlist could point at yet.
+      if (row.kind === 'imported') continue
       const trackId = states[row.result.videoId]?.trackId
       if (trackId == null) return null
       ids.add(trackId)
@@ -237,6 +284,57 @@ export function SearchView(props: SearchViewProps) {
     const timer = setTimeout(() => setNotice(null), 1800)
     return () => clearTimeout(timer)
   }, [notice])
+
+  /**
+   * Live local search. Typing never calls YouTube: the two database catalogues
+   * are cheap enough to filter as the query settles, while the network search
+   * stays behind the explicit button. A query edit also drops the old YouTube
+   * answer, so results can never sit under a query they were not asked for.
+   */
+  useEffect(() => {
+    const text = query.trim()
+    liveTokenRef.current += 1
+    youtubeTokenRef.current += 1
+    const token = liveTokenRef.current
+    setSubmitted('')
+    setYoutube([])
+    setYoutubeError(null)
+    setYoutubePage(1)
+    setYoutubeHasMore(false)
+    setLocal([])
+    setImported([])
+    setError(null)
+    // A request from the previous query can no longer clear these itself: its
+    // token is stale, so its `finally` bails out. Clearing them here is what
+    // keeps the field usable after typing during a slow search.
+    setLoading(false)
+    setYoutubePageLoading(false)
+    if (text.length === 0) {
+      setLiveLoading(false)
+      return
+    }
+
+    setLiveLoading(true)
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const result = await api.searchLibrary(text, LIVE_SEARCH_LIMIT)
+          if (token !== liveTokenRef.current) return
+          setLocal(result.local)
+          setImported(result.imported)
+        } catch (cause) {
+          if (token !== liveTokenRef.current) return
+          setLocal([])
+          setImported([])
+          setError(messageOf(cause))
+        } finally {
+          if (token === liveTokenRef.current) setLiveLoading(false)
+        }
+      })()
+    }, LIVE_SEARCH_DELAY_MS)
+
+    return () => clearTimeout(timer)
+  }, [query])
 
   const pasteQuery = useCallback(async (): Promise<void> => {
     try {
@@ -338,30 +436,24 @@ export function SearchView(props: SearchViewProps) {
     setYoutubePage(1)
     setYoutubeHasMore(false)
     // Clear the previous answer before waiting: a slow search that leaves the
-    // old rows on screen under the new query is worse than an empty list.
-    setLocal([])
+    // old rows on screen under the new query is worse than an empty shelf.
     setYoutube([])
 
-    const [localAnswer, youtubeAnswer] = await Promise.allSettled([
-      api.listTracks({ search: text, limit: 25 }),
-      api.searchYouTube(text, YOUTUBE_PAGE_SIZE, 0)
-    ])
-
-    if (localAnswer.status === 'fulfilled') {
-      setLocal(localAnswer.value.tracks)
-    } else {
-      setLocal([])
-      setError(messageOf(localAnswer.reason))
-    }
-
-    if (youtubeAnswer.status === 'fulfilled') {
-      setYoutube(youtubeAnswer.value)
-      setYoutubeHasMore(youtubeAnswer.value.length === YOUTUBE_PAGE_SIZE)
-    } else {
+    youtubeTokenRef.current += 1
+    const token = youtubeTokenRef.current
+    try {
+      const results = await api.searchYouTube(text, YOUTUBE_PAGE_SIZE, 0)
+      // A newer query owns the shelf now; its own request will fill it.
+      if (token !== youtubeTokenRef.current) return
+      setYoutube(results)
+      setYoutubeHasMore(results.length === YOUTUBE_PAGE_SIZE)
+    } catch (cause) {
+      if (token !== youtubeTokenRef.current) return
       setYoutube([])
-      setYoutubeError(messageOf(youtubeAnswer.reason))
+      setYoutubeError(messageOf(cause))
+    } finally {
+      if (token === youtubeTokenRef.current) setLoading(false)
     }
-    setLoading(false)
   }, [query])
 
   /**
@@ -373,12 +465,14 @@ export function SearchView(props: SearchViewProps) {
       if (page < 1 || page === youtubePage || submitted.length === 0) return
       setYoutubePageLoading(true)
       setError(null)
+      const token = youtubeTokenRef.current
       try {
         const results = await api.searchYouTube(
           submitted,
           YOUTUBE_PAGE_SIZE,
           (page - 1) * YOUTUBE_PAGE_SIZE
         )
+        if (token !== youtubeTokenRef.current) return
         if (results.length === 0) {
           // The end of the list, not an error: keep the page that is on screen
           // and stop offering a next arrow.
@@ -389,9 +483,9 @@ export function SearchView(props: SearchViewProps) {
         setYoutubePage(page)
         setYoutubeHasMore(results.length === YOUTUBE_PAGE_SIZE)
       } catch (cause) {
-        setError(messageOf(cause))
+        if (token === youtubeTokenRef.current) setError(messageOf(cause))
       } finally {
-        setYoutubePageLoading(false)
+        if (token === youtubeTokenRef.current) setYoutubePageLoading(false)
       }
     },
     [submitted, youtubePage]
@@ -470,16 +564,48 @@ export function SearchView(props: SearchViewProps) {
     }
   }, [])
 
+  const playImported = useCallback(
+    async (track: Track): Promise<void> => {
+      setBulkBusy(true)
+      setError(null)
+      try {
+        await onPlaySearchSelection([{ kind: 'imported', track }])
+      } catch (cause) {
+        setError(messageOf(cause))
+      } finally {
+        setBulkBusy(false)
+      }
+    },
+    [onPlaySearchSelection]
+  )
+
+  const queueImported = useCallback(
+    async (track: Track): Promise<void> => {
+      setError(null)
+      try {
+        await onQueueSearchSelection([{ kind: 'imported', track }])
+      } catch (cause) {
+        setError(messageOf(cause))
+      }
+    },
+    [onQueueSearchSelection]
+  )
+
   const activateRow = useCallback(
     (row: SearchRow): void => {
       if (row.kind === 'local') {
         onPlayLocal([row.track])
         return
       }
+      if (row.kind === 'imported') {
+        if (bulkBusy) return
+        void playImported(row.track)
+        return
+      }
       if (busyVideoId === row.result.videoId) return
       void playYouTube(row.result)
     },
-    [busyVideoId, onPlayLocal, playYouTube]
+    [bulkBusy, busyVideoId, onPlayLocal, playImported, playYouTube]
   )
 
   const toggleRow = useCallback((row: SearchRow, additive: boolean): void => {
@@ -621,7 +747,11 @@ export function SearchView(props: SearchViewProps) {
   }, [saveYouTubeResults, unsavedSelected])
 
   const rows = resultRows
-  const hasResults = submitted.length > 0 && (local.length > 0 || youtube.length > 0)
+  const typed = query.trim()
+  const hasLibraryResults = local.length > 0 || imported.length > 0
+  const showYoutubeCta = typed.length > 0 && submitted.length === 0 && !loading
+  const hasResults =
+    typed.length > 0 && (hasLibraryResults || submitted.length > 0 || loading || liveLoading)
 
   const selectionBar = selecting ? (
     <div className="banner selection-bar discover-selection-bar">
@@ -688,6 +818,7 @@ export function SearchView(props: SearchViewProps) {
         ids.add(row.track.id)
         continue
       }
+      if (row.kind === 'imported') continue
       const trackId = states[row.result.videoId]?.trackId
       if (trackId == null) return null
       ids.add(trackId)
@@ -697,7 +828,8 @@ export function SearchView(props: SearchViewProps) {
   const rowMenuItems: RowMenuItem[] = []
 
   if (rowMenuRow) {
-    const rowTitle = rowMenuRow.kind === 'local' ? rowMenuRow.track.title : rowMenuRow.result.title
+    const rowTitle =
+      rowMenuRow.kind === 'youtube' ? rowMenuRow.result.title : rowMenuRow.track.title
     rowMenuItems.push({
       id: 'select',
       label: rowMenuIsSelected ? 'Deselect' : 'Select',
@@ -708,10 +840,11 @@ export function SearchView(props: SearchViewProps) {
       id: 'play',
       label: 'Play',
       icon: <PlayIcon />,
-      onSelect: () =>
-        rowMenuRow.kind === 'local'
-          ? onPlayLocal([rowMenuRow.track])
-          : void playYouTube(rowMenuRow.result)
+      onSelect: () => {
+        if (rowMenuRow.kind === 'local') onPlayLocal([rowMenuRow.track])
+        else if (rowMenuRow.kind === 'imported') void playImported(rowMenuRow.track)
+        else void playYouTube(rowMenuRow.result)
+      }
     })
     if (rowMenuIsSelected && rowMenuRows.length > 0) {
       rowMenuItems.push({
@@ -759,7 +892,7 @@ export function SearchView(props: SearchViewProps) {
       icon: <InfoIcon />,
       onSelect: () =>
         setDetailsTrack(
-          rowMenuRow.kind === 'local' ? rowMenuRow.track : artworkTrack(rowMenuRow.result)
+          rowMenuRow.kind === 'youtube' ? artworkTrack(rowMenuRow.result) : rowMenuRow.track
         )
     })
     if (rowMenuRow.kind === 'youtube') {
@@ -814,7 +947,7 @@ export function SearchView(props: SearchViewProps) {
           <p className="subtitle">
             {channel
               ? 'Recent videos from this channel. Nothing is downloaded until you ask.'
-              : 'Your library and YouTube in one list, grouped by source.'}
+              : 'Search this device and imported tracks as you type; YouTube is searched when you ask.'}
           </p>
         </div>
         {channel ? (
@@ -886,8 +1019,8 @@ export function SearchView(props: SearchViewProps) {
                 type="search"
                 autoComplete="off"
                 spellCheck={false}
-                placeholder="Search your library and YouTube"
-                aria-label="Search your library and YouTube"
+                placeholder="Search your device, imported tracks and YouTube"
+                aria-label="Search your device, imported tracks and YouTube"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 onKeyDown={fieldMenu.onKeyDown}
@@ -900,28 +1033,29 @@ export function SearchView(props: SearchViewProps) {
               disabled={loading || youtubePageLoading || channelLoading || query.trim().length === 0}
             >
               {loading ? <SpinnerIcon /> : <SearchIcon />}
-              <span>{loading ? 'Searching…' : 'Search'}</span>
+              <span>{loading ? 'Searching YouTube…' : 'Search YouTube'}</span>
             </button>
           </form>
 
-          {loading ? <div className="banner">Searching your library and YouTube…</div> : null}
+          {loading ? <div className="banner">Searching YouTube…</div> : null}
           {channelLoading ? <div className="banner">Opening the channel…</div> : null}
           {error ? <div className="banner error">{error}</div> : null}
           {notice ? <div className="banner">{notice}</div> : null}
           {youtubeError ? (
             <div className="banner">
-              YouTube search is unavailable right now: {youtubeError} Your library results are still shown.
+              YouTube search is unavailable right now: {youtubeError} Your device and imported
+              results are still shown.
             </div>
           ) : null}
 
-          {!hasResults && !loading ? (
+          {!hasResults && !loading && !liveLoading ? (
             <div className="empty-state">
               <SearchIcon size={32} />
               <h2>{submitted ? 'Nothing matched' : 'Find something to play'}</h2>
               <p>
                 {submitted
-                  ? 'No local tracks or YouTube videos matched that search. Try a shorter query, or check the spelling.'
-                  : 'Search by song, artist, album or channel. Local rows play from disk; YouTube rows stream, and can be queued or saved into your library.'}
+                  ? 'No device tracks, imported tracks or YouTube videos matched that search. Try a shorter query, or check the spelling.'
+                  : 'Search by song, artist, album or channel. Device rows play from disk; imported and YouTube rows stream, and YouTube is only searched when you ask.'}
               </p>
             </div>
           ) : null}
@@ -930,7 +1064,8 @@ export function SearchView(props: SearchViewProps) {
             <>
               <div className="discover-summary">
                 <span>
-                  Results for <strong>“{submitted}”</strong>
+                  Results for <strong>“{typed}”</strong>
+                  {liveLoading ? <span className="discover-live"> · searching this device…</span> : null}
                 </span>
                 <span className="discover-count">{formatCount(rows.length)}</span>
               </div>
@@ -939,8 +1074,8 @@ export function SearchView(props: SearchViewProps) {
                 <ul className="discover-list" aria-label="Search results">
                   {local.length > 0 ? (
                     <li className="discover-divider">
-                      <span className="source-badge local">Local</span>
-                      <span>In your library</span>
+                      <span className="source-badge local">On this device</span>
+                      <span>Files in your library</span>
                       <span className="discover-count">{local.length}</span>
                     </li>
                   ) : null}
@@ -969,11 +1104,57 @@ export function SearchView(props: SearchViewProps) {
                     )
                   })}
 
-                  {youtube.length > 0 ? (
+                  {imported.length > 0 ? (
+                    <li className="discover-divider">
+                      <span className="source-badge imported">Imported</span>
+                      <span>Remembered YouTube tracks, not downloaded</span>
+                      <span className="discover-count">{imported.length}</span>
+                    </li>
+                  ) : null}
+                  {importedRows.map((row, index) => (
+                    <DiscoverRow
+                      key={row.key}
+                      row={row}
+                      selected={selectedKeys.has(row.key)}
+                      selecting={selecting}
+                      busy={false}
+                      isSaved={false}
+                      savingState={undefined}
+                      isCurrent={false}
+                      isPlaying={isPlaying}
+                      onClick={(event) => onRowClick(event, row, localRows.length + index)}
+                      onContextMenu={(event) =>
+                        openContextMenu(event, row, localRows.length + index)
+                      }
+                      onKeyDown={(event) => onRowKeyDown(event, row, localRows.length + index)}
+                      onToggleSelected={() => toggleRow(row, true)}
+                      onQueue={() => void queueImported(row.track)}
+                      onSave={undefined}
+                      onMore={(event) => openRowMenuAt(event, row, localRows.length + index)}
+                      onChannel={null}
+                    />
+                  ))}
+
+                  {typed.length > 0 ? (
                     <li className="discover-divider">
                       <span className="source-badge youtube">YouTube</span>
-                      <span>Not in your library</span>
+                      <span>{submitted ? 'Search results' : 'Not searched yet'}</span>
                       <span className="discover-count">{youtube.length}</span>
+                    </li>
+                  ) : null}
+                  {showYoutubeCta ? (
+                    <li className="discover-cta-row">
+                      <button
+                        type="button"
+                        className="search-youtube-cta"
+                        onClick={() => void run()}
+                        disabled={loading}
+                      >
+                        <SearchIcon size={16} />
+                        <span>
+                          Search YouTube for <strong>“{typed}”</strong>
+                        </span>
+                      </button>
                     </li>
                   ) : null}
                   {youtubeRows.map((row, index) => (
@@ -987,13 +1168,21 @@ export function SearchView(props: SearchViewProps) {
                       savingState={states[row.result.videoId]}
                       isCurrent={row.result.videoId === currentVideoId}
                       isPlaying={isPlaying}
-                      onClick={(event) => onRowClick(event, row, localRows.length + index)}
-                      onContextMenu={(event) => openContextMenu(event, row, localRows.length + index)}
-                      onKeyDown={(event) => onRowKeyDown(event, row, localRows.length + index)}
+                      onClick={(event) =>
+                        onRowClick(event, row, localRows.length + importedRows.length + index)
+                      }
+                      onContextMenu={(event) =>
+                        openContextMenu(event, row, localRows.length + importedRows.length + index)
+                      }
+                      onKeyDown={(event) =>
+                        onRowKeyDown(event, row, localRows.length + importedRows.length + index)
+                      }
                       onToggleSelected={() => toggleRow(row, true)}
                       onQueue={() => void queueYouTube(row.result)}
                       onSave={() => void saveYouTube(row.result)}
-                      onMore={(event) => openRowMenuAt(event, row, localRows.length + index)}
+                      onMore={(event) =>
+                        openRowMenuAt(event, row, localRows.length + importedRows.length + index)
+                      }
                       onChannel={
                         row.result.channelId || row.result.channelName
                           ? () =>
@@ -1005,6 +1194,9 @@ export function SearchView(props: SearchViewProps) {
                       }
                     />
                   ))}
+                  {submitted.length > 0 && !loading && youtube.length === 0 ? (
+                    <li className="discover-empty-shelf">No YouTube results for this search.</li>
+                  ) : null}
                 </ul>
                 {youtube.length > 0 || youtubePage > 1 ? (
                   <ResultPager
@@ -1035,7 +1227,7 @@ export function SearchView(props: SearchViewProps) {
       {rowMenu && rowMenuRow ? (
         <RowMenu
           at={rowMenu.at}
-          title={rowMenuRow.kind === 'local' ? rowMenuRow.track.title : rowMenuRow.result.title}
+          title={rowMenuRow.kind === 'youtube' ? rowMenuRow.result.title : rowMenuRow.track.title}
           items={rowMenuItems}
           onClose={() => setRowMenu(null)}
           portal
@@ -1098,17 +1290,16 @@ function DiscoverRow(props: {
     onChannel
   } = props
   const isYouTube = row.kind === 'youtube'
-  const title = row.kind === 'local' ? row.track.title : row.result.title
+  const title = row.kind === 'youtube' ? row.result.title : row.track.title
   const channelName = row.kind === 'youtube' ? channelNameOf(row.result) : null
-  const artist =
-    row.kind === 'local' ? row.track.artist ?? 'Unknown artist' : channelName
-  const duration = row.kind === 'local' ? row.track.durationMs : row.result.durationMs
+  const artist = row.kind === 'youtube' ? channelName : (row.track.artist ?? 'Unknown artist')
+  const duration = row.kind === 'youtube' ? row.result.durationMs : row.track.durationMs
   const savingActive =
     savingState !== undefined &&
     savingState.status !== 'saved' &&
     savingState.status !== 'failed' &&
     savingState.status !== 'cancelled'
-  const artTrack = row.kind === 'local' ? row.track : artworkTrack(row.result)
+  const artTrack = row.kind === 'youtube' ? artworkTrack(row.result) : row.track
   const rowClass = [
     'discover-item',
     selecting ? 'selecting' : '',
@@ -1150,6 +1341,11 @@ function DiscoverRow(props: {
         <span className="discover-title">
           {isCurrent ? <span className={isPlaying ? 'playing-dot' : 'playing-dot paused'} /> : null}
           {title}
+          {row.kind === 'imported' ? (
+            <span className="discover-import-source" title={`Imported from ${row.source}`}>
+              {row.source}
+            </span>
+          ) : null}
         </span>
         <span className="discover-artist">
           {isYouTube && onChannel && channelName ? (

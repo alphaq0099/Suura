@@ -149,6 +149,7 @@ import { nextDecision, shuffleFrom, shuffled } from '@shared/queue'
 import { sanitizeTaskbarState, taskbarControls } from '@shared/taskbar'
 import { parseRangeHeader } from '@shared/range'
 import { isImportedPlaylistTrackId, onlineEntryToTrack, onlinePlaylistItemToTrack } from '@shared/online'
+import { mergeLibrarySearch } from '@shared/search'
 import { sanitizeFilePart, savePathParts } from '@shared/files'
 import { AsyncTtlCache } from '../src/main/async-cache'
 import { cleanupAbandonedDownloads, DownloadService } from '../src/main/download-service'
@@ -4096,6 +4097,109 @@ async function main(): Promise<void> {
       checkEqual('online lists: the deleted playlist is gone', repo.list().length, 1)
       checkEqual('online lists: the deleted entries are gone too', repo.items(mix.id).length, 0)
       check('online lists: deleting something already gone is harmless', !repo.delete(mix.id))
+    } finally {
+      handle.close()
+      await rm(root, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }
+
+  // --- one live search across local and imported --------------------------
+  // The merge is what keeps the Imported shelf honest: a downloaded copy hides
+  // the remembered video, and a video repeated across history and a list shows
+  // once. The repository searches feed it, so both run against a real database.
+  {
+    const root = await mkdtemp(join(tmpdir(), 'player-search-'))
+    const handle = openLibraryDatabase(join(root, 'library.db'), silentLogger)
+    try {
+      const history = new OnlineRepository(handle.db)
+      const playlists = new OnlinePlaylistRepository(handle.db)
+      const now = Date.now()
+      const seeded = [
+        { videoId: 'searchaaaaa', title: 'Search One', artist: 'Search Artist' },
+        { videoId: 'searchbbbbb', title: 'Search Two', artist: null }
+      ]
+      seeded.forEach((entry, at) => {
+        history.upsert(
+          {
+            ...entry,
+            channel: null,
+            album: null,
+            durationMs: null,
+            sourceUrl: youtubeWatchUrl(entry.videoId),
+            artworkKey: null
+          },
+          now - at * 1000
+        )
+      })
+      playlists.upsert(
+        {
+          listId: 'PLsearchtest',
+          kind: 'playlist',
+          title: 'Search List',
+          owner: null,
+          sourceUrl: 'https://www.youtube.com/playlist?list=PLsearchtest',
+          coverKey: null,
+          totalCount: 2
+        },
+        [
+          { videoId: 'searchbbbbb', title: 'Search Two', artist: null, album: null, durationMs: null },
+          { videoId: 'searchccccc', title: 'Search Three', artist: null, album: null, durationMs: null }
+        ],
+        now
+      )
+
+      const merged = mergeLibrarySearch(
+        [],
+        history.search('Search', 30),
+        playlists.search('Search', 30),
+        30
+      )
+      checkEqual(
+        'search: a repeated video appears once on Imported',
+        merged.imported.map((row) => row.track.sourceId).join(','),
+        'searchaaaaa,searchbbbbb,searchccccc'
+      )
+      checkEqual(
+        'search: every imported row names its source',
+        merged.imported.map((row) => row.source).join(','),
+        'History,History,Search List'
+      )
+
+      const remembered = history.getByVideoId('searchaaaaa')
+      const localCopy = remembered
+        ? {
+            ...onlineEntryToTrack(remembered),
+            id: 7,
+            sourceKind: 'local' as const,
+            filePath: 'C:/music/search-one.flac',
+            originKind: 'youtube' as const,
+            originId: 'searchaaaaa'
+          }
+        : null
+      const hidden = mergeLibrarySearch(
+        localCopy ? [localCopy] : [],
+        history.search('Search', 30),
+        playlists.search('Search', 30),
+        30
+      )
+      checkEqual(
+        'search: a downloaded copy hides the remembered video',
+        hidden.imported[0]?.track.sourceId,
+        'searchbbbbb'
+      )
+      checkEqual(
+        'search: the local shelf keeps the downloaded copy',
+        hidden.local.map((track) => track.id).join(','),
+        '7'
+      )
+
+      const capped = mergeLibrarySearch([], history.search('Search', 30), playlists.search('Search', 30), 1)
+      checkEqual('search: the Imported shelf honours its cap', capped.imported.length, 1)
+      checkEqual(
+        'search: the repository search ignores unrelated text',
+        history.search('Unrelated', 30).length + playlists.search('Unrelated', 30).length,
+        0
+      )
     } finally {
       handle.close()
       await rm(root, { recursive: true, force: true }).catch(() => undefined)

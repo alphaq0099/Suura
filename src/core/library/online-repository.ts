@@ -1,4 +1,5 @@
 import type { OnlineTrack } from '@shared/types'
+import { likeTerm } from '../db/like'
 import type { SqlDatabase } from '../db/driver'
 
 /**
@@ -90,6 +91,30 @@ export class OnlineRepository {
       .prepare(`SELECT ${COLUMNS} FROM online_tracks WHERE video_id = ?`)
       .get<OnlineRow>(videoId)
     return row ? mapRow(row) : null
+  }
+
+  /**
+   * History rows whose text matches a live search query.
+   *
+   * Deliberately ranked by the same activity order as `list`: the Imported
+   * shelf should look like a filtered view of history, not a new ordering.
+   * `online_tracks` has no FTS index; the table holds remembered links, not the
+   * whole library, so a bounded LIKE scan is the honest starting point.
+   */
+  search(query: string, limit = 30): OnlineTrack[] {
+    const term = likeTerm(query)
+    return this.db
+      .prepare(
+        `SELECT ${COLUMNS} FROM online_tracks
+         WHERE title LIKE ? ESCAPE '\\'
+            OR artist LIKE ? ESCAPE '\\'
+            OR channel LIKE ? ESCAPE '\\'
+            OR album LIKE ? ESCAPE '\\'
+         ORDER BY MAX(COALESCE(last_played_at, 0), added_at) DESC, id DESC
+         LIMIT ?`
+      )
+      .all<OnlineRow>(term, term, term, term, limit)
+      .map(mapRow)
   }
 
   /**

@@ -1,4 +1,5 @@
 import type { OnlinePlaylist, OnlinePlaylistItem, OnlinePlaylistKind } from '@shared/types'
+import { likeTerm } from '../db/like'
 import type { SqlDatabase } from '../db/driver'
 
 /** Everything needed to write or refresh an imported playlist. */
@@ -48,6 +49,20 @@ interface ItemRow {
   artist: string | null
   album: string | null
   duration_ms: number | null
+}
+
+/** A matching entry with just enough of its playlist to draw the row. */
+interface ItemSearchRow extends ItemRow {
+  p_id: number
+  p_list_id: string
+  p_kind: string
+  p_title: string
+  p_custom_title: string | null
+  p_owner: string | null
+  p_source_url: string
+  p_cover_key: string | null
+  p_total_count: number | null
+  p_imported_at: number
 }
 
 const PLAYLIST_COLUMNS = `p.id, p.list_id, p.kind, p.title, p.custom_title, p.owner, p.source_url,
@@ -131,6 +146,52 @@ export class OnlinePlaylistRepository {
       )
       .all<ItemRow>(playlistId)
       .map(mapItem)
+  }
+
+  /**
+   * Entries whose text matches a live search query, with their playlist.
+   *
+   * The playlist title and owner are searched too: typing an album name should
+   * find its songs even when the individual titles do not repeat the album.
+   * Newest imports come first, then source order inside each list, which keeps
+   * the Imported shelf stable across keystrokes.
+   */
+  search(query: string, limit = 30): Array<{ item: OnlinePlaylistItem; playlist: OnlinePlaylist }> {
+    const term = likeTerm(query)
+    return this.db
+      .prepare(
+        `SELECT i.id, i.playlist_id, i.position, i.video_id, i.title, i.artist, i.album, i.duration_ms,
+                p.id AS p_id, p.list_id AS p_list_id, p.kind AS p_kind, p.title AS p_title,
+                p.custom_title AS p_custom_title, p.owner AS p_owner, p.source_url AS p_source_url,
+                p.cover_key AS p_cover_key, p.total_count AS p_total_count, p.imported_at AS p_imported_at
+         FROM online_playlist_items i
+         JOIN online_playlists p ON p.id = i.playlist_id
+         WHERE i.title LIKE ? ESCAPE '\\'
+            OR i.artist LIKE ? ESCAPE '\\'
+            OR i.album LIKE ? ESCAPE '\\'
+            OR p.title LIKE ? ESCAPE '\\'
+            OR p.custom_title LIKE ? ESCAPE '\\'
+            OR p.owner LIKE ? ESCAPE '\\'
+         ORDER BY p.imported_at DESC, p.id DESC, i.position ASC, i.id ASC
+         LIMIT ?`
+      )
+      .all<ItemSearchRow>(term, term, term, term, term, term, limit)
+      .map((row) => ({
+        item: mapItem(row),
+        playlist: {
+          id: row.p_id,
+          listId: row.p_list_id,
+          kind: row.p_kind === 'album' || row.p_kind === 'mix' ? row.p_kind : 'playlist',
+          title: row.p_custom_title ?? row.p_title,
+          owner: row.p_owner,
+          sourceUrl: row.p_source_url,
+          coverKey: row.p_cover_key,
+          firstVideoId: null,
+          trackCount: 0,
+          totalCount: row.p_total_count,
+          importedAt: row.p_imported_at
+        }
+      }))
   }
 
   /**

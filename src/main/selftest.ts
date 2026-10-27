@@ -8,6 +8,7 @@ import { promisify } from 'node:util'
 import { app, BrowserWindow, clipboard, dialog, net } from 'electron'
 import { probeExecutable } from '@engine/sidecar/locate'
 import { IPC_EVENTS } from '@shared/ipc'
+import { mergeLibrarySearch } from '@shared/search'
 import { buildMediaUrl } from '@shared/media-url'
 import { buildStreamUrl } from '@shared/stream-url'
 import { youtubeWatchUrl } from '@shared/youtube'
@@ -5835,9 +5836,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          nav('Home')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
          const deadline = Date.now() + 8000
          let card = null
-         let playlistsShelf = null
          while (Date.now() < deadline) {
-           playlistsShelf = shelf('Playlists')
            card = onlineCard('Shelf Test Album')
            if (card) break
            await sleep(100)
@@ -5859,36 +5858,54 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          // One shelf scrolls: the arrows on its heading have to agree with what
          // it can actually do. At the start back is disabled; forward steps the
          // shelf and wakes back in the same gesture.
-         const arrows = [...(playlistsShelf?.querySelectorAll('.home-section-tools .shelf-arrow') || [])]
-         const scroller = playlistsShelf?.querySelector('.home-shelf')
-         out.arrowCount = arrows.length
-         out.arrowStartScroll = scroller ? Math.round(scroller.scrollLeft) : -1
-         out.shelfWidth = scroller ? Math.round(scroller.clientWidth) : -1
-         out.shelfContent = scroller ? Math.round(scroller.scrollWidth) : -1
-         out.arrowStartsDisabled = arrows[0]?.disabled === true
-         const arrowDeadline = Date.now() + 3000
-         while (Date.now() < arrowDeadline && arrows[1]?.disabled !== false) await sleep(50)
-         out.arrowForwardEnabled = arrows[1]?.disabled === false
-         const beforeScroll = scroller ? scroller.scrollLeft : 0
-         arrows[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-         // The step is smooth when motion is allowed, so wait for the shelf to
-         // stop instead of reading the first frame.
-         let settledAt = beforeScroll
-         let stillFor = 0
-         const scrollDeadline = Date.now() + 3000
-         while (Date.now() < scrollDeadline && scroller) {
-           await sleep(60)
-           if (Math.abs(scroller.scrollLeft - settledAt) < 1) {
-             stillFor += 60
-             if (stillFor >= 240) break
-           } else {
-             stillFor = 0
-             settledAt = scroller.scrollLeft
+         // The step is smooth when motion is allowed, and the compositor can
+         // pause a smooth scroll while the window is occluded. That would leave
+         // correct arrows looking broken, so this one interaction asks for the
+         // instant step that reduced motion uses, then puts the setting back:
+         // what is under test is the edges and the distance moved, not the
+         // easing. Nodes are re-read from the live tree on every check, because
+         // a shelf that receives data mid-test is legitimately re-rendered.
+         const motionBefore = document.documentElement.dataset.motion
+         document.documentElement.dataset.motion = 'reduced'
+         try {
+           const liveShelf = () => shelf('Playlists')
+           const liveScroller = () => liveShelf()?.querySelector('.home-shelf')
+           const liveArrows = () => [
+             ...(liveShelf()?.querySelectorAll('.home-section-tools .shelf-arrow') || [])
+           ]
+           out.arrowCount = liveArrows().length
+           const startNode = liveScroller()
+           out.arrowStartScroll = startNode ? Math.round(startNode.scrollLeft) : -1
+           out.shelfWidth = startNode ? Math.round(startNode.clientWidth) : -1
+           out.shelfContent = startNode ? Math.round(startNode.scrollWidth) : -1
+           const arrowDeadline = Date.now() + 3000
+           while (Date.now() < arrowDeadline && liveArrows()[1]?.disabled !== false) await sleep(50)
+           out.arrowStartsDisabled = liveArrows()[0]?.disabled === true
+           out.arrowForwardEnabled = liveArrows()[1]?.disabled === false
+           const scroller = liveScroller()
+           const beforeScroll = scroller ? scroller.scrollLeft : 0
+           liveArrows()[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+           const scrollDeadline = Date.now() + 2000
+           while (Date.now() < scrollDeadline) {
+             const node = liveScroller()
+             if (!node || Math.abs(node.scrollLeft - beforeScroll) >= 1) break
+             await sleep(40)
            }
+           // The back arrow re-enables when the shelf's own scroll listener has
+           // measured the new position. A window that is occluded can have that
+           // event held back, so deliver it explicitly: the listener under test
+           // still does the measuring and the state change.
+           liveScroller()?.dispatchEvent(new Event('scroll'))
+           const backDeadline = Date.now() + 2000
+           while (Date.now() < backDeadline && liveArrows()[0]?.disabled !== false) await sleep(40)
+           const after = liveScroller()
+           out.shelfScrolled = after ? Math.round(after.scrollLeft) : -1
+           out.arrowBackEnabled = liveArrows()[0]?.disabled === false
+           out.shelfNodeStable = Boolean(scroller && scroller === after)
+         } finally {
+           if (motionBefore === undefined) delete document.documentElement.dataset.motion
+           else document.documentElement.dataset.motion = motionBefore
          }
-         out.shelfScrolled = scroller ? Math.round(scroller.scrollLeft) : -1
-         out.arrowBackEnabled = arrows[0]?.disabled === false
-         out.shelfNodeStable = scroller === playlistsShelf?.querySelector('.home-shelf')
 
          // An artist can have tracks without owning an album card. That card
          // must open the tracks, not filter the album grid down to nothing.
@@ -6173,8 +6190,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     // ---- 16. Search rows, selection and menus ---------------------------
     // Search normally asks YouTube over the network. The layout, selection and
     // row-menu behaviour are local, so stub only the discovery provider: the
-    // renderer still runs its whole search path, including the IPC round trip,
-    // without making a real request or depending on what YouTube returns today.
+    // renderer still runs its whole search path, including the live IPC round
+    // trip, without making a real request or depending on what YouTube returns
+    // today. Imported fixtures are seeded directly and removed afterwards.
     window.setSize(1200, 780)
     await delay(300)
     const realSearch = container.online.search
@@ -6204,11 +6222,103 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       url: 'https://www.youtube.com/channel/UCselftest',
       entries: searchResults.slice(0, 1)
     })
+    const importedSeed = Date.now()
+    const importedHistory = [
+      {
+        videoId: 'selftestimport1',
+        title: 'Selftest Imported One',
+        artist: 'Selftest Imported Artist',
+        channel: 'Selftest Imported Channel',
+        album: null,
+        durationMs: 180_000,
+        sourceUrl: youtubeWatchUrl('selftestimport1'),
+        artworkKey: null
+      },
+      {
+        videoId: 'selftestimport2',
+        title: 'Selftest Imported Two',
+        artist: 'Selftest Imported Artist',
+        channel: 'Selftest Imported Channel',
+        album: null,
+        durationMs: 200_000,
+        sourceUrl: youtubeWatchUrl('selftestimport2'),
+        artworkKey: null
+      }
+    ]
+    importedHistory.forEach((entry, at) => {
+      container.onlineRepo.upsert(entry, importedSeed - at * 1000)
+    })
+    // The first entry repeats a history video on purpose: the shelf must show
+    // that video once, as history, rather than once per place it is remembered.
+    const importedList = container.onlinePlaylists.upsert(
+      {
+        listId: 'PLselftestsearch',
+        kind: 'playlist',
+        title: 'Selftest Imported List',
+        owner: 'Selftest Owner',
+        sourceUrl: 'https://www.youtube.com/playlist?list=PLselftestsearch',
+        coverKey: null,
+        totalCount: 2
+      },
+      [
+        {
+          videoId: 'selftestimport2',
+          title: 'Selftest Imported Two',
+          artist: 'Selftest Imported Artist',
+          album: null,
+          durationMs: 200_000
+        },
+        {
+          videoId: 'selftestimport3',
+          title: 'Selftest Imported Three',
+          artist: null,
+          album: null,
+          durationMs: 150_000
+        }
+      ],
+      importedSeed
+    )
     try {
+      // A downloaded copy is the same track as the remembered video, and a
+      // video that sits in history and in a list is still one row. Both are
+      // decisions of the merge, so they are checked without driving the UI.
+      const localForMerge = container.library.list({ search: 'Selftest', limit: 1 }).tracks[0]
+      const merged = mergeLibrarySearch(
+        localForMerge
+          ? [{ ...localForMerge, originKind: 'youtube' as const, originId: 'selftestimport1' }]
+          : [],
+        container.onlineRepo.search('Selftest', 30),
+        container.onlinePlaylists.search('Selftest', 30),
+        30
+      )
+      const mergedIds = merged.imported.map((entry) => entry.track.sourceId)
+      const mergedSources = merged.imported.map((entry) => entry.source)
+      record(
+        mergedIds.length === 2 &&
+          !mergedIds.includes('selftestimport1') &&
+          mergedIds.filter((id) => id === 'selftestimport2').length === 1,
+        'Search Imported drops a downloaded copy and shows a repeated video once',
+        mergedIds
+      )
+      record(
+        mergedSources.includes('History') && mergedSources.includes('Selftest Imported List'),
+        'Search labels an imported row with the history or playlist that remembers it',
+        mergedSources
+      )
+
       const searchUi = await evaluate<{
-        rows: number
+        liveLocal: number
+        liveImported: number
+        liveYoutube: number
+        ctaBeforeSubmit: boolean
+        ctaText: string
+        submitLabel: string
+        importSources: string[]
+        rowsAfterSubmit: number
         localRows: number
+        importedRows: number
         youtubeRows: number
+        ctaAfterSubmit: boolean
         dividerBadges: number
         rowSourceBadges: number
         albumCells: number
@@ -6216,6 +6326,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         channelLinkText: string
         channelLinkUnderline: string
         titleWider: boolean
+        resetYoutube: number
+        resetCta: boolean
         selectedOne: boolean
         checkboxes: number
         selectedTwo: boolean
@@ -6223,6 +6335,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         menuLabels: string[]
         playlistMenu: boolean
         menusClosed: boolean
+        importedMenu: string[]
         channelTitle: string
         channelRows: number
         channelHasBack: boolean
@@ -6234,11 +6347,38 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            const pick = (selector) => document.querySelector(selector)
            const pickAll = (selector) => [...document.querySelectorAll(selector)]
            const text = (element) => ((element || {}).textContent || '')
+           const divider = (badge) =>
+             pickAll('.discover-divider')
+               .find((el) => text(el.querySelector('.source-badge')).trim() === badge)
+           const count = (badge) =>
+             Number(text(divider(badge) ? divider(badge).querySelector('.discover-count') : null))
+           const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+           const setInput = (value) => {
+             const input = pick('.discover-input input')
+             if (!input) return
+             setValue.call(input, value)
+             input.dispatchEvent(new Event('input', { bubbles: true }))
+           }
+           const submitNow = () => {
+             const button = pick('.discover-bar button[type="submit"]')
+             if (button) button.click()
+           }
+           const waitFor = async (check, ms) => {
+             const until = Date.now() + ms
+             while (Date.now() < until) {
+               if (check()) return true
+               await sleep(100)
+             }
+             return check()
+           }
            const out = {
-             rows: 0, localRows: 0, youtubeRows: 0, dividerBadges: 0, rowSourceBadges: 0,
-             albumCells: 0, channelLinks: 0, channelLinkText: '', channelLinkUnderline: '',
-             titleWider: false, selectedOne: false, checkboxes: 0, selectedTwo: false,
-             menuOpen: false, menuLabels: [], playlistMenu: false, menusClosed: false,
+             liveLocal: 0, liveImported: 0, liveYoutube: 0, ctaBeforeSubmit: false, ctaText: '',
+             submitLabel: '', importSources: [], rowsAfterSubmit: 0, localRows: 0,
+             importedRows: 0, youtubeRows: 0, ctaAfterSubmit: false, dividerBadges: 0,
+             rowSourceBadges: 0, albumCells: 0, channelLinks: 0, channelLinkText: '',
+             channelLinkUnderline: '', titleWider: false, resetYoutube: 0, resetCta: false,
+             selectedOne: false, checkboxes: 0, selectedTwo: false, menuOpen: false,
+             menuLabels: [], playlistMenu: false, menusClosed: false, importedMenu: [],
              channelTitle: '', channelRows: 0, channelHasBack: false, backToSearch: false
            }
 
@@ -6246,23 +6386,24 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            if (searchNav) searchNav.dispatchEvent(new MouseEvent('click', { bubbles: true }))
            await sleep(350)
 
-           const input = pick('.discover-input input')
-           const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
-           if (input) {
-             setValue.call(input, 'Selftest')
-             input.dispatchEvent(new Event('input', { bubbles: true }))
-           }
-           await sleep(120)
-           const submit = pick('.discover-bar button[type="submit"]')
-           if (submit) submit.click()
+           // Typing fills the two database shelves; YouTube is only an offer.
+           setInput('Selftest')
+           await waitFor(() => pickAll('.discover-item').length >= 5, 5000)
+           out.liveLocal = count('On this device')
+           out.liveImported = count('Imported')
+           out.liveYoutube = pickAll('.discover-item').length - out.liveLocal - out.liveImported
+           out.ctaBeforeSubmit = Boolean(pick('.search-youtube-cta'))
+           out.ctaText = text(pick('.search-youtube-cta')).trim()
+           out.submitLabel = text(pick('.discover-bar button[type="submit"]')).trim()
+           out.importSources = pickAll('.discover-import-source').map((el) => text(el).trim())
 
-           let deadline = Date.now() + 6000
-           while (Date.now() < deadline && pickAll('.discover-item').length < 4) await sleep(100)
-
-           const dividers = pickAll('.discover-divider')
-           out.rows = pickAll('.discover-item').length
-           out.localRows = Number(text(dividers[0] ? dividers[0].querySelector('.discover-count') : null))
-           out.youtubeRows = Number(text(dividers[1] ? dividers[1].querySelector('.discover-count') : null))
+           submitNow()
+           await waitFor(() => count('YouTube') === 2, 8000)
+           out.rowsAfterSubmit = pickAll('.discover-item').length
+           out.localRows = count('On this device')
+           out.importedRows = count('Imported')
+           out.youtubeRows = count('YouTube')
+           out.ctaAfterSubmit = Boolean(pick('.search-youtube-cta'))
            out.dividerBadges = pickAll('.discover-divider .source-badge').length
            out.rowSourceBadges = pickAll('.discover-item .source-badge').length
            out.albumCells = pickAll('.discover-album').length
@@ -6275,6 +6416,18 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            out.titleWider = Boolean(
              localTitle && localArtist && localTitle.getBoundingClientRect().width > localArtist.getBoundingClientRect().width
            )
+
+           // Editing the query must take the YouTube answer away with it.
+           setInput('Selftest T')
+           await waitFor(() => Boolean(pick('.search-youtube-cta')), 4000)
+           out.resetYoutube = count('YouTube')
+           out.resetCta = Boolean(pick('.search-youtube-cta'))
+
+           // Ask again, then drive selection and the row menus on the full page.
+           setInput('Selftest')
+           await waitFor(() => pickAll('.discover-item').length >= 5, 5000)
+           submitNow()
+           await waitFor(() => count('YouTube') === 2, 8000)
 
            const rows = pickAll('.discover-item')
            if (rows[0]) rows[0].dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
@@ -6302,9 +6455,20 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            await sleep(120)
            out.menusClosed = !pick('.row-menu') && !pick('.add-to-playlist')
 
+           // An imported row is streamable but not a file: it offers Play and
+           // Details, and no save or playlist action that needs a library row.
+           const importedRow = pickAll('.discover-item')[out.localRows]
+           if (importedRow) {
+             importedRow.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 260, clientY: 300 }))
+           }
+           await sleep(150)
+           out.importedMenu = pickAll('.row-menu .context-item').map((item) => text(item).trim())
+           document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+           await sleep(120)
+
            const link = pick('.discover-channel-link')
            if (link) link.click()
-           deadline = Date.now() + 3000
+           let deadline = Date.now() + 3000
            while (Date.now() < deadline && text(pick('.view-header h1')).trim() !== 'Search Channel') await sleep(100)
            out.channelTitle = text(pick('.view-header h1')).trim()
            out.channelRows = pickAll('.discover-item').length
@@ -6313,18 +6477,53 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            const back = pickAll('.view-header button').find((button) => text(button).includes('Back to results'))
            if (back) back.click()
            await sleep(400)
-           out.backToSearch = text(pick('.view-header h1')).trim() === 'Search' && pickAll('.discover-item').length >= 4
+           out.backToSearch = text(pick('.view-header h1')).trim() === 'Search' && pickAll('.discover-item').length >= 7
            return out
          })()`
       )
       record(
-        searchUi.rows >= 4 && searchUi.localRows >= 2 && searchUi.youtubeRows === 2,
-        'Search lists matching local tracks and YouTube results in one grouped list',
-        { rows: searchUi.rows, local: searchUi.localRows, youtube: searchUi.youtubeRows }
+        searchUi.liveLocal === 2 &&
+          searchUi.liveImported === 3 &&
+          searchUi.liveYoutube === 0 &&
+          searchUi.ctaBeforeSubmit,
+        'Search fills On this device and Imported as you type, and offers YouTube instead of guessing',
+        {
+          local: searchUi.liveLocal,
+          imported: searchUi.liveImported,
+          youtube: searchUi.liveYoutube,
+          cta: searchUi.ctaBeforeSubmit
+        }
       )
       record(
-        searchUi.dividerBadges === 2 && searchUi.rowSourceBadges === 0 && searchUi.albumCells === 0,
-        'Search uses section source badges only and drops the old album column',
+        searchUi.submitLabel === 'Search YouTube' && searchUi.ctaText.includes('Search YouTube for'),
+        'Search names the network request on the button and in the empty YouTube shelf',
+        { button: searchUi.submitLabel, cta: searchUi.ctaText }
+      )
+      record(
+        searchUi.importSources.length === 3 &&
+          searchUi.importSources[0] === 'History' &&
+          searchUi.importSources[1] === 'History' &&
+          searchUi.importSources[2] === 'Selftest Imported List',
+        'Search names the history or playlist that remembers each imported row',
+        searchUi.importSources
+      )
+      record(
+        searchUi.rowsAfterSubmit === 7 &&
+          searchUi.localRows === 2 &&
+          searchUi.importedRows === 3 &&
+          searchUi.youtubeRows === 2 &&
+          !searchUi.ctaAfterSubmit,
+        'Search YouTube fills the third shelf beside the two local shelves',
+        {
+          rows: searchUi.rowsAfterSubmit,
+          local: searchUi.localRows,
+          imported: searchUi.importedRows,
+          youtube: searchUi.youtubeRows
+        }
+      )
+      record(
+        searchUi.dividerBadges === 3 && searchUi.rowSourceBadges === 0 && searchUi.albumCells === 0,
+        'Search uses one source badge per shelf and no per-row badge or album column',
         {
           dividers: searchUi.dividerBadges,
           rows: searchUi.rowSourceBadges,
@@ -6344,7 +6543,12 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         searchUi.titleWider
       )
       record(
-        searchUi.selectedOne && searchUi.checkboxes === 4 && searchUi.selectedTwo,
+        searchUi.resetYoutube === 0 && searchUi.resetCta,
+        'Search clears the YouTube answer, and offers the search again, when the query changes',
+        { youtube: searchUi.resetYoutube, cta: searchUi.resetCta }
+      )
+      record(
+        searchUi.selectedOne && searchUi.checkboxes === 7 && searchUi.selectedTwo,
         'Search rows select with Ctrl-click and reveal a checkbox per row',
         { first: searchUi.selectedOne, boxes: searchUi.checkboxes, two: searchUi.selectedTwo }
       )
@@ -6363,6 +6567,15 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         { opened: searchUi.playlistMenu, closed: searchUi.menusClosed }
       )
       record(
+        searchUi.importedMenu.includes('Play') &&
+          searchUi.importedMenu.includes('Details') &&
+          !searchUi.importedMenu.includes('Save to library') &&
+          !searchUi.importedMenu.includes('Add to playlist…') &&
+          !searchUi.importedMenu.includes('Go to channel'),
+        'an imported row offers Play and Details, without save or playlist actions',
+        searchUi.importedMenu
+      )
+      record(
         searchUi.channelTitle === 'Search Channel' && searchUi.channelRows === 1 && searchUi.channelHasBack,
         'Search opens a channel from the row link',
         { title: searchUi.channelTitle, rows: searchUi.channelRows, back: searchUi.channelHasBack }
@@ -6375,6 +6588,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     } finally {
       container.online.search = realSearch
       container.online.channel = realChannel
+      container.onlineRepo.removeByVideoIds(['selftestimport1', 'selftestimport2'])
+      container.onlinePlaylists.delete(importedList.id)
+      broadcast(IPC_EVENTS.onlineChanged, null)
     }
 
     // ---- gapless handoff, SMTC and taskbar ------------------------------

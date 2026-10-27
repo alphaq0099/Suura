@@ -5915,6 +5915,74 @@ button.online-jump:hover {
   color: var(--accent-strong);
 }
 
+/* Imported is neither of the other two: the database remembers the video, but
+   there is no file and no live answer. A neutral badge keeps it from reading
+   as either On this device or YouTube. */
+.source-badge.imported {
+  border-color: rgb(var(--overlay-rgb) / 14%);
+  background: rgb(var(--overlay-rgb) / 6%);
+  color: var(--text-dim);
+}
+
+/* The playlist an imported row came from. The badge already says Imported;
+   this says which list remembered the video. */
+.discover-import-source {
+  margin-left: 7px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-faint);
+  font-size: calc(10px * var(--text-scale));
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* A quiet note while the database half of a search is still settling. */
+.discover-live {
+  color: var(--text-faint);
+}
+
+/* Before a submit the YouTube shelf has nothing to show, so it offers the one
+   action that can fill it instead of an empty list. */
+.discover-cta-row {
+  padding: 6px 8px 8px;
+}
+
+.search-youtube-cta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: rgb(var(--overlay-rgb) / 2%);
+  color: var(--text-dim);
+  text-align: left;
+}
+
+.search-youtube-cta svg {
+  flex: none;
+}
+
+.search-youtube-cta:hover:not(:disabled) {
+  border-color: rgb(var(--accent-rgb) / 40%);
+  background: rgb(var(--accent-rgb) / 8%);
+  color: var(--text);
+}
+
+.search-youtube-cta strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* An answer that came back empty is a fact worth stating, not an error. */
+.discover-empty-shelf {
+  padding: 14px 12px;
+  color: var(--text-faint);
+  font-size: calc(12px * var(--text-scale));
+}
+
 @media (max-width: 880px) {
   .discover-jump {
     grid-template-columns: 42px minmax(0, 1fr) 60px;

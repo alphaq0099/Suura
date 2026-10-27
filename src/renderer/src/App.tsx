@@ -749,9 +749,10 @@ export function App() {
   )
 
   /**
-   * Search can select local rows and YouTube rows in one list. Build the queue
-   * in row order, resolving each stream through the same add-link path as a
-   * single click, then hand the player one queue with both sources tagged.
+   * Search can select local rows, imported YouTube rows and live YouTube rows
+   * in one list. Build the queue in row order, resolving only the live results
+   * through the add-link path; an imported row already has a database identity,
+   * so playing it must not copy the video into history as well.
    */
   const playSearchSelection = useCallback(
     async (items: SearchSelectionItem[]): Promise<void> => {
@@ -759,6 +760,10 @@ export function App() {
       for (const item of items) {
         if (item.kind === 'local') {
           queue.push(...tagQueueTracks([item.track], LIBRARY_QUEUE_SOURCE))
+          continue
+        }
+        if (item.kind === 'imported') {
+          queue.push(...tagQueueTracks([item.track], YOUTUBE_QUEUE_SOURCE))
           continue
         }
         const entry = await online.addLink(youtubeWatchUrl(item.result.videoId))
@@ -777,6 +782,10 @@ export function App() {
       for (const item of items) {
         if (item.kind === 'local') {
           queue.push(...tagQueueTracks([item.track], LIBRARY_QUEUE_SOURCE))
+          continue
+        }
+        if (item.kind === 'imported') {
+          queue.push(...tagQueueTracks([item.track], YOUTUBE_QUEUE_SOURCE))
           continue
         }
         const entry = await online.addLink(youtubeWatchUrl(item.result.videoId))

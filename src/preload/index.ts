@@ -59,6 +59,9 @@ const api: PlayerApi = {
 
   listTracks: (query?: ListTracksQuery) => ipcRenderer.invoke(IPC.libraryListTracks, query),
 
+  searchLibrary: (query: string, limit?: number) =>
+    ipcRenderer.invoke(IPC.librarySearch, query, limit),
+
   getTracks: (trackIds: number[]) => ipcRenderer.invoke(IPC.libraryTracksByIds, trackIds),
 
   listAlbums: (query?: ListAlbumsQuery) => ipcRenderer.invoke(IPC.libraryListAlbums, query),

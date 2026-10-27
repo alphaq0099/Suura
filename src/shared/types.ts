@@ -428,6 +428,36 @@ export interface YouTubeChannel {
 }
 
 /**
+ * One YouTube track that lives only in the database.
+ *
+ * Imported is not a play log: it means the app remembers the video (as a
+ * pasted link or as an entry in an imported playlist) but has no file for it.
+ * Once a download finishes the same video belongs to On this device instead,
+ * and this row disappears from the Imported shelf.
+ */
+export interface ImportedSearchResult {
+  track: Track
+  /** "History", or the imported playlist the entry came from. */
+  source: string
+  /** The imported playlist's row id; null for a history row. */
+  playlistId: number | null
+}
+
+/**
+ * One live search across the two local catalogues.
+ *
+ * YouTube is a separate, explicit request, so it is not part of this answer.
+ * Both halves arrive in one round trip, which is what lets typing filter the
+ * page without a network search per keystroke.
+ */
+export interface LibrarySearchResult {
+  /** Files on this device, including downloaded YouTube tracks. */
+  local: Track[]
+  /** Database-only YouTube tracks: history rows and imported playlist entries. */
+  imported: ImportedSearchResult[]
+}
+
+/**
  * Every state a save can be in.
  *
  * The array is the runtime form of the union so that the download history can

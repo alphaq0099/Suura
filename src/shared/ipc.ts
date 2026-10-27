@@ -20,6 +20,7 @@ import type {
   DuplicateReport,
   EngineStatus,
   LibraryStats,
+  LibrarySearchResult,
   ListAlbumsQuery,
   ListTracksQuery,
   OnlinePlaylist,
@@ -69,6 +70,7 @@ export const IPC = {
   libraryScanCancel: 'library:scan-cancel',
   libraryAddPaths: 'library:add-paths',
   libraryListTracks: 'library:list-tracks',
+  librarySearch: 'library:search',
   libraryTracksByIds: 'library:tracks-by-ids',
   libraryListAlbums: 'library:list-albums',
   libraryListArtists: 'library:list-artists',
@@ -253,6 +255,13 @@ export interface PlayerApi {
    */
   getPathForFile(file: File): string
   listTracks(query?: ListTracksQuery): Promise<TrackPage>
+  /**
+   * Searches local files and database-only imported YouTube tracks together.
+   *
+   * One round trip so live typing can update both shelves in the same frame.
+   * YouTube is deliberately absent: that is a separate, explicit request.
+   */
+  searchLibrary(query: string, limit?: number): Promise<LibrarySearchResult>
   /**
    * Looks up specific rows in one request.
    *

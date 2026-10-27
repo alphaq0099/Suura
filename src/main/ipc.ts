@@ -82,6 +82,7 @@ import {
 import type { AppContainer } from './services/container'
 import { broadcast } from './broadcast'
 import { readLogTail, sanitizeDiagnosticsSummary, writeDiagnosticsFile } from './diagnostics'
+import { LIBRARY_SEARCH_LIMIT, searchLibrary } from './library-search'
 import { isMiniPlayer, setMiniPlayer } from './window-mode'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -820,6 +821,17 @@ export function registerIpcHandlers(container: AppContainer): void {
   })
 
   ipcMain.handle(IPC.libraryListTracks, (_event, query: unknown) => library.list(sanitizeListQuery(query)))
+
+  ipcMain.handle(IPC.librarySearch, (_event, query: unknown, limit: unknown) => {
+    if (typeof query !== 'string') throw new Error('Type something to search for.')
+    const text = query.trim().slice(0, 200)
+    if (text.length === 0) return { local: [], imported: [] }
+    const count =
+      typeof limit === 'number' && Number.isFinite(limit)
+        ? clamp(Math.round(limit), 1, 50)
+        : LIBRARY_SEARCH_LIMIT
+    return searchLibrary(container, text, count)
+  })
 
   ipcMain.handle(IPC.libraryTracksByIds, (_event, input: unknown) => {
     if (!Array.isArray(input) || input.length > 500) {

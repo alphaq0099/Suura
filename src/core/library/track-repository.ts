@@ -14,6 +14,7 @@ import type {
 import { recentlyAddedCutoff } from '@shared/library'
 import { isYouTubeVideoId } from '@shared/youtube'
 import { isPathInside, localContentKey, normalizePath } from './content-key'
+import { likeTerm } from '../db/like'
 import type { SqlDatabase, SqlParam } from '../db/driver'
 
 export interface TrackRow {
@@ -287,11 +288,6 @@ function albumArtistExpr(alias = ''): string {
 }
 
 const ALBUM_ARTIST = albumArtistExpr()
-
-/** Escapes the wildcard characters in a user's search term for a LIKE query. */
-function likeTerm(input: string): string {
-  return `%${input.replace(/[\\%_]/g, '\\$&')}%`
-}
 
 const ALBUM_SORT_COLUMNS: Record<AlbumSortField, string> = {
   recent: 'MAX(added_at)',
