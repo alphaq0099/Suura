@@ -94,6 +94,10 @@ The feedback is not one visual-polish pass. It contains:
 - Cream mode shows the hero artwork through a left fade instead of a haze.
 - An artist with tracks but no albums opens their track list, not an empty album grid.
 - Every shelf has prev/next arrows that disable at its ends.
+- Typing fills **On this device** and **Imported** without a network call; the button or Enter is the only way to ask YouTube.
+- Each local shelf shows at most eight cards with **Show all**, and a YouTube answer is one **Best match** plus five alternatives.
+- Editing the query returns the YouTube shelf to its call to action instead of leaving stale rows under a new query.
+- Search warms the best YouTube match only when both local shelves are empty, once per attempt, and stops when the user plays a card or edits the query.
 - A saved download is still listed in Downloads after a relaunch.
 - A restart does not clear cached entries unless the configured age/size policy requires it.
 - Downloads has correct top padding and no clipped tab labels.
@@ -124,6 +128,8 @@ All four slices are implemented and verified.
 - Quick check: played albumless files as track cards on Recently played: `212fc4c`
 - Quick check: imported playlists and YouTube listens on the Home shelves: `56a21a3`
 - Quick check: hero resume, shelf arrows and the albumless artist view: `f62d0da`
+- Search redesign, grouped live shelves: `259e9d7`
+- Search redesign, card grid, best match and guarded warm-up: `25ae4da`
 
 A counted listen (30 seconds or completion) now refreshes **Recently played** while Home is open, and is counted once per listen instead of again when the track ends or changes. A played file with no album tag now appears there as a track card, merged with the played albums by newest listen, instead of being omitted because it has no album summary. The equalizer is one row of upright faders with the preamp apart, hangs above the player bar without covering it, and uses a faders icon that cannot be confused with Settings or Queue. Album-card play badges keep their accent when hovered or focused.
 
@@ -142,4 +148,11 @@ The Home hero and shelves now point at what the user actually just did:
 - An artist card with no albums opens that artist's tracks in the detail view, with the album column on, instead of filtering the album grid to an empty page.
 - Every shelf heading has small prev/next arrows that disable at the ends, move by a page and use instant movement under reduced motion.
 
-Each slice passed `npm run typecheck`, `npm run smoke`, `npm run build` and `npm run selftest`. Manual acceptance of the visual slices (P3, P13, the equalizer, the play badge, the hero backdrop and the new Home cards) is still required. M8 stays open on signing, updates, crash reporting, sidecars, compatibility and a clean-Windows pass. The tree also contains an unrelated, uncommitted performance-harness change in `src/main/scale-check.ts`; it is not part of this feedback pass and must not be mixed into these commits.
+Search is now three shelves rather than one mixed list:
+
+- Typing filters **On this device** and **Imported** from the database as it settles; the network is only touched by the button or Enter, whose label is always **Search YouTube** when there is a query.
+- A local shelf shows eight cards, then **Show all**; the YouTube answer is always one **Best match** and five alternatives, so the page shape does not jump between queries.
+- Imported means remembered, not downloaded: YouTube history entries and imported playlist entries, deduped by video id, with a local copy hiding its remembered twin.
+- Prefetching is a single guarded guess: the best match only, 1.8 s after an answer that found nothing locally, one in flight, a 45 s cooldown, paused by a bot check and cancelled by playing a card or editing the query.
+
+Each slice passed `npm run typecheck`, `npm run smoke`, `npm run build` and `npm run selftest`. Manual acceptance of the visual slices (P3, P13, the equalizer, the play badge, the hero backdrop, the Home cards and the Search shelf layout) is still required. M8 stays open on signing, updates, crash reporting, sidecars, compatibility and a clean-Windows pass. The tree also contains an unrelated, uncommitted performance-harness change in `src/main/scale-check.ts`; it is not part of this feedback pass and must not be mixed into these commits.

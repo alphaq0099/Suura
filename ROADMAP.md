@@ -390,12 +390,20 @@ separate layer with its own budget, and the two never pretend to be the same thi
 leaves no temp folder; pause/resume, cancel, retry and remove work from the dock and the Downloads screen. **Met.**
 
 ### M5 — Discovery & YouTube Library Surface  *(complete)*
-- [x] Unified search: local results **and** YouTube results in one list, clearly badged. The new **Search** view queries
-      both in parallel; every row carries a **Local** or **YouTube** badge. A local row plays a file at once. A
-      YouTube row goes through the same add-link path as a pasted URL, so it is remembered in the YouTube history and
-      uses the same resolve cache. Rows offer Play, Add to queue and Save to library; a YouTube search returns metadata
-      only, so no result is resolved or written until it is chosen. The view stays mounted for the session, so leaving
-      Search and returning keeps the query, results and open channel; a restart clears them.
+- [x] Unified search: **On this device**, **Imported** and **YouTube** as three shelves in one view. Typing filters
+      the first two from SQLite as it settles, without a network call, so files and remembered videos answer
+      immediately; YouTube stays behind **Search YouTube** (button or Enter) and is never guessed. A device row plays a
+      file at once. A YouTube row goes through the same add-link path as a pasted URL, so it is remembered in the
+      YouTube history and uses the same resolve cache. Results are cards in Home's visual language, capped at eight
+      per local shelf with **Show all**, and a YouTube answer is one **Best match** plus five alternatives with no
+      pager. Choosing a result still returns metadata only, so nothing is resolved or written until it is chosen. The
+      view stays mounted for the session, so leaving Search and returning keeps the query, results and open channel; a
+      restart clears them.
+- [x] Search may warm the best YouTube match once, and only when the query found nothing on the device or in the
+      imported lists. The guess waits 1.8 s after the answer appears, never overlaps another resolve, respects the
+      existing **Prefetch the next track** setting, stays quiet for 45 s after an attempt and pauses with the engine
+      after a bot check. It is cancelled by playing a card or editing the query, so a warm-up never outlives the
+      result it was meant for.
 - [x] Channel/artist pages (basic), **more from this channel**. A search result's channel id or handle opens a page of
       its recent videos in place, with the same row actions. Search results that carry only a display name fall back to
       a name search; the page says what it is instead of inventing a channel URL.
@@ -430,10 +438,11 @@ leaves no temp folder; pause/resume, cancel, retry and remove work from the dock
       and a row menu holding Remove from history and Details. The rows stay links (they are not local tracks and the
       local chips do not count them), but the user no longer has to leave the Library to see them.
 **Exit:** a user can go from "no music" to "a 40-track playlist playing" without touching a folder.
-*Status: complete. Search finds local and YouTube rows together, channels open in place, smart chips cover recent,
-played and unplayed views, and the YouTube chip folds stream-only history into the Library. Imported lists plus the link
-history cover the "start from nothing" path. The channel page is a flat recent-videos list on purpose — no subscriptions,
-no channel import, no "download all".*
+*Status: complete. Search splits local, imported and YouTube answers into three shelves, fills the first two while
+typing, searches YouTube only on request, and warms one best match when the local shelves are empty. Channels open in
+place, smart chips cover recent, played and unplayed views, and the YouTube chip folds stream-only history into the
+Library. Imported lists plus the link history cover the "start from nothing" path. The channel page is a flat
+recent-videos list on purpose — no subscriptions, no channel import, no "download all".*
 
 ### M6 — Settings Revamp  *(complete)*
 **Goal:** one deliberate pass over Settings after M5, instead of growing it card by card. The page currently mixes
