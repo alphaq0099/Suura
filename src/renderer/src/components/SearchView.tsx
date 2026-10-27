@@ -17,6 +17,7 @@ import type {
   YouTubeSearchResult
 } from '@shared/types'
 import { youtubeWatchUrl } from '@shared/youtube'
+import { canPrefetchSearchMatch } from '@shared/search'
 import { formatCount, formatDuration } from '@shared/format'
 import { api, messageOf } from '../api'
 import type { DownloadState, UseDownloadsResult } from '../hooks/useDownloads'
@@ -80,10 +81,12 @@ export interface SearchViewProps {
   /** Plays every selected row in order, resolving streams as it goes. */
   onPlaySearchSelection: (items: SearchSelectionItem[]) => Promise<void>
   onQueueSearchSelection: (items: SearchSelectionItem[]) => Promise<void>
+  /** The same "prefetch the next track" setting the player uses. */
+  prefetchEnabled: boolean
 }
 
 /** Six YouTube results: one best match and five alternatives. */
-const YOUTUBE_PAGE_SIZE = 6
+const YOUTUBE_RESULT_LIMIT = 6
 const CHANNEL_PAGE_SIZE = 10
 
 /**
@@ -92,8 +95,21 @@ const CHANNEL_PAGE_SIZE = 10
  */
 const LIVE_SEARCH_LIMIT = 30
 
+/** Cards shown per database shelf before Show all. */
+const SHELF_CARD_LIMIT = 8
+
 /** How long typing has to pause before the local/imported shelves update. */
 const LIVE_SEARCH_DELAY_MS = 180
+
+/**
+ * How long the best match waits before it is warmed, and how long Search stays
+ * quiet afterwards. A prefetch is a guess: it must never compete with reading
+ * the result list or with the next, different query.
+ */
+const PREFETCH_DELAY_MS = 1800
+const PREFETCH_COOLDOWN_MS = 45_000
+/** A bot check is not retried for five minutes, matching the sidecar gate. */
+const PREFETCH_BLOCKED_MS = 5 * 60_000
 
 /** A track-shaped stub, only so the row can borrow the shared artwork lookup. */
 function artworkTrack(result: YouTubeSearchResult): Track {
@@ -166,7 +182,8 @@ export function SearchView(props: SearchViewProps) {
     onPlayYouTube,
     onQueueYouTube,
     onPlaySearchSelection,
-    onQueueSearchSelection
+    onQueueSearchSelection,
+    prefetchEnabled
   } = props
   const { saved, states, save } = downloads
 
@@ -183,9 +200,8 @@ export function SearchView(props: SearchViewProps) {
   const [busyVideoId, setBusyVideoId] = useState<string | null>(null)
   const [bulkBusy, setBulkBusy] = useState(false)
   const [bulkSaving, setBulkSaving] = useState(false)
-  const [youtubePage, setYoutubePage] = useState(1)
-  const [youtubeHasMore, setYoutubeHasMore] = useState(false)
-  const [youtubePageLoading, setYoutubePageLoading] = useState(false)
+  const [showAllLocal, setShowAllLocal] = useState(false)
+  const [showAllImported, setShowAllImported] = useState(false)
   const [channel, setChannel] = useState<YouTubeChannel | null>(null)
   const [channelTarget, setChannelTarget] = useState<string | null>(null)
   const [channelPage, setChannelPage] = useState(1)
@@ -210,6 +226,13 @@ export function SearchView(props: SearchViewProps) {
   const liveTokenRef = useRef(0)
   /** The newest YouTube request; a query edit invalidates paging too. */
   const youtubeTokenRef = useRef(0)
+  /** Bumped whenever the query or an activation makes a warm-up stale. */
+  const prefetchEpochRef = useRef(0)
+  const prefetchInFlightRef = useRef(false)
+  const prefetchLastAtRef = useRef<number | null>(null)
+  const prefetchBlockedUntilRef = useRef(0)
+  /** The shelves as they are *now*, for a timer set a moment earlier. */
+  const prefetchShelfRef = useRef({ local: 0, imported: 0, query: '', submitted: '' })
   const fieldMenu = useFieldContextMenu(inputRef)
 
   const localRows = useMemo<LocalSearchRow[]>(
@@ -296,19 +319,19 @@ export function SearchView(props: SearchViewProps) {
     liveTokenRef.current += 1
     youtubeTokenRef.current += 1
     const token = liveTokenRef.current
+    prefetchEpochRef.current += 1
     setSubmitted('')
     setYoutube([])
     setYoutubeError(null)
-    setYoutubePage(1)
-    setYoutubeHasMore(false)
     setLocal([])
     setImported([])
+    setShowAllLocal(false)
+    setShowAllImported(false)
     setError(null)
     // A request from the previous query can no longer clear these itself: its
     // token is stale, so its `finally` bails out. Clearing them here is what
     // keeps the field usable after typing during a slow search.
     setLoading(false)
-    setYoutubePageLoading(false)
     if (text.length === 0) {
       setLiveLoading(false)
       return
@@ -335,6 +358,92 @@ export function SearchView(props: SearchViewProps) {
 
     return () => clearTimeout(timer)
   }, [query])
+
+  // A timer set below fires later, when the live search may already have found
+  // something. Keep the newest shelf counts where the timer can read them.
+  useEffect(() => {
+    prefetchShelfRef.current = {
+      local: local.length,
+      imported: imported.length,
+      query,
+      submitted
+    }
+  })
+
+  /**
+   * Warms the best match only when it is the last hope for this query.
+   *
+   * With nothing on the device or in the imported lists, a YouTube match is
+   * what the user is about to play, and resolving it now makes that play feel
+   * instant. The timer and the cooldown keep the guess from spending resolves
+   * on queries the user is still reading or typing.
+   */
+  useEffect(() => {
+    const best = youtube[0] ?? null
+    if (
+      !best ||
+      !canPrefetchSearchMatch({
+        enabled: prefetchEnabled,
+        submitted: submitted.length > 0,
+        localCount: local.length,
+        importedCount: imported.length,
+        bestVideoId: best.videoId,
+        inFlight: prefetchInFlightRef.current,
+        now: Date.now(),
+        lastAttemptAt: prefetchLastAtRef.current,
+        blockedUntil: prefetchBlockedUntilRef.current,
+        cooldownMs: PREFETCH_COOLDOWN_MS
+      })
+    ) {
+      return
+    }
+
+    const epoch = prefetchEpochRef.current
+    const timer = window.setTimeout(() => {
+      const shelves = prefetchShelfRef.current
+      const now = Date.now()
+      if (
+        epoch !== prefetchEpochRef.current ||
+        shelves.query.trim() !== shelves.submitted ||
+        !canPrefetchSearchMatch({
+          enabled: prefetchEnabled,
+          submitted: shelves.submitted.length > 0,
+          localCount: shelves.local,
+          importedCount: shelves.imported,
+          bestVideoId: best.videoId,
+          inFlight: prefetchInFlightRef.current,
+          now,
+          lastAttemptAt: prefetchLastAtRef.current,
+          blockedUntil: prefetchBlockedUntilRef.current,
+          cooldownMs: PREFETCH_COOLDOWN_MS
+        })
+      ) {
+        return
+      }
+
+      prefetchInFlightRef.current = true
+      prefetchLastAtRef.current = now
+      void api
+        .prefetchSource({
+          id: 0,
+          sourceKind: 'youtube',
+          sourceId: best.videoId,
+          filePath: null
+        })
+        .catch((cause) => {
+          // A bot check or sign-in challenge is not retried: the next guess
+          // would only make it more likely, so this pauses with the engine.
+          if (/bot|sign-in check|verify|rate limit|paused for about/i.test(messageOf(cause))) {
+            prefetchBlockedUntilRef.current = Date.now() + PREFETCH_BLOCKED_MS
+          }
+        })
+        .finally(() => {
+          prefetchInFlightRef.current = false
+        })
+    }, PREFETCH_DELAY_MS)
+
+    return () => window.clearTimeout(timer)
+  }, [prefetchEnabled, youtube, local.length, imported.length, submitted, query])
 
   const pasteQuery = useCallback(async (): Promise<void> => {
     try {
@@ -433,20 +542,20 @@ export function SearchView(props: SearchViewProps) {
     setChannelPage(1)
     setChannelHasMore(false)
     setSubmitted(text)
-    setYoutubePage(1)
-    setYoutubeHasMore(false)
-    // Clear the previous answer before waiting: a slow search that leaves the
-    // old rows on screen under the new query is worse than an empty shelf.
     setYoutube([])
+    // A new question makes any warm-up for the old one pointless.
+    prefetchEpochRef.current += 1
 
     youtubeTokenRef.current += 1
     const token = youtubeTokenRef.current
     try {
-      const results = await api.searchYouTube(text, YOUTUBE_PAGE_SIZE, 0)
+      const results = await api.searchYouTube(text, YOUTUBE_RESULT_LIMIT, 0)
       // A newer query owns the shelf now; its own request will fill it.
       if (token !== youtubeTokenRef.current) return
-      setYoutube(results)
-      setYoutubeHasMore(results.length === YOUTUBE_PAGE_SIZE)
+      // The page shape is one best match and five alternatives. The provider is
+      // asked for exactly that many, and a provider that ignores the limit must
+      // not grow the shelf or displace the empty-CTA layout.
+      setYoutube(results.slice(0, YOUTUBE_RESULT_LIMIT))
     } catch (cause) {
       if (token !== youtubeTokenRef.current) return
       setYoutube([])
@@ -455,41 +564,6 @@ export function SearchView(props: SearchViewProps) {
       if (token === youtubeTokenRef.current) setLoading(false)
     }
   }, [query])
-
-  /**
-   * Fetches one page of YouTube results. The local half of the list does not
-   * move: paging is about discovery, not about searching the library again.
-   */
-  const goToYoutubePage = useCallback(
-    async (page: number): Promise<void> => {
-      if (page < 1 || page === youtubePage || submitted.length === 0) return
-      setYoutubePageLoading(true)
-      setError(null)
-      const token = youtubeTokenRef.current
-      try {
-        const results = await api.searchYouTube(
-          submitted,
-          YOUTUBE_PAGE_SIZE,
-          (page - 1) * YOUTUBE_PAGE_SIZE
-        )
-        if (token !== youtubeTokenRef.current) return
-        if (results.length === 0) {
-          // The end of the list, not an error: keep the page that is on screen
-          // and stop offering a next arrow.
-          setYoutubeHasMore(false)
-          return
-        }
-        setYoutube(results)
-        setYoutubePage(page)
-        setYoutubeHasMore(results.length === YOUTUBE_PAGE_SIZE)
-      } catch (cause) {
-        if (token === youtubeTokenRef.current) setError(messageOf(cause))
-      } finally {
-        if (token === youtubeTokenRef.current) setYoutubePageLoading(false)
-      }
-    },
-    [submitted, youtubePage]
-  )
 
   const submit = (event: FormEvent): void => {
     event.preventDefault()
@@ -524,18 +598,6 @@ export function SearchView(props: SearchViewProps) {
       }
     },
     [onQueueYouTube]
-  )
-
-  const saveYouTube = useCallback(
-    async (result: YouTubeSearchResult): Promise<void> => {
-      setError(null)
-      try {
-        await save({ videoId: result.videoId, title: result.title, artist: result.artist, album: null })
-      } catch (cause) {
-        setError(messageOf(cause))
-      }
-    },
-    [save]
   )
 
   const saveYouTubeResults = useCallback(
@@ -593,6 +655,9 @@ export function SearchView(props: SearchViewProps) {
 
   const activateRow = useCallback(
     (row: SearchRow): void => {
+      // Acting on this page ends the guess: a pending warm-up must not spend a
+      // resolve for a result the user is no longer considering.
+      prefetchEpochRef.current += 1
       if (row.kind === 'local') {
         onPlayLocal([row.track])
         return
@@ -746,12 +811,10 @@ export function SearchView(props: SearchViewProps) {
     }
   }, [saveYouTubeResults, unsavedSelected])
 
-  const rows = resultRows
   const typed = query.trim()
-  const hasLibraryResults = local.length > 0 || imported.length > 0
   const showYoutubeCta = typed.length > 0 && submitted.length === 0 && !loading
-  const hasResults =
-    typed.length > 0 && (hasLibraryResults || submitted.length > 0 || loading || liveLoading)
+  const visibleLocal = showAllLocal ? localRows : localRows.slice(0, SHELF_CARD_LIMIT)
+  const visibleImported = showAllImported ? importedRows : importedRows.slice(0, SHELF_CARD_LIMIT)
 
   const selectionBar = selecting ? (
     <div className="banner selection-bar discover-selection-bar">
@@ -844,6 +907,18 @@ export function SearchView(props: SearchViewProps) {
         if (rowMenuRow.kind === 'local') onPlayLocal([rowMenuRow.track])
         else if (rowMenuRow.kind === 'imported') void playImported(rowMenuRow.track)
         else void playYouTube(rowMenuRow.result)
+      }
+    })
+    // The card has no room for a queue button of its own, so the action lives
+    // beside Play here, where the row menu already handles every source.
+    rowMenuItems.push({
+      id: 'queue',
+      label: 'Add to queue',
+      icon: <QueueIcon />,
+      onSelect: () => {
+        if (rowMenuRow.kind === 'local') onQueueLocal([rowMenuRow.track])
+        else if (rowMenuRow.kind === 'imported') void queueImported(rowMenuRow.track)
+        else void queueYouTube(rowMenuRow.result)
       }
     })
     if (rowMenuIsSelected && rowMenuRows.length > 0) {
@@ -974,29 +1049,36 @@ export function SearchView(props: SearchViewProps) {
           ) : (
             <div className="discover-results">
               {selectionBar}
-              <ul className="discover-list" aria-label={`${channel.name} videos`}>
-                {channelRows.map((row, index) => (
-                  <DiscoverRow
-                    key={row.key}
-                    row={row}
-                    selected={selectedKeys.has(row.key)}
-                    selecting={selecting}
-                    busy={busyVideoId === row.result.videoId}
-                    isSaved={saved.has(row.result.videoId)}
-                    savingState={states[row.result.videoId]}
-                    isCurrent={row.result.videoId === currentVideoId}
-                    isPlaying={isPlaying}
-                    onClick={(event) => onRowClick(event, row, index)}
-                    onContextMenu={(event) => openContextMenu(event, row, index)}
-                    onKeyDown={(event) => onRowKeyDown(event, row, index)}
-                    onToggleSelected={() => toggleRow(row, true)}
-                    onQueue={() => void queueYouTube(row.result)}
-                    onSave={() => void saveYouTube(row.result)}
-                    onMore={(event) => openRowMenuAt(event, row, index)}
-                    onChannel={null}
-                  />
-                ))}
-              </ul>
+              <div className="discover-list discover-shelves">
+                <section className="discover-shelf" aria-label={`${channel.name} videos`}>
+                  <div className="discover-shelf-head">
+                    <span className="source-badge youtube">YouTube</span>
+                    <span className="discover-shelf-note">Recent videos from this channel</span>
+                    <span className="discover-count">{formatCount(channelRows.length)}</span>
+                  </div>
+                  <ul className="discover-grid">
+                    {channelRows.map((row, index) => (
+                      <DiscoverRow
+                        key={row.key}
+                        row={row}
+                        selected={selectedKeys.has(row.key)}
+                        selecting={selecting}
+                        busy={busyVideoId === row.result.videoId}
+                        isSaved={saved.has(row.result.videoId)}
+                        savingState={states[row.result.videoId]}
+                        isCurrent={row.result.videoId === currentVideoId}
+                        isPlaying={isPlaying}
+                        onClick={(event) => onRowClick(event, row, index)}
+                        onContextMenu={(event) => openContextMenu(event, row, index)}
+                        onKeyDown={(event) => onRowKeyDown(event, row, index)}
+                        onToggleSelected={() => toggleRow(row, true)}
+                        onMore={(event) => openRowMenuAt(event, row, index)}
+                        onChannel={null}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              </div>
               {channelPage > 1 || channelHasMore ? (
                 <ResultPager
                   page={channelPage}
@@ -1024,13 +1106,13 @@ export function SearchView(props: SearchViewProps) {
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 onKeyDown={fieldMenu.onKeyDown}
-                disabled={loading || youtubePageLoading || channelLoading}
+                disabled={loading || channelLoading}
               />
             </div>
             <button
               type="submit"
               className="primary"
-              disabled={loading || youtubePageLoading || channelLoading || query.trim().length === 0}
+              disabled={loading || channelLoading || query.trim().length === 0}
             >
               {loading ? <SpinnerIcon /> : <SearchIcon />}
               <span>{loading ? 'Searching YouTube…' : 'Search YouTube'}</span>
@@ -1048,102 +1130,132 @@ export function SearchView(props: SearchViewProps) {
             </div>
           ) : null}
 
-          {!hasResults && !loading && !liveLoading ? (
+          {typed.length === 0 ? (
             <div className="empty-state">
               <SearchIcon size={32} />
-              <h2>{submitted ? 'Nothing matched' : 'Find something to play'}</h2>
+              <h2>Find something to play</h2>
               <p>
-                {submitted
-                  ? 'No device tracks, imported tracks or YouTube videos matched that search. Try a shorter query, or check the spelling.'
-                  : 'Search by song, artist, album or channel. Device rows play from disk; imported and YouTube rows stream, and YouTube is only searched when you ask.'}
+                Search by song, artist, album or channel. Files play from disk; imported and
+                YouTube tracks stream, and YouTube is only searched when you ask.
               </p>
             </div>
-          ) : null}
-
-          {hasResults ? (
+          ) : (
             <>
               <div className="discover-summary">
                 <span>
                   Results for <strong>“{typed}”</strong>
                   {liveLoading ? <span className="discover-live"> · searching this device…</span> : null}
                 </span>
-                <span className="discover-count">{formatCount(rows.length)}</span>
               </div>
               <div className="discover-results">
                 {selectionBar}
-                <ul className="discover-list" aria-label="Search results">
-                  {local.length > 0 ? (
-                    <li className="discover-divider">
+                <div className="discover-list discover-shelves" aria-label="Search results">
+                  <section className="discover-shelf" aria-label="On this device">
+                    <div className="discover-shelf-head">
                       <span className="source-badge local">On this device</span>
-                      <span>Files in your library</span>
-                      <span className="discover-count">{local.length}</span>
-                    </li>
-                  ) : null}
-                  {localRows.map((row, index) => {
-                    const isCurrent = row.track.id === currentTrackId
-                    return (
-                      <DiscoverRow
-                        key={row.key}
-                        row={row}
-                        selected={selectedKeys.has(row.key)}
-                        selecting={selecting}
-                        busy={false}
-                        isSaved
-                        savingState={undefined}
-                        isCurrent={isCurrent}
-                        isPlaying={isPlaying}
-                        onClick={(event) => onRowClick(event, row, index)}
-                        onContextMenu={(event) => openContextMenu(event, row, index)}
-                        onKeyDown={(event) => onRowKeyDown(event, row, index)}
-                        onToggleSelected={() => toggleRow(row, true)}
-                        onQueue={() => onQueueLocal([row.track])}
-                        onSave={undefined}
-                        onMore={(event) => openRowMenuAt(event, row, index)}
-                        onChannel={null}
-                      />
-                    )
-                  })}
+                      <span className="discover-shelf-note">Files in your library</span>
+                      <span className="discover-count">{formatCount(local.length)}</span>
+                    </div>
+                    {visibleLocal.length > 0 ? (
+                      <ul className="discover-grid">
+                        {visibleLocal.map((row, index) => {
+                          const isCurrent = row.track.id === currentTrackId
+                          return (
+                            <DiscoverRow
+                              key={row.key}
+                              row={row}
+                              selected={selectedKeys.has(row.key)}
+                              selecting={selecting}
+                              busy={false}
+                              isSaved
+                              savingState={undefined}
+                              isCurrent={isCurrent}
+                              isPlaying={isPlaying}
+                              onClick={(event) => onRowClick(event, row, index)}
+                              onContextMenu={(event) => openContextMenu(event, row, index)}
+                              onKeyDown={(event) => onRowKeyDown(event, row, index)}
+                              onToggleSelected={() => toggleRow(row, true)}
+                              onMore={(event) => openRowMenuAt(event, row, index)}
+                              onChannel={null}
+                            />
+                          )
+                        })}
+                      </ul>
+                    ) : (
+                      <p className="discover-empty-shelf">
+                        {liveLoading ? 'Searching this device…' : 'No files on this device matched.'}
+                      </p>
+                    )}
+                    {local.length > SHELF_CARD_LIMIT ? (
+                      <button
+                        type="button"
+                        className="discover-show-all"
+                        onClick={() => setShowAllLocal((current) => !current)}
+                      >
+                        {showAllLocal ? 'Show fewer' : `Show all ${formatCount(local.length)}`}
+                      </button>
+                    ) : null}
+                  </section>
 
-                  {imported.length > 0 ? (
-                    <li className="discover-divider">
+                  <section className="discover-shelf" aria-label="Imported">
+                    <div className="discover-shelf-head">
                       <span className="source-badge imported">Imported</span>
-                      <span>Remembered YouTube tracks, not downloaded</span>
-                      <span className="discover-count">{imported.length}</span>
-                    </li>
-                  ) : null}
-                  {importedRows.map((row, index) => (
-                    <DiscoverRow
-                      key={row.key}
-                      row={row}
-                      selected={selectedKeys.has(row.key)}
-                      selecting={selecting}
-                      busy={false}
-                      isSaved={false}
-                      savingState={undefined}
-                      isCurrent={false}
-                      isPlaying={isPlaying}
-                      onClick={(event) => onRowClick(event, row, localRows.length + index)}
-                      onContextMenu={(event) =>
-                        openContextMenu(event, row, localRows.length + index)
-                      }
-                      onKeyDown={(event) => onRowKeyDown(event, row, localRows.length + index)}
-                      onToggleSelected={() => toggleRow(row, true)}
-                      onQueue={() => void queueImported(row.track)}
-                      onSave={undefined}
-                      onMore={(event) => openRowMenuAt(event, row, localRows.length + index)}
-                      onChannel={null}
-                    />
-                  ))}
+                      <span className="discover-shelf-note">Remembered YouTube tracks, not downloaded</span>
+                      <span className="discover-count">{formatCount(imported.length)}</span>
+                    </div>
+                    {visibleImported.length > 0 ? (
+                      <ul className="discover-grid">
+                        {visibleImported.map((row, index) => (
+                          <DiscoverRow
+                            key={row.key}
+                            row={row}
+                            selected={selectedKeys.has(row.key)}
+                            selecting={selecting}
+                            busy={false}
+                            isSaved={false}
+                            savingState={undefined}
+                            isCurrent={false}
+                            isPlaying={isPlaying}
+                            onClick={(event) => onRowClick(event, row, localRows.length + index)}
+                            onContextMenu={(event) =>
+                              openContextMenu(event, row, localRows.length + index)
+                            }
+                            onKeyDown={(event) => onRowKeyDown(event, row, localRows.length + index)}
+                            onToggleSelected={() => toggleRow(row, true)}
+                            onMore={(event) => openRowMenuAt(event, row, localRows.length + index)}
+                            onChannel={null}
+                          />
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="discover-empty-shelf">
+                        {liveLoading ? 'Searching imported tracks…' : 'No imported tracks matched.'}
+                      </p>
+                    )}
+                    {imported.length > SHELF_CARD_LIMIT ? (
+                      <button
+                        type="button"
+                        className="discover-show-all"
+                        onClick={() => setShowAllImported((current) => !current)}
+                      >
+                        {showAllImported ? 'Show fewer' : `Show all ${formatCount(imported.length)}`}
+                      </button>
+                    ) : null}
+                  </section>
 
-                  {typed.length > 0 ? (
-                    <li className="discover-divider">
+                  <section className="discover-shelf" aria-label="YouTube">
+                    <div className="discover-shelf-head">
                       <span className="source-badge youtube">YouTube</span>
-                      <span>{submitted ? 'Search results' : 'Not searched yet'}</span>
-                      <span className="discover-count">{youtube.length}</span>
-                    </li>
-                  ) : null}
-                  {showYoutubeCta ? (
-                    <li className="discover-cta-row">
+                      <span className="discover-shelf-note">
+                        {submitted.length === 0
+                          ? 'Not searched yet'
+                          : youtube.length > 1
+                            ? `Best match and ${formatCount(youtube.length - 1)} more`
+                            : 'Best match'}
+                      </span>
+                      <span className="discover-count">{formatCount(youtube.length)}</span>
+                    </div>
+                    {showYoutubeCta ? (
                       <button
                         type="button"
                         className="search-youtube-cta"
@@ -1155,61 +1267,70 @@ export function SearchView(props: SearchViewProps) {
                           Search YouTube for <strong>“{typed}”</strong>
                         </span>
                       </button>
-                    </li>
-                  ) : null}
-                  {youtubeRows.map((row, index) => (
-                    <DiscoverRow
-                      key={row.key}
-                      row={row}
-                      selected={selectedKeys.has(row.key)}
-                      selecting={selecting}
-                      busy={busyVideoId === row.result.videoId}
-                      isSaved={saved.has(row.result.videoId)}
-                      savingState={states[row.result.videoId]}
-                      isCurrent={row.result.videoId === currentVideoId}
-                      isPlaying={isPlaying}
-                      onClick={(event) =>
-                        onRowClick(event, row, localRows.length + importedRows.length + index)
-                      }
-                      onContextMenu={(event) =>
-                        openContextMenu(event, row, localRows.length + importedRows.length + index)
-                      }
-                      onKeyDown={(event) =>
-                        onRowKeyDown(event, row, localRows.length + importedRows.length + index)
-                      }
-                      onToggleSelected={() => toggleRow(row, true)}
-                      onQueue={() => void queueYouTube(row.result)}
-                      onSave={() => void saveYouTube(row.result)}
-                      onMore={(event) =>
-                        openRowMenuAt(event, row, localRows.length + importedRows.length + index)
-                      }
-                      onChannel={
-                        row.result.channelId || row.result.channelName
-                          ? () =>
-                              void openChannel(
-                                row.result.channelId ?? row.result.channelName ?? row.result.videoId,
-                                channelNameOf(row.result)
+                    ) : null}
+                    {loading ? <p className="discover-empty-shelf">Searching YouTube…</p> : null}
+                    {youtube.length > 0 ? (
+                      <ul className="discover-grid">
+                        {youtubeRows.map((row, index) => (
+                          <DiscoverRow
+                            key={row.key}
+                            row={row}
+                            selected={selectedKeys.has(row.key)}
+                            selecting={selecting}
+                            busy={busyVideoId === row.result.videoId}
+                            isSaved={saved.has(row.result.videoId)}
+                            savingState={states[row.result.videoId]}
+                            isCurrent={row.result.videoId === currentVideoId}
+                            isPlaying={isPlaying}
+                            isBest={index === 0}
+                            onClick={(event) =>
+                              onRowClick(event, row, localRows.length + importedRows.length + index)
+                            }
+                            onContextMenu={(event) =>
+                              openContextMenu(
+                                event,
+                                row,
+                                localRows.length + importedRows.length + index
                               )
-                          : null
-                      }
-                    />
-                  ))}
-                  {submitted.length > 0 && !loading && youtube.length === 0 ? (
-                    <li className="discover-empty-shelf">No YouTube results for this search.</li>
-                  ) : null}
-                </ul>
-                {youtube.length > 0 || youtubePage > 1 ? (
-                  <ResultPager
-                    page={youtubePage}
-                    hasMore={youtubeHasMore}
-                    loading={youtubePageLoading}
-                    noun="YouTube results"
-                    onPage={(page) => void goToYoutubePage(page)}
-                  />
-                ) : null}
+                            }
+                            onKeyDown={(event) =>
+                              onRowKeyDown(
+                                event,
+                                row,
+                                localRows.length + importedRows.length + index
+                              )
+                            }
+                            onToggleSelected={() => toggleRow(row, true)}
+                            onMore={(event) =>
+                              openRowMenuAt(
+                                event,
+                                row,
+                                localRows.length + importedRows.length + index
+                              )
+                            }
+                            onChannel={
+                              row.result.channelId || row.result.channelName
+                                ? () =>
+                                    void openChannel(
+                                      row.result.channelId ??
+                                        row.result.channelName ??
+                                        row.result.videoId,
+                                      channelNameOf(row.result)
+                                    )
+                                : null
+                            }
+                          />
+                        ))}
+                      </ul>
+                    ) : null}
+                    {submitted.length > 0 && !loading && youtube.length === 0 ? (
+                      <p className="discover-empty-shelf">No YouTube results for this search.</p>
+                    ) : null}
+                  </section>
+                </div>
               </div>
             </>
-          ) : null}
+          )}
         </>
       )}
 
@@ -1253,6 +1374,14 @@ export function SearchView(props: SearchViewProps) {
   )
 }
 
+/**
+ * One result as a card, in the same visual language as Home.
+ *
+ * The card itself is the row: Ctrl/Shift-click and the keyboard still work as
+ * they do in a list, and the checkbox appears once a selection starts. The `…`
+ * button is the mouse route to the same menu a right-click opens, where queue,
+ * save and playlist actions live.
+ */
 function DiscoverRow(props: {
   row: SearchRow
   selected: boolean
@@ -1262,12 +1391,12 @@ function DiscoverRow(props: {
   savingState: DownloadState | undefined
   isCurrent: boolean
   isPlaying: boolean
+  /** The first YouTube result, when the query was actually searched. */
+  isBest?: boolean
   onClick: (event: ReactMouseEvent<HTMLLIElement>) => void
   onContextMenu: (event: ReactMouseEvent<HTMLLIElement>) => void
   onKeyDown: (event: ReactKeyboardEvent<HTMLLIElement>) => void
   onToggleSelected: () => void
-  onQueue: () => void
-  onSave: (() => void) | undefined
   onMore: (event: ReactMouseEvent<HTMLButtonElement>) => void
   onChannel: (() => void) | null
 }) {
@@ -1280,12 +1409,11 @@ function DiscoverRow(props: {
     savingState,
     isCurrent,
     isPlaying,
+    isBest = false,
     onClick,
     onContextMenu,
     onKeyDown,
     onToggleSelected,
-    onQueue,
-    onSave,
     onMore,
     onChannel
   } = props
@@ -1300,11 +1428,16 @@ function DiscoverRow(props: {
     savingState.status !== 'failed' &&
     savingState.status !== 'cancelled'
   const artTrack = row.kind === 'youtube' ? artworkTrack(row.result) : row.track
+  const meta = [artist, duration !== null ? formatDuration(duration) : null]
+    .filter(Boolean)
+    .join(' · ')
   const rowClass = [
+    'album-card',
     'discover-item',
     selecting ? 'selecting' : '',
     isCurrent ? 'current' : '',
-    selected ? 'selected' : ''
+    selected ? 'selected' : '',
+    isBest ? 'best-match' : ''
   ]
     .filter(Boolean)
     .join(' ')
@@ -1327,7 +1460,11 @@ function DiscoverRow(props: {
       onKeyDown={onKeyDown}
     >
       {selecting ? (
-        <label className="discover-select" title={selected ? 'Deselect' : 'Select'} onClick={(event) => event.stopPropagation()}>
+        <label
+          className="discover-select"
+          title={selected ? 'Deselect' : 'Select'}
+          onClick={(event) => event.stopPropagation()}
+        >
           <input
             type="checkbox"
             checked={selected}
@@ -1336,78 +1473,53 @@ function DiscoverRow(props: {
           />
         </label>
       ) : null}
-      <div className="discover-jump">
-        <ArtworkImage track={artTrack} size={34} className="discover-art" />
-        <span className="discover-title">
-          {isCurrent ? <span className={isPlaying ? 'playing-dot' : 'playing-dot paused'} /> : null}
-          {title}
-          {row.kind === 'imported' ? (
-            <span className="discover-import-source" title={`Imported from ${row.source}`}>
-              {row.source}
-            </span>
-          ) : null}
+      <span className="album-card-art">
+        <ArtworkImage track={artTrack} size="100%" className="album-cover" />
+        <span className="album-card-shade" aria-hidden="true" />
+        {isBest ? <span className="discover-best-pill">Best match</span> : null}
+        {row.kind === 'imported' ? (
+          <span className="discover-import-source" title={`Imported from ${row.source}`}>
+            {row.source}
+          </span>
+        ) : null}
+        <span className="album-card-play discover-play" aria-hidden="true">
+          {busy ? <SpinnerIcon size={16} /> : <PlayIcon size={16} />}
         </span>
-        <span className="discover-artist">
-          {isYouTube && onChannel && channelName ? (
-            <button
-              type="button"
-              className="discover-channel-link"
-              title={`More from ${channelName}`}
-              onClick={(event) => {
-                event.stopPropagation()
-                onChannel()
-              }}
-            >
-              {channelName}
-            </button>
-          ) : (
-            artist
-          )}
-        </span>
-        <span className="discover-time">{busy ? 'Resolving…' : formatDuration(duration)}</span>
-      </div>
-      <div className="discover-actions">
-        {isYouTube && onSave ? (
+      </span>
+      <span className="album-card-title discover-title" title={title}>
+        {isCurrent ? <span className={isPlaying ? 'playing-dot' : 'playing-dot paused'} /> : null}
+        {title}
+      </span>
+      <span className="album-card-meta discover-artist" title={meta}>
+        {isYouTube && onChannel && channelName ? (
           <button
             type="button"
-            className={isSaved ? 'icon-button subtle saved' : 'icon-button subtle'}
-            title={isSaved ? 'Already in your library' : savingActive ? 'Saving…' : 'Save to library'}
-            aria-label={isSaved ? `${title} is in your library` : `Save ${title} to your library`}
-            disabled={isSaved || savingActive}
+            className="discover-channel-link"
+            title={`More from ${channelName}`}
             onClick={(event) => {
               event.stopPropagation()
-              onSave()
+              onChannel()
             }}
           >
-            {isSaved ? <CheckIcon /> : savingActive ? <SpinnerIcon /> : <DownloadIcon />}
+            {channelName}
           </button>
-        ) : null}
-        <button
-          type="button"
-          className="icon-button subtle"
-          title="Add to queue"
-          aria-label={`Add ${title} to the queue`}
-          onClick={(event) => {
-            event.stopPropagation()
-            onQueue()
-          }}
-        >
-          <QueueIcon size={15} />
-        </button>
-        <button
-          type="button"
-          className="icon-button subtle"
-          title="More actions"
-          aria-label={`More actions for ${title}`}
-          onClick={onMore}
-        >
-          <MoreIcon size={15} />
-        </button>
-      </div>
+        ) : (
+          artist
+        )}
+        {duration !== null ? <span className="discover-time"> · {formatDuration(duration)}</span> : null}
+      </span>
+      <button
+        type="button"
+        className="discover-menu icon-button subtle"
+        title={savingActive ? 'Saving…' : isSaved ? 'More actions · saved to library' : 'More actions'}
+        aria-label={`More actions for ${title}`}
+        onClick={onMore}
+      >
+        {savingActive ? <SpinnerIcon size={15} /> : <MoreIcon size={15} />}
+      </button>
     </li>
   )
 }
-
 function ResultPager(props: {
   page: number
   hasMore: boolean

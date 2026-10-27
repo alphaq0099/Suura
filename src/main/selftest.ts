@@ -6245,6 +6245,20 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         artworkKey: null
       }
     ]
+    // Enough history to overflow the Imported shelf's eight-card cap, so Show
+    // all is exercised against a real shelf rather than a stubbed count.
+    for (let extra = 0; extra < 7; extra += 1) {
+      importedHistory.push({
+        videoId: `selftestimportx${extra}`,
+        title: `Selftest Imported Extra ${extra + 1}`,
+        artist: 'Selftest Imported Artist',
+        channel: 'Selftest Imported Channel',
+        album: null,
+        durationMs: 120_000,
+        sourceUrl: youtubeWatchUrl(`selftestimportx${extra}`),
+        artworkKey: null
+      })
+    }
     importedHistory.forEach((entry, at) => {
       container.onlineRepo.upsert(entry, importedSeed - at * 1000)
     })
@@ -6278,6 +6292,23 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       ],
       importedSeed
     )
+    // A Search prefetch is a real resolve in the app. The provider above is
+    // stubbed, so the resolver must be too: the spy records the guess and
+    // returns at once, and a play of an actual row still takes the real path.
+    const realResolve = container.resolvers.resolve
+    const prefetchRequests: string[] = []
+    container.resolvers.resolve = async (track) => {
+      if (track.sourceKind === 'youtube' && track.id === 0) {
+        prefetchRequests.push(track.sourceId ?? '')
+        return {
+          url: 'https://selftest.invalid/prefetch',
+          expiresAt: null,
+          mimeType: null,
+          resolverId: 'selftest'
+        }
+      }
+      return realResolve.call(container.resolvers, track)
+    }
     try {
       // A downloaded copy is the same track as the remembered video, and a
       // video that sits in history and in a list is still one row. Both are
@@ -6294,7 +6325,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       const mergedIds = merged.imported.map((entry) => entry.track.sourceId)
       const mergedSources = merged.imported.map((entry) => entry.source)
       record(
-        mergedIds.length === 2 &&
+        mergedIds.length === 9 &&
           !mergedIds.includes('selftestimport1') &&
           mergedIds.filter((id) => id === 'selftestimport2').length === 1,
         'Search Imported drops a downloaded copy and shows a repeated video once',
@@ -6309,23 +6340,32 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       const searchUi = await evaluate<{
         liveLocal: number
         liveImported: number
-        liveYoutube: number
+        liveYoutubeCards: number
         ctaBeforeSubmit: boolean
         ctaText: string
         submitLabel: string
         importSources: string[]
+        shelves: number
+        grids: number
+        shelfBadges: number
+        importedShownBefore: number
+        showAllLabelBefore: string
+        importedShownAfter: number
+        showAllLabelAfter: string
         rowsAfterSubmit: number
         localRows: number
         importedRows: number
         youtubeRows: number
         ctaAfterSubmit: boolean
-        dividerBadges: number
-        rowSourceBadges: number
-        albumCells: number
+        pager: number
+        bestCards: number
+        bestPillText: string
+        bestIsFirst: boolean
+        artSquare: boolean
+        rowMenuButton: boolean
         channelLinks: number
         channelLinkText: string
         channelLinkUnderline: string
-        titleWider: boolean
         resetYoutube: number
         resetCta: boolean
         selectedOne: boolean
@@ -6347,11 +6387,18 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            const pick = (selector) => document.querySelector(selector)
            const pickAll = (selector) => [...document.querySelectorAll(selector)]
            const text = (element) => ((element || {}).textContent || '')
-           const divider = (badge) =>
-             pickAll('.discover-divider')
-               .find((el) => text(el.querySelector('.source-badge')).trim() === badge)
-           const count = (badge) =>
-             Number(text(divider(badge) ? divider(badge).querySelector('.discover-count') : null))
+           const shelf = (badge) =>
+             pickAll('.discover-shelf').find(
+               (section) => text(section.querySelector('.source-badge')).trim() === badge
+             )
+           const count = (badge) => {
+             const section = shelf(badge)
+             return Number(text(section ? section.querySelector('.discover-count') : null))
+           }
+           const cards = (badge) => {
+             const section = shelf(badge)
+             return [...(section ? section.querySelectorAll('.discover-item') : [])]
+           }
            const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
            const setInput = (value) => {
              const input = pick('.discover-input input')
@@ -6372,14 +6419,17 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
              return check()
            }
            const out = {
-             liveLocal: 0, liveImported: 0, liveYoutube: 0, ctaBeforeSubmit: false, ctaText: '',
-             submitLabel: '', importSources: [], rowsAfterSubmit: 0, localRows: 0,
-             importedRows: 0, youtubeRows: 0, ctaAfterSubmit: false, dividerBadges: 0,
-             rowSourceBadges: 0, albumCells: 0, channelLinks: 0, channelLinkText: '',
-             channelLinkUnderline: '', titleWider: false, resetYoutube: 0, resetCta: false,
-             selectedOne: false, checkboxes: 0, selectedTwo: false, menuOpen: false,
-             menuLabels: [], playlistMenu: false, menusClosed: false, importedMenu: [],
-             channelTitle: '', channelRows: 0, channelHasBack: false, backToSearch: false
+             liveLocal: 0, liveImported: 0, liveYoutubeCards: 0, ctaBeforeSubmit: false,
+             ctaText: '', submitLabel: '', importSources: [], shelves: 0, grids: 0,
+             shelfBadges: 0, importedShownBefore: 0, showAllLabelBefore: '',
+             importedShownAfter: 0, showAllLabelAfter: '', rowsAfterSubmit: 0,
+             localRows: 0, importedRows: 0, youtubeRows: 0, ctaAfterSubmit: false,
+             pager: 0, bestCards: 0, bestPillText: '', bestIsFirst: false,
+             artSquare: false, rowMenuButton: false, channelLinks: 0, channelLinkText: '',
+             channelLinkUnderline: '', resetYoutube: 0, resetCta: false, selectedOne: false,
+             checkboxes: 0, selectedTwo: false, menuOpen: false, menuLabels: [],
+             playlistMenu: false, menusClosed: false, importedMenu: [], channelTitle: '',
+             channelRows: 0, channelHasBack: false, backToSearch: false
            }
 
            const searchNav = pickAll('.nav-item').find((el) => text(el).trim().startsWith('Search'))
@@ -6388,13 +6438,25 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
 
            // Typing fills the two database shelves; YouTube is only an offer.
            setInput('Selftest')
-           await waitFor(() => pickAll('.discover-item').length >= 5, 5000)
+           await waitFor(() => count('On this device') === 2 && count('Imported') === 10, 6000)
            out.liveLocal = count('On this device')
            out.liveImported = count('Imported')
-           out.liveYoutube = pickAll('.discover-item').length - out.liveLocal - out.liveImported
+           out.liveYoutubeCards = cards('YouTube').length
            out.ctaBeforeSubmit = Boolean(pick('.search-youtube-cta'))
            out.ctaText = text(pick('.search-youtube-cta')).trim()
            out.submitLabel = text(pick('.discover-bar button[type="submit"]')).trim()
+           out.shelves = pickAll('.discover-shelf').length
+           out.grids = pickAll('.discover-grid').length
+           out.shelfBadges = pickAll('.discover-shelf .source-badge').length
+
+           // Eight cards, then Show all; the shelf's own count never lies.
+           out.importedShownBefore = cards('Imported').length
+           const showAll = shelf('Imported') ? shelf('Imported').querySelector('.discover-show-all') : null
+           out.showAllLabelBefore = text(showAll).trim()
+           if (showAll) showAll.click()
+           await waitFor(() => cards('Imported').length === 10, 3000)
+           out.importedShownAfter = cards('Imported').length
+           out.showAllLabelAfter = text(shelf('Imported').querySelector('.discover-show-all')).trim()
            out.importSources = pickAll('.discover-import-source').map((el) => text(el).trim())
 
            submitNow()
@@ -6404,18 +6466,22 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            out.importedRows = count('Imported')
            out.youtubeRows = count('YouTube')
            out.ctaAfterSubmit = Boolean(pick('.search-youtube-cta'))
-           out.dividerBadges = pickAll('.discover-divider .source-badge').length
-           out.rowSourceBadges = pickAll('.discover-item .source-badge').length
-           out.albumCells = pickAll('.discover-album').length
+           out.pager = pickAll('.discover-pager').length
+
+           // The first YouTube card is the best match, and only one is marked.
+           const youtubeCards = cards('YouTube')
+           out.bestCards = pickAll('.discover-item.best-match').length
+           out.bestPillText = text(pick('.discover-best-pill')).trim()
+           out.bestIsFirst = Boolean(youtubeCards[0] && youtubeCards[0].classList.contains('best-match'))
+           out.rowMenuButton = Boolean(youtubeCards[0] && youtubeCards[0].querySelector('.discover-menu'))
+           const art = youtubeCards[0] ? youtubeCards[0].querySelector('.album-card-art') : null
+           const artBox = art ? art.getBoundingClientRect() : null
+           out.artSquare = Boolean(artBox && Math.abs(artBox.width - artBox.height) < 2)
+
            out.channelLinks = pickAll('.discover-channel-link').length
            const channelLink = pick('.discover-channel-link')
            out.channelLinkText = text(channelLink).trim()
            out.channelLinkUnderline = channelLink ? getComputedStyle(channelLink).textDecorationLine : 'missing'
-           const localTitle = pick('.discover-item .discover-title')
-           const localArtist = pick('.discover-item .discover-artist')
-           out.titleWider = Boolean(
-             localTitle && localArtist && localTitle.getBoundingClientRect().width > localArtist.getBoundingClientRect().width
-           )
 
            // Editing the query must take the YouTube answer away with it.
            setInput('Selftest T')
@@ -6455,8 +6521,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            await sleep(120)
            out.menusClosed = !pick('.row-menu') && !pick('.add-to-playlist')
 
-           // An imported row is streamable but not a file: it offers Play and
-           // Details, and no save or playlist action that needs a library row.
+           // An imported card is streamable but not a file: it offers Play,
+           // queue and Details, and no save or playlist action.
            const importedRow = pickAll('.discover-item')[out.localRows]
            if (importedRow) {
              importedRow.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 260, clientY: 300 }))
@@ -6483,15 +6549,30 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       )
       record(
         searchUi.liveLocal === 2 &&
-          searchUi.liveImported === 3 &&
-          searchUi.liveYoutube === 0 &&
-          searchUi.ctaBeforeSubmit,
-        'Search fills On this device and Imported as you type, and offers YouTube instead of guessing',
+          searchUi.liveImported === 10 &&
+          searchUi.liveYoutubeCards === 0 &&
+          searchUi.ctaBeforeSubmit &&
+          searchUi.shelves === 3 &&
+          searchUi.grids === 2,
+        'Search fills On this device and Imported as you type in three shelves, and offers YouTube instead of guessing',
         {
           local: searchUi.liveLocal,
           imported: searchUi.liveImported,
-          youtube: searchUi.liveYoutube,
-          cta: searchUi.ctaBeforeSubmit
+          youtube: searchUi.liveYoutubeCards,
+          cta: searchUi.ctaBeforeSubmit,
+          shelves: searchUi.shelves,
+          grids: searchUi.grids
+        }
+      )
+      record(
+        searchUi.importedShownBefore === 8 &&
+          searchUi.showAllLabelBefore === 'Show all 10' &&
+          searchUi.importedShownAfter === 10 &&
+          searchUi.showAllLabelAfter === 'Show fewer',
+        'Search shows eight cards per shelf and reveals the rest on demand',
+        {
+          before: [searchUi.importedShownBefore, searchUi.showAllLabelBefore],
+          after: [searchUi.importedShownAfter, searchUi.showAllLabelAfter]
         }
       )
       record(
@@ -6500,35 +6581,43 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         { button: searchUi.submitLabel, cta: searchUi.ctaText }
       )
       record(
-        searchUi.importSources.length === 3 &&
-          searchUi.importSources[0] === 'History' &&
-          searchUi.importSources[1] === 'History' &&
-          searchUi.importSources[2] === 'Selftest Imported List',
-        'Search names the history or playlist that remembers each imported row',
+        searchUi.importSources.length === 10 &&
+          searchUi.importSources.slice(0, 9).every((source) => source === 'History') &&
+          searchUi.importSources[9] === 'Selftest Imported List',
+        'Search names the history or playlist that remembers each imported card',
         searchUi.importSources
       )
       record(
-        searchUi.rowsAfterSubmit === 7 &&
+        searchUi.rowsAfterSubmit === 14 &&
           searchUi.localRows === 2 &&
-          searchUi.importedRows === 3 &&
+          searchUi.importedRows === 10 &&
           searchUi.youtubeRows === 2 &&
-          !searchUi.ctaAfterSubmit,
-        'Search YouTube fills the third shelf beside the two local shelves',
+          !searchUi.ctaAfterSubmit &&
+          searchUi.pager === 0 &&
+          searchUi.shelfBadges === 3,
+        'Search YouTube fills the third shelf beside the two local shelves, without a pager',
         {
-          rows: searchUi.rowsAfterSubmit,
+          cards: searchUi.rowsAfterSubmit,
           local: searchUi.localRows,
           imported: searchUi.importedRows,
-          youtube: searchUi.youtubeRows
+          youtube: searchUi.youtubeRows,
+          pager: searchUi.pager,
+          badges: searchUi.shelfBadges
         }
       )
       record(
-        searchUi.dividerBadges === 3 && searchUi.rowSourceBadges === 0 && searchUi.albumCells === 0,
-        'Search uses one source badge per shelf and no per-row badge or album column',
+        searchUi.bestCards === 1 && searchUi.bestPillText === 'Best match' && searchUi.bestIsFirst,
+        'Search marks the first YouTube card as the best match and leaves the rest unmarked',
         {
-          dividers: searchUi.dividerBadges,
-          rows: searchUi.rowSourceBadges,
-          albums: searchUi.albumCells
+          marked: searchUi.bestCards,
+          pill: searchUi.bestPillText,
+          first: searchUi.bestIsFirst
         }
+      )
+      record(
+        searchUi.artSquare && searchUi.rowMenuButton,
+        'Search results are square art cards with a row menu button',
+        { square: searchUi.artSquare, menu: searchUi.rowMenuButton }
       )
       record(
         searchUi.channelLinks === 2 &&
@@ -6538,23 +6627,19 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         { links: searchUi.channelLinks, text: searchUi.channelLinkText, decoration: searchUi.channelLinkUnderline }
       )
       record(
-        searchUi.titleWider,
-        'Search gives the title more room than the channel name',
-        searchUi.titleWider
-      )
-      record(
         searchUi.resetYoutube === 0 && searchUi.resetCta,
         'Search clears the YouTube answer, and offers the search again, when the query changes',
         { youtube: searchUi.resetYoutube, cta: searchUi.resetCta }
       )
       record(
-        searchUi.selectedOne && searchUi.checkboxes === 7 && searchUi.selectedTwo,
-        'Search rows select with Ctrl-click and reveal a checkbox per row',
+        searchUi.selectedOne && searchUi.checkboxes === 12 && searchUi.selectedTwo,
+        'Search cards select with Ctrl-click and reveal a checkbox per card',
         { first: searchUi.selectedOne, boxes: searchUi.checkboxes, two: searchUi.selectedTwo }
       )
       record(
         searchUi.menuOpen &&
           searchUi.menuLabels.includes('Deselect') &&
+          searchUi.menuLabels.includes('Add to queue') &&
           searchUi.menuLabels.some((label) => label.startsWith('Play selected')) &&
           searchUi.menuLabels.includes('Add to playlist…') &&
           searchUi.menuLabels.includes('Select all results'),
@@ -6568,16 +6653,17 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       )
       record(
         searchUi.importedMenu.includes('Play') &&
+          searchUi.importedMenu.includes('Add to queue') &&
           searchUi.importedMenu.includes('Details') &&
           !searchUi.importedMenu.includes('Save to library') &&
           !searchUi.importedMenu.includes('Add to playlist…') &&
           !searchUi.importedMenu.includes('Go to channel'),
-        'an imported row offers Play and Details, without save or playlist actions',
+        'an imported card offers Play and Details, without save or playlist actions',
         searchUi.importedMenu
       )
       record(
         searchUi.channelTitle === 'Search Channel' && searchUi.channelRows === 1 && searchUi.channelHasBack,
-        'Search opens a channel from the row link',
+        'Search opens a channel from the card link',
         { title: searchUi.channelTitle, rows: searchUi.channelRows, back: searchUi.channelHasBack }
       )
       record(
@@ -6585,10 +6671,84 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         'Search returns from a channel to the results that were there',
         searchUi.backToSearch
       )
+
+      // A warm-up is a real resolve, so the spy above records every attempt.
+      // Three moments matter: a timer cancelled by the next keystroke, a query
+      // the local shelves can answer, and one that only YouTube can, followed
+      // by a second query inside the cooldown.
+      await evaluate<void>(
+        window,
+        `(async () => {
+           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+           const pick = (selector) => document.querySelector(selector)
+           const pickAll = (selector) => [...document.querySelectorAll(selector)]
+           const text = (element) => ((element || {}).textContent || '')
+           const shelf = (badge) =>
+             pickAll('.discover-shelf').find(
+               (section) => text(section.querySelector('.source-badge')).trim() === badge
+             )
+           const count = (badge) => {
+             const section = shelf(badge)
+             return Number(text(section ? section.querySelector('.discover-count') : null))
+           }
+           const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+           const setInput = (value) => {
+             const input = pick('.discover-input input')
+             if (!input) return
+             setValue.call(input, value)
+             input.dispatchEvent(new Event('input', { bubbles: true }))
+           }
+           const submitNow = () => {
+             const button = pick('.discover-bar button[type="submit"]')
+             if (button) button.click()
+           }
+           const type = async (value) => {
+             setInput(value)
+             await sleep(260)
+           }
+           const waitFor = async (check, ms) => {
+             const until = Date.now() + ms
+             while (Date.now() < until) {
+               if (check()) return true
+               await sleep(100)
+             }
+             return check()
+           }
+
+           // A pending warm-up is cancelled by the next query, and a query the
+           // device can answer is never warmed at all.
+           await type('No Selftest Tune')
+           submitNow()
+           await sleep(500)
+           await type('Selftest')
+           await waitFor(() => count('On this device') === 2, 5000)
+           submitNow()
+           await waitFor(() => count('YouTube') === 2, 8000)
+           await sleep(2600)
+
+           // Nothing on the device or in the lists: warm the one best match.
+           await type('No Selftest Tune')
+           submitNow()
+           await waitFor(() => count('YouTube') === 2, 8000)
+           await sleep(2800)
+
+           // A second query inside the cooldown must not spend another resolve.
+           await type('No Selftest Tune Two')
+           submitNow()
+           await waitFor(() => count('YouTube') === 2, 8000)
+           await sleep(2800)
+         })()`
+      )
+      record(
+        prefetchRequests.length === 1 && prefetchRequests[0] === 'selftestsearch1',
+        'Search warms the best match once, only when both local shelves are empty',
+        prefetchRequests
+      )
     } finally {
       container.online.search = realSearch
       container.online.channel = realChannel
-      container.onlineRepo.removeByVideoIds(['selftestimport1', 'selftestimport2'])
+      container.resolvers.resolve = realResolve
+      container.onlineRepo.removeByVideoIds(importedHistory.map((entry) => entry.videoId))
       container.onlinePlaylists.delete(importedList.id)
       broadcast(IPC_EVENTS.onlineChanged, null)
     }

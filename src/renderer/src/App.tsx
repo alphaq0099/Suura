@@ -1187,6 +1187,7 @@ export function App() {
         onQueueYouTube={queueYouTubeResult}
         onPlaySearchSelection={playSearchSelection}
         onQueueSearchSelection={queueSearchSelection}
+        prefetchEnabled={settings?.engine.prefetchNext ?? true}
       />
 
       <SavesPanel downloads={downloads} onReveal={(trackId) => void revealTrack(trackId)} />

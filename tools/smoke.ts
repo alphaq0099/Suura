@@ -149,7 +149,7 @@ import { nextDecision, shuffleFrom, shuffled } from '@shared/queue'
 import { sanitizeTaskbarState, taskbarControls } from '@shared/taskbar'
 import { parseRangeHeader } from '@shared/range'
 import { isImportedPlaylistTrackId, onlineEntryToTrack, onlinePlaylistItemToTrack } from '@shared/online'
-import { mergeLibrarySearch } from '@shared/search'
+import { canPrefetchSearchMatch, mergeLibrarySearch, type SearchPrefetchGate } from '@shared/search'
 import { sanitizeFilePart, savePathParts } from '@shared/files'
 import { AsyncTtlCache } from '../src/main/async-cache'
 import { cleanupAbandonedDownloads, DownloadService } from '../src/main/download-service'
@@ -4200,6 +4200,45 @@ async function main(): Promise<void> {
         history.search('Unrelated', 30).length + playlists.search('Unrelated', 30).length,
         0
       )
+
+      // The prefetch gate is pure, so its edges are checked here rather than
+      // through a live resolve. Search may warm a result only for the case the
+      // guess is meant for: an empty local answer, one best match, no work
+      // already in flight, and a quiet minute behind it.
+      const gate: SearchPrefetchGate = {
+        enabled: true,
+        submitted: true,
+        localCount: 0,
+        importedCount: 0,
+        bestVideoId: 'searchbbbbb',
+        inFlight: false,
+        now: 1_000_000,
+        lastAttemptAt: null,
+        blockedUntil: 0,
+        cooldownMs: 45_000
+      }
+      const allows = (patch: Partial<SearchPrefetchGate>): boolean =>
+        canPrefetchSearchMatch({ ...gate, ...patch })
+      check('search: an empty shelf with a best match may be warmed', allows({}))
+      check('search: the prefetch setting turns the guess off', !allows({ enabled: false }))
+      check('search: nothing is warmed before the query is submitted', !allows({ submitted: false }))
+      check('search: a device hit needs no warm-up', !allows({ localCount: 1 }))
+      check('search: an imported hit needs no warm-up', !allows({ importedCount: 1 }))
+      check('search: no best match means no warm-up', !allows({ bestVideoId: null }))
+      check('search: only one warm-up may be in flight', !allows({ inFlight: true }))
+      check(
+        'search: a second warm-up waits for the cooldown',
+        !allows({ lastAttemptAt: gate.now - gate.cooldownMs + 1 })
+      )
+      check(
+        'search: the cooldown ends on its boundary',
+        allows({ lastAttemptAt: gate.now - gate.cooldownMs })
+      )
+      check(
+        'search: a bot check pauses the guess',
+        !allows({ blockedUntil: gate.now + 5 * 60_000 })
+      )
+      check('search: a passed block allows a guess again', allows({ blockedUntil: gate.now - 1 }))
     } finally {
       handle.close()
       await rm(root, { recursive: true, force: true }).catch(() => undefined)
