@@ -485,6 +485,9 @@ function sanitizeListQuery(input: unknown): ListTracksQuery {
   if (typeof input.artist === 'string' && input.artist.trim().length > 0) {
     query.artist = input.artist.slice(0, 500)
   }
+  if (input.albumless === true) {
+    query.albumless = true
+  }
   if (typeof input.limit === 'number' && Number.isFinite(input.limit)) {
     query.limit = Math.round(clamp(input.limit, 1, 50000))
   }

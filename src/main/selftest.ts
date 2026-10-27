@@ -489,6 +489,78 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       window.webContents.sendInputEvent({ type: 'mouseMove', x: 2, y: 2 })
       await delay(60)
     }
+    // ---- 3c. a played single with no album tag -------------------------
+    // Recently played is an album shelf, so a file without an album tag has no
+    // album card to appear on. A counted listen must still surface it, and the
+    // only honest card for that case is the track itself. The fixtures both
+    // belong to an album, so this inserts one temporary single into the same
+    // DB, reports the listen through the service the IPC handler uses, reads
+    // the live shelf back, and then removes the row again.
+    const singleId = container.repo.insert(
+      {
+        contentKey: 'selftest-albumless-single',
+        sourceKind: 'local',
+        sourceId: null,
+        originKind: null,
+        originId: null,
+        title: 'Selftest Single',
+        artist: 'Selftest Artist',
+        albumArtist: null,
+        album: null,
+        trackNo: null,
+        discNo: null,
+        year: null,
+        genre: null,
+        durationMs: 180_000,
+        codec: 'flac',
+        bitrateKbps: null,
+        sampleRate: null,
+        channels: null,
+        fileSize: null,
+        fileMtimeMs: null,
+        filePath: null
+      },
+      Date.now()
+    )
+    container.library.reportPlayback(singleId, 31_000, false)
+    const playedSingle = await evaluate<{
+      found: boolean
+      title: string
+      meta: string
+      playLabel: string
+    }>(
+      window,
+      `(async () => {
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const deadline = Date.now() + 6000
+         let card = null
+         while (Date.now() < deadline) {
+           card = [...document.querySelectorAll('.home-shelf .track-card')].find(
+             (entry) =>
+               ((entry.querySelector('.album-card-title')?.textContent || '').trim()) ===
+               'Selftest Single'
+           )
+           if (card) break
+           await sleep(100)
+         }
+         return {
+           found: Boolean(card),
+           title: (card?.querySelector('.album-card-title')?.textContent || '').trim(),
+           meta: (card?.querySelector('.album-card-meta')?.textContent || '').trim(),
+           playLabel: card?.querySelector('.album-card-play')?.getAttribute('aria-label') || ''
+         }
+       })()`
+    )
+    container.library.removeTracks([singleId])
+    record(
+      playedSingle.found &&
+        playedSingle.title === 'Selftest Single' &&
+        playedSingle.meta.includes('Selftest Artist') &&
+        playedSingle.playLabel === 'Play Selftest Single',
+      'home: a counted listen from a file with no album tag appears as a track card',
+      playedSingle
+    )
+
     home.onLibrary = await evaluate<boolean>(
       window,
       `(async () => {

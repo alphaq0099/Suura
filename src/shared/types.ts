@@ -863,6 +863,12 @@ export interface ListTracksQuery {
   albumArtist?: string
   /** Exact track artist, used by an artist card's quick play. */
   artist?: string
+  /**
+   * Only tracks with no album tag. Home uses this to put a played single back
+   * on Recently played, which otherwise lists albums and would silently omit
+   * every file that has no album metadata.
+   */
+  albumless?: boolean
   limit?: number
   offset?: number
 }

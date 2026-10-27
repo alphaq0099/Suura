@@ -37,6 +37,8 @@ import {
 import { DEFAULT_PREFERENCE_PATCH } from '@shared/settings-defaults'
 import { isLocalLibraryFilter, recentlyAddedCutoff, streamFallbackFor } from '@shared/library'
 import { PLAY_COUNT_THRESHOLD_MS, PlaySession, countsAsPlay } from '@shared/play-count'
+import { mergePlayedShelf } from '@shared/played-shelf'
+import type { AlbumSummary, Track } from '@shared/types'
 import { serializeDetails, silentLogger } from '@core/logging/logger'
 import {
   DIAGNOSTICS_SUMMARY_LIMIT,
@@ -540,6 +542,74 @@ async function main(): Promise<void> {
       watchedLibrary.reportPlayback(-1, 31_000, false)
       checkEqual('a threshold listen sends one play-history change', playHistoryEvents, 2)
     }
+
+    // --- the Recently played shelf ---------------------------------------
+    // A played file with no album tag has no album card, so Home has to merge
+    // those singles into the shelf itself. The merge is the part that decides
+    // which card represents a listen; the SQL below proves the query can find
+    // them without a scan-time copy of album data.
+    const mergeAlbum = (name: string, at: number | null) =>
+      ({ album: name, lastPlayedAt: at }) as AlbumSummary
+    const mergeTrack = (id: number, album: string | null, at: number | null) =>
+      ({ id, album, lastPlayedAt: at }) as Track
+    const merged = mergePlayedShelf(
+      [mergeAlbum('Older', 100), mergeAlbum('Unplayed', null)],
+      [mergeTrack(7, null, 300), mergeTrack(8, 'Has Album', 400), mergeTrack(9, null, 200)],
+      3
+    )
+    checkEqual(
+      'recently played merges albums and albumless singles newest first',
+      merged.map((entry) => (entry.kind === 'album' ? entry.album.album : entry.track.id)).join(','),
+      '7,9,Older'
+    )
+    check(
+      'recently played skips album tracks and unplayed rows',
+      !merged.some((entry) => entry.kind === 'track' && entry.track.id === 8) &&
+        !merged.some((entry) => entry.kind === 'album' && entry.album.album === 'Unplayed')
+    )
+
+    const singleId = repo.insert(
+      {
+        contentKey: 'smoke-albumless-single',
+        sourceKind: 'local',
+        sourceId: null,
+        originKind: null,
+        originId: null,
+        title: 'Smoke Single',
+        artist: 'Smoke',
+        albumArtist: null,
+        album: null,
+        trackNo: null,
+        discNo: null,
+        year: null,
+        genre: null,
+        durationMs: 1000,
+        codec: 'flac',
+        bitrateKbps: null,
+        sampleRate: null,
+        channels: null,
+        fileSize: null,
+        fileMtimeMs: null,
+        filePath: null
+      },
+      Date.now()
+    )
+    library.reportPlayback(singleId, 31_000, false)
+    const albumlessPlays = library.list({
+      sort: 'played',
+      direction: 'desc',
+      filter: 'most-played',
+      albumless: true
+    })
+    check(
+      'an albumless query returns the played single',
+      albumlessPlays.tracks.some((track) => track.id === singleId)
+    )
+    check(
+      'an albumless query excludes album tracks',
+      albumlessPlays.tracks.every((track) => track.album === null || track.album.trim() === '')
+    )
+    repo.deleteByIds([singleId])
 
     // --- smart library views ----------------------------------------------
     // The chips are answered by SQL, so the checks are about the sets and the

@@ -13,6 +13,7 @@ import type {
 } from '@shared/types'
 import { buildArtworkUrl } from '@shared/artwork-url'
 import { formatBytes, formatCount, formatDuration } from '@shared/format'
+import { mergePlayedShelf } from '@shared/played-shelf'
 import { api, messageOf } from '../api'
 import { useAlbums } from '../hooks/useAlbums'
 import { useArtwork } from '../hooks/useArtwork'
@@ -222,6 +223,60 @@ function AlbumCard({
   )
 }
 
+/**
+ * A played file with no album tag.
+ *
+ * It uses the album-card shell so the shelf stays one row of covers, but its
+ * main action plays the track instead of opening a release that does not
+ * exist. The meta line carries the duration, which is what tells it apart from
+ * the album cards around it.
+ */
+function TrackCard({ track, onPlay }: { track: Track; onPlay: (track: Track) => void }) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const visible = useNearViewport(ref)
+  const meta = [track.artist || 'Unknown artist', formatDuration(track.durationMs)]
+    .filter(Boolean)
+    .join(' · ')
+
+  return (
+    <div className="album-card track-card" ref={ref}>
+      <button
+        type="button"
+        className="album-card-main"
+        onClick={() => onPlay(track)}
+        aria-label={`Play ${track.title}`}
+        title={`Play ${track.title}`}
+      >
+        <span className="album-card-art">
+          <ArtworkImage
+            track={visible ? track : null}
+            size="100%"
+            artworkKey={track.artworkKey ?? undefined}
+            request={visible ? LOCAL_REQUEST(track.id) : null}
+            className="album-cover"
+          />
+          <span className="album-card-shade" aria-hidden="true" />
+        </span>
+        <span className="album-card-title" title={track.title}>
+          {track.title}
+        </span>
+        <span className="album-card-meta" title={meta}>
+          {meta}
+        </span>
+      </button>
+      <button
+        type="button"
+        className="album-card-play"
+        onClick={() => onPlay(track)}
+        aria-label={`Play ${track.title}`}
+        title={`Play ${track.title}`}
+      >
+        <PlayIcon size={16} />
+      </button>
+    </div>
+  )
+}
+
 function ArtistCard({
   artist,
   busy,
@@ -349,6 +404,7 @@ export function HomeView(props: HomeViewProps) {
   const albums = useAlbums()
   const [recentAlbums, setRecentAlbums] = useState<AlbumSummary[]>([])
   const [playedAlbums, setPlayedAlbums] = useState<AlbumSummary[]>([])
+  const [playedSingles, setPlayedSingles] = useState<Track[]>([])
   const [artists, setArtists] = useState<ArtistSummary[]>([])
   const [shelvesLoading, setShelvesLoading] = useState(true)
   const [shelvesError, setShelvesError] = useState<string | null>(null)
@@ -374,14 +430,24 @@ export function HomeView(props: HomeViewProps) {
     const token = ++shelvesTokenRef.current
     setShelvesLoading(true)
     try {
-      const [recent, played, artistRows] = await Promise.all([
+      const [recent, played, singles, artistRows] = await Promise.all([
         api.listAlbums({ sort: 'recent', direction: 'desc', limit: 12 }),
         api.listAlbums({ sort: 'played', direction: 'desc', limit: 24 }),
+        // A played file without album tags has no album card to appear on, so
+        // ask for it separately and let the shelf merge both kinds.
+        api.listTracks({
+          sort: 'played',
+          direction: 'desc',
+          filter: 'most-played',
+          albumless: true,
+          limit: 12
+        }),
         api.listArtists(12)
       ])
       if (token !== shelvesTokenRef.current) return
       setRecentAlbums(recent.albums)
       setPlayedAlbums(played.albums.filter((album) => album.lastPlayedAt !== null).slice(0, 12))
+      setPlayedSingles(singles.tracks)
       setArtists(artistRows)
       setShelvesError(null)
     } catch (cause) {
@@ -407,6 +473,11 @@ export function HomeView(props: HomeViewProps) {
       api.off(playToken)
     }
   }, [loadShelves])
+
+  const playedShelf = useMemo(
+    () => mergePlayedShelf(playedAlbums, playedSingles, 12),
+    [playedAlbums, playedSingles]
+  )
 
   const heroAlbum = playedAlbums[0] ?? recentAlbums[0] ?? null
   const heroFallback = heroAlbum && !heroAlbum.artworkKey ? LOCAL_REQUEST(heroAlbum.trackId) : null
@@ -879,31 +950,41 @@ export function HomeView(props: HomeViewProps) {
         </div>
       ) : (
         <>
-          {playedAlbums.length > 0 ? (
+          {playedShelf.length > 0 ? (
             <Shelf
               title="Recently played"
               icon={<PlayIcon size={15} />}
               action={
-                <button
-                  type="button"
-                  className="home-more"
-                  onClick={() => showAlbumShelf('played')}
-                  title="Show every album, most recently played first"
-                  aria-label="More recently played albums"
-                >
-                  More
-                </button>
+                playedAlbums.length > 0 ? (
+                  <button
+                    type="button"
+                    className="home-more"
+                    onClick={() => showAlbumShelf('played')}
+                    title="Show every album, most recently played first"
+                    aria-label="More recently played albums"
+                  >
+                    More
+                  </button>
+                ) : undefined
               }
             >
-              {playedAlbums.map((album) => (
-                <AlbumCard
-                  key={albumKeyOf(album)}
-                  album={album}
-                  busy={busyAlbum === albumKeyOf(album)}
-                  onOpen={openAlbumDetail}
-                  onPlay={(next) => void playAlbum(next)}
-                />
-              ))}
+              {playedShelf.map((entry) =>
+                entry.kind === 'album' ? (
+                  <AlbumCard
+                    key={`album-${albumKeyOf(entry.album)}`}
+                    album={entry.album}
+                    busy={busyAlbum === albumKeyOf(entry.album)}
+                    onOpen={openAlbumDetail}
+                    onPlay={(next) => void playAlbum(next)}
+                  />
+                ) : (
+                  <TrackCard
+                    key={`track-${entry.track.id}`}
+                    track={entry.track}
+                    onPlay={(track) => onPlayLocal([track], 0)}
+                  />
+                )
+              )}
             </Shelf>
           ) : null}
 

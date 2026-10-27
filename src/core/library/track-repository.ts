@@ -261,6 +261,11 @@ function buildFilter(query: ListTracksQuery): { where: string; params: SqlParam[
     conditions.push('artist = ?')
     params.push(query.artist)
   }
+  if (query.albumless) {
+    // An absent tag reaches the scanner as null; treat a hand-edited empty
+    // string the same way so a single never leaks into the album grid.
+    conditions.push("(album IS NULL OR album = '')")
+  }
 
   return {
     where: conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
