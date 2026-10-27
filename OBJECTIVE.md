@@ -87,6 +87,9 @@ The feedback is not one visual-polish pass. It contains:
 ## Acceptance criteria
 
 - Playing a track and saving a download updates the relevant Home shelves without a restart.
+- An imported playlist appears on Home's Playlists shelf and its card opens it in Playlists.
+- A counted YouTube listen appears on Recently played as a track card, including one played from an imported list.
+- A newly added file with no album tag appears on Recently added without displacing its album cards.
 - A saved download is still listed in Downloads after a relaunch.
 - A restart does not clear cached entries unless the configured age/size policy requires it.
 - Downloads has correct top padding and no clipped tab labels.
@@ -115,7 +118,16 @@ All four slices are implemented and verified.
 - Quick check: live play counting and the album-card play badge: `5c01337`
 - Quick check: compact equalizer fader strip and its own trigger icon: `66793f4`
 - Quick check: played albumless files as track cards on Recently played: `212fc4c`
+- Quick check: imported playlists and YouTube listens on the Home shelves: `56a21a3`
 
 A counted listen (30 seconds or completion) now refreshes **Recently played** while Home is open, and is counted once per listen instead of again when the track ends or changes. A played file with no album tag now appears there as a track card, merged with the played albums by newest listen, instead of being omitted because it has no album summary. The equalizer is one row of upright faders with the preamp apart, hangs above the player bar without covering it, and uses a faders icon that cannot be confused with Settings or Queue. Album-card play badges keep their accent when hovered or focused.
 
-Each slice passed `npm run typecheck`, `npm run smoke`, `npm run build` and `npm run selftest`. Manual acceptance of the visual slices (P3, P13, the equalizer and the play badge) is still required. M8 stays open on signing, updates, crash reporting, sidecars, compatibility and a clean-Windows pass. The tree also contains an unrelated, uncommitted performance-harness change in `src/main/scale-check.ts`; it is not part of this feedback pass and must not be mixed into these commits.
+Home now shows what the user actually has, not only what fits an album shelf:
+
+- **Recently played** merges played albums, played albumless files and counted YouTube listens, newest first. A stream keeps its own card even when YouTube gives it an album name, and a downloaded copy replaces the stream card by video id instead of doubling the listen.
+- **Recently added** merges added albums with added files that have no album tag, so a new single is no longer invisible there.
+- **Playlists** lists imported YouTube lists beside custom ones; an imported card shows its kind and track count and opens the list in Playlists, where it can be played, saved or edited.
+- Stream listens are written after the same 30 s threshold, in a `stream_plays` table keyed by video id. That is deliberately separate from the YouTube history: playing an imported entry still does not echo into `online_tracks`, but the listen still reaches Home.
+- A shelf scrolls back to its first card when a new one is prepended, and does nothing when reduced motion is on.
+
+Each slice passed `npm run typecheck`, `npm run smoke`, `npm run build` and `npm run selftest`. Manual acceptance of the visual slices (P3, P13, the equalizer, the play badge and the new Home cards) is still required. M8 stays open on signing, updates, crash reporting, sidecars, compatibility and a clean-Windows pass. The tree also contains an unrelated, uncommitted performance-harness change in `src/main/scale-check.ts`; it is not part of this feedback pass and must not be mixed into these commits.
