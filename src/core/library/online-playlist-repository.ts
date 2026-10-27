@@ -205,6 +205,24 @@ export class OnlinePlaylistRepository {
   }
 
   /**
+   * One entry by its own id.
+   *
+   * A played entry is queued under that id; when the listen is counted this is
+   * where the metadata for the stream-play row comes from. It may be gone if the
+   * list was re-imported during playback, and the caller then skips the record.
+   */
+  getItem(id: number): OnlinePlaylistItem | null {
+    const row = this.db
+      .prepare(
+        `SELECT id, playlist_id, position, video_id, title, artist, album, duration_ms
+         FROM online_playlist_items
+         WHERE id = ?`
+      )
+      .get<ItemRow>(id)
+    return row ? mapItem(row) : null
+  }
+
+  /**
    * The first entry anywhere that holds a video.
    *
    * Used when an imported track is played for the first time: it has no history

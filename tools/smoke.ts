@@ -37,7 +37,7 @@ import {
 import { DEFAULT_PREFERENCE_PATCH } from '@shared/settings-defaults'
 import { isLocalLibraryFilter, recentlyAddedCutoff, streamFallbackFor } from '@shared/library'
 import { PLAY_COUNT_THRESHOLD_MS, PlaySession, countsAsPlay } from '@shared/play-count'
-import { mergePlayedShelf } from '@shared/played-shelf'
+import { mergeAddedShelf, mergePlayedShelf } from '@shared/played-shelf'
 import type { AlbumSummary, Track } from '@shared/types'
 import { serializeDetails, silentLogger } from '@core/logging/logger'
 import {
@@ -78,6 +78,7 @@ import {
 import { libraryCsv } from '@core/library/library-csv'
 import { OnlineRepository } from '@core/library/online-repository'
 import { OnlinePlaylistRepository } from '@core/library/online-playlist-repository'
+import { StreamPlayRepository } from '@core/library/stream-play-repository'
 import { PlayStateRepository } from '@core/library/play-state-repository'
 import { PlaybackService } from '@core/library/playback-service'
 import { isPathInside, localContentKey, normalizePath } from '@core/library/content-key'
@@ -550,23 +551,108 @@ async function main(): Promise<void> {
     // them without a scan-time copy of album data.
     const mergeAlbum = (name: string, at: number | null) =>
       ({ album: name, lastPlayedAt: at }) as AlbumSummary
+    // The added shelf reads a different timestamp, so an album fixture built for
+    // the played shelf would sort as `undefined`. Keep the two explicit.
+    const mergeAddedAlbum = (name: string, at: number | null) =>
+      ({ album: name, addedAt: at }) as AlbumSummary
     const mergeTrack = (id: number, album: string | null, at: number | null) =>
       ({ id, album, lastPlayedAt: at }) as Track
+    const mergeStream = (videoId: string, album: string | null, at: number | null) =>
+      ({
+        id: 0,
+        sourceKind: 'youtube',
+        sourceId: videoId,
+        originKind: null,
+        originId: null,
+        album,
+        lastPlayedAt: at
+      }) as Track
     const merged = mergePlayedShelf(
       [mergeAlbum('Older', 100), mergeAlbum('Unplayed', null)],
-      [mergeTrack(7, null, 300), mergeTrack(8, 'Has Album', 400), mergeTrack(9, null, 200)],
+      [
+        mergeTrack(7, null, 300),
+        mergeTrack(8, 'Has Album', 400),
+        mergeTrack(9, null, 200),
+        // A downloaded stream: the same video must not be shown twice.
+        ({ ...mergeTrack(10, null, 500), originKind: 'youtube', originId: 'samevideo1' } as Track)
+      ],
+      [mergeStream('samevideo1', null, 600), mergeStream('streamtwo', 'YouTube Album', 450)],
+      4
+    )
+    checkEqual(
+      'recently played merges albums, albumless singles and streams newest first',
+      merged
+        .map((entry) =>
+          entry.kind === 'album'
+            ? entry.album.album
+            : entry.track.sourceKind === 'youtube'
+              ? entry.track.sourceId
+              : entry.track.id
+        )
+        .join(','),
+      '10,streamtwo,7,9'
+    )
+    check(
+      'recently played skips album tracks, unplayed rows and downloaded duplicates',
+      !merged.some((entry) => entry.kind === 'track' && entry.track.id === 8) &&
+        !merged.some((entry) => entry.kind === 'album' && entry.album.album === 'Unplayed') &&
+        !merged.some((entry) => entry.kind === 'track' && entry.track.sourceId === 'samevideo1')
+    )
+    check(
+      'a YouTube album tag does not hide a stream from recently played',
+      merged.some((entry) => entry.kind === 'track' && entry.track.sourceId === 'streamtwo')
+    )
+
+    const addedMerge = mergeAddedShelf(
+      [mergeAddedAlbum('Recent Album', 200)],
+      [
+        ({ ...mergeTrack(11, null, 300), addedAt: 300 } as Track),
+        ({ ...mergeTrack(12, 'Has Album', 400), addedAt: 400 } as Track)
+      ],
       3
     )
     checkEqual(
-      'recently played merges albums and albumless singles newest first',
-      merged.map((entry) => (entry.kind === 'album' ? entry.album.album : entry.track.id)).join(','),
-      '7,9,Older'
+      'recently added merges albumless files with albums newest first',
+      addedMerge.map((entry) => (entry.kind === 'album' ? entry.album.album : entry.track.id)).join(','),
+      '11,Recent Album'
     )
     check(
-      'recently played skips album tracks and unplayed rows',
-      !merged.some((entry) => entry.kind === 'track' && entry.track.id === 8) &&
-        !merged.some((entry) => entry.kind === 'album' && entry.album.album === 'Unplayed')
+      'recently added keeps album tracks on their album card',
+      !addedMerge.some((entry) => entry.kind === 'track' && entry.track.id === 12)
     )
+
+    // The stream play log is what makes a YouTube listen visible on Home.
+    const streamPlays = new StreamPlayRepository(database.db)
+    streamPlays.upsert(
+      { videoId: 'streamone1', title: 'Stream One', artist: 'A', album: null, durationMs: 1000 },
+      1_000
+    )
+    streamPlays.upsert(
+      { videoId: 'streamtwo2', title: 'Stream Two', artist: 'B', album: 'Record', durationMs: 2000 },
+      2_000
+    )
+    checkEqual('a stream play is written once', streamPlays.count(), 2)
+    checkEqual(
+      'stream plays list newest first',
+      streamPlays.list().map((play) => play.videoId).join(','),
+      'streamtwo2,streamone1'
+    )
+    const replayed = streamPlays.upsert(
+      { videoId: 'streamone1', title: 'Stream One', artist: 'A', album: null, durationMs: 1000 },
+      3_000
+    )
+    checkEqual('replaying a stream counts another listen', replayed.playCount, 2)
+    checkEqual(
+      'a replayed stream rises to the top',
+      streamPlays.list()[0]?.videoId,
+      'streamone1'
+    )
+    check(
+      'touching an unknown stream row changes nothing',
+      !streamPlays.touch(9_999, 4_000) && streamPlays.count() === 2
+    )
+    streamPlays.clear()
+    checkEqual('the play log can be cleared', streamPlays.count(), 0)
 
     const singleId = repo.insert(
       {

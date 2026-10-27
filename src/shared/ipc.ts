@@ -38,6 +38,7 @@ import type {
   SavedPlayback,
   SaveToLibraryRequest,
   ScanProgress,
+  StreamPlay,
   Track,
   TrackPage,
   YouTubeChannel,
@@ -103,6 +104,7 @@ export const IPC = {
   onlineAddLink: 'online:add-link',
   onlineRemove: 'online:remove',
   onlineClear: 'online:clear',
+  onlineStreamPlays: 'online:stream-plays',
   onlineImport: 'online:import',
   onlineSearch: 'online:search',
   onlineChannel: 'online:channel',
@@ -371,6 +373,14 @@ export interface PlayerApi {
   removeOnline(id: number): Promise<void>
   /** Forgets every remembered link. Resolves to how many were removed. */
   clearOnline(): Promise<number>
+  /**
+   * Counted listens of YouTube tracks, newest first.
+   *
+   * Separate from `listOnline`: a play from an imported list is not a link the
+   * user added, but it is still something they listened to. Home's Recently
+   * played shelf merges these with the local albums and singles.
+   */
+  listStreamPlays(limit?: number): Promise<StreamPlay[]>
   /**
    * Imports a playlist, album or mix and remembers it as an Online playlist.
    *

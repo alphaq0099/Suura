@@ -655,6 +655,22 @@ export function App() {
     [player]
   )
 
+  /**
+   * Plays one Home card.
+   *
+   * The shelf can now hold a played YouTube song beside local albums and
+   * singles, so the queue label follows the track rather than the view. The
+   * stream is resolved by its video id, exactly as a row in the YouTube view is.
+   */
+  const playHomeTrack = useCallback(
+    (track: Track): void => {
+      setPlayingList(null)
+      const source = track.sourceKind === 'youtube' ? YOUTUBE_QUEUE_SOURCE : LIBRARY_QUEUE_SOURCE
+      player.playQueue(tagQueueTracks([track], source), 0)
+    },
+    [player]
+  )
+
   const selectAllVisible = useCallback((): void => {
     if (showingStreams) {
       selectMany(streamTracks.map((track) => track.id))
@@ -943,6 +959,7 @@ export function App() {
           scanning={scanning}
           error={combinedError}
           playlists={playlists.playlists}
+          onlinePlaylists={playlists.onlinePlaylists}
           currentTrackId={player.current?.id ?? null}
           isPlaying={player.isPlaying}
           rowHeight={DENSITY_ROW_HEIGHT[settings.visuals.density]}
@@ -956,7 +973,12 @@ export function App() {
             playlists.select(playlistId)
             setView('playlists')
           }}
+          onOpenOnlinePlaylist={(playlistId) => {
+            playlists.selectOnline(playlistId)
+            setView('playlists')
+          }}
           onPlayLocal={playLocalTracks}
+          onPlayTrack={playHomeTrack}
           onQueueLocal={queueLocalTracks}
           onReveal={(trackId) => void revealTrack(trackId)}
           onAddTracksToPlaylist={playlists.addTracks}

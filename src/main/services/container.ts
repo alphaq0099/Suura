@@ -15,6 +15,7 @@ import { PlaylistService } from '@core/library/playlist-service'
 import { DataCareService } from '@core/library/data-care-service'
 import { OnlineRepository } from '@core/library/online-repository'
 import { OnlinePlaylistRepository } from '@core/library/online-playlist-repository'
+import { StreamPlayRepository } from '@core/library/stream-play-repository'
 import { PlayStateRepository } from '@core/library/play-state-repository'
 import { PlaybackService } from '@core/library/playback-service'
 import { InnerTubeMetadataClient } from '@engine/innertube'
@@ -68,6 +69,8 @@ export interface AppContainer {
   onlineRepo: OnlineRepository
   /** Imported playlists, exposed so the self-test can seed one. */
   onlinePlaylists: OnlinePlaylistRepository
+  /** The counted listens of streams; Home's Recently played reads it. */
+  streamPlays: StreamPlayRepository
   /** Starts/stops an external PO Token provider when the user asks. */
   poToken: PoTokenProvider
   /** Measures ReplayGain for local files in the background. */
@@ -154,6 +157,7 @@ export function createContainer(): AppContainer {
 
   const onlineRepo = new OnlineRepository(database.db)
   const onlinePlaylists = new OnlinePlaylistRepository(database.db)
+  const streamPlays = new StreamPlayRepository(database.db)
   // Search and channel metadata use YouTube's web API; playback keeps yt-dlp.
   // Separating them means a discovery request cannot spend the playback budget.
   const metadata = new InnerTubeMetadataClient({ log: log.child('innertube') })
@@ -161,12 +165,16 @@ export function createContainer(): AppContainer {
     resolver: youtube.resolver,
     repo: onlineRepo,
     playlists: onlinePlaylists,
+    plays: streamPlays,
     listProvider: ytDlp,
     discoverProvider: metadata,
     engine: () => settings.get().engine,
     artwork,
     log: log.child('online'),
-    onChange: () => broadcast(IPC_EVENTS.onlineChanged, null)
+    onChange: () => broadcast(IPC_EVENTS.onlineChanged, null),
+    // A stream counted its listen, so Home's Recently played is stale even though
+    // no library row changed. This is the same signal a local play sends.
+    onPlayHistory: () => broadcast(IPC_EVENTS.playHistoryChanged, null)
   })
 
   const library = new LibraryService(repo, settings, log.child('library'), {
@@ -287,6 +295,7 @@ export function createContainer(): AppContainer {
     online,
     onlineRepo,
     onlinePlaylists,
+    streamPlays,
     poToken,
     replayGain,
     dispose: () => {

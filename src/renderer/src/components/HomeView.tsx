@@ -7,13 +7,15 @@ import type {
   ArtistSummary,
   LibraryClickAction,
   LibraryStats,
+  OnlinePlaylist,
   Playlist,
   ScanProgress,
   Track
 } from '@shared/types'
 import { buildArtworkUrl } from '@shared/artwork-url'
 import { formatBytes, formatCount, formatDuration } from '@shared/format'
-import { mergePlayedShelf } from '@shared/played-shelf'
+import { onlinePlaylistArtworkTrack, streamPlayToTrack } from '@shared/online'
+import { mergeAddedShelf, mergePlayedShelf, type ShelfEntry } from '@shared/played-shelf'
 import { api, messageOf } from '../api'
 import { useAlbums } from '../hooks/useAlbums'
 import { useArtwork } from '../hooks/useArtwork'
@@ -41,6 +43,8 @@ export interface HomeViewProps {
   scanning: boolean
   error: string | null
   playlists: Playlist[]
+  /** Playlists, albums and mixes imported from a link, newest first. */
+  onlinePlaylists: OnlinePlaylist[]
   currentTrackId: number | null
   isPlaying: boolean
   rowHeight: number
@@ -51,7 +55,11 @@ export interface HomeViewProps {
   onCancelScan: () => void
   onOpenLibrary: () => void
   onOpenPlaylist: (playlistId: number) => void
+  /** Opens an imported list in the Playlists view, where it can be edited. */
+  onOpenOnlinePlaylist: (playlistId: number) => void
   onPlayLocal: (tracks: Track[], index: number) => void
+  /** Plays one shelf card. A stream card needs the YouTube queue, not the library. */
+  onPlayTrack: (track: Track) => void
   onQueueLocal: (tracks: Track[]) => void
   onReveal: (trackId: number) => void
   onAddTracksToPlaylist: (playlistId: number, trackIds: number[]) => Promise<AddTracksOutcome>
@@ -59,6 +67,49 @@ export interface HomeViewProps {
 }
 
 const LOCAL_REQUEST = (trackId: number) => ({ id: trackId, sourceKind: 'local' as const, sourceId: null })
+
+/** True unless the user asked for reduced motion in Settings or the OS. */
+function allowsMotion(): boolean {
+  const mode = document.documentElement.dataset.motion ?? 'system'
+  if (mode === 'full') return true
+  if (mode === 'reduced') return false
+  return !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+/**
+ * Brings a horizontal shelf back to its first card when a new one appears.
+ *
+ * New listens and new files are prepended, so a shelf the user had scrolled to
+ * the right rendered the new card off-screen. Only a change of the first card
+ * scrolls; an ordinary re-render of the same list leaves the position alone.
+ */
+function useRevealNewest(
+  scrollRef: RefObject<HTMLDivElement | null>,
+  firstKey: string | null
+): void {
+  const previous = useRef<string | null>(null)
+  useEffect(() => {
+    if (!firstKey) return
+    if (previous.current === null) {
+      previous.current = firstKey
+      return
+    }
+    if (previous.current === firstKey) return
+    previous.current = firstKey
+    scrollRef.current?.scrollTo({ left: 0, behavior: allowsMotion() ? 'smooth' : 'auto' })
+  }, [firstKey, scrollRef])
+}
+
+function shelfEntryKey(entry: ShelfEntry): string {
+  return entry.kind === 'album'
+    ? `album-${entry.album.album}\u001f${entry.album.albumArtist}`
+    : `track-${entry.track.id}`
+}
+
+function firstShelfKey(entries: readonly ShelfEntry[]): string | null {
+  const first = entries[0]
+  return first ? shelfEntryKey(first) : null
+}
 
 /** Slow enough to read the page: the backdrop is atmosphere, not a carousel. */
 const HERO_SLIDE_INTERVAL_MS = 12_000
@@ -117,22 +168,13 @@ function useNearViewport(ref: RefObject<HTMLElement | null>): boolean {
  */
 function useHeroSlides(count: number): { index: number; running: boolean } {
   const [index, setIndex] = useState(0)
-  const [motionAllowed, setMotionAllowed] = useState(() => {
-    const mode = document.documentElement.dataset.motion ?? 'system'
-    return (
-      mode === 'full' ||
-      (mode === 'system' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches)
-    )
-  })
+  const [motionAllowed, setMotionAllowed] = useState(() => allowsMotion())
   const [pageVisible, setPageVisible] = useState(() => !document.hidden)
 
   useEffect(() => {
     const root = document.documentElement
     const query = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const read = (): void => {
-      const mode = root.dataset.motion ?? 'system'
-      setMotionAllowed(mode === 'full' || (mode === 'system' && !query.matches))
-    }
+    const read = (): void => setMotionAllowed(allowsMotion())
     read()
     const observer = new MutationObserver(read)
     observer.observe(root, { attributes: true, attributeFilter: ['data-motion'] })
@@ -234,7 +276,11 @@ function AlbumCard({
 function TrackCard({ track, onPlay }: { track: Track; onPlay: (track: Track) => void }) {
   const ref = useRef<HTMLDivElement | null>(null)
   const visible = useNearViewport(ref)
-  const meta = [track.artist || 'Unknown artist', formatDuration(track.durationMs)]
+  const meta = [
+    track.artist || 'Unknown artist',
+    formatDuration(track.durationMs),
+    track.sourceKind === 'youtube' ? 'YouTube' : null
+  ]
     .filter(Boolean)
     .join(' · ')
 
@@ -252,7 +298,7 @@ function TrackCard({ track, onPlay }: { track: Track; onPlay: (track: Track) => 
             track={visible ? track : null}
             size="100%"
             artworkKey={track.artworkKey ?? undefined}
-            request={visible ? LOCAL_REQUEST(track.id) : null}
+            request={visible && track.sourceKind !== 'youtube' ? LOCAL_REQUEST(track.id) : null}
             className="album-cover"
           />
           <span className="album-card-shade" aria-hidden="true" />
@@ -346,15 +392,67 @@ function PlaylistCard({ playlist, onOpen }: { playlist: Playlist; onOpen: (playl
   )
 }
 
+/**
+ * A playlist imported from a link, on Home.
+ *
+ * It keeps the playlist-card shell so the shelf stays one row of covers, but
+ * shows the list's own cover (or its first video's still) instead of an initial.
+ * Opening it lands in Playlists, where the imported pane can play, save or edit
+ * it; the YouTube view is not the only doorway any more.
+ */
+function OnlinePlaylistCard({
+  playlist,
+  onOpen
+}: {
+  playlist: OnlinePlaylist
+  onOpen: (playlist: OnlinePlaylist) => void
+}) {
+  const ref = useRef<HTMLButtonElement | null>(null)
+  const visible = useNearViewport(ref)
+  const art = onlinePlaylistArtworkTrack(playlist)
+  const kind = playlist.kind === 'album' ? 'Album' : playlist.kind === 'mix' ? 'Mix' : 'Playlist'
+  const meta = [
+    `YouTube ${kind.toLowerCase()}`,
+    `${formatCount(playlist.trackCount)} ${playlist.trackCount === 1 ? 'track' : 'tracks'}`
+  ].join(' · ')
+
+  return (
+    <button
+      type="button"
+      className="playlist-card online-playlist-card"
+      ref={ref}
+      onClick={() => onOpen(playlist)}
+      title={`Open ${playlist.title} in Playlists`}
+    >
+      <span className="playlist-card-cover">
+        <ArtworkImage
+          track={visible ? art : null}
+          size="100%"
+          artworkKey={playlist.coverKey ?? undefined}
+          className="album-cover"
+        />
+      </span>
+      <span className="album-card-title" title={playlist.title}>
+        {playlist.title}
+      </span>
+      <span className="album-card-meta" title={meta}>
+        {meta}
+      </span>
+    </button>
+  )
+}
+
 function Shelf({
   title,
   icon,
   action,
+  scrollRef,
   children
 }: {
   title: string
   icon?: ReactNode
   action?: ReactNode
+  scrollRef?: RefObject<HTMLDivElement | null>
   children: ReactNode
 }) {
   return (
@@ -366,7 +464,9 @@ function Shelf({
         </h2>
         {action}
       </div>
-      <div className="home-shelf">{children}</div>
+      <div className="home-shelf" ref={scrollRef}>
+        {children}
+      </div>
     </section>
   )
 }
@@ -384,6 +484,7 @@ export function HomeView(props: HomeViewProps) {
     scanning,
     error,
     playlists,
+    onlinePlaylists,
     currentTrackId,
     isPlaying,
     rowHeight,
@@ -394,7 +495,9 @@ export function HomeView(props: HomeViewProps) {
     onCancelScan,
     onOpenLibrary,
     onOpenPlaylist,
+    onOpenOnlinePlaylist,
     onPlayLocal,
+    onPlayTrack,
     onQueueLocal,
     onReveal,
     onAddTracksToPlaylist,
@@ -403,8 +506,10 @@ export function HomeView(props: HomeViewProps) {
 
   const albums = useAlbums()
   const [recentAlbums, setRecentAlbums] = useState<AlbumSummary[]>([])
+  const [addedSingles, setAddedSingles] = useState<Track[]>([])
   const [playedAlbums, setPlayedAlbums] = useState<AlbumSummary[]>([])
   const [playedSingles, setPlayedSingles] = useState<Track[]>([])
+  const [playedStreams, setPlayedStreams] = useState<Track[]>([])
   const [artists, setArtists] = useState<ArtistSummary[]>([])
   const [shelvesLoading, setShelvesLoading] = useState(true)
   const [shelvesError, setShelvesError] = useState<string | null>(null)
@@ -423,6 +528,8 @@ export function HomeView(props: HomeViewProps) {
   const gridRef = useRef<HTMLElement | null>(null)
   const gridHeadingRef = useRef<HTMLHeadingElement | null>(null)
   const gridScrollRef = useRef(0)
+  const playedShelfRef = useRef<HTMLDivElement | null>(null)
+  const addedShelfRef = useRef<HTMLDivElement | null>(null)
   /** Bumped per shelf load so a slow scan refresh cannot overwrite a newer one. */
   const shelvesTokenRef = useRef(0)
 
@@ -430,8 +537,11 @@ export function HomeView(props: HomeViewProps) {
     const token = ++shelvesTokenRef.current
     setShelvesLoading(true)
     try {
-      const [recent, played, singles, artistRows] = await Promise.all([
+      const [recent, added, played, singles, streams, artistRows] = await Promise.all([
         api.listAlbums({ sort: 'recent', direction: 'desc', limit: 12 }),
+        // A file with no album tag has no album card, so Recently added would
+        // omit every new single. Ask for the same recent window of those files.
+        api.listTracks({ sort: 'added', direction: 'desc', albumless: true, limit: 12 }),
         api.listAlbums({ sort: 'played', direction: 'desc', limit: 24 }),
         // A played file without album tags has no album card to appear on, so
         // ask for it separately and let the shelf merge both kinds.
@@ -442,12 +552,17 @@ export function HomeView(props: HomeViewProps) {
           albumless: true,
           limit: 12
         }),
+        // YouTube listens have no library row at all; the play log is the only
+        // place a song played from a link or an imported list can come from.
+        api.listStreamPlays(24),
         api.listArtists(12)
       ])
       if (token !== shelvesTokenRef.current) return
       setRecentAlbums(recent.albums)
+      setAddedSingles(added.tracks)
       setPlayedAlbums(played.albums.filter((album) => album.lastPlayedAt !== null).slice(0, 12))
       setPlayedSingles(singles.tracks)
+      setPlayedStreams(streams.map(streamPlayToTrack))
       setArtists(artistRows)
       setShelvesError(null)
     } catch (cause) {
@@ -475,9 +590,15 @@ export function HomeView(props: HomeViewProps) {
   }, [loadShelves])
 
   const playedShelf = useMemo(
-    () => mergePlayedShelf(playedAlbums, playedSingles, 12),
-    [playedAlbums, playedSingles]
+    () => mergePlayedShelf(playedAlbums, playedSingles, playedStreams, 12),
+    [playedAlbums, playedSingles, playedStreams]
   )
+  const addedShelf = useMemo(
+    () => mergeAddedShelf(recentAlbums, addedSingles, 12),
+    [addedSingles, recentAlbums]
+  )
+  useRevealNewest(playedShelfRef, firstShelfKey(playedShelf))
+  useRevealNewest(addedShelfRef, firstShelfKey(addedShelf))
 
   const heroAlbum = playedAlbums[0] ?? recentAlbums[0] ?? null
   const heroFallback = heroAlbum && !heroAlbum.artworkKey ? LOCAL_REQUEST(heroAlbum.trackId) : null
@@ -954,6 +1075,7 @@ export function HomeView(props: HomeViewProps) {
             <Shelf
               title="Recently played"
               icon={<PlayIcon size={15} />}
+              scrollRef={playedShelfRef}
               action={
                 playedAlbums.length > 0 ? (
                   <button
@@ -971,7 +1093,7 @@ export function HomeView(props: HomeViewProps) {
               {playedShelf.map((entry) =>
                 entry.kind === 'album' ? (
                   <AlbumCard
-                    key={`album-${albumKeyOf(entry.album)}`}
+                    key={shelfEntryKey(entry)}
                     album={entry.album}
                     busy={busyAlbum === albumKeyOf(entry.album)}
                     onOpen={openAlbumDetail}
@@ -979,40 +1101,51 @@ export function HomeView(props: HomeViewProps) {
                   />
                 ) : (
                   <TrackCard
-                    key={`track-${entry.track.id}`}
+                    key={shelfEntryKey(entry)}
                     track={entry.track}
-                    onPlay={(track) => onPlayLocal([track], 0)}
+                    onPlay={onPlayTrack}
                   />
                 )
               )}
             </Shelf>
           ) : null}
 
-          {recentAlbums.length > 0 ? (
+          {addedShelf.length > 0 ? (
             <Shelf
               title="Recently added"
               icon={<DiscIcon size={15} />}
+              scrollRef={addedShelfRef}
               action={
-                <button
-                  type="button"
-                  className="home-more"
-                  onClick={() => showAlbumShelf('recent')}
-                  title="Show every album, newest first"
-                  aria-label="More recently added albums"
-                >
-                  More
-                </button>
+                recentAlbums.length > 0 ? (
+                  <button
+                    type="button"
+                    className="home-more"
+                    onClick={() => showAlbumShelf('recent')}
+                    title="Show every album, newest first"
+                    aria-label="More recently added albums"
+                  >
+                    More
+                  </button>
+                ) : undefined
               }
             >
-              {recentAlbums.map((album) => (
-                <AlbumCard
-                  key={albumKeyOf(album)}
-                  album={album}
-                  busy={busyAlbum === albumKeyOf(album)}
-                  onOpen={openAlbumDetail}
-                  onPlay={(next) => void playAlbum(next)}
-                />
-              ))}
+              {addedShelf.map((entry) =>
+                entry.kind === 'album' ? (
+                  <AlbumCard
+                    key={shelfEntryKey(entry)}
+                    album={entry.album}
+                    busy={busyAlbum === albumKeyOf(entry.album)}
+                    onOpen={openAlbumDetail}
+                    onPlay={(next) => void playAlbum(next)}
+                  />
+                ) : (
+                  <TrackCard
+                    key={shelfEntryKey(entry)}
+                    track={entry.track}
+                    onPlay={onPlayTrack}
+                  />
+                )
+              )}
             </Shelf>
           ) : null}
 
@@ -1030,13 +1163,20 @@ export function HomeView(props: HomeViewProps) {
             </Shelf>
           ) : null}
 
-          {playlists.length > 0 ? (
+          {playlists.length + onlinePlaylists.length > 0 ? (
             <Shelf title="Playlists" icon={<PlayIcon size={15} />}>
               {playlists.map((playlist) => (
                 <PlaylistCard
-                  key={playlist.id}
+                  key={`custom-${playlist.id}`}
                   playlist={playlist}
                   onOpen={(next) => onOpenPlaylist(next.id)}
+                />
+              ))}
+              {onlinePlaylists.map((playlist) => (
+                <OnlinePlaylistCard
+                  key={`online-${playlist.id}`}
+                  playlist={playlist}
+                  onOpen={(next) => onOpenOnlinePlaylist(next.id)}
                 />
               ))}
             </Shelf>

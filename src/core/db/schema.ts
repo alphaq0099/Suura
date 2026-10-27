@@ -416,6 +416,34 @@ export const MIGRATIONS: readonly Migration[] = [
           ON download_history(updated_at DESC);
       `)
     }
+  },
+  {
+    version: 13,
+    name: 'played streams',
+    up: (db) => {
+      // A stream has no `tracks` row, so its listens have nowhere to go. The
+      // online history is the set of links the user added, not a play log, and
+      // an imported playlist entry deliberately stays out of it. This table is
+      // the play log itself: keyed by video, with its own copy of the metadata
+      // because the history row or playlist entry may be gone by the time Home
+      // draws the card.
+      db.exec(`
+        CREATE TABLE stream_plays (
+          id             INTEGER PRIMARY KEY AUTOINCREMENT,
+          video_id       TEXT    NOT NULL UNIQUE,
+          title          TEXT    NOT NULL,
+          artist         TEXT,
+          album          TEXT,
+          duration_ms    INTEGER,
+          added_at       INTEGER NOT NULL,
+          last_played_at INTEGER NOT NULL,
+          play_count     INTEGER NOT NULL DEFAULT 1
+        );
+
+        CREATE INDEX idx_stream_plays_recent
+          ON stream_plays(last_played_at DESC);
+      `)
+    }
   }
 ]
 

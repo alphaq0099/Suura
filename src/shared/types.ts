@@ -314,6 +314,20 @@ export interface SavedPlayback {
  * `Track`: it owns no file, no resolver session and no row in `tracks`.
  * `onlineEntryToTrack` turns it into a session track when it is played.
  */
+export interface StreamPlay {
+  id: number
+  videoId: string
+  title: string
+  artist: string | null
+  album: string | null
+  durationMs: number | null
+  /** When the video was first counted as played. */
+  addedAt: number
+  /** When the most recent counted listen finished. */
+  lastPlayedAt: number
+  playCount: number
+}
+
 export interface OnlineTrack {
   id: number
   videoId: string

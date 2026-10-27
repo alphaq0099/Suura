@@ -5651,6 +5651,202 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       copiedLink
     )
 
+    // ---- 15b. the Home shelves after imports and streams ----------------
+    // Three things the shelves used to omit: an imported list (the Playlists
+    // shelf only knew custom ones), a YouTube listen (no `tracks` row exists),
+    // and a newly added file with no album tag (Recently added was album-only).
+    // This seeds each in the way the app writes it, visits Home once, and then
+    // puts the fixtures back so the restart section starts where it expects.
+    const shelfSeed = Date.now()
+    const shelfPlaylist = container.onlinePlaylists.upsert(
+      {
+        listId: 'OLAK5uy_shelftest',
+        kind: 'album',
+        title: 'Shelf Test Album',
+        owner: 'Shelf Streamer',
+        sourceUrl: 'https://www.youtube.com/playlist?list=OLAK5uy_shelftest',
+        coverKey: null,
+        totalCount: 2
+      },
+      [
+        {
+          videoId: 'shelftest01',
+          title: 'Shelf Test Stream',
+          artist: 'Shelf Streamer',
+          album: 'Shelf Test Album',
+          durationMs: 120_000
+        },
+        {
+          videoId: 'shelftest02',
+          title: 'Shelf Test Second',
+          artist: 'Shelf Streamer',
+          album: 'Shelf Test Album',
+          durationMs: 90_000
+        }
+      ],
+      shelfSeed
+    )
+    const shelfHistory = container.onlineRepo.upsert(
+      {
+        videoId: 'shelftest03',
+        title: 'Shelf Test Stream',
+        artist: 'Shelf Streamer',
+        channel: 'Shelf Streamer',
+        album: null,
+        durationMs: 120_000,
+        sourceUrl: youtubeWatchUrl('shelftest03'),
+        artworkKey: null
+      },
+      shelfSeed
+    )
+    const streamPlaysBefore = container.streamPlays.count()
+    // The history row is what a pasted link produces; reporting a counted listen
+    // for it is the same call the player makes when the threshold is crossed.
+    container.online.recordStreamPlay(-shelfHistory.id)
+    const shelfSingleId = container.repo.insert(
+      {
+        contentKey: 'selftest-shelf-single',
+        sourceKind: 'local',
+        sourceId: null,
+        originKind: null,
+        originId: null,
+        title: 'Shelf Test Single',
+        artist: 'Shelf Shelf Artist',
+        albumArtist: null,
+        album: null,
+        trackNo: null,
+        discNo: null,
+        year: null,
+        genre: null,
+        durationMs: 150_000,
+        codec: 'flac',
+        bitrateKbps: null,
+        sampleRate: null,
+        channels: null,
+        fileSize: null,
+        fileMtimeMs: null,
+        filePath: null
+      },
+      shelfSeed
+    )
+    broadcast(IPC_EVENTS.onlineChanged, null)
+    broadcast(IPC_EVENTS.playHistoryChanged, null)
+
+    const homeShelves = await evaluate<{
+      playlistTitle: string
+      playlistMeta: string
+      streamTitle: string
+      streamMeta: string
+      addedTitle: string
+      addedMeta: string
+      addedInPlayed: boolean
+      onPlaylists: boolean
+      paneTitle: string
+      paneRows: number
+    }>(
+      window,
+      `(async () => {
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const text = (el) => ((el || {}).textContent || '')
+         const nav = (label) =>
+           [...document.querySelectorAll('.nav-item')].find((el) =>
+             text(el).trim().startsWith(label)
+           )
+         const shelf = (title) =>
+           [...document.querySelectorAll('.home-section')].find(
+             (section) =>
+               text(section.querySelector('.home-section-head h2')).trim() === title
+           )
+         const trackCard = (title, name) =>
+           [...(shelf(title)?.querySelectorAll('.track-card') || [])].find(
+             (card) => text(card.querySelector('.album-card-title')).trim() === name
+           )
+         const out = {
+           playlistTitle: '', playlistMeta: '', streamTitle: '', streamMeta: '',
+           addedTitle: '', addedMeta: '', addedInPlayed: false,
+           onPlaylists: false, paneTitle: '', paneRows: 0
+         }
+
+         nav('Home')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         const deadline = Date.now() + 8000
+         let card = null
+         while (Date.now() < deadline) {
+           card = document.querySelector('.home-shelf .online-playlist-card')
+           if (card) break
+           await sleep(100)
+         }
+         out.playlistTitle = text(card?.querySelector('.album-card-title')).trim()
+         out.playlistMeta = text(card?.querySelector('.album-card-meta')).trim()
+
+         const stream = trackCard('Recently played', 'Shelf Test Stream')
+         out.streamTitle = text(stream?.querySelector('.album-card-title')).trim()
+         out.streamMeta = text(stream?.querySelector('.album-card-meta')).trim()
+
+         const added = trackCard('Recently added', 'Shelf Test Single')
+         out.addedTitle = text(added?.querySelector('.album-card-title')).trim()
+         out.addedMeta = text(added?.querySelector('.album-card-meta')).trim()
+         // The single has never been played, so it must not leak onto the
+         // played shelf just because both read the same merged shape.
+         out.addedInPlayed = Boolean(trackCard('Recently played', 'Shelf Test Single'))
+
+         if (card) card.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         // The pane is filled by an IPC round trip, so wait for the title rather
+         // than assuming one paint.
+         const paneDeadline = Date.now() + 6000
+         let pane = ''
+         while (Date.now() < paneDeadline) {
+           pane = text(document.querySelector('.playlist-pane-head h2')).trim()
+           if (pane.length > 0) break
+           await sleep(100)
+         }
+         out.onPlaylists = Boolean(document.querySelector('.playlists-view'))
+         out.paneTitle = pane
+         out.paneRows = document.querySelectorAll('.playlist-pane .track-row').length
+         return out
+       })()`
+    )
+
+    record(
+      homeShelves.playlistTitle === 'Shelf Test Album' &&
+        homeShelves.playlistMeta.includes('YouTube album') &&
+        homeShelves.playlistMeta.includes('2 tracks'),
+      'home: an imported playlist appears in the Playlists shelf with its kind and count',
+      `${homeShelves.playlistTitle || 'none'} · ${homeShelves.playlistMeta || 'no meta'}`
+    )
+    record(
+      homeShelves.streamTitle === 'Shelf Test Stream' &&
+        homeShelves.streamMeta.includes('Shelf Streamer') &&
+        homeShelves.streamMeta.includes('YouTube'),
+      'home: a YouTube listen appears on Recently played as its own track card',
+      `${homeShelves.streamTitle || 'none'} · ${homeShelves.streamMeta || 'no meta'}`
+    )
+    record(
+      homeShelves.addedTitle === 'Shelf Test Single' &&
+        homeShelves.addedMeta.includes('Shelf Shelf Artist') &&
+        !homeShelves.addedInPlayed,
+      'home: a newly added file with no album tag appears on Recently added only',
+      `${homeShelves.addedTitle || 'none'} · ${homeShelves.addedMeta || 'no meta'} · leaked ${homeShelves.addedInPlayed}`
+    )
+    record(
+      homeShelves.onPlaylists &&
+        homeShelves.paneTitle === 'Shelf Test Album' &&
+        homeShelves.paneRows === 2,
+      'home: the imported playlist card opens the list in Playlists',
+      `view ${homeShelves.onPlaylists ? 'Playlists' : 'other'}, pane ${homeShelves.paneTitle || 'none'}, ${homeShelves.paneRows} rows`
+    )
+    record(
+      streamPlaysBefore === 0 && container.streamPlays.getByVideoId('shelftest03') !== null,
+      'the stream play log records a counted YouTube listen under its video id',
+      `${streamPlaysBefore} before, ${container.streamPlays.count()} after`
+    )
+
+    container.library.removeTracks([shelfSingleId])
+    container.onlineRepo.remove(shelfHistory.id)
+    container.onlinePlaylists.delete(shelfPlaylist.id)
+    container.streamPlays.clear()
+    broadcast(IPC_EVENTS.onlineChanged, null)
+    broadcast(IPC_EVENTS.playHistoryChanged, null)
+
     // ---- 16. resuming ----------------------------------------------------
     // A restart cannot be faked from inside the page: the queue lives in a hook,
     // so the only way to know it survives is to throw the page away and let it

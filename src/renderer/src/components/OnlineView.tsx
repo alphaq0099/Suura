@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import type { DownloadProgress, OnlinePlaylist, OnlinePlaylistDetail, OnlineTrack, Track } from '@shared/types'
 import { formatCount, formatDuration } from '@shared/format'
 import { YOUTUBE_QUEUE_SOURCE, tagQueueTracks } from '@shared/queue'
-import { onlineEntryToTrack, onlinePlaylistItemToTrack } from '@shared/online'
+import { onlineEntryToTrack, onlinePlaylistArtworkTrack, onlinePlaylistItemToTrack } from '@shared/online'
 import type { PlayingList } from '@shared/online'
 import { describeYouTubeRefusal, parseYouTubeLink, youtubeListUrl } from '@shared/youtube'
 import { api, messageOf } from '../api'
@@ -84,30 +84,6 @@ interface ListOffer {
 const MENU_WIDTH = 240
 // Tall enough for the selected-row actions without the menu growing off-screen.
 const MENU_HEIGHT = 360
-
-/**
- * The art a list card can show when it has no cover of its own.
- *
- * A playlist or mix has no sleeve; its first entry's still is the closest thing
- * to a face. The synthetic entry exists only to reach the same artwork path a
- * row uses — it is never queued or stored, so its placeholder id is harmless.
- */
-function playlistArtworkTrack(playlist: OnlinePlaylist): Track | null {
-  if (playlist.coverKey || !playlist.firstVideoId) return null
-  return onlinePlaylistItemToTrack(
-    {
-      id: 0,
-      playlistId: playlist.id,
-      position: 0,
-      videoId: playlist.firstVideoId,
-      title: playlist.title,
-      artist: playlist.owner,
-      album: null,
-      durationMs: null
-    },
-    playlist
-  )
-}
 
 /**
  * The YouTube view.
@@ -669,7 +645,7 @@ export function OnlineView(props: OnlineViewProps) {
                   className={playingHere ? 'online-imported-row current' : 'online-imported-row'}
                 >
                   <ArtworkImage
-                    track={playlistArtworkTrack(playlist)}
+                    track={onlinePlaylistArtworkTrack(playlist)}
                     artworkKey={playlist.coverKey ?? undefined}
                     size={36}
                     iconSize={16}

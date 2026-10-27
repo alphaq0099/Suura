@@ -137,6 +137,8 @@ const api: PlayerApi = {
 
   clearOnline: () => ipcRenderer.invoke(IPC.onlineClear) as Promise<number>,
 
+  listStreamPlays: (limit?: number) => ipcRenderer.invoke(IPC.onlineStreamPlays, limit),
+
   importOnlineList: (url: string, limit?: number) => ipcRenderer.invoke(IPC.onlineImport, url, limit),
 
   searchYouTube: (query: string, limit?: number, offset?: number) =>

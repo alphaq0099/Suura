@@ -1,6 +1,7 @@
 import type { Logger } from '@core/logging/logger'
 import type { OnlinePlaylistRepository } from '@core/library/online-playlist-repository'
 import type { OnlineRepository } from '@core/library/online-repository'
+import type { StreamPlayRepository } from '@core/library/stream-play-repository'
 import type { YtPlaylistProvider, YtSearchProvider } from '@engine/sidecar/yt-dlp'
 import type { YouTubeResolver } from '@engine/youtube-resolver'
 import type {
@@ -8,6 +9,7 @@ import type {
   OnlinePlaylist,
   OnlinePlaylistDetail,
   OnlineTrack,
+  StreamPlay,
   YouTubeChannel,
   YouTubeSearchResult
 } from '@shared/types'
@@ -22,6 +24,12 @@ import {
   youtubeThumbnailCandidates,
   youtubeWatchUrl
 } from '@shared/youtube'
+import {
+  importedPlaylistItemId,
+  isImportedPlaylistTrackId,
+  isStreamPlayTrackId,
+  streamPlayRowId
+} from '@shared/online'
 import { AsyncTtlCache } from './async-cache'
 import type { ArtworkService } from './artwork-service'
 
@@ -46,6 +54,23 @@ export interface OnlineService {
    * not echo it into the history, where the list already holds it.
    */
   rememberPlay(videoId: string): void
+  /**
+   * The counted listens of videos that have no library row, newest first.
+   *
+   * Recently played merges these with local albums and singles so a YouTube
+   * song appears where the user expects it, including one played from an
+   * imported list that deliberately stays out of the history.
+   */
+  streamPlays(limit?: number): StreamPlay[]
+  /**
+   * Records one counted listen for a stream track.
+   *
+   * `trackId` is the negative queue id: a history row, an imported entry or a
+   * card on Recently played. A history row or entry is looked up for its
+   * metadata; a card simply lifts its own row, because a re-import may already
+   * have replaced the entry it originally came from.
+   */
+  recordStreamPlay(trackId: number): void
   remove(id: number): void
   /** Forgets every link. Returns how many were removed. */
   clear(): number
@@ -145,6 +170,8 @@ export function createOnlineService(deps: {
   resolver: YouTubeResolver
   repo: OnlineRepository
   playlists: OnlinePlaylistRepository
+  /** The counted listens of streams, which Recent played reads. */
+  plays: StreamPlayRepository
   /**
    * The flat listing provider. Repeated here rather than reached through the
    * resolver because importing is a different read: no formats, no stream URLs.
@@ -157,6 +184,8 @@ export function createOnlineService(deps: {
   log: Logger
   /** Called after any change, so the main process can push a refresh. */
   onChange?: () => void
+  /** Called after a stream listen is counted, so Home's shelf refreshes. */
+  onPlayHistory?: () => void
   now?: () => number
 }): OnlineService {
   const withArtwork = (entry: OnlineTrack): OnlineTrack => {
@@ -337,6 +366,55 @@ export function createOnlineService(deps: {
       if (!deps.repo.getByVideoId(videoId)) return
       deps.repo.touch(videoId, deps.now?.() ?? Date.now())
       deps.onChange?.()
+    },
+
+    streamPlays(limit) {
+      return deps.plays.list(limit)
+    },
+
+    recordStreamPlay(trackId) {
+      const now = deps.now?.() ?? Date.now()
+
+      // A card on Recently played: the listen it stands for already has a row.
+      if (isStreamPlayTrackId(trackId)) {
+        if (deps.plays.touch(streamPlayRowId(trackId), now)) deps.onPlayHistory?.()
+        return
+      }
+
+      // An imported entry. Its metadata lives in the snapshot, but the entry can
+      // disappear when the list is re-imported mid-play; the listen is then left
+      // unrecorded rather than invented from the id.
+      if (isImportedPlaylistTrackId(trackId)) {
+        const item = deps.playlists.getItem(importedPlaylistItemId(trackId))
+        if (!item) return
+        deps.plays.upsert(
+          {
+            videoId: item.videoId,
+            title: item.title,
+            artist: item.artist,
+            album: item.album,
+            durationMs: item.durationMs
+          },
+          now
+        )
+        deps.onPlayHistory?.()
+        return
+      }
+
+      if (trackId >= 0) return
+      const entry = deps.repo.get(-trackId)
+      if (!entry) return
+      deps.plays.upsert(
+        {
+          videoId: entry.videoId,
+          title: entry.title,
+          artist: entry.artist,
+          album: entry.album,
+          durationMs: entry.durationMs
+        },
+        now
+      )
+      deps.onPlayHistory?.()
     },
 
     remove(id) {

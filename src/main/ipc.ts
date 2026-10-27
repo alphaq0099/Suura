@@ -15,6 +15,7 @@ import { sanitizeFilePart } from '@shared/files'
 import { IPC, IPC_EVENTS } from '@shared/ipc'
 import { isLocalLibraryFilter, streamFallbackFor } from '@shared/library'
 import { isImportedPlaylistTrackId } from '@shared/online'
+import { countsAsPlay } from '@shared/play-count'
 import { clampPlaylistIndexWidth } from '@shared/playlists'
 import type {
   AccentName,
@@ -922,6 +923,12 @@ export function registerIpcHandlers(container: AppContainer): void {
 
   ipcMain.handle(IPC.onlineClear, () => container.online.clear())
 
+  ipcMain.handle(IPC.onlineStreamPlays, (_event, limit: unknown) => {
+    const count =
+      typeof limit === 'number' && Number.isFinite(limit) ? Math.round(limit) : undefined
+    return container.online.streamPlays(count)
+  })
+
   // ----- imported playlists ---------------------------------------------
   // Importing is a long request (a flat listing is several seconds). It writes a
   // snapshot and returns it; queueing and playback are the renderer's call, so
@@ -1078,14 +1085,16 @@ export function registerIpcHandlers(container: AppContainer): void {
   })
 
   ipcMain.handle(IPC.mediaReportPlay, (_event, trackId: unknown, playedMs: unknown, completed: unknown) => {
-    // A stream track is session-only and carries a negative id: there is no row
-    // to count a play against until remote tracks are stored in M5.
-    if (typeof trackId === 'number' && Number.isInteger(trackId) && trackId < 0) return
-    library.reportPlayback(
-      toTrackId(trackId),
-      typeof playedMs === 'number' && Number.isFinite(playedMs) ? playedMs : 0,
-      completed === true
-    )
+    const played = typeof playedMs === 'number' && Number.isFinite(playedMs) ? playedMs : 0
+    const finished = completed === true
+    // A stream track has a negative session id and no `tracks` row. Its counted
+    // listen still belongs in Recently played, so it goes to the stream play log
+    // instead of the library's play count.
+    if (typeof trackId === 'number' && Number.isInteger(trackId) && trackId < 0) {
+      if (countsAsPlay(played, finished)) container.online.recordStreamPlay(trackId)
+      return
+    }
+    library.reportPlayback(toTrackId(trackId), played, finished)
   })
 
   ipcMain.handle(IPC.engineStatus, async () => {
