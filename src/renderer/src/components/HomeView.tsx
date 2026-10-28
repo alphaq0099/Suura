@@ -256,10 +256,20 @@ function AlbumCard({
   ]
     .filter(Boolean)
     .join(' · ')
+  // A one-track album is a single: the user added a song and expects the card
+  // to play it, not to open a release page with one row. A real album still
+  // opens its detail, where Play/Queue and the running order live.
+  const isSingle = album.trackCount <= 1
 
   return (
     <div className="album-card" ref={ref}>
-      <button type="button" className="album-card-main" onClick={() => onOpen(album)}>
+      <button
+        type="button"
+        className="album-card-main"
+        onClick={() => (isSingle ? onPlay(album) : onOpen(album))}
+        aria-label={isSingle ? `Play ${album.album}` : `Open ${album.album}`}
+        title={isSingle ? `Play ${album.album}` : `Open ${album.album}`}
+      >
         <span className="album-card-art">
           <ArtworkImage
             track={null}

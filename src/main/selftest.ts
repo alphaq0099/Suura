@@ -214,10 +214,6 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       artistCards: number
       allRows: number
       allBadges: string
-      detailTitle: string
-      detailRows: number
-      detailHasTone: boolean
-      backWorks: boolean
       searchEmpty: boolean
       searchCleared: boolean
       artistKicker: string
@@ -291,8 +287,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          const out = {
            isHome: false, activeNav: '', heroTitle: '', stats: '', shelfTitles: '',
            shelfAlbums: 0, artistCards: 0, allRows: 0, allBadges: '',
-           detailTitle: '', detailRows: 0,
-           detailHasTone: false, backWorks: false, searchEmpty: false, searchCleared: false,
+           searchEmpty: false, searchCleared: false,
            artistKicker: '', artistTitle: '', artistRows: 0, artistBackWorks: false,
            onLibrary: false,
            heroAction: '', heroActionCount: 0, heroResumeAfter: '', heroHasLastScan: false,
@@ -377,24 +372,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          root.dataset.theme = previousTheme
          await sleep(120)
 
-         // An album card in a shelf opens the same detail view it always did;
-         // the bottom section is a track list now, so the album is reached from
-         // Recently added rather than from a grid card.
-         const target = [...document.querySelectorAll('.home-shelf .album-card')].find((card) => {
-           const title = (card.querySelector('.album-card-title')?.textContent || '').trim()
-           const meta = (card.querySelector('.album-card-meta')?.textContent || '').trim()
-           return title === 'Selftest Album' && meta.includes('Selftest') && !meta.includes('Zzz')
-         })
-         target?.querySelector('.album-card-main')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-         const detail = await waitFor('.album-detail')
-         out.detailTitle = (document.querySelector('.album-detail-copy h2')?.textContent || '').trim()
-         out.detailRows = document.querySelectorAll('.album-detail .track-row').length
-         out.detailHasTone = [...document.querySelectorAll('.album-detail .row-title-text')].some(
-           (el) => (el.textContent || '').trim() === 'Selftest Tone'
-         )
-         document.querySelector('.home-back')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-         await waitFor('.all-tracks-list')
-         out.backWorks = Boolean(document.querySelector('.all-tracks-list')) && !detail?.isConnected
+         // Card clicks are covered in the Home shelf section below: a single
+         // plays, a real album opens its detail. Leaving them out here keeps the
+         // library click test below starting from nothing already playing.
 
          const search = document.querySelector('.tracks-search input')
          if (search) {
@@ -740,19 +720,6 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         inSource: home.badgesInSource,
         inTitle: home.badgesInTitle,
         toolsBelow: home.toolsBelowHeading
-      }
-    )
-    record(
-      home.detailTitle === 'Selftest Album' &&
-        home.detailRows === 1 &&
-        home.detailHasTone &&
-        home.backWorks,
-      'an album card opens its exact album and returns to Home',
-      {
-        title: home.detailTitle,
-        rows: home.detailRows,
-        tone: home.detailHasTone,
-        back: home.backWorks
       }
     )
     record(
@@ -5956,6 +5923,86 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       },
       shelfSeed
     )
+    const shelfAlbumId = container.repo.insert(
+      {
+        contentKey: 'selftest-shelf-album',
+        sourceKind: 'local',
+        sourceId: null,
+        originKind: null,
+        originId: null,
+        title: 'Shelf Test Album Single',
+        artist: 'Shelf Album Artist',
+        albumArtist: null,
+        album: 'Shelf Test Single Album',
+        trackNo: 1,
+        discNo: null,
+        year: null,
+        genre: null,
+        durationMs: 140_000,
+        codec: 'flac',
+        bitrateKbps: null,
+        sampleRate: null,
+        channels: null,
+        fileSize: null,
+        fileMtimeMs: null,
+        filePath: null
+      },
+      shelfSeed + 1
+    )
+    // A real two-track album keeps the detail page covered: the single above
+    // proves the play-on-click rule, this one proves a release still opens.
+    const shelfMultiOneId = container.repo.insert(
+      {
+        contentKey: 'selftest-shelf-multi-one',
+        sourceKind: 'local',
+        sourceId: null,
+        originKind: null,
+        originId: null,
+        title: 'Shelf Test Multi One',
+        artist: 'Shelf Multi Artist',
+        albumArtist: null,
+        album: 'Shelf Test Multi Album',
+        trackNo: 1,
+        discNo: null,
+        year: null,
+        genre: null,
+        durationMs: 130_000,
+        codec: 'flac',
+        bitrateKbps: null,
+        sampleRate: null,
+        channels: null,
+        fileSize: null,
+        fileMtimeMs: null,
+        filePath: null
+      },
+      shelfSeed + 2
+    )
+    const shelfMultiTwoId = container.repo.insert(
+      {
+        contentKey: 'selftest-shelf-multi-two',
+        sourceKind: 'local',
+        sourceId: null,
+        originKind: null,
+        originId: null,
+        title: 'Shelf Test Multi Two',
+        artist: 'Shelf Multi Artist',
+        albumArtist: null,
+        album: 'Shelf Test Multi Album',
+        trackNo: 2,
+        discNo: null,
+        year: null,
+        genre: null,
+        durationMs: 110_000,
+        codec: 'flac',
+        bitrateKbps: null,
+        sampleRate: null,
+        channels: null,
+        fileSize: null,
+        fileMtimeMs: null,
+        filePath: null
+      },
+      shelfSeed + 3
+    )
     broadcast(IPC_EVENTS.onlineChanged, null)
     broadcast(IPC_EVENTS.playHistoryChanged, null)
 
@@ -5982,6 +6029,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       artistHasSingle: boolean
       artistAlbumColumn: string
       playStarted: boolean
+      singleAlbumPlayed: boolean
+      singleAlbumDetail: boolean
+      multiDetailTitle: string
+      multiDetailRows: number
+      multiBackWorks: boolean
       openMenuItems: string
       onPlaylists: boolean
       paneTitle: string
@@ -6032,7 +6084,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            shelfScrolled: 0, arrowBackEnabled: false, shelfNodeStable: false,
            artistKicker: '', artistTitle: '', artistRows: 0, artistHasSingle: false,
            artistAlbumColumn: '',
-           playStarted: false, openMenuItems: '',
+           playStarted: false, singleAlbumPlayed: false, singleAlbumDetail: false,
+           multiDetailTitle: '', multiDetailRows: 0, multiBackWorks: false,
+           openMenuItems: '',
            onPlaylists: false, paneTitle: '', paneRows: 0,
            allTitles: '', allBadges: '', allPlaylistBadge: '', allLibraryBadge: '',
            allHasStreamBadge: false, sourceHeading: '', badgesInSource: -1,
@@ -6215,6 +6269,45 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          const backDeadline = Date.now() + 6000
          while (Date.now() < backDeadline && !document.querySelector('.home-shelf')) await sleep(100)
 
+         // A one-track album is a single, not a release worth its own page:
+         // its card plays the song instead of opening a one-row detail.
+         const singleAlbum = [...document.querySelectorAll('.home-shelf .album-card')].find(
+           (card) => text(card.querySelector('.album-card-title')).trim() === 'Shelf Test Single Album'
+         )
+         singleAlbum
+           ?.querySelector('.album-card-main')
+           ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         const singleDeadline = Date.now() + 6000
+         while (Date.now() < singleDeadline) {
+           if (text(document.querySelector('.player-title')).trim() === 'Shelf Test Album Single') break
+           await sleep(100)
+         }
+         out.singleAlbumPlayed =
+           text(document.querySelector('.player-title')).trim() === 'Shelf Test Album Single'
+         out.singleAlbumDetail = Boolean(document.querySelector('.album-detail'))
+
+         // A real album keeps its detail page: two rows, Play and Queue, and a
+         // back button that returns to the shelves.
+         const multiAlbum = [...document.querySelectorAll('.home-shelf .album-card')].find(
+           (card) => text(card.querySelector('.album-card-title')).trim() === 'Shelf Test Multi Album'
+         )
+         multiAlbum
+           ?.querySelector('.album-card-main')
+           ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         const multiDeadline = Date.now() + 6000
+         let multiDetail = null
+         while (Date.now() < multiDeadline) {
+           multiDetail = document.querySelector('.album-detail')
+           if (multiDetail && multiDetail.querySelectorAll('.track-row').length === 2) break
+           await sleep(100)
+         }
+         out.multiDetailTitle = text(multiDetail?.querySelector('.album-detail-copy h2')).trim()
+         out.multiDetailRows = multiDetail?.querySelectorAll('.track-row').length || 0
+         multiDetail?.querySelector('.home-back')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         const multiBackDeadline = Date.now() + 6000
+         while (Date.now() < multiBackDeadline && !document.querySelector('.home-shelf')) await sleep(100)
+         out.multiBackWorks = Boolean(document.querySelector('.home-shelf')) && !multiDetail?.isConnected
+
          // A card is a play control now: one click queues the list's tracks.
          // The queue length is set synchronously, before any stream resolves,
          // so this does not depend on the engine answering.
@@ -6285,6 +6378,22 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         !homeShelves.addedInPlayed,
       'home: a newly added file with no album tag appears on Recently added only',
       `${homeShelves.addedTitle || 'none'} · ${homeShelves.addedMeta || 'no meta'} · leaked ${homeShelves.addedInPlayed}`
+    )
+    record(
+      homeShelves.singleAlbumPlayed && !homeShelves.singleAlbumDetail,
+      'home: a one-track album card plays instead of opening a one-row page',
+      { played: homeShelves.singleAlbumPlayed, detail: homeShelves.singleAlbumDetail }
+    )
+    record(
+      homeShelves.multiDetailTitle === 'Shelf Test Multi Album' &&
+        homeShelves.multiDetailRows === 2 &&
+        homeShelves.multiBackWorks,
+      'home: a real album card still opens its detail and returns to Home',
+      {
+        title: homeShelves.multiDetailTitle,
+        rows: homeShelves.multiDetailRows,
+        back: homeShelves.multiBackWorks
+      }
     )
     record(
       homeShelves.playStarted,
@@ -6372,7 +6481,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       `${homeShelves.artistKicker || '?'} ${homeShelves.artistTitle || 'none'} · ${homeShelves.artistRows} rows · album column ${homeShelves.artistAlbumColumn || 'none'}`
     )
 
-    container.library.removeTracks([shelfSingleId])
+    container.library.removeTracks([shelfSingleId, shelfAlbumId, shelfMultiOneId, shelfMultiTwoId])
     container.onlineRepo.remove(shelfHistory.id)
     container.onlinePlaylists.delete(shelfPlaylist.id)
     for (const extra of shelfExtras) container.onlinePlaylists.delete(extra.id)
