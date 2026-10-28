@@ -268,7 +268,7 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
       representative videos — presence is checked by `npm run smoke`; the 20-video sample (**20/20**, median 8.8 s) and
       the 50-video M3 sample (**50/50**, median 8.3 s) are done, in [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-dlp-sample.md)
       and [`docs/notes/yt-dlp-50.md`](./docs/notes/yt-dlp-50.md); the clean-machine pass is still open
-- [x] Legal/ToS note drafted (§10) — in the README under **Scope and legal**
+- [x] Legal/ToS note drafted (§10) — in the README under **Legal** and in `docs/development.md` under **Scope and legal**
 **Exit:** a one-page architecture doc + stack ADR + working sidecar smoke test.
 
 ### M1 — Local Library MVP  *(~2–3 weeks)*
