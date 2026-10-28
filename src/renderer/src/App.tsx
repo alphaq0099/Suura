@@ -997,6 +997,8 @@ export function App() {
           currentTrackId={player.current?.id ?? null}
           isPlaying={player.isPlaying}
           rowHeight={DENSITY_ROW_HEIGHT[settings.visuals.density]}
+          heroSlideSeconds={settings.visuals.heroSlideSeconds}
+          downloads={downloads}
           singleClick={settings.interaction.librarySingleClick}
           doubleClick={settings.interaction.libraryDoubleClick}
           onAddFolder={() => void addFolder()}

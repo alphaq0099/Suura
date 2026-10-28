@@ -865,17 +865,10 @@ input[type='radio'] {
   transition: opacity 1100ms ease;
 }
 
+/* Full strength in both themes: the mask and the overlay, not a translucent
+   layer, are what keep the copy readable over the art. */
 .home-hero-backdrop.active {
-  opacity: var(--hero-art-dark, 0.24);
-}
-
-/* Cream mode has less contrast to lose, so the same 0.24 reads as a haze
-   instead of art. The mask keeps the copy side clean; the right can carry more.
-   Both values are variables so the temporary Hero look panel can move them
-   independently while the final numbers are chosen. */
-:root[data-theme='light'] .home-hero-backdrop.active {
-  opacity: var(--hero-art-light, 0.68);
-  filter: saturate(1.05);
+  opacity: 1;
 }
 
 .home-hero::after {
@@ -936,15 +929,6 @@ input[type='radio'] {
   margin-top: 4px;
 }
 
-/* The primary action names the album it will play, so a long title is clipped
-   rather than allowed to widen the hero. */
-.home-hero-action-label {
-  max-width: 26ch;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
 .home-scan {
   display: flex;
   align-items: center;
@@ -957,6 +941,8 @@ input[type='radio'] {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  width: 100%;
+  max-width: 460px;
 }
 
 .home-stat {
@@ -988,81 +974,6 @@ input[type='radio'] {
   font-size: calc(11px * var(--text-scale));
   letter-spacing: 0.04em;
   text-transform: uppercase;
-}
-
-/* The temporary Hero look panel. It is deliberately a dashed, accent-tinted
-   card: a preview tool, not a setting, and it will disappear once the values
-   are written into the stylesheet. */
-.hero-look {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 16px 18px;
-  border: 1px dashed rgb(var(--accent-rgb) / 46%);
-  border-radius: var(--radius);
-  background: rgb(var(--bg-panel-rgb) / 72%);
-}
-
-.hero-look-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.hero-look-head h2 {
-  margin: 0;
-  font-size: calc(15px * var(--text-scale));
-  letter-spacing: -0.01em;
-}
-
-.hero-look-head p {
-  margin: 3px 0 0;
-  color: var(--text-dim);
-  font-size: calc(12px * var(--text-scale));
-}
-
-.hero-look-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 12px 20px;
-}
-
-.hero-look-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  color: var(--text-dim);
-  font-size: calc(12px * var(--text-scale));
-}
-
-.hero-look-field > span {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  color: var(--text);
-  font-weight: 600;
-}
-
-.hero-look-field output {
-  color: var(--accent-strong);
-  font-variant-numeric: tabular-nums;
-}
-
-.hero-look-field input[type='range'] {
-  width: 100%;
-  accent-color: var(--accent);
-}
-
-.hero-look-foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  color: var(--text-faint);
-  font-size: calc(11.5px * var(--text-scale));
 }
 
 .home-section {
@@ -1467,10 +1378,9 @@ input[type='radio'] {
 
 .all-tracks-head {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
 }
 
 .all-tracks-head h2 {
@@ -1496,6 +1406,7 @@ input[type='radio'] {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
 }
 
@@ -1544,6 +1455,15 @@ input[type='radio'] {
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: none;
+}
+
+/* Source replaces Album in Home's merged feed. The badge is the whole cell,
+   so it sits on the same centre line as the title and artist. */
+.track-head .col-source,
+.track-row .col-source {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
 }
 
 /* ---------- album detail ---------- */
@@ -2183,14 +2103,17 @@ input[type='radio'] {
    columns are dropped instead of squeezing every column down to an ellipsis.
    The fixed columns are #, Duration and Actions; the title is the only flexible
    remainder. Dropping Album at 820px leaves the title at least ~220px even for
-   an imported list, whose action column is widest. */
+   an imported list, whose action column is widest. Source shares Album's track,
+   so it has to leave with it — including the cell-level display that puts the
+   badge on the centre line. */
 @container track-list (max-width: 820px) {
   .track-head,
   .track-row {
     --track-columns: var(--index-track) minmax(0, 1fr) var(--artist-track) var(--time-track) var(--track-actions, 58px);
   }
 
-  .col-album {
+  .track-head .col-album,
+  .track-row .col-album {
     display: none;
   }
 
@@ -2860,6 +2783,16 @@ input[type='radio'] {
 .field > span {
   font-size: calc(12px * var(--text-scale));
   color: var(--text-faint);
+}
+
+.field > span output {
+  margin-left: 4px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.field input[type='range'] {
+  width: 100%;
 }
 
 /* A read-only note under a control. It names the concrete values behind a

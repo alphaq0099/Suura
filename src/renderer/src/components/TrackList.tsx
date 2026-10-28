@@ -125,11 +125,13 @@ export interface TrackListProps {
   /** Progress for a row that is saving, so the button becomes a spinner. */
   saveState?: (track: Track) => { status: DownloadStatus; percent: number | null; error: string | null } | undefined
   /**
-   * A small label after the title, for a list whose rows come from more than one
-   * place. Home's All tracks uses it for the source badge; every other list
-   * leaves it out and keeps the plain title.
+   * Turns the fourth column into Source and renders this per row.
+   *
+   * A merged feed mixes files, listens and imported entries, so "Album" is
+   * either empty or a half-truth there. The origin is the fact the list can
+   * always state; every other list leaves this out and keeps Album.
    */
-  rowBadge?: (track: Track, index: number) => ReactNode
+  sourceBadge?: (track: Track, index: number) => ReactNode
 }
 
 interface Column {
@@ -191,7 +193,7 @@ export function TrackList(props: TrackListProps) {
     onSave,
     isSaved,
     saveState,
-    rowBadge
+    sourceBadge
   } = props
 
   const scrollerRef = useRef<HTMLDivElement | null>(null)
@@ -446,7 +448,11 @@ export function TrackList(props: TrackListProps) {
 
   const activeId = tracks[activeIndex] ? `track-row-${activeIndex}` : undefined
   const columns = COLUMNS.map((column) =>
-    column.className === 'col-artist' ? { ...column, label: artistLabel } : column
+    column.className === 'col-artist'
+      ? { ...column, label: artistLabel }
+      : sourceBadge && column.className === 'col-album'
+        ? { ...column, label: 'Source', field: null, className: 'col-album col-source' }
+        : column
   )
   // Remove is a first-class icon only when there is no row menu to hold it.
   // Otherwise the menu keeps the row quiet and the action column narrow.
@@ -668,14 +674,19 @@ export function TrackList(props: TrackListProps) {
                   <div role="gridcell" className="cell col-title" title={track.title}>
                     <ArtworkImage track={track} size={24} className="row-art" />
                     <span className="row-title-text">{track.title}</span>
-                    {rowBadge ? rowBadge(track, index) : null}
                   </div>
                   <div role="gridcell" className="cell col-artist">
                     <ScrollingText text={track.artist ?? '—'} title={track.artist ?? undefined} />
                   </div>
-                  <div role="gridcell" className="cell col-album" title={track.album ?? undefined}>
-                    {track.album ?? '—'}
-                  </div>
+                  {sourceBadge ? (
+                    <div role="gridcell" className="cell col-album col-source">
+                      {sourceBadge(track, index)}
+                    </div>
+                  ) : (
+                    <div role="gridcell" className="cell col-album" title={track.album ?? undefined}>
+                      {track.album ?? '—'}
+                    </div>
+                  )}
                   <div role="gridcell" className="cell col-time">
                     {formatDuration(track.durationMs)}
                   </div>

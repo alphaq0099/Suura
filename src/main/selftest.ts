@@ -248,6 +248,16 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       reducedStops: boolean
       fullState: string
       heroMatchesRecent: boolean
+      heroStatsInCopy: boolean
+      heroStatsOutside: boolean
+      heroTagline: boolean
+      heroLightOpacity: string
+      heroDarkOpacity: string
+      heroActionsAfterLivePlay: number
+      sourceHeading: string
+      badgesInSource: number
+      badgesInTitle: number
+      toolsBelowHeading: boolean
       cardFocus: boolean
       cardLift: number
       cardRest: number
@@ -292,7 +302,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            moreChip: '', moreOnlyLibrary: false, chipCleared: false, chipHeading: '',
            statBlur: '', statTint: '', slideCount: 0,
            slideLayers: 0, activeSlides: 0, slideState: '', reducedStops: false,
-           fullState: '', heroMatchesRecent: false, cardFocus: false, cardLift: 0, cardRest: 0,
+           fullState: '', heroMatchesRecent: false, heroStatsInCopy: false,
+           heroStatsOutside: false, heroTagline: false, heroLightOpacity: '',
+           heroDarkOpacity: '', heroActionsAfterLivePlay: -1, sourceHeading: '',
+           badgesInSource: -1, badgesInTitle: -1, toolsBelowHeading: false,
+           cardFocus: false, cardLift: 0, cardRest: 0,
            livePlayShelf: false, livePlayAlbum: false
          }
 
@@ -313,6 +327,19 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.artistCards = document.querySelectorAll('.artist-card').length
          out.allRows = allRows().length
          out.allBadges = allBadges()
+         out.heroStatsInCopy = Boolean(document.querySelector('.home-hero-copy > .home-stats'))
+         out.heroStatsOutside = Boolean(document.querySelector('.home-hero > .home-stats'))
+         // The Source column replaces Album in the merged feed, and the badge
+         // belongs in that cell rather than trailing the title.
+         out.sourceHeading = (document.querySelector('.all-tracks-list .track-head .col-source')?.textContent || '').trim()
+         out.badgesInSource = document.querySelectorAll('.all-tracks-list .track-row .col-source .row-badge').length
+         out.badgesInTitle = document.querySelectorAll('.all-tracks-list .track-row .col-title .row-badge').length
+         const toolsRow = document.querySelector('.all-tracks-tools')
+         const headingBlock = document.querySelector('.all-tracks-head > div')
+         out.toolsBelowHeading = Boolean(
+           toolsRow && headingBlock &&
+           toolsRow.getBoundingClientRect().top >= headingBlock.getBoundingClientRect().bottom - 1
+         )
 
          // The stat boxes are glass over artwork: they need an accent wash and a
          // real backdrop blur, not a flat panel. The hero keeps one active image
@@ -337,6 +364,18 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.fullState = hero?.getAttribute('data-slide-state') || ''
          root.dataset.motion = previousMotion
          await sleep(160)
+         // The art is meant to be at full strength in both themes. Opacity is
+         // read per theme because the light rule used to be the weak one; the
+         // active layer is settled by now, and a theme switch does not restart
+         // its opacity transition.
+         const activeSlide = document.querySelector('.home-hero-backdrop.active')
+         out.heroDarkOpacity = activeSlide ? getComputedStyle(activeSlide).opacity : ''
+         const previousTheme = root.dataset.theme || 'dark'
+         root.dataset.theme = 'light'
+         await sleep(120)
+         out.heroLightOpacity = activeSlide ? getComputedStyle(activeSlide).opacity : ''
+         root.dataset.theme = previousTheme
+         await sleep(120)
 
          // An album card in a shelf opens the same detail view it always did;
          // the bottom section is a track list now, so the album is reached from
@@ -399,6 +438,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.heroActionCount = document.querySelectorAll('.home-hero-actions .primary').length
          out.heroHasLastScan = heroText.includes('Last scan')
          out.heroScanNote = Boolean(document.querySelector('.home-scan-note'))
+         out.heroTagline = heroText.includes('full library one click away')
          out.shelfHints = document.querySelectorAll('.home-section-head > span').length
          out.moreLabels = [...document.querySelectorAll('.home-more')]
            .map((el) => el.getAttribute('aria-label'))
@@ -482,6 +522,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.heroResumeAfter = (
            document.querySelector('.home-hero-actions .primary')?.textContent || ''
          ).trim()
+         out.heroActionsAfterLivePlay = document.querySelectorAll('.home-hero-actions .primary').length
 
          // The backdrop must be the art of that newest card, not a separate
          // album query that can lag behind what was actually played. Resolve
@@ -671,6 +712,37 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       }
     )
     record(
+      home.heroStatsInCopy &&
+        !home.heroStatsOutside &&
+        !home.heroTagline &&
+        home.heroActionCount === 0,
+      'home: the hero puts stats under its heading and leaves the right side to the art',
+      {
+        statsInCopy: home.heroStatsInCopy,
+        statsOutside: home.heroStatsOutside,
+        tagline: home.heroTagline,
+        action: home.heroActionCount
+      }
+    )
+    record(
+      home.heroDarkOpacity === '1' && home.heroLightOpacity === '1',
+      'home: the hero art shows at full strength in both themes',
+      { dark: home.heroDarkOpacity, light: home.heroLightOpacity }
+    )
+    record(
+      home.sourceHeading === 'Source' &&
+        home.badgesInSource === 2 &&
+        home.badgesInTitle === 0 &&
+        home.toolsBelowHeading,
+      'home: All tracks names a Source column and puts its tools under the heading',
+      {
+        heading: home.sourceHeading,
+        inSource: home.badgesInSource,
+        inTitle: home.badgesInTitle,
+        toolsBelow: home.toolsBelowHeading
+      }
+    )
+    record(
       home.detailTitle === 'Selftest Album' &&
         home.detailRows === 1 &&
         home.detailHasTone &&
@@ -724,8 +796,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       }
     )
     record(
-      home.heroActionCount === 0 && !home.heroHasLastScan && !home.heroScanNote,
-      'home: the hero offers no action until something has been played',
+      home.heroActionCount === 0 &&
+        home.heroActionsAfterLivePlay === 0 &&
+        !home.heroHasLastScan &&
+        !home.heroScanNote,
+      'home: the hero never becomes a second transport or a scan readout',
       { action: home.heroAction, count: home.heroActionCount, lastScan: home.heroHasLastScan }
     )
     record(
@@ -774,8 +849,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       { shelf: home.livePlayShelf, album: home.livePlayAlbum }
     )
     record(
-      home.heroResumeAfter === 'Resume Selftest Album',
-      'home: the hero action becomes a resume of the newest played album',
+      home.heroResumeAfter === '' && home.heroActionsAfterLivePlay === 0,
+      'home: a counted listen still leaves the hero without a resume button',
       home.heroResumeAfter || 'no action'
     )
     record(home.onLibrary, 'the Home dashboard can hand off to the full library')
@@ -2062,6 +2137,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       resetIconSet: string
       resetAlbumColumn: string
       resetChannelColumn: string
+      heroSlidePresent: boolean
+      heroSlideSaved: number
+      resetHeroSlide: string
       mediumBodyPx: number
       comfortableRowHeight: number
     }>(
@@ -2084,6 +2162,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            onlineNoOverflow: false, onlineTimeFits: false,
            resetTheme: '', resetAccent: '', resetDensity: '', resetSurface: '', resetMotion: '',
            resetTextSize: '', resetIconSet: '', resetAlbumColumn: '', resetChannelColumn: '',
+           heroSlidePresent: false, heroSlideSaved: -1, resetHeroSlide: '',
            mediumBodyPx: -1, comfortableRowHeight: -1
          }
          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -2250,6 +2329,17 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          tab('Appearance')
          await sleep(200)
 
+         const heroSlider = document.querySelector('[data-hero-slide-slider]')
+         out.heroSlidePresent = Boolean(heroSlider)
+         if (heroSlider) {
+           const setSlider = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+           setSlider.call(heroSlider, '30')
+           heroSlider.dispatchEvent(new Event('input', { bubbles: true }))
+           await sleep(450)
+         }
+         const savedHero = await window.player.getSettings()
+         out.heroSlideSaved = savedHero?.visuals?.heroSlideSeconds ?? -1
+
          press(document.querySelector('.appearance-reset button'))
          await sleep(700)
          out.resetTheme = root.dataset.theme || ''
@@ -2261,6 +2351,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.resetIconSet = document.querySelector('.app')?.dataset.iconSet || ''
          out.resetAlbumColumn = document.querySelector('.app')?.dataset.albumColumn || ''
          out.resetChannelColumn = document.querySelector('.app')?.dataset.channelColumn || ''
+         out.resetHeroSlide = document.querySelector('[data-hero-slide-slider]')?.value || ''
 
          nav('Library')
          await sleep(400)
@@ -2362,6 +2453,17 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         appearance.mediumBodyPx < 16,
       'appearance: Reset puts every choice back',
       appearance
+    )
+    record(
+      appearance.heroSlidePresent &&
+        appearance.heroSlideSaved === 30 &&
+        appearance.resetHeroSlide === '12',
+      'appearance: the Home hero pace is a setting and Reset restores it',
+      {
+        present: appearance.heroSlidePresent,
+        saved: appearance.heroSlideSaved,
+        reset: appearance.resetHeroSlide
+      }
     )
     record(
       appearance.comfortableRowHeight === 38,
@@ -5889,6 +5991,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       allPlaylistBadge: string
       allLibraryBadge: string
       allHasStreamBadge: boolean
+      sourceHeading: string
+      badgesInSource: number
+      badgesInTitle: number
+      streamSaveTitle: string
+      localSaveButton: boolean
       playedHeading: string
       playedChip: string
       playedBadges: string
@@ -5928,7 +6035,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            playStarted: false, openMenuItems: '',
            onPlaylists: false, paneTitle: '', paneRows: 0,
            allTitles: '', allBadges: '', allPlaylistBadge: '', allLibraryBadge: '',
-           allHasStreamBadge: false, playedHeading: '', playedChip: '',
+           allHasStreamBadge: false, sourceHeading: '', badgesInSource: -1,
+           badgesInTitle: -1, streamSaveTitle: '', localSaveButton: false,
+           playedHeading: '', playedChip: '',
            playedBadges: '', playedHasPlaylistOnly: false, playedCleared: false,
            playedClearedHeading: ''
          }
@@ -6022,6 +6131,21 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.allBadges = rowEls().map(badgeOf).join('|')
          out.allPlaylistBadge = badgeOf(rowFor('Shelf Test Second') || document.createElement('div'))
          out.allLibraryBadge = badgeOf(rowFor('Shelf Test Single') || document.createElement('div'))
+         out.sourceHeading = text(
+           document.querySelector('.all-tracks-list .track-head .col-source')
+         ).trim()
+         out.badgesInSource = document.querySelectorAll(
+           '.all-tracks-list .track-row .col-source .row-badge'
+         ).length
+         out.badgesInTitle = document.querySelectorAll(
+           '.all-tracks-list .track-row .col-title .row-badge'
+         ).length
+         const streamRow = rowFor('Shelf Test Stream')
+         out.streamSaveTitle =
+           streamRow?.querySelector('.col-actions button')?.getAttribute('title') || ''
+         out.localSaveButton = Boolean(
+           rowFor('Shelf Test Single')?.querySelector('.col-actions button')
+         )
          out.allHasStreamBadge = rowEls().some(
            (row) => titleOf(row) === 'Shelf Test Stream' && badgeOf(row) === 'YouTube'
          )
@@ -6204,6 +6328,22 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         playlist: homeShelves.allPlaylistBadge,
         library: homeShelves.allLibraryBadge,
         stream: homeShelves.allHasStreamBadge
+      }
+    )
+    record(
+      homeShelves.sourceHeading === 'Source' &&
+        homeShelves.badgesInSource === homeShelves.allBadges.split('|').length &&
+        homeShelves.badgesInTitle === 0 &&
+        homeShelves.streamSaveTitle === 'Save to your library' &&
+        !homeShelves.localSaveButton,
+      'home: All tracks badges sit under Source and only stream rows offer a save',
+      {
+        heading: homeShelves.sourceHeading,
+        inSource: homeShelves.badgesInSource,
+        inTitle: homeShelves.badgesInTitle,
+        rows: homeShelves.allBadges.split('|').length,
+        save: homeShelves.streamSaveTitle,
+        localSave: homeShelves.localSaveButton
       }
     )
     record(

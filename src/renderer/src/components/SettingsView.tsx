@@ -4,6 +4,8 @@ import {
   ACCENT_CHOICES,
   DEFAULT_APPEARANCE,
   DENSITY_CHOICES,
+  HERO_SLIDE_SECONDS_MAX,
+  HERO_SLIDE_SECONDS_MIN,
   ICON_SET_CHOICES,
   MOTION_CHOICES,
   SURFACE_CHOICES,
@@ -922,6 +924,34 @@ export function SettingsView(props: SettingsViewProps) {
                     ))}
                   </div>
                 </div>
+              </article>
+
+              <article className="card">
+                <header className="card-header">
+                  <h2>
+                    Home hero
+                    <InfoHint label="About the Home hero">
+                      How long each cover stays before the next one.
+                    </InfoHint>
+                  </h2>
+                </header>
+                <label className="field">
+                  <span>
+                    Seconds per cover <output>{settings.visuals.heroSlideSeconds}s</output>
+                  </span>
+                  <input
+                    type="range"
+                    min={HERO_SLIDE_SECONDS_MIN}
+                    max={HERO_SLIDE_SECONDS_MAX}
+                    step={1}
+                    value={settings.visuals.heroSlideSeconds}
+                    aria-label="Seconds per Home hero cover"
+                    data-hero-slide-slider
+                    onChange={(event) =>
+                      onUpdate({ visuals: { heroSlideSeconds: Number(event.target.value) } })
+                    }
+                  />
+                </label>
               </article>
 
               <div className="appearance-reset">

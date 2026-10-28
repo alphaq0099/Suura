@@ -765,6 +765,8 @@ export interface VisualSettings {
   textSize: TextSize
   /** Sidebar glyph family. */
   iconSet: IconSet
+  /** Seconds each Home hero cover stays before the next crossfade. */
+  heroSlideSeconds: number
   /** Keep the Album column in local track lists. Imported playlists always keep it. */
   showAlbumColumn: boolean
   /**

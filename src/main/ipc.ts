@@ -4,6 +4,8 @@ import { extname, join } from 'node:path'
 import {
   ACCENTS,
   DENSITIES,
+  HERO_SLIDE_SECONDS_MAX,
+  HERO_SLIDE_SECONDS_MIN,
   ICON_SETS,
   MOTION_PREFERENCES,
   SURFACES,
@@ -299,6 +301,12 @@ export function sanitizeSettingsPatch(input: unknown): DeepPartial<AppSettings> 
     }
     if (typeof source.showChannelColumn === 'boolean') {
       visuals.showChannelColumn = source.showChannelColumn
+    }
+    if (typeof source.heroSlideSeconds === 'number' && Number.isFinite(source.heroSlideSeconds)) {
+      visuals.heroSlideSeconds = Math.min(
+        HERO_SLIDE_SECONDS_MAX,
+        Math.max(HERO_SLIDE_SECONDS_MIN, Math.round(source.heroSlideSeconds))
+      )
     }
     if (typeof source.accent === 'string' && ACCENTS.includes(source.accent as AccentName)) {
       visuals.accent = source.accent as AccentName

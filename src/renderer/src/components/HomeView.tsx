@@ -1,5 +1,5 @@
 import { Children, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, ReactNode, RefObject } from 'react'
+import type { ReactNode, RefObject } from 'react'
 import type {
   AddTracksOutcome,
   AlbumSummary,
@@ -20,6 +20,7 @@ import { mergeAddedShelf, mergePlayedShelf, type ShelfEntry } from '@shared/play
 import { api, messageOf } from '../api'
 import { useAllTracks } from '../hooks/useAllTracks'
 import { resolveArtwork, useArtwork } from '../hooks/useArtwork'
+import type { UseDownloadsResult } from '../hooks/useDownloads'
 import { ArtworkImage } from './ArtworkImage'
 import {
   ArrowLeftIcon,
@@ -39,7 +40,6 @@ import {
   QueueIcon,
   RefreshIcon,
   SearchIcon,
-  SlidersIcon,
   SpinnerIcon
 } from './Icons'
 import { RowMenu } from './RowMenu'
@@ -58,6 +58,10 @@ export interface HomeViewProps {
   currentTrackId: number | null
   isPlaying: boolean
   rowHeight: number
+  /** Seconds between Home hero covers, from Settings → Appearance. */
+  heroSlideSeconds: number
+  /** Shared save queue, so a stream row here reports the same progress as YouTube. */
+  downloads: UseDownloadsResult
   singleClick: LibraryClickAction
   doubleClick: LibraryClickAction
   onAddFolder: () => void
@@ -135,55 +139,8 @@ function firstShelfKey(entries: readonly ShelfEntry[]): string | null {
   return first ? shelfEntryKey(first) : null
 }
 
-/** Slow enough to read the page: the backdrop is atmosphere, not a carousel. */
-const HERO_SLIDE_INTERVAL_MS = 12_000
+/** How many covers the hero cycles through; the interval is a setting. */
 const HERO_SLIDE_LIMIT = 8
-
-/** The temporary look controls: percentages, and seconds between slides. */
-interface HeroLook {
-  light: number
-  dark: number
-  interval: number
-}
-
-const HERO_LOOK_KEY = 'player.home.hero-look'
-
-/**
- * The values the hero ships with. The panel writes a local copy while the art is
- * being judged; the final numbers go into the stylesheet once they are chosen.
- */
-const DEFAULT_HERO_LOOK: HeroLook = {
-  light: 68,
-  dark: 24,
-  interval: Math.round(HERO_SLIDE_INTERVAL_MS / 1000)
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
-}
-
-function readHeroLook(): HeroLook {
-  try {
-    const raw = window.localStorage.getItem(HERO_LOOK_KEY)
-    if (!raw) return DEFAULT_HERO_LOOK
-    const parsed = JSON.parse(raw) as Partial<HeroLook>
-    return {
-      light: clamp(Math.round(Number(parsed.light) || DEFAULT_HERO_LOOK.light), 5, 100),
-      dark: clamp(Math.round(Number(parsed.dark) || DEFAULT_HERO_LOOK.dark), 5, 100),
-      interval: clamp(Math.round(Number(parsed.interval) || DEFAULT_HERO_LOOK.interval), 3, 60)
-    }
-  } catch {
-    return DEFAULT_HERO_LOOK
-  }
-}
-
-function storeHeroLook(look: HeroLook): void {
-  try {
-    window.localStorage.setItem(HERO_LOOK_KEY, JSON.stringify(look))
-  } catch {
-    // A blocked storage write only loses the preview, never the app's settings.
-  }
-}
 
 function albumKeyOf(album: AlbumSummary): string {
   return `${album.album}\u001f${album.albumArtist}`
@@ -694,6 +651,8 @@ export function HomeView(props: HomeViewProps) {
     currentTrackId,
     isPlaying,
     rowHeight,
+    heroSlideSeconds,
+    downloads,
     singleClick,
     doubleClick,
     onAddFolder,
@@ -731,8 +690,6 @@ export function HomeView(props: HomeViewProps) {
   >(null)
   /** The card whose tracks are being fetched for play or queue. */
   const [busyPlaylist, setBusyPlaylist] = useState<string | null>(null)
-  const [heroLook, setHeroLook] = useState<HeroLook>(readHeroLook)
-  const [heroLookOpen, setHeroLookOpen] = useState(false)
   const [heroArtKeys, setHeroArtKeys] = useState<string[]>([])
 
   const [openAlbum, setOpenAlbum] = useState<AlbumSummary | null>(null)
@@ -881,27 +838,10 @@ export function HomeView(props: HomeViewProps) {
     }
   }, [heroCandidates])
 
-  const heroSlide = useHeroSlides(heroArtKeys.length, heroLook.interval * 1000)
+  const heroSlide = useHeroSlides(heroArtKeys.length, heroSlideSeconds * 1000)
 
   const hasLibrary = (stats?.tracks ?? 0) > 0
   const combinedError = error ?? shelvesError
-
-  /**
-   * The hero's one action follows the last listen, not a fixed album.
-   *
-   * "Play <latest album>" duplicated the first card of a shelf and never moved
-   * when the user played something else. Resuming the newest entry on Recently
-   * played is the thing a music home can offer that the cards below cannot: it
-   * is the same control as the cards, but named after what the user just heard.
-   * With nothing played yet there is no action, because the albums are one
-   * glance away and the header already links the library.
-   */
-  const heroResume = playedShelf[0] ?? null
-  const heroResumeLabel = heroResume
-    ? heroResume.kind === 'album'
-      ? heroResume.album.album
-      : heroResume.track.title
-    : null
 
   const openAlbumDetail = useCallback((album: AlbumSummary): void => {
     gridScrollRef.current = scrollRef.current?.scrollTop ?? 0
@@ -1025,14 +965,6 @@ export function HomeView(props: HomeViewProps) {
     },
     [onPlayLocal]
   )
-
-  /** Plays whatever the hero names: the newest played album or track. */
-  const resumeHero = useCallback((): void => {
-    const entry = heroResume
-    if (!entry) return
-    if (entry.kind === 'album') void playAlbum(entry.album)
-    else onPlayTrack(entry.track)
-  }, [heroResume, playAlbum, onPlayTrack])
 
   /**
    * Plays one row from All tracks.
@@ -1165,19 +1097,6 @@ export function HomeView(props: HomeViewProps) {
     [busyPlaylist, onQueueImported]
   )
 
-  const updateHeroLook = useCallback((patch: Partial<HeroLook>): void => {
-    setHeroLook((current) => {
-      const next = { ...current, ...patch }
-      storeHeroLook(next)
-      return next
-    })
-  }, [])
-
-  const resetHeroLook = useCallback((): void => {
-    storeHeroLook(DEFAULT_HERO_LOOK)
-    setHeroLook(DEFAULT_HERO_LOOK)
-  }, [])
-
   const selectedTracks = useMemo(
     () => albumTracks.filter((track) => albumSelection.has(track.id)),
     [albumTracks, albumSelection]
@@ -1185,6 +1104,46 @@ export function HomeView(props: HomeViewProps) {
 
   /** TrackList wants tracks; the source badge reaches them by the row's index. */
   const allTrackRows = useMemo(() => allTracks.rows.map((row) => row.track), [allTracks.rows])
+
+  const {
+    saved: savedStreams,
+    states: saveStates,
+    save: saveStreamToLibrary,
+    refreshSaved
+  } = downloads
+
+  // A merged list can surface the same video as a listen and as a playlist
+  // entry; asking once per distinct id keeps that from becoming one IPC call
+  // for every row.
+  const allTrackStreamIds = useMemo(
+    () =>
+      [
+        ...new Set(
+          allTracks.rows.flatMap((row) =>
+            row.track.sourceKind === 'youtube' && row.track.sourceId ? [row.track.sourceId] : []
+          )
+        )
+      ],
+    [allTracks.rows]
+  )
+
+  useEffect(() => {
+    void refreshSaved(allTrackStreamIds)
+  }, [allTrackStreamIds, refreshSaved])
+
+  const saveAllTracksStream = useCallback(
+    (track: Track): void => {
+      if (track.sourceKind !== 'youtube' || !track.sourceId) return
+      // The row shows its own progress and error; the Saves dock keeps a retry.
+      void saveStreamToLibrary({
+        videoId: track.sourceId,
+        title: track.title,
+        artist: track.artist,
+        album: track.album
+      }).catch(() => undefined)
+    },
+    [saveStreamToLibrary]
+  )
 
   const playOpenAlbum = useCallback((): void => {
     if (albumTracks.length > 0) onPlayLocal(albumTracks, 0)
@@ -1416,15 +1375,6 @@ export function HomeView(props: HomeViewProps) {
           </p>
         </div>
         <div className="header-actions">
-          <button
-            type="button"
-            onClick={() => setHeroLookOpen((open) => !open)}
-            aria-pressed={heroLookOpen}
-            title="Adjust the hero art while choosing final values"
-          >
-            <SlidersIcon />
-            <span>Hero look</span>
-          </button>
           <button type="button" onClick={onOpenLibrary}>
             <LibraryIcon />
             <span>Library</span>
@@ -1442,81 +1392,8 @@ export function HomeView(props: HomeViewProps) {
 
       {combinedError ? <div className="banner error">{combinedError}</div> : null}
 
-      {heroLookOpen ? (
-        <section className="hero-look" aria-label="Hero look">
-          <div className="hero-look-head">
-            <div>
-              <h2>Hero look</h2>
-              <p>Temporary: these numbers stay in this app until the final ones are baked in.</p>
-            </div>
-            <button
-              type="button"
-              className="icon-button subtle"
-              onClick={() => setHeroLookOpen(false)}
-              aria-label="Close hero look"
-              title="Close hero look"
-            >
-              <CloseIcon />
-            </button>
-          </div>
-          <div className="hero-look-grid">
-            <label className="hero-look-field">
-              <span>
-                Dark art opacity <output>{heroLook.dark}%</output>
-              </span>
-              <input
-                type="range"
-                min={5}
-                max={100}
-                step={1}
-                value={heroLook.dark}
-                onChange={(event) => updateHeroLook({ dark: Number(event.target.value) })}
-              />
-            </label>
-            <label className="hero-look-field">
-              <span>
-                Light art opacity <output>{heroLook.light}%</output>
-              </span>
-              <input
-                type="range"
-                min={5}
-                max={100}
-                step={1}
-                value={heroLook.light}
-                onChange={(event) => updateHeroLook({ light: Number(event.target.value) })}
-              />
-            </label>
-            <label className="hero-look-field">
-              <span>
-                Seconds per slide <output>{heroLook.interval}s</output>
-              </span>
-              <input
-                type="range"
-                min={3}
-                max={60}
-                step={1}
-                value={heroLook.interval}
-                onChange={(event) => updateHeroLook({ interval: Number(event.target.value) })}
-              />
-            </label>
-          </div>
-          <div className="hero-look-foot">
-            <span>The art crossfades behind the copy; opacity is how strongly it shows through.</span>
-            <button type="button" onClick={resetHeroLook}>
-              Reset
-            </button>
-          </div>
-        </section>
-      ) : null}
-
       <section
         className="home-hero"
-        style={
-          {
-            '--hero-art-dark': heroLook.dark / 100,
-            '--hero-art-light': heroLook.light / 100
-          } as CSSProperties
-        }
         data-slide-state={heroSlide.running ? 'running' : 'still'}
         data-slide-count={heroArtKeys.length}
       >
@@ -1536,43 +1413,45 @@ export function HomeView(props: HomeViewProps) {
           <h2>
             {hasLibrary ? 'Your music, at a glance.' : 'A quiet home for your music.'}
           </h2>
-          <p>
-            {hasLibrary
-              ? 'Recent albums, familiar artists and playlists, with the full library one click away.'
-              : 'Add a folder of audio files and Player will index everything inside it. Nothing is uploaded or moved.'}
-          </p>
-          <div className="home-hero-actions">
-            {!hasLibrary ? (
-              <button type="button" className="primary" onClick={onAddFolder}>
-                <FolderIcon />
-                <span>Add music folder</span>
-              </button>
-            ) : heroResume && heroResumeLabel ? (
-              // Resume names what the user heard last. It only appears once
-              // something has been played, so it can never be a stale guess.
-              <button
-                type="button"
-                className="primary"
-                onClick={resumeHero}
-                disabled={
-                  heroResume.kind === 'album' && busyAlbum === albumKeyOf(heroResume.album)
-                }
-                title={`Resume ${heroResumeLabel}`}
-              >
-                {heroResume.kind === 'album' && busyAlbum === albumKeyOf(heroResume.album) ? (
-                  <SpinnerIcon />
-                ) : (
-                  <PlayIcon size={16} />
-                )}
-                <span className="home-hero-action-label">Resume {heroResumeLabel}</span>
-              </button>
-            ) : null}
-            {scanning ? (
-              <button type="button" className="link-button" onClick={onCancelScan}>
-                Cancel scan
-              </button>
-            ) : null}
+          {!hasLibrary ? (
+            <p>
+              Add a folder of audio files and Player will index everything inside it. Nothing is
+              uploaded or moved.
+            </p>
+          ) : null}
+          <div className="home-stats">
+            <div className="home-stat">
+              <strong>{stats ? formatCount(stats.tracks) : '--'}</strong>
+              <span>Tracks</span>
+            </div>
+            <div className="home-stat">
+              <strong>{stats ? formatCount(stats.albums) : '--'}</strong>
+              <span>Albums</span>
+            </div>
+            <div className="home-stat">
+              <strong>{stats ? formatCount(stats.artists) : '--'}</strong>
+              <span>Artists</span>
+            </div>
+            <div className="home-stat">
+              <strong>{stats ? formatBytes(stats.totalBytes) : '--'}</strong>
+              <span>On disk</span>
+            </div>
           </div>
+          {!hasLibrary || scanning ? (
+            <div className="home-hero-actions">
+              {!hasLibrary ? (
+                <button type="button" className="primary" onClick={onAddFolder}>
+                  <FolderIcon />
+                  <span>Add music folder</span>
+                </button>
+              ) : null}
+              {scanning ? (
+                <button type="button" className="link-button" onClick={onCancelScan}>
+                  Cancel scan
+                </button>
+              ) : null}
+            </div>
+          ) : null}
           {scanning ? (
             <div className="home-scan" role="status">
               <SpinnerIcon size={14} />
@@ -1584,24 +1463,6 @@ export function HomeView(props: HomeViewProps) {
               </span>
             </div>
           ) : null}
-        </div>
-        <div className="home-stats">
-          <div className="home-stat">
-            <strong>{stats ? formatCount(stats.tracks) : '--'}</strong>
-            <span>Tracks</span>
-          </div>
-          <div className="home-stat">
-            <strong>{stats ? formatCount(stats.albums) : '--'}</strong>
-            <span>Albums</span>
-          </div>
-          <div className="home-stat">
-            <strong>{stats ? formatCount(stats.artists) : '--'}</strong>
-            <span>Artists</span>
-          </div>
-          <div className="home-stat">
-            <strong>{stats ? formatBytes(stats.totalBytes) : '--'}</strong>
-            <span>On disk</span>
-          </div>
         </div>
       </section>
 
@@ -1766,7 +1627,7 @@ export function HomeView(props: HomeViewProps) {
               {allTracks.search ? ` matching “${allTracks.search}”` : ''}
             </p>
           </div>
-          <div className="album-grid-tools">
+          <div className="all-tracks-tools">
             {allTracks.filter !== 'all' ? (
               <button
                 type="button"
@@ -1858,13 +1719,21 @@ export function HomeView(props: HomeViewProps) {
                 sortable={false}
                 rowHeight={rowHeight}
                 listKey={`all-tracks:${allTracks.filter}:${allTracks.search}`}
-                rowBadge={(_track, index) => {
+                // The fourth column names where the row came from rather than
+                // repeating an album: half this list has no album at all, and
+                // the source is what a merged feed has to explain.
+                sourceBadge={(_track, index) => {
                   const source = allTracks.rows[index]?.source ?? 'library'
                   const badge = SOURCE_BADGE[source]
                   return (
                     <span className={`row-badge source-badge ${badge.tone}`}>{badge.label}</span>
                   )
                 }}
+                onSave={saveAllTracksStream}
+                isSaved={(track) =>
+                  track.sourceId ? savedStreams.has(track.sourceId) : false
+                }
+                saveState={(track) => (track.sourceId ? saveStates[track.sourceId] : undefined)}
               />
             </div>
             {allTracks.truncated ? (

@@ -26,6 +26,15 @@ export const DENSITIES: readonly Density[] = ['compact', 'comfortable', 'spaciou
 export const SURFACES: readonly SurfaceStyle[] = ['solid', 'accented']
 export const MOTION_PREFERENCES: readonly MotionPreference[] = ['system', 'reduced', 'full']
 export const ARTWORK_SIZES: readonly ArtworkSize[] = ['small', 'medium', 'large', 'xlarge']
+/**
+ * The Home hero crossfade is a setting, not a constant: some people read the
+ * page between slides, and a slow enough interval is the difference between
+ * atmosphere and distraction. The range stays narrow enough that every value
+ * still reads as a slideshow rather than a still image.
+ */
+export const HERO_SLIDE_SECONDS_MIN = 3
+export const HERO_SLIDE_SECONDS_MAX = 60
+
 export const TEXT_SIZES: readonly TextSize[] = ['small', 'medium', 'large', 'xlarge']
 export const ICON_SETS: readonly IconSet[] = ['modern', 'classic']
 
@@ -124,6 +133,8 @@ export const DEFAULT_APPEARANCE = {
     playlistArtworkSize: 'medium',
     textSize: 'medium',
     iconSet: 'modern',
+    // Slow enough to read the page: the backdrop is atmosphere, not a carousel.
+    heroSlideSeconds: 12,
     showAlbumColumn: true,
     showChannelColumn: true,
     playerArtwork: true,

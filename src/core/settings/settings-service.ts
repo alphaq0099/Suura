@@ -1,7 +1,7 @@
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { mkdirSync } from 'node:fs'
-import { ARTWORK_SIZES, ICON_SETS, TEXT_SIZES } from '@shared/appearance'
+import { ARTWORK_SIZES, HERO_SLIDE_SECONDS_MAX, HERO_SLIDE_SECONDS_MIN, ICON_SETS, TEXT_SIZES } from '@shared/appearance'
 import { normalizeAudioSettings } from '@shared/audio'
 import {
   DEFAULT_SETTINGS,
@@ -189,7 +189,16 @@ export class SettingsService {
           ? (storedVisuals.iconSet as IconSet)
           : DEFAULT_SETTINGS.visuals.iconSet,
         showAlbumColumn: storedVisuals.showAlbumColumn !== false,
-        showChannelColumn: storedVisuals.showChannelColumn !== false
+        showChannelColumn: storedVisuals.showChannelColumn !== false,
+        heroSlideSeconds:
+          typeof storedVisuals.heroSlideSeconds === 'number' &&
+          Number.isFinite(storedVisuals.heroSlideSeconds)
+            ? clampInt(
+                storedVisuals.heroSlideSeconds,
+                HERO_SLIDE_SECONDS_MIN,
+                HERO_SLIDE_SECONDS_MAX
+              )
+            : DEFAULT_SETTINGS.visuals.heroSlideSeconds
       }
     }
 
