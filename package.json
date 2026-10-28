@@ -21,6 +21,7 @@
     "runtime:check": "electron tools/runtime-check.cjs",
     "selftest": "electron . --selftest",
     "scale": "electron . --scale",
+    "perf": "npm run build && electron . --perf",
     "clean": "node -e \"require('fs').rmSync('out',{recursive:true,force:true})\""
   },
   "devDependencies": {

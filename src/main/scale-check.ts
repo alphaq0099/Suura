@@ -5,13 +5,31 @@ import type { BrowserWindow } from 'electron'
 import type { AppContainer } from './services/container'
 
 /**
- * The size the M1 exit criteria names, and the two budgets it has to meet.
- * Run with `npm run scale`.
+ * The size the M1 exit criteria names, and the budgets that protect it.
+ *
+ * `npm run scale` also measures the two things a person feels - cold start and
+ * first audio - and needs a window. `npm run perf` runs only the core budgets
+ * below, which need no window or audio device and are therefore safe in CI.
  */
 const TRACK_COUNT = 10_000
 const FILES_PER_FOLDER = 100
 const COLD_START_BUDGET_MS = 2_000
 const FIRST_AUDIO_BUDGET_MS = 300
+
+/**
+ * Generous next to this machine's baseline (about 10-14 s scan, 2-4 s rescan,
+ * 20 ms page and 5 ms search) so a slower CI runner does not fail on noise,
+ * but tight enough that an accidental one-query-per-row regression fails.
+ *
+ * Exported so the smoke test can hold each check to its own edge instead of
+ * copying the numbers, which would let a budget drift away from its test.
+ */
+export const SCAN_BUDGET_MS = 30_000
+export const RESCAN_BUDGET_MS = 10_000
+export const PAGE_BUDGET_MS = 500
+export const SEARCH_BUDGET_MS = 500
+export const DATABASE_BUDGET_BYTES = 32 * 1024 * 1024
+export const RSS_BUDGET_BYTES = 512 * 1024 * 1024
 
 export interface ScaleSummary {
   tracks: number
@@ -21,6 +39,7 @@ export interface ScaleSummary {
   pageMs: number
   searchMs: number
   databaseBytes: number
+  rssBytes: number
 }
 
 /**
@@ -97,6 +116,7 @@ export async function seedScaleLibrary(container: AppContainer): Promise<ScaleSu
   } catch {
     databaseBytes = 0
   }
+  const rssBytes = process.memoryUsage().rss
 
   console.log(`SCALE  ${scanned.tracks} tracks in ${TRACK_COUNT / FILES_PER_FOLDER} folders`)
   console.log(`SCALE  writing the files: ${copyMs} ms`)
@@ -105,6 +125,7 @@ export async function seedScaleLibrary(container: AppContainer): Promise<ScaleSu
   console.log(`SCALE  first page of ${page.tracks.length}: ${pageMs} ms`)
   console.log(`SCALE  search: ${searchMs} ms (${found.total} hit${found.total === 1 ? '' : 's'})`)
   console.log(`SCALE  database: ${(databaseBytes / 1024 / 1024).toFixed(1)} MB`)
+  console.log(`SCALE  main-process RSS: ${(rssBytes / 1024 / 1024).toFixed(1)} MB`)
 
   return {
     tracks: scanned.tracks,
@@ -113,8 +134,51 @@ export async function seedScaleLibrary(container: AppContainer): Promise<ScaleSu
     rescanMs,
     pageMs,
     searchMs,
-    databaseBytes
+    databaseBytes,
+    rssBytes
   }
+}
+
+/**
+ * Checks the numbers `seedScaleLibrary` just measured. Kept separate from the
+ * window probe so `npm run perf` can enforce the same limits on a headless CI
+ * machine, where there is no audio device and no desktop to draw on.
+ *
+ * The measurements are already on the SCALE lines printed above, so only a
+ * miss is reported beside its budget: a healthy run ends on one line rather
+ * than repeating six numbers. `report` is injectable so the smoke test can
+ * read the verdict without printing it.
+ */
+export function checkScaleBudgets(
+  summary: ScaleSummary,
+  report: (line: string) => void = (line) => console.log(line)
+): number {
+  const checks = [
+    { name: 'full scan', value: summary.scanMs, budget: SCAN_BUDGET_MS, unit: 'ms' },
+    { name: 'incremental rescan', value: summary.rescanMs, budget: RESCAN_BUDGET_MS, unit: 'ms' },
+    { name: 'first page', value: summary.pageMs, budget: PAGE_BUDGET_MS, unit: 'ms' },
+    { name: 'search', value: summary.searchMs, budget: SEARCH_BUDGET_MS, unit: 'ms' },
+    { name: 'database', value: summary.databaseBytes, budget: DATABASE_BUDGET_BYTES, unit: 'B' },
+    { name: 'main-process RSS', value: summary.rssBytes, budget: RSS_BUDGET_BYTES, unit: 'B' }
+  ]
+  const failures = checks.filter((check) => check.value > check.budget)
+  for (const check of failures) {
+    const actual =
+      check.unit === 'ms'
+        ? `${check.value} ms`
+        : `${(check.value / 1024 / 1024).toFixed(1)} MB`
+    const budget =
+      check.unit === 'ms'
+        ? `${check.budget} ms`
+        : `${(check.budget / 1024 / 1024).toFixed(0)} MB`
+    report(`SCALE  core ${check.name}: ${actual} (budget ${budget}) MISSED`)
+  }
+  report(
+    failures.length === 0
+      ? `SCALE  core budgets: met (${checks.length} measured)`
+      : `SCALE  core budgets: ${failures.length} of ${checks.length} missed`
+  )
+  return failures.length
 }
 
 interface WindowProbe {
@@ -190,8 +254,16 @@ export async function runScaleCheck(
              // is not a measurement. The median is reported and budgeted.
              const page = await window.player.listTracks({ limit: 1 })
              const track = page.tracks[0]
-             for (let attempt = 0; track && attempt < 3; attempt += 1) {
-               const source = await window.player.resolveSource(track.id)
+             // resolveSource takes the same claim the rest of the renderer
+             // sends - an id plus the source kind - not a bare id. A bare id is
+             // refused as a malformed request, and that refusal used to be
+             // swallowed here, which let the interface's own dispatch time pass
+             // for "first audio".
+             const request = track
+               ? { id: track.id, sourceKind: track.sourceKind, sourceId: track.sourceId }
+               : null
+             for (let attempt = 0; request && attempt < 3; attempt += 1) {
+               const source = await window.player.resolveSource(request)
                const audio = new Audio(source.url)
                audio.preload = 'auto'
                const playedAt = performance.now()
@@ -240,8 +312,10 @@ export async function runScaleCheck(
   // The bar flips on the `play` event, which fires before a sample is decoded.
   // The audio element probe is the one that waits for `currentTime` to move, so
   // it is the number that means "first audio"; the bar's number is reported
-  // beside it as the interface's share of the wait.
-  const firstAudioMs = probe.pipelineMs >= 0 ? probe.pipelineMs : probe.dispatchMs
+  // beside it as the interface's share of the wait. There is deliberately no
+  // fallback: substituting the bar's number is how a probe that never resolved
+  // a source passed as a fast result instead of failing.
+  const firstAudioMs = probe.pipelineMs
   const coldOk = coldStartMs <= COLD_START_BUDGET_MS
   const audioOk = firstAudioMs >= 0 && firstAudioMs <= FIRST_AUDIO_BUDGET_MS
 

@@ -47,6 +47,16 @@ import {
   sanitizeDiagnosticsSummary,
   writeDiagnosticsFile
 } from '../src/main/diagnostics'
+import {
+  DATABASE_BUDGET_BYTES,
+  PAGE_BUDGET_MS,
+  RESCAN_BUDGET_MS,
+  RSS_BUDGET_BYTES,
+  SCAN_BUDGET_MS,
+  SEARCH_BUDGET_MS,
+  checkScaleBudgets,
+  type ScaleSummary
+} from '../src/main/scale-check'
 import { resolveAppPaths, ensureAppDirectories } from '@core/paths'
 import { DEFAULT_SETTINGS, mergeSettings, normalizeRetention, SettingsService } from '@core/settings/settings-service'
 import { DatabaseSchemaTooNewError, latestVersion, openLibraryDatabase } from '@core/db/database'
@@ -4332,6 +4342,70 @@ async function main(): Promise<void> {
       await rm(root, { recursive: true, force: true }).catch(() => undefined)
     }
   }
+
+  // The scale budgets are a pure decision, so they are held to their edges here
+  // rather than by building a 10,000-file library in the smoke test. `npm run
+  // perf` is what measures the real numbers; this is what proves the gate says
+  // no when it should.
+  const scaleSummary = (patch: Partial<ScaleSummary>): ScaleSummary => ({
+    tracks: 10_000,
+    copyMs: 0,
+    scanMs: 1_000,
+    rescanMs: 500,
+    pageMs: 10,
+    searchMs: 5,
+    databaseBytes: 8 * 1024 * 1024,
+    rssBytes: 200 * 1024 * 1024,
+    ...patch
+  })
+  const scaleReport = (summary: ScaleSummary): { failures: number; lines: string[] } => {
+    const lines: string[] = []
+    return { failures: checkScaleBudgets(summary, (line) => lines.push(line)), lines }
+  }
+
+  const healthyScale = scaleReport(scaleSummary({}))
+  checkEqual('scale: a library inside every budget passes', healthyScale.failures, 0)
+  check(
+    'scale: a passing run ends on one line',
+    healthyScale.lines.length === 1 && (healthyScale.lines[0]?.includes('core budgets: met') ?? false),
+    healthyScale.lines.join(' | ')
+  )
+
+  const atTheEdge = scaleReport(scaleSummary({ searchMs: SEARCH_BUDGET_MS }))
+  checkEqual('scale: a measurement exactly on its budget passes', atTheEdge.failures, 0)
+
+  const overSearch = scaleReport(scaleSummary({ searchMs: SEARCH_BUDGET_MS + 1 }))
+  checkEqual('scale: one millisecond over the search budget fails', overSearch.failures, 1)
+  check(
+    'scale: the miss names the metric, the number and the budget',
+    overSearch.lines.some(
+      (line) =>
+        line.includes('core search') &&
+        line.includes(`${SEARCH_BUDGET_MS + 1} ms`) &&
+        line.includes(`budget ${SEARCH_BUDGET_MS} ms`) &&
+        line.includes('MISSED')
+    ),
+    overSearch.lines.join(' | ')
+  )
+
+  const everythingOver = scaleReport(
+    scaleSummary({
+      scanMs: SCAN_BUDGET_MS + 1,
+      rescanMs: RESCAN_BUDGET_MS + 1,
+      pageMs: PAGE_BUDGET_MS + 1,
+      searchMs: SEARCH_BUDGET_MS + 1,
+      databaseBytes: DATABASE_BUDGET_BYTES + 1,
+      rssBytes: RSS_BUDGET_BYTES + 1
+    })
+  )
+  checkEqual('scale: every budget is checked, not just the first', everythingOver.failures, 6)
+
+  const overDatabase = scaleReport(scaleSummary({ databaseBytes: DATABASE_BUDGET_BYTES * 2 }))
+  check(
+    'scale: a byte budget is reported in megabytes',
+    overDatabase.lines.some((line) => line.includes('core database') && line.includes('MB')),
+    overDatabase.lines.join(' | ')
+  )
 
   const passed = results.length - failed
   console.log(`\n${passed}/${results.length} checks passed`)

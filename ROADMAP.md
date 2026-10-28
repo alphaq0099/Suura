@@ -304,7 +304,9 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
       list uses the album page's hero (large sleeve, name, facts and actions above the rows) for custom and imported
       playlists alike
 - [x] Persist play state; resume last session on start
-- [x] 10,000-track check (`npm run scale`): cold start 0.5 s, first audio 46 ms (median), first page 12 ms, search 2 ms
+- [x] 10,000-track check (`npm run scale`): cold start 1.3 s, first audio 98 ms (median of three decoded samples),
+      first page 15 ms, search 4 ms, database 5.5 MB, main-process RSS 174 MB; the core numbers are budgets now, not
+      just a report (`npm run perf`)
 **Exit:** 10,000-track library is fast, searchable and pleasant; audio starts in < 300 ms.
 
 ### M2 — Player Quality & System Integration  *(~2 weeks)*
@@ -531,7 +533,9 @@ restore, migration guard, and id-preserving relocation were exercised in the smo
       bridge and `webUtils.getPathForFile` still work under `sandbox: true` in dev and packaged builds.
 - [ ] Opt-in crash reporting (no remote service is configured; diagnostics remain local/export-only)
 - [ ] Windows 10/11 compatibility matrix, HiDPI, multi-monitor, 4K scaling
-- [ ] Performance budget tests in CI: cold start, scan 10k files, memory under playback
+- [x] Performance budgets enforced headlessly (`npm run perf`): 10,000-file scan, incremental rescan, first page,
+      search, database size and main-process memory, with a non-zero exit and the missed metric named on a regression
+- [ ] The same budgets on a CI runner, plus cold start, first audio and memory under playback
 - [ ] Accessibility pass: keyboard-only navigation, screen-reader labels, contrast
 **Exit:** a stranger can install, use and uninstall it without instructions.
 **Status:** packaging, manual diagnostics export and renderer sandboxing are the completed slices. The installer is

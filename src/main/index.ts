@@ -8,7 +8,7 @@ import { registerMediaKeys } from './media-keys'
 import { installMediaProtocolHandler } from './media-protocol'
 import { registerPrivilegedSchemes } from './schemes'
 import { installStreamProtocolHandler } from './stream-protocol'
-import { runScaleCheck, seedScaleLibrary } from './scale-check'
+import { checkScaleBudgets, runScaleCheck, seedScaleLibrary } from './scale-check'
 import { runSelfTest } from './selftest'
 import { createContainer, type AppContainer } from './services/container'
 import { installTray, type TrayController } from './tray'
@@ -16,11 +16,16 @@ import { createMainWindow } from './window'
 
 // `npm run selftest` drives an end-to-end check and exits with a status code.
 // `npm run scale` measures the M1 size target against a real 10,000-track
-// library. Neither may read or write the real one, so both run against a
-// throwaway userData directory that is deleted afterwards.
+// library, including cold start and first audio, which need a window.
+// `npm run perf` enforces only the core budgets, so it can run on a CI machine
+// with no desktop or audio device. None of them may read or write the real
+// library, so all three run against a throwaway userData directory that is
+// deleted afterwards.
 const SELFTEST = process.argv.includes('--selftest')
 const SCALE = process.argv.includes('--scale')
-const HEADLESS = SELFTEST || SCALE
+const PERF = process.argv.includes('--perf')
+const HEADLESS = SELFTEST || SCALE || PERF
+const HEADLESS_KIND = SELFTEST ? 'selftest' : SCALE ? 'scale' : 'perf'
 let headlessDataDir: string | null = null
 
 // The headless runs use throwaway settings, so an automatic `yt-dlp -U` would
@@ -29,7 +34,7 @@ let headlessDataDir: string | null = null
 if (HEADLESS) process.env.PLAYER_SKIP_ENGINE_UPDATE = '1'
 
 if (HEADLESS) {
-  headlessDataDir = join(tmpdir(), `player-${SELFTEST ? 'selftest' : 'scale'}-${Date.now()}`)
+  headlessDataDir = join(tmpdir(), `player-${HEADLESS_KIND}-${Date.now()}`)
   app.setPath('userData', headlessDataDir)
 }
 
@@ -59,6 +64,14 @@ function focusWindow(window: BrowserWindow): void {
 
 async function shutdownHeadlessDirectory(): Promise<void> {
   if (!headlessDataDir) return
+  // Close the database before deleting its folder: Windows refuses to remove a
+  // file that is still open, and the `rm` below swallows errors, so the leak
+  // would be silent. A run that opened a window still leaves Chromium's own
+  // cache directories behind, because the browser process holds them until it
+  // exits; `--perf`, the mode meant for CI, opens no window and removes
+  // everything.
+  container?.dispose()
+  container = null
   await rm(headlessDataDir, { recursive: true, force: true }).catch(() => undefined)
 }
 
@@ -68,6 +81,19 @@ function start(): void {
     .then(async () => {
       const appContainer = createContainer()
       container = appContainer
+
+      // `npm run perf` stops here: the budgets below are about the core, so it
+      // opens no window, grabs no media keys and needs no audio device. That is
+      // what makes it safe to run on a CI machine, and why it exits non-zero on
+      // a miss instead of leaving a number in a log for someone to notice.
+      if (PERF) {
+        const summary = await seedScaleLibrary(appContainer)
+        const failures = checkScaleBudgets(summary)
+        appContainer.log.info('perf check complete', { failures })
+        await shutdownHeadlessDirectory()
+        app.exit(failures === 0 ? 0 : 1)
+        return
+      }
 
       installMediaProtocolHandler({
         isPathAllowed: (filePath) =>
@@ -91,6 +117,9 @@ function start(): void {
       // Built before the window exists on purpose: the first paint is then a
       // cold start against a full library, which is the number being measured.
       const scale = SCALE ? await seedScaleLibrary(appContainer) : null
+      // `npm run scale` enforces the core budgets as well, so the manual run and
+      // the headless CI run agree about what "fast enough" means.
+      const coreFailures = scale ? checkScaleBudgets(scale) : 0
       const windowStartedAt = Date.now()
       const window = createMainWindow(appContainer.log.child('window'))
 
@@ -121,9 +150,10 @@ function start(): void {
         const summary = scale
         window.webContents.once('did-finish-load', () => {
           void runScaleCheck(window, windowStartedAt, summary).then((failures) => {
-            appContainer.log.info('scale check complete', { failures })
+            const total = failures + coreFailures
+            appContainer.log.info('scale check complete', { failures: total, coreFailures })
             setTimeout(() => {
-              void shutdownHeadlessDirectory().finally(() => app.exit(failures === 0 ? 0 : 1))
+              void shutdownHeadlessDirectory().finally(() => app.exit(total === 0 ? 0 : 1))
             }, 200)
           })
         })

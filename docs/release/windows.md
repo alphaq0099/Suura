@@ -9,6 +9,7 @@ under `%LOCALAPPDATA%\Programs\Suura` and never asks for administrator rights.
 npm ci
 npm run typecheck
 npm run smoke
+npm run perf
 npm run runtime:check
 npm run package:dir
 npm run package:win
