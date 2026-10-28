@@ -726,7 +726,9 @@ favour of Channel plus an optional Artist, and keeps Duration/Actions fixed when
 the bounded stream cache, offline replay, retention modes, download history, disk pre-flight, the cache manager and the
 full Downloads screen are in place, including pause/resume, remove-download with stream fallback, and per-entry keep.
 **The visual revamp is done**: Home opens on a cover-led dashboard with library totals, recently played/added shelves,
-artist and playlist cards, and a searchable/sortable album grid whose album cards open an in-place track list.
+artist and playlist cards, and one merged **All tracks** list below them. That list spans local files, counted stream
+listens, imported playlist entries and remembered links, deduped by video id and newest activity first, with a source
+badge on each row and a search box; a shelf's **More** filters the same list in place with a removable chip.
 **Windows release engineering (M8) is in progress**: the per-user NSIS installer, icon, uninstall data prompt and
 renderer sandbox are in place and the packaged app passes its self-test; signing is documented but not configured, and
 update, crash reporting and sidecar packaging remain.

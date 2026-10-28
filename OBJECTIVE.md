@@ -130,6 +130,7 @@ All four slices are implemented and verified.
 - Quick check: hero resume, shelf arrows and the albumless artist view: `f62d0da`
 - Search redesign, grouped live shelves: `259e9d7`
 - Search redesign, card grid, best match and guarded warm-up: `25ae4da`
+- Home All tracks, source badges and the shelf More filter: `9c0ad2a`
 
 A counted listen (30 seconds or completion) now refreshes **Recently played** while Home is open, and is counted once per listen instead of again when the track ends or changes. A played file with no album tag now appears there as a track card, merged with the played albums by newest listen, instead of being omitted because it has no album summary. The equalizer is one row of upright faders with the preamp apart, hangs above the player bar without covering it, and uses a faders icon that cannot be confused with Settings or Queue. Album-card play badges keep their accent when hovered or focused.
 
@@ -137,7 +138,7 @@ Home now shows what the user actually has, not only what fits an album shelf:
 
 - **Recently played** merges played albums, played albumless files and counted YouTube listens, newest first. A stream keeps its own card even when YouTube gives it an album name, and a downloaded copy replaces the stream card by video id instead of doubling the listen.
 - **Recently added** merges added albums with added files that have no album tag, so a new single is no longer invisible there.
-- **Playlists** lists imported YouTube lists beside custom ones; an imported card shows its kind and track count and opens the list in Playlists, where it can be played, saved or edited.
+- **Playlists** lists imported YouTube lists beside custom ones; a card shows its kind and track count and starts the list when clicked, while its **…** menu opens it in Playlists for editing.
 - Stream listens are written after the same 30 s threshold, in a `stream_plays` table keyed by video id. That is deliberately separate from the YouTube history: playing an imported entry still does not echo into `online_tracks`, but the listen still reaches Home.
 - A shelf scrolls back to its first card when a new one is prepended, and does nothing when reduced motion is on.
 
@@ -145,8 +146,16 @@ The Home hero and shelves now point at what the user actually just did:
 
 - The hero action is **Resume <newest played item>**, named after the top of Recently played, and it does not appear before the first listen. It no longer replays a fixed album that the shelves already show as a card.
 - The hero backdrop is masked to fade out under the copy and is stronger in cream mode, so the artwork reads as art rather than a haze.
-- An artist card with no albums opens that artist's tracks in the detail view, with the album column on, instead of filtering the album grid to an empty page.
+- An artist card opens that artist's tracks in the detail view, with the album column on, instead of filtering an album grid to an empty page.
 - Every shelf heading has small prev/next arrows that disable at the ends, move by a page and use instant movement under reduced motion.
+
+The bottom of Home is now a list rather than an album grid:
+
+- **All tracks** merges local files, counted stream listens, imported playlist entries and remembered YouTube links, deduped by video id (a downloaded copy hides its remembered twin) and newest activity first. Each row carries a **Library**, **YouTube** or **Playlist** badge beside its title, and the list has its own search box.
+- A local row queues this list's local files from that row; a YouTube row plays that one stream, exactly as a stream row elsewhere.
+- **More** on Recently played or Recently added scrolls to the list and filters it in place: to tracks with a listen, or to local files only. A chip names the filter and clears back to All tracks.
+- The feed is merged and paged in the main process: each source contributes a bounded window, pages are 100 rows, and a footer says when the scan stopped at its limit rather than claiming the whole library is shown.
+- Artist cards open the artist's tracks instead of filtering an album grid, which this list replaced.
 
 Search is now three shelves rather than one mixed list:
 
@@ -155,4 +164,4 @@ Search is now three shelves rather than one mixed list:
 - Imported means remembered, not downloaded: YouTube history entries and imported playlist entries, deduped by video id, with a local copy hiding its remembered twin.
 - Prefetching is a single guarded guess: the best match only, 1.8 s after an answer that found nothing locally, one in flight, a 45 s cooldown, paused by a bot check and cancelled by playing a card or editing the query.
 
-Each slice passed `npm run typecheck`, `npm run smoke`, `npm run build` and `npm run selftest`. Manual acceptance of the visual slices (P3, P13, the equalizer, the play badge, the hero backdrop, the Home cards and the Search shelf layout) is still required. M8 stays open on signing, updates, crash reporting, sidecars, compatibility and a clean-Windows pass. The tree also contains an unrelated, uncommitted performance-harness change in `src/main/scale-check.ts`; it is not part of this feedback pass and must not be mixed into these commits.
+Each slice passed `npm run typecheck`, `npm run smoke`, `npm run build` and `npm run selftest`. A temporary **Hero look** panel exposes the light/dark art opacity and the slide interval, stored in localStorage only; it is removed once the tested values are baked into the stylesheet. Manual acceptance of the visual slices (P3, P13, the equalizer, the play badge, the hero backdrop, the Home cards and the Search shelf layout) is still required. M8 stays open on signing, updates, crash reporting, sidecars, compatibility and a clean-Windows pass. The tree also contains an unrelated, uncommitted performance-harness change in `src/main/scale-check.ts`; it is not part of this feedback pass and must not be mixed into these commits.
