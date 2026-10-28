@@ -1,7 +1,7 @@
 # Windows release build
 
 The installer is built with **electron-builder** and is per-user: it installs
-under `%LOCALAPPDATA%\Programs\Player` and never asks for administrator rights.
+under `%LOCALAPPDATA%\Programs\Suura` and never asks for administrator rights.
 
 ## Build
 
@@ -30,8 +30,8 @@ drawing support.
 - Lets the user choose the installation directory.
 - Runs the app after a successful install unless the user clears that box.
 - Uninstalling asks, **defaulting to No**, whether to delete the app data
-  directory (`%APPDATA%\Player`). Choosing Yes removes the database, settings,
-  logs, backups and caches. Music saved into `Music\Player` is never deleted by
+  directory (`%APPDATA%\Suura`). Choosing Yes removes the database, settings,
+  logs, backups and caches. Music saved into `Music\Suura` is never deleted by
   the uninstaller.
 
 ## Signing and SmartScreen
@@ -42,7 +42,7 @@ code-signing certificate. electron-builder reads the standard environment
 variables:
 
 ```powershell
-$env:CSC_LINK = 'C:\secure\player-signing.pfx'
+$env:CSC_LINK = 'C:\secure\suura-signing.pfx'
 $env:CSC_KEY_PASSWORD = '...'
 npm run package:win
 ```
@@ -57,7 +57,7 @@ a substitute for signing.
 **Settings → About → Save diagnostics** writes a plain-text bundle to a
 user-chosen file. It contains the app and runtime versions, platform, app paths,
 library-folder count, user agent, and the last 256 KB of
-`%APPDATA%\Player\logs\player.log`. It is local and user-initiated: no crash
+`%APPDATA%\Suura\logs\suura.log`. It is local and user-initiated: no crash
 reporting service is configured and nothing is uploaded. Ask users to review the
 file before sharing it, because log lines can contain local library paths.
 
@@ -87,7 +87,7 @@ them.
 - Run the packaged self-test and require exit code 0:
 
   ```powershell
-  $p = Start-Process .\release\win-unpacked\Player.exe -ArgumentList '--selftest' -Wait -PassThru
+  $p = Start-Process .\release\win-unpacked\Suura.exe -ArgumentList '--selftest' -Wait -PassThru
   $p.ExitCode
   ```
 

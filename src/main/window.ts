@@ -16,7 +16,7 @@ export function createMainWindow(log: Logger): BrowserWindow {
     minWidth: 940,
     minHeight: 580,
     show: false,
-    title: 'Player',
+    title: 'Suura',
     // The container has already applied the saved theme to nativeTheme, so the
     // window's first paint matches the palette instead of flashing dark over a
     // cream desktop.

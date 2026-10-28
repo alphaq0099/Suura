@@ -1,4 +1,4 @@
-# Roadmap — Music Player (working name: **Player**)
+# Roadmap - Music Player (working name: **Suura**)
 
 A music player that manages a **local music library** and can also **search, stream and download songs from YouTube** through a backend engine built on **yt-dlp**.
 
@@ -176,7 +176,7 @@ Setting       (key, value, scope = global|track|playlist|source)
 ## 5. Disk & Cache Layout
 
 ```
-%APPDATA%/Player/
+%APPDATA%/Suura/
 ├── config.json                 # settings
 ├── library.db                  # SQLite (+ FTS5)
 ├── cache/
@@ -517,7 +517,7 @@ restore, migration guard, and id-preserving relocation were exercised in the smo
 
 ### M8 — Windows Release Engineering  *(~2 weeks; in progress)*
 - [x] Installer (per-user, no admin): electron-builder NSIS x64, clean uninstall and an opt-in prompt to delete
-      `%APPDATA%\Player`. Silent install, the installed build's `--selftest`, and silent uninstall were verified; app
+      `%APPDATA%\Suura`. Silent install, the installed build's `--selftest`, and silent uninstall were verified; app
       data survived by default.
 - [x] Code signing path documented (or at least a documented SmartScreen workaround plan): certificate environment
       variables, checksum publishing and the unsigned-build warning are in `docs/release/windows.md`. No certificate is

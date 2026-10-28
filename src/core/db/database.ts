@@ -32,7 +32,7 @@ export class DatabaseSchemaTooNewError extends Error {
     readonly supported: number
   ) {
     super(
-      `This library was written by a newer version of Player (schema ${found}; this build supports ${supported}). Update Player before opening it.`
+      `This library was written by a newer version of Suura (schema ${found}; this build supports ${supported}). Update Suura before opening it.`
     )
     this.name = 'DatabaseSchemaTooNewError'
   }

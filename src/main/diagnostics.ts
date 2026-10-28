@@ -143,7 +143,7 @@ export function buildDiagnosticsBundle(input: DiagnosticsBundleInput): string {
       : `${input.log.size} bytes`
 
   return [
-    'Player diagnostics',
+    'Suura diagnostics',
     `Generated: ${generatedAt}`,
     'Review this file before sharing it: it can contain local file paths and recent log lines.',
     '',

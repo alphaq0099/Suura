@@ -12,7 +12,7 @@ export function resolveAppPaths(userDataDir: string): AppPaths {
     userData: userDataDir,
     config: join(userDataDir, 'config.json'),
     database: join(userDataDir, 'library.db'),
-    logs: join(userDataDir, 'logs', 'player.log'),
+    logs: join(userDataDir, 'logs', 'suura.log'),
     cache: join(userDataDir, 'cache'),
     downloads: join(userDataDir, 'downloads'),
     backups: join(userDataDir, 'backups')

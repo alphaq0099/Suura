@@ -58,7 +58,7 @@ export function Sidebar({
     <nav className="sidebar" data-icon-set={iconSet}>
       <div className="brand">
         {modern ? <BrandMarkIcon size={20} /> : <MusicIcon size={18} />}
-        <span>Player</span>
+        <span>Suura</span>
       </div>
 
       <button

@@ -2,7 +2,7 @@
 #
 # The installer is per-user on purpose: a music player should install without
 # asking for administrator rights. electron-builder's NSIS target installs to
-# %LOCALAPPDATA%\Programs\Player by default when perMachine is false.
+# %LOCALAPPDATA%\Programs\Suura by default when perMachine is false.
 #
 #   npm run package:dir   unpacked build, for smoke-testing the packaged app
 #   npm run package:win   NSIS installer in release/
@@ -10,9 +10,9 @@
 # Signing is optional here and enabled by the release environment through
 # CSC_LINK/CSC_KEY_PASSWORD. See docs/release/windows.md.
 
-appId: com.player.desktop
-productName: Player
-copyright: Copyright © 2026 Player
+appId: com.suura.desktop
+productName: Suura
+copyright: Copyright © 2026 Suura
 
 directories:
   output: release
@@ -46,8 +46,8 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
   createStartMenuShortcut: true
-  shortcutName: Player
-  uninstallDisplayName: Player
+  shortcutName: Suura
+  uninstallDisplayName: Suura
   runAfterFinish: true
   deleteAppDataOnUninstall: false
   include: build/installer.nsh

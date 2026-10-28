@@ -486,7 +486,7 @@ export function LibraryView(props: LibraryViewProps) {
           <FolderIcon size={32} />
           <h2>No music folders yet</h2>
           <p>
-            Add a folder and Player will index every audio file inside it, including subfolders.
+            Add a folder and Suura will index every audio file inside it, including subfolders.
             {streamCount > 0 ? ' Your played YouTube links are under the YouTube chip above.' : ''}
           </p>
           <button type="button" className="primary" onClick={onAddFolder} disabled={scanning}>

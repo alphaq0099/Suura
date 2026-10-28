@@ -676,9 +676,9 @@ export function registerIpcHandlers(container: AppContainer): void {
     const parent = BrowserWindow.getFocusedWindow()
     const stamp = new Date().toISOString().replace(/[:.]/g, '-')
     const options: Electron.SaveDialogOptions = {
-      title: 'Save Player diagnostics',
+      title: 'Save Suura diagnostics',
       buttonLabel: 'Save',
-      defaultPath: join(app.getPath('documents'), `Player diagnostics ${stamp}.txt`),
+      defaultPath: join(app.getPath('documents'), `Suura diagnostics ${stamp}.txt`),
       filters: [{ name: 'Text file', extensions: ['txt'] }]
     }
     const result = parent
@@ -745,7 +745,7 @@ export function registerIpcHandlers(container: AppContainer): void {
 
     // The picker chooses the parent; the app owns the timestamped folder so two
     // backups from the same minute cannot overwrite each other.
-    const directory = nextBackupDirectory(parentDirectory, 'Player backup', new Date())
+    const directory = nextBackupDirectory(parentDirectory, 'Suura backup', new Date())
     const summary = createBackupBundle({
       db: container.database.db,
       directory,
@@ -763,7 +763,7 @@ export function registerIpcHandlers(container: AppContainer): void {
   ipcMain.handle(IPC.dataRestore, async () => {
     const parent = BrowserWindow.getFocusedWindow()
     const options: Electron.OpenDialogOptions = {
-      title: 'Choose a Player backup folder',
+      title: 'Choose a Suura backup folder',
       buttonLabel: 'Choose backup',
       properties: ['openDirectory']
     }
@@ -803,7 +803,7 @@ export function registerIpcHandlers(container: AppContainer): void {
       type: 'warning',
       title: 'Restore this backup?',
       message: 'Replace the current library and settings?',
-      detail: `The current database and settings are copied to the backups folder first. Player will restart to finish the restore.\n\nBackup: ${directory}`,
+      detail: `The current database and settings are copied to the backups folder first. Suura will restart to finish the restore.\n\nBackup: ${directory}`,
       buttons: ['Restore and restart', 'Cancel'],
       defaultId: 1,
       cancelId: 1,
@@ -1225,7 +1225,7 @@ export function registerIpcHandlers(container: AppContainer): void {
       filters: [
         { name: 'M3U8 playlist', extensions: ['m3u8'] },
         { name: 'M3U playlist', extensions: ['m3u'] },
-        { name: 'Player playlist (JSON)', extensions: ['json'] }
+        { name: 'Suura playlist (JSON)', extensions: ['json'] }
       ]
     }
     const result = parent ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options)
@@ -1263,7 +1263,7 @@ export function registerIpcHandlers(container: AppContainer): void {
     const options: Electron.SaveDialogOptions = {
       title: 'Export library as CSV',
       buttonLabel: 'Export',
-      defaultPath: join(app.getPath('documents'), `Player Library ${date}.csv`),
+      defaultPath: join(app.getPath('documents'), `Suura Library ${date}.csv`),
       filters: [{ name: 'CSV spreadsheet', extensions: ['csv'] }]
     }
     const result = parent ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options)

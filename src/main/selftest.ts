@@ -78,7 +78,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          title: document.title
        }))()`
     )
-    record(boot.hasBridge, 'preload exposes the Player bridge on window.player')
+    record(boot.hasBridge, 'preload exposes the Suura bridge on window.player')
     record(boot.hasReactRoot, 'React mounted a view')
     record(boot.hasSidebar, 'sidebar rendered')
     record(boot.hasPlayerBar, 'player bar rendered')
@@ -103,7 +103,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         nodeIntegration: webPreferences?.nodeIntegration
       }
     )
-    record(boot.title === 'Player', 'document title is set', boot.title)
+    record(boot.title === 'Suura', 'document title is set', boot.title)
 
     // ---- 2. the engine layer can find ffmpeg ---------------------------
     const ffmpeg = await probeExecutable('ffmpeg', { versionArgs: ['-version'] })
@@ -2693,7 +2693,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            ? [...aboutCard.querySelectorAll('.status-value')].map((el) => (el.textContent || '').trim())
            : []
          out.aboutRuntime =
-           ['Player', 'Electron', 'Chromium', 'Node'].every((name) => statusNames.includes(name)) &&
+           ['Suura', 'Electron', 'Chromium', 'Node'].every((name) => statusNames.includes(name)) &&
            statusValues.some((value) => Number.isFinite(Number.parseFloat(value)))
          const copyButton = aboutCard
            ? [...aboutCard.querySelectorAll('button')].find((el) =>
@@ -2780,7 +2780,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     const diagnosticsText = await clipboard.readText()
     record(
       settingsSafety.diagnosticsCopied &&
-        diagnosticsText.includes('Player ') &&
+        diagnosticsText.includes('Suura ') &&
         diagnosticsText.includes('Library folders') &&
         !/cookie/i.test(diagnosticsText),
       'settings: Copy diagnostics puts versions and paths on the clipboard without cookies',

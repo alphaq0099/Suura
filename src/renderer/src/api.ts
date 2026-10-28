@@ -12,7 +12,7 @@ const bridge = window.player
 
 if (!bridge) {
   throw new Error(
-    'The Player bridge is unavailable. Start the app through Electron (npm run dev) instead of opening the HTML file directly.'
+    'The Suura bridge is unavailable. Start the app through Electron (npm run dev) instead of opening the HTML file directly.'
   )
 }
 

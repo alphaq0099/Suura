@@ -317,7 +317,7 @@ export interface PlayerApi {
    */
   exportPlaylist(playlistId: number): Promise<string | null>
   /**
-   * Imports an M3U, M3U8 or Player JSON playlist as a new custom playlist.
+   * Imports an M3U, M3U8 or Suura JSON playlist as a new custom playlist.
    *
    * Resolves to the import summary, or null when the dialog was cancelled.
    * Rejects with a readable message when the file cannot be parsed or none of

@@ -38,7 +38,7 @@ if (HEADLESS) {
 registerPrivilegedSchemes()
 
 // Grouping id for the Windows taskbar and for notifications (M2).
-app.setAppUserModelId('com.player.desktop')
+app.setAppUserModelId('com.suura.desktop')
 
 let container: AppContainer | null = null
 let releaseMediaKeys: (() => void) | null = null
@@ -143,11 +143,11 @@ function start(): void {
     .catch((error: unknown) => {
       // Without a window there is nowhere to show this, so it goes to the log file
       // and stderr, and the process exits non-zero rather than hanging invisibly.
-      console.error('Failed to start Player:', error)
+      console.error('Failed to start Suura:', error)
       container?.log.error('startup failed', error)
       if (!HEADLESS) {
         dialog.showErrorBox(
-          'Player could not open its library',
+          'Suura could not open its library',
           error instanceof Error ? error.message : String(error)
         )
       }

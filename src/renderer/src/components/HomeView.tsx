@@ -1419,13 +1419,13 @@ export function HomeView(props: HomeViewProps) {
           />
         ))}
         <div className="home-hero-copy">
-          <span className="home-kicker">{hasLibrary ? 'Your collection' : 'Welcome to Player'}</span>
+          <span className="home-kicker">{hasLibrary ? 'Your collection' : 'Welcome to Suura'}</span>
           <h2>
             {hasLibrary ? 'Your music, at a glance.' : 'A quiet home for your music.'}
           </h2>
           {!hasLibrary ? (
             <p>
-              Add a folder of audio files and Player will index everything inside it. Nothing is
+              Add a folder of audio files and Suura will index everything inside it. Nothing is
               uploaded or moved.
             </p>
           ) : null}

@@ -234,7 +234,7 @@ async function generateFlac(
 }
 
 async function main(): Promise<void> {
-  console.log('Player core smoke test\n')
+  console.log('Suura core smoke test\n')
 
   // Exercises the sidecar locator/version probe that the engine layer will use.
   const engine = await getEngineStatus({
@@ -1189,7 +1189,7 @@ async function main(): Promise<void> {
     } catch (error) {
       foreignJson = (error as Error).message
     }
-    check('an unrelated JSON file is not mistaken for a playlist', foreignJson.includes('not a Player playlist'), foreignJson)
+    check('an unrelated JSON file is not mistaken for a playlist', foreignJson.includes('not a Suura playlist'), foreignJson)
 
     let oversizedJson = ''
     try {
@@ -1814,7 +1814,7 @@ async function main(): Promise<void> {
 
     // --- data care: backups, restore and the schema guard -----------------
     const trackCountBeforeRestore = repo.stats().tracks
-    const backupDirectory = nextBackupDirectory(join(root, 'manual-backups'), 'Player backup', new Date('2026-10-20T12:00:00Z'))
+    const backupDirectory = nextBackupDirectory(join(root, 'manual-backups'), 'Suura backup', new Date('2026-10-20T12:00:00Z'))
     const bundle = createBackupBundle({
       db: database.db,
       directory: backupDirectory,
@@ -3434,7 +3434,7 @@ async function main(): Promise<void> {
 
     const diagnosticsDir = join(root, 'diagnostics')
     await mkdir(diagnosticsDir, { recursive: true })
-    const diagnosticsLog = join(diagnosticsDir, 'player.log')
+    const diagnosticsLog = join(diagnosticsDir, 'suura.log')
     await writeFile(diagnosticsLog, 'first line\nsecond line\nthird line\n', 'utf8')
     const smallTail = readLogTail(diagnosticsLog, 4096)
     check(
@@ -3461,14 +3461,14 @@ async function main(): Promise<void> {
       tail.text.startsWith('line ')
     )
     const diagnosticsBundle = buildDiagnosticsBundle({
-      summary: 'Player 1.2.3\r\nOS Windows',
+      summary: 'Suura 1.2.3\r\nOS Windows',
       logPath: diagnosticsLog,
       log: tail,
       generatedAt: new Date('2026-10-25T00:00:00Z')
     })
     check(
       'diagnostics: the bundle carries the summary, log path and timestamp',
-      diagnosticsBundle.includes('Player 1.2.3\nOS Windows') &&
+      diagnosticsBundle.includes('Suura 1.2.3\nOS Windows') &&
         diagnosticsBundle.includes(diagnosticsLog) &&
         diagnosticsBundle.includes('2026-10-25T00:00:00.000Z')
     )
@@ -3486,7 +3486,7 @@ async function main(): Promise<void> {
     )
     const diagnosticsFile = join(diagnosticsDir, 'bundle.txt')
     const written = await writeDiagnosticsFile(diagnosticsFile, {
-      summary: 'Player 1.2.3\nOS Windows',
+      summary: 'Suura 1.2.3\nOS Windows',
       logPath: diagnosticsLog,
       log: tail,
       generatedAt: new Date('2026-10-25T00:00:00Z')

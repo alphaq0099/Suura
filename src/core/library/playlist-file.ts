@@ -178,12 +178,12 @@ function parseJson(text: string, filePath: string): ParsedPlaylistFile {
   } catch {
     throw new Error('This playlist file is not valid JSON.')
   }
-  if (!isRecord(data)) throw new Error('This is not a Player playlist JSON file.')
+  if (!isRecord(data)) throw new Error('This is not a Suura playlist JSON file.')
   if (data.format !== PLAYLIST_JSON_FORMAT) {
-    throw new Error('This is not a Player playlist JSON file.')
+    throw new Error('This is not a Suura playlist JSON file.')
   }
   if (typeof data.version === 'number' && data.version > PLAYLIST_JSON_VERSION) {
-    throw new Error('This playlist was created by a newer version of Player.')
+    throw new Error('This playlist was created by a newer version of Suura.')
   }
   if (!Array.isArray(data.entries)) {
     throw new Error('This playlist JSON file has no entries.')

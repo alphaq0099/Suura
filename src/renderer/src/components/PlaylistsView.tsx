@@ -621,7 +621,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
             type="button"
             onClick={() => void runImport()}
             disabled={importing || exporting}
-            title="Import an M3U, M3U8 or Player JSON playlist"
+            title="Import an M3U, M3U8 or Suura JSON playlist"
           >
             {importing ? <SpinnerIcon /> : null}
             <span>{importing ? 'Importing.' : 'Import'}</span>

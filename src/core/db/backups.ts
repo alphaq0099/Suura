@@ -92,7 +92,7 @@ function uniquePath(directory: string, base: string, extension: string): string 
 }
 
 /** A folder name that is unique inside `parent`; the parent is created. */
-export function nextBackupDirectory(parent: string, prefix = 'Player backup', date = new Date()): string {
+export function nextBackupDirectory(parent: string, prefix = 'Suura backup', date = new Date()): string {
   mkdirSync(parent, { recursive: true })
   return uniquePath(parent, `${prefix} ${backupTimestamp(date)}`, '')
 }
@@ -200,7 +200,7 @@ export function createBackupBundle(input: {
 export function inspectBackupBundle(directory: string): InspectedBackup {
   const manifestPath = join(directory, 'manifest.json')
   if (!existsSync(manifestPath)) {
-    throw new Error('This folder does not contain a Player backup (manifest.json is missing).')
+    throw new Error('This folder does not contain a Suura backup (manifest.json is missing).')
   }
   let rawManifest: unknown
   try {
@@ -209,10 +209,10 @@ export function inspectBackupBundle(directory: string): InspectedBackup {
     throw new Error('The backup manifest is not valid JSON.')
   }
   if (!isPlainObject(rawManifest) || rawManifest.format !== BACKUP_FORMAT) {
-    throw new Error('This folder does not contain a Player backup.')
+    throw new Error('This folder does not contain a Suura backup.')
   }
   if (rawManifest.version !== BACKUP_FORMAT_VERSION) {
-    throw new Error('This backup uses a newer format than this version of Player understands.')
+    throw new Error('This backup uses a newer format than this version of Suura understands.')
   }
   if (
     typeof rawManifest.appVersion !== 'string' ||
@@ -234,7 +234,7 @@ export function inspectBackupBundle(directory: string): InspectedBackup {
   const target = latestVersion()
   if (inspection.schemaVersion > target) {
     throw new Error(
-      `This backup was written by a newer version of Player (schema ${inspection.schemaVersion}, this build supports ${target}). Update Player before restoring it.`
+      `This backup was written by a newer version of Suura (schema ${inspection.schemaVersion}, this build supports ${target}). Update Suura before restoring it.`
     )
   }
 

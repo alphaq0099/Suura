@@ -535,7 +535,7 @@ export function SettingsView(props: SettingsViewProps) {
     setDataNote(null)
     try {
       const staged = await onRestoreData()
-      setDataNote(staged ? 'Restoring — Player will restart.' : 'Restore cancelled.')
+      setDataNote(staged ? 'Restoring - Suura will restart.' : 'Restore cancelled.')
     } catch (cause) {
       setDataError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -644,7 +644,7 @@ export function SettingsView(props: SettingsViewProps) {
                 </h2>
               </header>
               <p className="card-hint">
-                Where Player opens, whether it checks for changes made while it was closed, what happens to the last
+                Where Suura opens, whether it checks for changes made while it was closed, what happens to the last
                 queue, and whether closing the window quits or hides it.
               </p>
               <div className="field-grid">
@@ -1668,7 +1668,7 @@ export function SettingsView(props: SettingsViewProps) {
                       <input
                         type="text"
                         readOnly
-                        value={settings.retention.downloadFolder ?? '(default: Music\\Player)'}
+                        value={settings.retention.downloadFolder ?? '(default: Music\\Suura)'}
                       />
                       <button type="button" onClick={onPickDownloadFolder}>
                         Change
@@ -1948,7 +1948,7 @@ export function SettingsView(props: SettingsViewProps) {
               </p>
               <ul className="status-list">
                 <li>
-                  <span className="status-name">Player</span>
+                  <span className="status-name">Suura</span>
                   <span className="status-value">{runtimeInfo?.appVersion ?? 'loading…'}</span>
                 </li>
                 <li>

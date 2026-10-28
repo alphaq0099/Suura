@@ -506,7 +506,7 @@ export class DownloadService {
 
   private downloadRoot(): string {
     const configured = this.deps.settings.get().retention.downloadFolder
-    const folder = configured && configured.trim().length > 0 ? configured : join(this.deps.musicDir, 'Player')
+    const folder = configured && configured.trim().length > 0 ? configured : join(this.deps.musicDir, 'Suura')
     return normalizePath(folder)
   }
 

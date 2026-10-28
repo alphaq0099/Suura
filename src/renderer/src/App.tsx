@@ -75,7 +75,7 @@ function diagnosticsSummary(
   settings: AppSettings | null
 ): string {
   return [
-    `Player ${runtimeInfo?.appVersion ?? 'unknown'}`,
+    `Suura ${runtimeInfo?.appVersion ?? 'unknown'}`,
     `Electron ${runtimeInfo?.electron ?? 'unknown'}`,
     `Chromium ${runtimeInfo?.chromium ?? 'unknown'}`,
     `Node ${runtimeInfo?.node ?? 'unknown'}`,
@@ -950,7 +950,7 @@ export function App() {
   if (!settings) {
     return (
       <div className="boot-screen">
-        <h1>Player</h1>
+        <h1>Suura</h1>
         <p>{settingsError ?? 'Starting…'}</p>
       </div>
     )

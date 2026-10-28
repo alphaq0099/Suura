@@ -36,7 +36,7 @@ export function installTray({ window, log }: TrayOptions): TrayController | null
     return null
   }
 
-  tray.setToolTip('Player')
+  tray.setToolTip('Suura')
 
   const send = (command: PlayerCommand): void => {
     broadcast(IPC_EVENTS.playerCommand, command)
@@ -57,7 +57,7 @@ export function installTray({ window, log }: TrayOptions): TrayController | null
     const open = windowIsOpen()
     return Menu.buildFromTemplate([
       {
-        label: open ? 'Hide Player' : 'Show Player',
+        label: open ? 'Hide Suura' : 'Show Suura',
         click: () => {
           if (window.isDestroyed()) return
           // Read the state at click time: the menu can outlive the visibility
@@ -81,7 +81,7 @@ export function installTray({ window, log }: TrayOptions): TrayController | null
       { label: 'Next', click: () => send({ type: 'next' }) },
       { type: 'separator' },
       {
-        label: 'Quit Player',
+        label: 'Quit Suura',
         click: () => app.quit()
       }
     ])
