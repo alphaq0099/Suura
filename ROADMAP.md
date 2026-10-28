@@ -282,10 +282,10 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
       the only flexible track, gives Artist/Album equal bounded widths, and uses a separate **#, Title, optional Artist,
       Channel, Duration, Action** grid for YouTube Links (no Album).
 - [x] Artwork: embedded covers extracted lazily, resized, cached content-addressed, served over `player-art://`
-- [x] Home dashboard and album grid (visual revamp): cover-led hero with stats, recently played/added shelves, artist
-      cards that filter the grid, playlist cards, and a searchable/sortable **All albums** grid with an in-place album
-      detail view. Album summaries group by title plus the album-artist fallback; covers load lazily as cards approach
-      the viewport. Home is the fresh-install launch view.
+- [x] Home dashboard and album grid (visual revamp): cover-led hero with the library stats under its heading, recently
+      played/added shelves, artist cards that open the artist's tracks, playlist cards, and one searchable **All tracks**
+      list with a **Source** column, plus an in-place album/artist detail view. Album summaries group by title plus the
+      album-artist fallback; covers load lazily as cards approach the viewport. Home is the fresh-install launch view.
 - [x] Now Playing: full-window player with a blurred art backdrop, transport, volume, queue and a scrubber; the queue
       as a panel inside the window, slid in by the button that opened it and dismissed by a press anywhere outside it
 - [x] Visuals settings: artwork square or circular, cropped to a square or given the cover's own shape, and sized from
@@ -725,10 +725,13 @@ keeps Title as the only flexible track, gives Artist/Album equal bounded widths,
 favour of Channel plus an optional Artist, and keeps Duration/Actions fixed when a column is hidden. **M12 is done**:
 the bounded stream cache, offline replay, retention modes, download history, disk pre-flight, the cache manager and the
 full Downloads screen are in place, including pause/resume, remove-download with stream fallback, and per-entry keep.
-**The visual revamp is done**: Home opens on a cover-led dashboard with library totals, recently played/added shelves,
-artist and playlist cards, and one merged **All tracks** list below them. That list spans local files, counted stream
-listens, imported playlist entries and remembered links, deduped by video id and newest activity first, with a source
-badge on each row and a search box; a shelf's **More** filters the same list in place with a removable chip.
+**The visual revamp is done**: Home opens on a cover-led dashboard with the library totals under its heading, recently
+played/added shelves, artist and playlist cards, and one merged **All tracks** list below them. That list spans local
+files, counted stream listens, imported playlist entries and remembered links, deduped by video id and newest activity
+first; its fourth column is **Source** rather than Album, the filter chip and search sit in a toolbar under the heading,
+and a YouTube row saves through the same download queue as YouTube Links. A shelf's **More** filters the same list in
+place with a removable chip. The hero art is at full strength in both themes, and its crossfade pace is a Settings
+slider (3–60 s) instead of a constant.
 **Windows release engineering (M8) is in progress**: the per-user NSIS installer, icon, uninstall data prompt and
 renderer sandbox are in place and the packaged app passes its self-test; signing is documented but not configured, and
 update, crash reporting and sidecar packaging remain.

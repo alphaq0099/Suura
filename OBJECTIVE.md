@@ -60,6 +60,15 @@ The feedback is not one visual-polish pass. It contains:
 - When the user changes volume from the keyboard, the vertical slider must visibly open and move, not just change the value silently.
 - This is the last item in the pass and must not block P1–P3.
 
+### Home follow-up — the annotated `1.png`
+
+- Show the hero art at full strength in both themes; the mask and overlay keep the copy readable, not a wash.
+- Move the hero pace out of the preview panel and into **Settings → Appearance** (3–60 seconds, default 12).
+- Remove the hero tagline and the Resume action; the stats sit under the heading on the left and the right side stays art.
+- Put All tracks' filter chip and search in a toolbar under the heading instead of on the heading's row.
+- Replace All tracks' Album column with **Source**, with each row's badge in that column.
+- Give YouTube rows in All tracks the same save action as YouTube Links.
+
 ## Decisions
 
 | Area | Decision |
@@ -90,8 +99,10 @@ The feedback is not one visual-polish pass. It contains:
 - An imported playlist appears on Home's Playlists shelf and its card opens it in Playlists.
 - A counted YouTube listen appears on Recently played as a track card, including one played from an imported list.
 - A newly added file with no album tag appears on Recently added without displacing its album cards.
-- The hero offers Resume for the newest played item and no action before the first listen.
-- Cream mode shows the hero artwork through a left fade instead of a haze.
+- The hero never becomes a transport: no Resume, no duplicate Library or Add folder action, and the stats sit under its heading.
+- The hero art shows at full strength in both themes, with the left fade keeping the copy readable.
+- The hero pace is set in Settings → Appearance, and Reset returns it to 12 seconds.
+- All tracks shows a Source column with each row's badge in that column, and only YouTube rows offer Save.
 - An artist with tracks but no albums opens their track list, not an empty album grid.
 - Every shelf has prev/next arrows that disable at its ends.
 - Typing fills **On this device** and **Imported** without a network call; the button or Enter is the only way to ask YouTube.
@@ -131,6 +142,7 @@ All four slices are implemented and verified.
 - Search redesign, grouped live shelves: `259e9d7`
 - Search redesign, card grid, best match and guarded warm-up: `25ae4da`
 - Home All tracks, source badges and the shelf More filter: `9c0ad2a`
+- Home hero bake, Source column and the All tracks toolbar: `5ed40c7`
 
 A counted listen (30 seconds or completion) now refreshes **Recently played** while Home is open, and is counted once per listen instead of again when the track ends or changes. A played file with no album tag now appears there as a track card, merged with the played albums by newest listen, instead of being omitted because it has no album summary. The equalizer is one row of upright faders with the preamp apart, hangs above the player bar without covering it, and uses a faders icon that cannot be confused with Settings or Queue. Album-card play badges keep their accent when hovered or focused.
 
@@ -144,15 +156,16 @@ Home now shows what the user actually has, not only what fits an album shelf:
 
 The Home hero and shelves now point at what the user actually just did:
 
-- The hero action is **Resume <newest played item>**, named after the top of Recently played, and it does not appear before the first listen. It no longer replays a fixed album that the shelves already show as a card.
-- The hero backdrop is masked to fade out under the copy and is stronger in cream mode, so the artwork reads as art rather than a haze.
+- The hero is atmosphere, not a second transport: no Resume, no tagline and no duplicate Library/Add folder button. Its stats sit under **Your music, at a glance.** on the left, and the right side is left to the art.
+- The hero backdrop is masked to fade out under the copy and now shows at full strength in both themes; the mask and overlay keep the copy readable rather than washing the picture.
+- The pace of the backdrop is a setting (**Settings → Appearance → Home hero**, 3–60 seconds, default 12), so a slower or quicker crossfade no longer needs a code change.
 - An artist card opens that artist's tracks in the detail view, with the album column on, instead of filtering an album grid to an empty page.
 - Every shelf heading has small prev/next arrows that disable at the ends, move by a page and use instant movement under reduced motion.
 
 The bottom of Home is now a list rather than an album grid:
 
-- **All tracks** merges local files, counted stream listens, imported playlist entries and remembered YouTube links, deduped by video id (a downloaded copy hides its remembered twin) and newest activity first. Each row carries a **Library**, **YouTube** or **Playlist** badge beside its title, and the list has its own search box.
-- A local row queues this list's local files from that row; a YouTube row plays that one stream, exactly as a stream row elsewhere.
+- **All tracks** merges local files, counted stream listens, imported playlist entries and remembered YouTube links, deduped by video id (a downloaded copy hides its remembered twin) and newest activity first. The fourth column is **Source**, with each row's **Library**, **YouTube** or **Playlist** badge in that column, and the filter chip and search sit in a toolbar under the heading.
+- A local row queues this list's local files from that row; a YouTube row plays that one stream, exactly as a stream row elsewhere, and carries the same **Save to your library** action as YouTube Links.
 - **More** on Recently played or Recently added scrolls to the list and filters it in place: to tracks with a listen, or to local files only. A chip names the filter and clears back to All tracks.
 - The feed is merged and paged in the main process: each source contributes a bounded window, pages are 100 rows, and a footer says when the scan stopped at its limit rather than claiming the whole library is shown.
 - Artist cards open the artist's tracks instead of filtering an album grid, which this list replaced.
@@ -164,4 +177,4 @@ Search is now three shelves rather than one mixed list:
 - Imported means remembered, not downloaded: YouTube history entries and imported playlist entries, deduped by video id, with a local copy hiding its remembered twin.
 - Prefetching is a single guarded guess: the best match only, 1.8 s after an answer that found nothing locally, one in flight, a 45 s cooldown, paused by a bot check and cancelled by playing a card or editing the query.
 
-Each slice passed `npm run typecheck`, `npm run smoke`, `npm run build` and `npm run selftest`. A temporary **Hero look** panel exposes the light/dark art opacity and the slide interval, stored in localStorage only; it is removed once the tested values are baked into the stylesheet. Manual acceptance of the visual slices (P3, P13, the equalizer, the play badge, the hero backdrop, the Home cards and the Search shelf layout) is still required. M8 stays open on signing, updates, crash reporting, sidecars, compatibility and a clean-Windows pass. The tree also contains an unrelated, uncommitted performance-harness change in `src/main/scale-check.ts`; it is not part of this feedback pass and must not be mixed into these commits.
+Each slice passed `npm run typecheck`, `npm run smoke`, `npm run build` and `npm run selftest`. The temporary **Hero look** panel is gone: the tested opacity is written into the stylesheet and the pace is a real setting, so nothing about the hero lives in localStorage. Manual acceptance of the visual slices (P3, P13, the equalizer, the play badge, the hero backdrop, the Home cards and the Search shelf layout) is still required. M8 stays open on signing, updates, crash reporting, sidecars, compatibility and a clean-Windows pass. The tree also contains an unrelated, uncommitted performance-harness change in `src/main/scale-check.ts`; it is not part of this feedback pass and must not be mixed into these commits.
