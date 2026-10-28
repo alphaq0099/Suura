@@ -1,0 +1,7372 @@
+:root {
+  color-scheme: dark;
+
+  /* One multiplier for every text size in the stylesheet. The size presets sit
+     beside the density presets below; Medium is deliberately a little larger
+     than the old fixed 14px because the UI read too small at a distance. */
+  --text-scale: 1.1;
+
+  --bg: #0f1016;
+  --bg-rgb: 15 16 22;
+  --bg-raised: #161823;
+  --bg-raised-rgb: 22 24 35;
+  --bg-hover: #1e2130;
+  --bg-active: #262a3d;
+  --bg-sunken: #0c0e14;
+  --bg-panel: #12141d;
+  --bg-panel-rgb: 18 20 29;
+  --bg-elevated: #151824;
+  --bg-input: #10121b;
+  --bg-subtle: #171a24;
+  --bg-badge: #232739;
+  --bg-art: #1b1f2e;
+
+  --border: #262a3a;
+  --border-soft: #1b1e2b;
+  --border-strong: #333852;
+
+  --text: #e8eaf2;
+  --text-rgb: 232 234 242;
+  --text-dim: #9aa1b8;
+  --text-faint: #7f87a7;
+
+  --accent: #6c8cff;
+  --accent-rgb: 108 140 255;
+  --accent-strong: #8aa2ff;
+  --accent-contrast: #0b0d14;
+  --danger: #ff6b72;
+  --danger-rgb: 255 107 114;
+  --danger-bg: #2a161b;
+  --danger-border: #5a2730;
+  --danger-text: #ffbcc0;
+  --ok: #4dd6a1;
+  --ok-rgb: 77 214 161;
+  --ok-border: #1f3f36;
+
+  --scroll-thumb: #343a52;
+  --scroll-thumb-hover: #454d6c;
+  --overlay-rgb: 255 255 255;
+  --knob: #fff;
+
+  /* Selection follows the accent, so changing it changes the whole surface
+     language rather than only buttons and links. */
+  --row-selected: rgb(var(--accent-rgb) / 16%);
+  --row-current: rgb(var(--accent-rgb) / 9%);
+  --row-current-selected: rgb(var(--accent-rgb) / 22%);
+  --choice-selected-bg: rgb(var(--accent-rgb) / 8%);
+  --choice-selected-border: rgb(var(--accent-rgb) / 42%);
+  --tag-album-text: #b9a6ff;
+  --tag-album-border: #3b3560;
+  --tag-mix-text: #7fd0b0;
+  --tag-mix-border: #2c4d42;
+  --tag-list-text: #9db8e8;
+  --tag-list-border: #34456b;
+
+  --bar-scrim-rgb: 15 16 22;
+  --bar-scrim-alpha: 22%;
+  --bar-text-dim: #b6bdd2;
+  --np-scrim-rgb: 15 16 22;
+  --np-panel-rgb: 9 11 17;
+  --np-overlay-rgb: 255 255 255;
+  --np-art-border: rgb(255 255 255 / 10%);
+  --np-context-shadow: 0 1px 6px rgb(0 0 0 / 60%);
+  --np-panel-shadow:
+    0 2px 6px rgb(0 0 0 / 16%),
+    0 18px 44px rgb(0 0 0 / 28%);
+  --np-fallback: radial-gradient(120% 100% at 50% 0%, #2b3560 0%, #161a2b 45%, var(--bg) 100%);
+
+  --radius: 10px;
+  --radius-sm: 7px;
+
+  --track-row-height: 38px;
+  --track-head-height: 34px;
+  --queue-row-height: 36px;
+  --density-gap: 14px;
+  --density-panel-pad: 14px;
+  --density-card-pad: 16px;
+  --density-view-pad: 20px 24px 28px;
+  --density-nav-pad: 9px 10px;
+  --density-field-gap: 10px;
+}
+
+/* Accents have two tones: one bright enough to sit on the dark surface, and one
+   dark enough to read as text on cream. Both are checked against their own
+   surface rather than reusing a single "brand" colour at every size. */
+:root[data-theme='dark'][data-accent='teal'] {
+  --accent: #3fc8b4;
+  --accent-rgb: 63 200 180;
+  --accent-strong: #7ee0d0;
+  --accent-contrast: #06201c;
+}
+
+:root[data-theme='dark'][data-accent='violet'] {
+  --accent: #a78bfa;
+  --accent-rgb: 167 139 250;
+  --accent-strong: #c4b0ff;
+  --accent-contrast: #140b2a;
+}
+
+:root[data-theme='dark'][data-accent='rose'] {
+  --accent: #f472b6;
+  --accent-rgb: 244 114 182;
+  --accent-strong: #ff9dcd;
+  --accent-contrast: #2a0717;
+}
+
+:root[data-theme='dark'][data-accent='amber'] {
+  --accent: #f2b84b;
+  --accent-rgb: 242 184 75;
+  --accent-strong: #ffd37a;
+  --accent-contrast: #241701;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #f2ece1;
+  --bg-rgb: 242 236 225;
+  --bg-raised: #fbf7ef;
+  --bg-raised-rgb: 251 247 239;
+  --bg-hover: #ebe2d4;
+  --bg-active: #e2d7c7;
+  --bg-sunken: #e9e0d2;
+  --bg-panel: #f8f2e8;
+  --bg-panel-rgb: 248 242 232;
+  --bg-elevated: #fdf9f2;
+  --bg-input: #fffdf8;
+  --bg-subtle: #f5eee4;
+  --bg-badge: #e7dccb;
+  --bg-art: #e6dccb;
+
+  --border: #d8cdbb;
+  --border-soft: #e7ddcf;
+  --border-strong: #c4b7a3;
+
+  --text: #2b2620;
+  --text-rgb: 43 38 32;
+  --text-dim: #625a4e;
+  --text-faint: #716657;
+
+  --accent: #3b5ccc;
+  --accent-rgb: 59 92 204;
+  --accent-strong: #2b47a8;
+  --accent-contrast: #fffdf8;
+  --danger: #b42335;
+  --danger-rgb: 180 35 53;
+  --danger-bg: #f8e3e3;
+  --danger-border: #e4b8b8;
+  --danger-text: #8f1f2c;
+  --ok: #1f7a5c;
+  --ok-rgb: 31 122 92;
+  --ok-border: #b7d8ca;
+
+  --scroll-thumb: #c3b6a2;
+  --scroll-thumb-hover: #a99a84;
+  --overlay-rgb: 43 38 32;
+  --knob: #fff;
+
+  --tag-album-text: #5b3fc0;
+  --tag-album-border: #c9bcf0;
+  --tag-mix-text: #1d6b58;
+  --tag-mix-border: #b7d8ca;
+  --tag-list-text: #35528a;
+  --tag-list-border: #bccbe6;
+
+  --bar-scrim-rgb: 242 236 225;
+  --bar-scrim-alpha: 75%;
+  --bar-text-dim: #554e43;
+  --np-scrim-rgb: 242 236 225;
+  --np-panel-rgb: 251 247 239;
+  --np-overlay-rgb: 43 38 32;
+  --np-art-border: rgb(43 38 32 / 14%);
+  --np-context-shadow: 0 1px 6px rgb(255 253 248 / 75%);
+  --np-panel-shadow:
+    0 2px 6px rgb(43 38 32 / 8%),
+    0 18px 44px rgb(43 38 32 / 16%);
+  --np-fallback: radial-gradient(120% 100% at 50% 0%, #dcd8ef 0%, #efe7dc 45%, var(--bg) 100%);
+}
+
+:root[data-theme='light'][data-accent='teal'] {
+  --accent: #0c7166;
+  --accent-rgb: 12 113 102;
+  --accent-strong: #0a5f57;
+  --accent-contrast: #fffdf8;
+}
+
+:root[data-theme='light'][data-accent='violet'] {
+  --accent: #6d4fd0;
+  --accent-rgb: 109 79 208;
+  --accent-strong: #5739b0;
+  --accent-contrast: #fffdf8;
+}
+
+:root[data-theme='light'][data-accent='rose'] {
+  --accent: #b83272;
+  --accent-rgb: 184 50 114;
+  --accent-strong: #98265d;
+  --accent-contrast: #fffdf8;
+}
+
+:root[data-theme='light'][data-accent='amber'] {
+  --accent: #8a5600;
+  --accent-rgb: 138 86 0;
+  --accent-strong: #7d4f00;
+  --accent-contrast: #fffdf8;
+}
+
+:root[data-density='compact'] {
+  --track-row-height: 32px;
+  --track-head-height: 30px;
+  --queue-row-height: 31px;
+  --density-gap: 10px;
+  --density-panel-pad: 10px;
+  --density-card-pad: 12px;
+  --density-view-pad: 16px 20px 22px;
+  --density-nav-pad: 7px 9px;
+  --density-field-gap: 8px;
+}
+
+:root[data-density='spacious'] {
+  --track-row-height: 46px;
+  --track-head-height: 40px;
+  --queue-row-height: 44px;
+  --density-gap: 18px;
+  --density-panel-pad: 18px;
+  --density-card-pad: 20px;
+  --density-view-pad: 24px 28px 34px;
+  --density-nav-pad: 11px 11px;
+  --density-field-gap: 14px;
+}
+
+/* Text size. Every font-size is `calc(Npx * var(--text-scale))`, so one value
+   scales headings, rows, metadata and the smallest hint together without
+   pretending a text preference is a density preference. */
+:root[data-text-size='small'] {
+  --text-scale: 1;
+}
+
+:root[data-text-size='medium'] {
+  --text-scale: 1.1;
+}
+
+:root[data-text-size='large'] {
+  --text-scale: 1.2;
+}
+
+:root[data-text-size='xlarge'] {
+  --text-scale: 1.3;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter Variable', 'Inter', 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: calc(14px * var(--text-scale));
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+/* Buttons inside a popover or a sidebar row: the default padding is sized for a
+   header, not for something sitting next to an input. */
+button.small {
+  padding: 5px 10px;
+  font-size: calc(12.5px * var(--text-scale));
+}
+
+input,
+select {
+  font: inherit;
+  color: inherit;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  min-width: 0;
+}
+
+input:focus-visible,
+select:focus-visible,
+button:focus-visible,
+tr:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+input[type='range'] {
+  padding: 0;
+  background: transparent;
+  border: none;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  padding: 0;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---------- shell ---------- */
+
+.app {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: 100%;
+}
+
+.boot-screen {
+  height: 100%;
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.boot-screen h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: calc(22px * var(--text-scale));
+}
+
+/* ---------- sidebar ---------- */
+
+.sidebar {
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 10px;
+  background: var(--bg-sunken);
+  border-right: 1px solid var(--border);
+  min-height: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 8px 14px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--text);
+}
+
+.brand svg {
+  width: 21px;
+  height: 21px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 9px 10px;
+  color: var(--text-dim);
+  text-align: left;
+}
+
+/* The glyph is the first thing the eye lands on in the sidebar; the old 16px
+   default was too small to tell the outlines apart. */
+.nav-item > svg {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+
+.nav-item:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.nav-item.active {
+  background: var(--bg-active);
+  border-color: var(--border-strong);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.nav-count {
+  margin-left: auto;
+  font-size: calc(11.5px * var(--text-scale));
+  font-weight: 400;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+/* The per-row counts are reference, not status: keep them out of the way and
+   reveal them when the row is hovered or focused. The footer carries the total. */
+.nav-item:hover .nav-count,
+.nav-item:focus-visible .nav-count {
+  opacity: 0.55;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 12px 8px 2px;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 6px;
+}
+
+.sidebar-stat {
+  display: flex;
+  justify-content: space-between;
+  font-size: calc(12px * var(--text-scale));
+  color: var(--text-faint);
+}
+
+.sidebar-stat strong {
+  color: var(--text-faint);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.82;
+}
+
+/* "All sources" is the one source line. The local/YouTube split lives in the
+   tooltip: repeating it here made the footer read as a dashboard. */
+.sidebar-source {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: calc(12px * var(--text-scale));
+  color: var(--text-faint);
+}
+
+.sidebar-source-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-source-total {
+  color: var(--text-faint);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.82;
+}
+
+/* ---------- main view ---------- */
+
+.main-view {
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  /* Belt and braces: every child below is width-constrained, but a stray wide
+     child must scroll vertically rather than drag the whole page sideways. */
+  overflow-x: hidden;
+  padding: 20px 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  /* Chromium's default overlay bar hides itself until the mouse moves. A thin
+     always-visible bar is the only cue that a long view continues below. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+
+/* SearchView stays mounted for the session so its results survive a trip to
+   another view. `hidden` still needs to win over the flex display above. */
+.main-view[hidden] {
+  display: none;
+}
+
+.main-view::-webkit-scrollbar {
+  width: 10px;
+}
+
+.main-view::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.main-view::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border: 2px solid var(--bg);
+  border-radius: 999px;
+}
+
+.main-view::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+}
+
+.view-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.view-heading h1 {
+  margin: 0 0 4px;
+  font-size: calc(21px * var(--text-scale));
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: calc(12.5px * var(--text-scale));
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Saved library views. Chips rather than a second sidebar: they change what
+   the same list shows, and the current one stays visible next to the search
+   field instead of moving the user somewhere else. */
+.library-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-dim);
+  font-size: calc(12px * var(--text-scale));
+}
+
+.filter-chip:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.filter-chip[aria-pressed='true'] {
+  border-color: rgb(var(--accent-rgb) / 46%);
+  background: rgb(var(--accent-rgb) / 12%);
+  color: var(--accent-strong);
+}
+
+.filter-count {
+  color: var(--text-faint);
+  font-size: calc(11px * var(--text-scale));
+  font-variant-numeric: tabular-nums;
+}
+
+.filter-chip[aria-pressed='true'] .filter-count {
+  color: inherit;
+  opacity: 0.72;
+}
+
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+}
+
+.search-field input {
+  border: none;
+  background: transparent;
+  width: 210px;
+  padding: 7px 0;
+}
+
+.search-field input:focus-visible {
+  outline: none;
+}
+
+/* ---------- banners ---------- */
+
+.banner {
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  font-size: calc(13px * var(--text-scale));
+}
+
+.banner.error {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.banner.scan {
+  display: grid;
+  gap: 8px;
+}
+
+.playing-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 0 rgb(var(--ok-rgb) / 45%);
+  animation: playing-pulse 1.8s ease-out infinite;
+}
+
+.playing-dot.paused {
+  background: var(--text-faint);
+  animation: none;
+  box-shadow: none;
+}
+
+@keyframes playing-pulse {
+  70% {
+    box-shadow: 0 0 0 7px rgb(var(--ok-rgb) / 0%);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(var(--ok-rgb) / 0%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .playing-dot {
+    animation: none;
+  }
+}
+
+.scan-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.scan-line strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.scan-file {
+  font-size: calc(11.5px * var(--text-scale));
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.scan-bar {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--bg-badge);
+  overflow: hidden;
+}
+
+.scan-bar-fill {
+  height: 100%;
+  width: 35%;
+  border-radius: 999px;
+  background: var(--accent);
+  animation: slide 1.15s ease-in-out infinite;
+}
+
+@keyframes slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+.link-button {
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  padding: 0 4px;
+  margin-left: auto;
+}
+
+/* A link that asks a second time before doing something destructive. */
+.link-button.danger {
+  color: var(--danger);
+}
+
+.link-button:hover {
+  background: transparent;
+  text-decoration: underline;
+  border: none;
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- empty states ---------- */
+
+.empty-state {
+  flex: 1;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+  color: var(--text-faint);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 40px;
+}
+
+.empty-state h2 {
+  margin: 4px 0 0;
+  font-size: calc(17px * var(--text-scale));
+  color: var(--text);
+}
+
+.empty-state p {
+  margin: 0;
+  max-width: 420px;
+  line-height: 1.5;
+}
+
+/* ---------- home ---------- */
+
+/* The Home view is narrow when the sidebar and a resized window leave little
+   room. Container queries keep the hero and cards aware of the pane, not the
+   window, the same way the track list already does. */
+.home-view {
+  container-type: inline-size;
+  container-name: home;
+  gap: 22px;
+}
+
+/* The view is a scroll container, not a fixed-height flex box. Without this the
+   hero can be squeezed to its min-height and clip the stats row when it wraps
+   below the copy at narrow sizes. */
+.home-view > * {
+  flex: 0 0 auto;
+}
+
+.home-header {
+  align-items: center;
+}
+
+.home-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(270px, 0.75fr);
+  gap: 24px;
+  align-items: center;
+  padding: 26px 28px;
+  min-height: 188px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 6px);
+  background:
+    linear-gradient(135deg, rgb(var(--accent-rgb) / 18%), transparent 58%),
+    var(--bg-panel);
+  box-shadow: 0 14px 38px rgb(0 0 0 / 0.08);
+}
+
+.home-hero-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  filter: saturate(1.2);
+  transform: scale(1.04);
+  pointer-events: none;
+  /* The art belongs to the right side of the hero; on the left it would sit
+     under the copy. The mask makes that fade part of the image itself, so the
+     overlay below does not have to wash the whole picture to keep text legible. */
+  mask-image: linear-gradient(90deg, transparent 0%, rgb(0 0 0 / 0.4) 38%, #000 82%);
+  transition: opacity 1100ms ease;
+}
+
+/* Full strength in both themes: the mask and the overlay, not a translucent
+   layer, are what keep the copy readable over the art. */
+.home-hero-backdrop.active {
+  opacity: 1;
+}
+
+.home-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(
+    90deg,
+    rgb(var(--bg-panel-rgb) / 92%) 0%,
+    rgb(var(--bg-panel-rgb) / 72%) 46%,
+    rgb(var(--bg-panel-rgb) / 22%) 100%
+  );
+  pointer-events: none;
+}
+
+.home-hero > :not(.home-hero-backdrop) {
+  position: relative;
+  z-index: 2;
+}
+
+.home-hero-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.home-kicker {
+  color: var(--accent);
+  font-size: calc(10.5px * var(--text-scale));
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.home-hero h2 {
+  margin: 0;
+  max-width: 20ch;
+  font-size: calc(30px * var(--text-scale));
+  line-height: 1.06;
+  letter-spacing: -0.025em;
+}
+
+.home-hero p {
+  margin: 0;
+  max-width: 54ch;
+  color: var(--text-dim);
+  line-height: 1.55;
+}
+
+.home-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.home-scan {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-faint);
+  font-size: calc(12px * var(--text-scale));
+}
+
+.home-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+  max-width: 460px;
+}
+
+.home-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  /* The accent wash keeps the boxes part of the hero instead of glass panels
+     floating on top of it. Blur and saturation stay behind the text, which
+     moves from faint to dim so the small uppercase labels keep their contrast. */
+  background:
+    linear-gradient(135deg, rgb(var(--accent-rgb) / 15%), transparent 72%),
+    rgb(var(--bg-raised-rgb) / 62%);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+}
+
+.home-stat strong {
+  font-size: calc(21px * var(--text-scale));
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.home-stat span {
+  color: var(--text-dim);
+  font-size: calc(11px * var(--text-scale));
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.home-section {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  min-width: 0;
+}
+
+.home-section[hidden] {
+  display: none;
+}
+
+.home-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.home-section-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: calc(16px * var(--text-scale));
+  letter-spacing: -0.015em;
+}
+
+.home-section-head h2 svg {
+  color: var(--accent);
+}
+
+/* A shelf's way into the full list. Text, not a bordered button: it sits on the
+   same baseline as the heading and should not compete with the cards. */
+.home-more {
+  padding: 3px 8px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-dim);
+  font-size: calc(11.5px * var(--text-scale));
+  font-weight: 600;
+}
+
+.home-more:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+/* The arrows live on the heading baseline, at the same weight as More. They are
+   a small affordance for a mouse, never the only way to reach a card. */
+.home-section-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.shelf-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+}
+
+.shelf-arrow:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.shelf-arrow:disabled {
+  opacity: 0.32;
+}
+
+.shelf-arrow svg {
+  display: block;
+}
+
+/* The list heading takes focus after a shelf's More, so the scroll lands
+   somewhere a screen reader announces. */
+.all-tracks-head h2:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.home-shelf {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(128px, 154px);
+  gap: 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 2px 10px;
+  scroll-snap-type: x proximity;
+  /* The arrows are the shelf's visible navigation. A scrollbar under every row
+     turned Home into a stack of bars, so the shelf still scrolls but hides its
+     track; the heading's prev/next buttons and the wheel-free drag remain. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.home-shelf::-webkit-scrollbar {
+  display: none;
+}
+
+.home-shelf > * {
+  scroll-snap-align: start;
+}
+
+.home-shelves-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 118px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-faint);
+}
+
+.home-empty {
+  min-height: 220px;
+}
+
+/* ---------- album / artist cards ---------- */
+
+.album-card {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.album-card-main,
+.artist-card-main,
+.playlist-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.album-card-main:hover:not(:disabled),
+.artist-card-main:hover:not(:disabled),
+.playlist-card:hover:not(:disabled) {
+  border-color: transparent;
+  background: transparent;
+}
+
+.album-card-main:focus-visible,
+.artist-card-main:focus-visible,
+.playlist-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+.album-card-art,
+.artist-card-art,
+.playlist-card-cover {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 2px);
+  background: var(--bg-art);
+  box-shadow: 0 10px 26px rgb(0 0 0 / 0.14);
+}
+
+.album-cover,
+.artist-cover,
+.album-detail-cover {
+  width: 100% !important;
+  height: 100% !important;
+  border: 0 !important;
+  border-radius: inherit !important;
+  object-fit: cover;
+}
+
+.album-card-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 42%, rgb(0 0 0 / 0.34));
+  opacity: 0;
+  transition: opacity 160ms ease;
+  pointer-events: none;
+}
+
+.album-card:hover .album-card-shade,
+.album-card:focus-within .album-card-shade {
+  opacity: 1;
+}
+
+.album-card-play {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  box-shadow: 0 6px 16px rgb(0 0 0 / 0.3);
+  opacity: 0;
+  transform: translateY(-3px);
+  transition: opacity 140ms ease, transform 140ms ease, background 120ms ease;
+}
+
+.album-card:hover .album-card-play,
+.album-card:focus-within .album-card-play,
+.artist-card:hover .album-card-play,
+.artist-card:focus-within .album-card-play {
+  opacity: 1;
+  transform: none;
+}
+
+/* The global button hover would replace the accent with the neutral hover
+   fill, which made the play badge look disabled just as the pointer reached
+   it. Keep the badge accent and only strengthen it. */
+.album-card-play:hover:not(:disabled),
+.album-card-play:focus:not(:disabled) {
+  background: var(--accent-strong);
+  border-color: transparent;
+  color: var(--accent-contrast);
+}
+
+.album-card-play:disabled {
+  opacity: 0.75;
+}
+
+/* The overflow control on a playlist card. It is always visible, because it is
+   the only way to Open a list now that the card itself plays; it sits over the
+   art like the play badge, at a smaller weight. */
+.card-overflow {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 50%;
+  background: rgb(12 14 20 / 46%);
+  color: #fff;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  opacity: 0.82;
+  transition: opacity 140ms ease, background 120ms ease;
+}
+
+.card-overflow:hover:not(:disabled),
+.card-overflow:focus-visible {
+  background: rgb(12 14 20 / 70%);
+  border-color: rgb(255 255 255 / 34%);
+  color: #fff;
+  opacity: 1;
+}
+
+.album-card-title {
+  display: block;
+  overflow: hidden;
+  color: var(--text);
+  font-size: calc(13.5px * var(--text-scale));
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.album-card-meta {
+  display: block;
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: calc(11.5px * var(--text-scale));
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artist-card {
+  position: relative;
+  min-width: 0;
+}
+
+/* A card lifts a few pixels on hover, or when one of its own controls holds
+   keyboard focus. The movement is the affordance: no extra shadow is drawn and
+   nothing overlays the artwork or the play button. Reduced motion collapses the
+   transition through the global motion rules. */
+.album-card,
+.artist-card,
+.playlist-card {
+  transition: transform 180ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.album-card:hover,
+.album-card:focus-within,
+.artist-card:hover,
+.artist-card:focus-within,
+.playlist-card:hover:not(:disabled),
+.playlist-card:focus-visible {
+  transform: translateY(-4px);
+}
+
+.artist-card-main {
+  align-items: center;
+  text-align: center;
+}
+
+.artist-card-art {
+  width: 100%;
+  border-radius: 50%;
+}
+
+.artist-cover {
+  border-radius: 50% !important;
+}
+
+.artist-card-name {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: calc(13.5px * var(--text-scale));
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artist-card-meta {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: calc(11px * var(--text-scale));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playlist-card-cover {
+  display: grid;
+  place-items: center;
+  color: #fff;
+  border-color: transparent;
+}
+
+.playlist-card-cover[data-tone='0'] {
+  background: linear-gradient(140deg, #2d3e73, #6c8cff);
+}
+
+.playlist-card-cover[data-tone='1'] {
+  background: linear-gradient(140deg, #1f5c55, #3fc8b4);
+}
+
+.playlist-card-cover[data-tone='2'] {
+  background: linear-gradient(140deg, #4a356f, #a78bfa);
+}
+
+.playlist-card-cover[data-tone='3'] {
+  background: linear-gradient(140deg, #6d2e50, #f472b6);
+}
+
+.playlist-card-cover[data-tone='4'] {
+  background: linear-gradient(140deg, #684d1e, #f2b84b);
+}
+
+.playlist-card-initial {
+  font-size: calc(38px * var(--text-scale));
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  opacity: 0.9;
+}
+
+/* ---------- all tracks ---------- */
+
+.all-tracks-section {
+  scroll-margin-top: 18px;
+}
+
+.all-tracks-head {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.all-tracks-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: calc(17px * var(--text-scale));
+  letter-spacing: -0.015em;
+}
+
+.all-tracks-head h2 svg {
+  color: var(--accent);
+}
+
+.all-tracks-head p {
+  margin: 3px 0 0;
+  color: var(--text-faint);
+  font-size: calc(11.5px * var(--text-scale));
+}
+
+.all-tracks-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.all-tracks-chip {
+  color: var(--text);
+  border-color: var(--choice-selected-border);
+  background: var(--choice-selected-bg);
+}
+
+.tracks-search input {
+  width: 188px;
+}
+
+/* The list is a scrolling table inside a scrolling page, so it needs a height of
+   its own. The clamp keeps it useful on a laptop without swallowing a tall
+   window whole. */
+.all-tracks-list {
+  display: flex;
+  height: clamp(300px, 52vh, 640px);
+  min-height: 0;
+}
+
+.all-tracks-list > * {
+  flex: 1;
+}
+
+.all-tracks-end {
+  margin: 0;
+  padding: 4px 0;
+  color: var(--text-faint);
+  font-size: calc(11.5px * var(--text-scale));
+  text-align: center;
+}
+
+.all-tracks-empty {
+  min-height: 200px;
+}
+
+/* A quiet source label after a row's title. It borrows the badge palette of the
+   Search view but drops the uppercase shout: every row carries one, and eight
+   shouting labels in a row is noise. */
+.row-badge.source-badge {
+  flex: none;
+  padding: 1px 5px;
+  font-size: calc(9.5px * var(--text-scale));
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+/* Source replaces Album in Home's merged feed. The badge is the whole cell,
+   so it sits on the same centre line as the title and artist. */
+.track-head .col-source,
+.track-row .col-source {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+/* ---------- album detail ---------- */
+
+.home-back {
+  align-self: flex-start;
+  padding: 5px 9px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-dim);
+}
+
+.home-back:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.album-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.album-detail-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 24px;
+  padding: 22px 24px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 6px);
+  background:
+    linear-gradient(135deg, rgb(var(--accent-rgb) / 14%), transparent 62%),
+    var(--bg-panel);
+}
+
+.album-detail-art {
+  display: block;
+  flex: none;
+  width: clamp(140px, 22vw, 200px);
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-art);
+  box-shadow: 0 16px 38px rgb(0 0 0 / 0.22);
+}
+
+.album-detail-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  min-width: 0;
+}
+
+.album-detail-copy h2 {
+  margin: 0;
+  font-size: clamp(
+    calc(26px * var(--text-scale)),
+    3.8vw,
+    calc(42px * var(--text-scale))
+  );
+  line-height: 1.04;
+  letter-spacing: -0.035em;
+  overflow-wrap: anywhere;
+}
+
+.album-detail-artist {
+  margin: 2px 0 0;
+  color: var(--text);
+  font-size: calc(14px * var(--text-scale));
+  font-weight: 600;
+}
+
+.album-detail-meta {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: calc(12px * var(--text-scale));
+}
+
+.album-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.album-detail-tracks {
+  display: flex;
+  height: clamp(300px, 52vh, 640px);
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+}
+
+.album-detail-tracks > * {
+  flex: 1;
+}
+
+.album-detail-loading {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  color: var(--text-faint);
+}
+
+.album-detail-empty {
+  border: 0;
+  border-radius: 0;
+}
+
+.album-selection-bar {
+  padding: 0 4px;
+}
+
+@container home (max-width: 780px) {
+  .home-hero {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 22px;
+  }
+
+  .home-hero h2 {
+    font-size: calc(25px * var(--text-scale));
+  }
+
+  .home-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .home-stat {
+    padding: 10px;
+  }
+
+  .home-stat strong {
+    font-size: calc(17px * var(--text-scale));
+  }
+
+  .album-detail-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .album-detail-art {
+    width: min(52%, 200px);
+  }
+}
+
+@container home (max-width: 560px) {
+  .home-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-shelf {
+    grid-auto-columns: minmax(116px, 138px);
+  }
+
+  .all-tracks-tools,
+  .tracks-search,
+  .tracks-search input {
+    width: 100%;
+  }
+
+  .all-tracks-tools {
+    align-items: stretch;
+  }
+}
+
+/* A quiet accent edge makes the current destination easier to find than a
+   slightly different rectangle. It is the only visual change to the sidebar. */
+.nav-item {
+  border-radius: var(--radius-sm);
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.nav-item.active {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+::selection {
+  background: rgb(var(--accent-rgb) / 30%);
+}
+
+
+/* ---------- track list (virtualized) ---------- */
+
+/* The default column holds one icon (the row menu). Saving adds a second,
+   queueing a third. Remove is only a direct icon when the list has no row menu,
+   so most rows stay at one or two. */
+.track-list.has-remove,
+.track-list.has-save,
+.track-list.has-queue {
+  --track-actions: 88px;
+}
+
+.track-list.has-save.has-queue,
+.track-list.has-remove.has-save,
+.track-list.has-remove.has-queue {
+  --track-actions: 118px;
+}
+
+.track-list.has-save.has-remove.has-queue {
+  --track-actions: 148px;
+}
+
+/* One source of truth for the column widths: the header and every row are the
+   same grid, so they line up without a <table>. Hiding a column in a container
+   query therefore has to redefine the template as well as hide the cells.
+
+   Format is deliberately absent: it is a library fact, not something to scan
+   while choosing what to play, and the same 118px buy the title and artist a
+   whole extra word. It lives in the row's Details sheet instead. */
+.track-list {
+  /* Title is the only flexible track. Artist/Channel and Album are equal,
+     bounded metadata columns; Index, Duration and Actions stay fixed so the eye
+     can find them without reading. Index and Duration scale with the text
+     preset: they are fixed relative to the title, not frozen while its own
+     label grows. The album and artist widths live in variables so Settings can
+     collapse either column without changing the template for every other
+     width. */
+  --index-track: max(56px, calc(48px * var(--text-scale)));
+  --meta-track: minmax(96px, 168px);
+  --artist-track: var(--meta-track);
+  --album-track: var(--meta-track);
+  --time-track: max(84px, calc(72px * var(--text-scale)));
+  --track-columns: var(--index-track) minmax(0, 1fr) var(--artist-track) var(--album-track) var(--time-track) var(--track-actions, 58px);
+  --row-height: var(--track-row-height);
+
+  /* Columns are chosen by the width of the list, not of the window. The same
+     list sits in panes of very different widths (the library takes what the
+     sidebar leaves; a playlist takes what its index leaves), so a window-wide
+     breakpoint is wrong for both: a 1180px window leaves a playlist list barely
+     660px, where the fixed columns alone used to consume the title's whole
+     share. Querying the list itself makes every pane choose its own layout. */
+  container-type: inline-size;
+  container-name: track-list;
+
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+
+
+/* Hiding a column collapses its track and removes its cells. Every remaining
+   cell is placed explicitly below: `display:none` takes a cell out of grid
+   auto-placement, so without explicit columns the next cell would slide into the
+   hidden track and Duration would land in a zero-width column. */
+.track-list[data-album-column='hide'] {
+  --album-track: 0px;
+}
+
+.track-list[data-album-column='hide'] .col-album {
+  display: none;
+}
+
+.track-list[data-artist-column='hide'] {
+  --artist-track: 0px;
+}
+
+.track-list[data-artist-column='hide'] .col-artist {
+  display: none;
+}
+
+.track-head,
+.track-row {
+  display: grid;
+  grid-template-columns: var(--track-columns);
+  align-items: center;
+}
+
+/* Fixed placement for all six columns at the base width. The container
+   queries below move the last two when Album or Artist is dropped, so a hidden
+   cell can never change where Duration and Actions sit. */
+.track-head .col-index,
+.track-row .col-index {
+  grid-column: 1;
+}
+
+.track-head .col-title,
+.track-row .col-title {
+  grid-column: 2;
+}
+
+.track-head .col-artist,
+.track-row .col-artist {
+  grid-column: 3;
+}
+
+.track-head .col-album,
+.track-row .col-album {
+  grid-column: 4;
+}
+
+.track-head .col-time,
+.track-row .col-time {
+  grid-column: 5;
+}
+
+.track-head .col-actions,
+.track-row .col-actions {
+  grid-column: 6;
+}
+
+.track-head {
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+  /* Rows scroll inside `.list-scroll`, whose classic scrollbar shortens their
+     grid. The header lives outside that scroller, so mirror the exact width
+     TrackList measures instead of letting Duration drift by a scrollbar. */
+  padding-right: var(--list-scrollbar, 0px);
+}
+
+.head-cell {
+  padding: 0 12px;
+  font-size: calc(11.5px * var(--text-scale));
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-faint);
+  font-weight: 600;
+  height: var(--track-head-height);
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  /* A last line of defence: if a column is ever narrower than its label, the
+     label is clipped rather than painted over its neighbour. The container
+     queries below keep that from happening in the first place. */
+  min-width: 0;
+  overflow: hidden;
+}
+
+.head-cell.col-index,
+.head-cell.col-time,
+.head-cell.col-actions {
+  justify-content: flex-end;
+}
+
+/* Once selection is active, the # header is the select-all control. It is
+   centered like the row checkboxes below it and gets the same forgiving hit
+   area as a row checkbox. */
+.head-cell.col-index.head-select-cell {
+  justify-content: center;
+  padding: 0;
+}
+
+.head-select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  margin: -4px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.head-select:hover {
+  background: rgb(var(--overlay-rgb) / 8%);
+}
+
+.head-select input {
+  display: block;
+  margin: 0;
+}
+
+.sort-button {
+  background: transparent;
+  border: none;
+  padding: 0;
+  gap: 5px;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+}
+
+.sort-button:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text);
+}
+
+/* The scroll container is the single tab stop (role="grid"). */
+.list-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  outline-offset: -2px;
+}
+
+.list-rows {
+  position: relative;
+}
+
+/* Translated to the first rendered row; the spacer height above it comes from
+   .list-rows, so the scrollbar reflects the whole result set. */
+.list-window {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  will-change: transform;
+}
+
+.track-row {
+  height: var(--row-height);
+  cursor: default;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--text-dim);
+  user-select: none;
+}
+
+.track-row .cell {
+  padding: 0 12px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.track-row:hover {
+  background: var(--bg-hover);
+}
+
+.track-row.selected {
+  background: var(--row-selected);
+}
+
+/* Keyboard cursor: visible while the grid has focus, so tabbing back into the
+   list shows where you left off. */
+.track-row.active {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.track-row.current {
+  background: var(--row-current);
+  color: var(--text);
+}
+
+.track-row.current .col-title {
+  font-weight: 600;
+}
+
+.track-row.current.selected {
+  background: var(--row-current-selected);
+}
+
+.cell.col-index {
+  text-align: right;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.cell.col-title {
+  color: var(--text);
+  font-weight: 500;
+  /* Artwork sits in front of the title, so this cell lays out as a row. The
+     text keeps its own ellipsis, which a flex container would otherwise lose. */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.row-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- hover-revealing metadata ---------- */
+
+/* Artist and Channel are deliberately narrow. A long name truncates with an
+   ellipsis, then scrolls just far enough to show its end while hovered. The
+   inner box owns the ellipsis; on hover it becomes its natural width and the
+   outer box keeps clipping, so nothing outside the cell moves. */
+.scrolling-text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.scrolling-text-inner {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scrolling-text.is-overflowing:hover .scrolling-text-inner {
+  width: max-content;
+  overflow: visible;
+  animation: scrolling-text-reveal var(--scroll-duration, 4s) ease-in-out infinite alternate;
+}
+
+@keyframes scrolling-text-reveal {
+  0%,
+  12% {
+    transform: translateX(0);
+  }
+
+  88%,
+  100% {
+    transform: translateX(var(--scroll-distance, 0px));
+  }
+}
+
+/* ---------- artwork ---------- */
+
+.artwork {
+  flex: none;
+  display: block;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-art);
+  object-fit: cover;
+}
+
+.artwork-empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+}
+
+/* Visuals preferences, published as data attributes on `.app` by App.tsx.
+   A circle is a single override rather than a per-element radius, because the
+   preference is about artwork in general and every piece should follow it
+   whatever size it happens to be. */
+.app[data-artwork-shape='circle'] .artwork {
+  border-radius: 50%;
+}
+
+/* Artwork size, published the same way. The presets are a multiplier on the
+   viewport-relative size above rather than a pixel value, so each one still
+   respects the window it is in. */
+.app[data-artwork-size='small'] {
+  --np-art-scale: 0.75;
+}
+
+.app[data-artwork-size='large'] {
+  --np-art-scale: 1.15;
+}
+
+.app[data-artwork-size='xlarge'] {
+  --np-art-scale: 1.3;
+}
+
+/* `contain` is not a letterbox any more: the box takes the cover's own
+   proportions, so nothing is ever cut off and nothing is ever left blank.
+   `min(size, size * ratio)` fills the box on the constraining axis and the ratio
+   gives the other one, which is what keeps a wide cover wide and a tall cover
+   tall without either of them overflowing the space the window allows.
+   The fallback of 1 applies until the image decodes and ArtworkImage publishes
+   the real ratio, so the reserved space is a full-size square either way. */
+.np-art[data-sizing='fit'] {
+  width: min(var(--np-art-size), calc(var(--np-art-size) * var(--art-scale, 1)));
+  height: auto;
+  aspect-ratio: var(--art-scale, 1);
+}
+
+/* A circle only exists on a square, so round artwork is cropped back to one
+   instead: fitting a wide cover into a round frame leaves an oval that cuts the
+   corners off the very thing the fit was meant to show whole. The Settings view
+   disables the fit control while the shape is round, for the same reason. */
+.app[data-artwork-shape='circle'] .np-art[data-sizing='fit'] {
+  width: var(--np-art-size);
+  height: var(--np-art-size);
+  aspect-ratio: 1;
+}
+
+.row-art {
+  border-radius: 3px;
+}
+
+.cell.col-time {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cell.col-actions {
+  text-align: right;
+  text-overflow: clip;
+}
+
+.list-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px;
+  font-size: calc(12px * var(--text-scale));
+  color: var(--text-faint);
+  border-top: 1px solid var(--border);
+  flex: none;
+}
+
+.selection-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Clear sits at the end where "Select all loaded" used to be, but it stays a
+   normal button: a selection bar is a row of actions, not a row of links. */
+.selection-bar .selection-clear {
+  margin-left: auto;
+}
+
+.selection-bar .danger-button {
+  color: var(--danger);
+  border-color: var(--danger-border);
+}
+
+.clear-search {
+  padding: 2px;
+}
+
+/* When the list is too narrow to show them comfortably, the least important
+   columns are dropped instead of squeezing every column down to an ellipsis.
+   The fixed columns are #, Duration and Actions; the title is the only flexible
+   remainder. Dropping Album at 820px leaves the title at least ~220px even for
+   an imported list, whose action column is widest. Source shares Album's track,
+   so it has to leave with it — including the cell-level display that puts the
+   badge on the centre line. */
+@container track-list (max-width: 820px) {
+  .track-head,
+  .track-row {
+    --track-columns: var(--index-track) minmax(0, 1fr) var(--artist-track) var(--time-track) var(--track-actions, 58px);
+  }
+
+  .track-head .col-album,
+  .track-row .col-album {
+    display: none;
+  }
+
+  .track-head .col-time,
+  .track-row .col-time {
+    grid-column: 4;
+  }
+
+  .track-head .col-actions,
+  .track-row .col-actions {
+    grid-column: 5;
+  }
+}
+
+@container track-list (max-width: 660px) {
+  .track-head,
+  .track-row {
+    --track-columns: var(--index-track) minmax(0, 1fr) var(--time-track) var(--track-actions, 58px);
+  }
+
+  .col-artist {
+    display: none;
+  }
+
+  .track-head .col-time,
+  .track-row .col-time {
+    grid-column: 3;
+  }
+
+  .track-head .col-actions,
+  .track-row .col-actions {
+    grid-column: 4;
+  }
+}
+
+/* The row number doubles as a play button on hover. */
+.row-play {
+  display: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.row-play:hover {
+  background: transparent;
+  border: none;
+  color: var(--accent-strong);
+}
+
+.track-row:hover .row-play {
+  display: inline-flex;
+}
+
+.track-row:hover .row-number {
+  display: none;
+}
+
+/* Once one row is selected the index column is the selection control. Keep the
+   checkbox itself small, but give it a little padding so it is not a 16px target. */
+.track-row.selecting .cell.col-index {
+  text-align: center;
+}
+
+.row-select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  margin: -4px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.row-select:hover {
+  background: rgb(var(--overlay-rgb) / 8%);
+}
+
+.row-select input {
+  display: block;
+  margin: 0;
+}
+
+.playing-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 22%);
+}
+
+.icon-button {
+  padding: 6px;
+  background: transparent;
+  border-color: transparent;
+}
+
+.icon-button svg {
+  width: 17px;
+  height: 17px;
+}
+
+.icon-button.subtle {
+  color: var(--text-faint);
+}
+
+/* The tick on a row that is already in the library. It stays disabled (there is
+   nothing left to do), so it must not fade into the background like a dead
+   action. */
+.icon-button.saved {
+  color: var(--ok);
+}
+
+.icon-button.saved:disabled {
+  opacity: 0.9;
+}
+
+.icon-button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+  border-radius: 50%;
+  width: 38px;
+  height: 38px;
+  justify-content: center;
+}
+
+.icon-button.primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+/* ---------- settings tabs ---------- */
+
+.settings-view {
+  /* The tab body owns the scrollbar, so the heading and the tab strip stay put. */
+  overflow: hidden;
+}
+
+.settings-tabs {
+  display: flex;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-panel);
+}
+
+.settings-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: calc(12.5px * var(--text-scale));
+  font-weight: 500;
+  text-align: center;
+}
+
+.settings-tab:last-child {
+  border-right: 0;
+}
+
+.settings-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.settings-tab.active {
+  background: var(--bg-active);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.settings-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: rgb(var(--overlay-rgb) / 1%);
+  overflow: hidden;
+}
+
+.settings-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  /* Keep long card content from adding a horizontal scrollbar. Tooltips live
+     in a portal, so they never ask this clip for room. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 14px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+
+.settings-panel[hidden] {
+  display: none;
+}
+
+.settings-panel::-webkit-scrollbar {
+  width: 10px;
+}
+
+.settings-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.settings-panel::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border: 2px solid var(--bg-panel);
+  border-radius: 999px;
+}
+
+.settings-panel::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+}
+
+/* ---------- cards (settings) ---------- */
+
+/* The outer grid holds either two independent `.cards-col` stacks (Appearance,
+   Streaming, Misc) or direct cards (General, About), which auto-place two per
+   row. `minmax(0, 1fr)` and `min-width: 0` matter: a plain 1fr track
+   refuses to shrink below its content, which is what pushed the grid past the
+   window and produced the horizontal scrollbar. */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 14px;
+}
+
+.cards-col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* About is a single wide card; every other direct card is placed by the
+   two-column grid. */
+.cards > .about-card {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1120px) {
+  .cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.card {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: grid;
+  /* A single auto-sized track refuses to go below the min-content of its widest
+     child. Nowrap content (file paths, tool version strings) is wide, so the
+     track — and every child in it — would be laid out past the card's own edge.
+     minmax(0, 1fr) lets the track shrink and pushes the truncation into the
+     children, where the ellipsis is. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.card-header h2 {
+  margin: 0;
+  font-size: calc(15px * var(--text-scale));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---------- equalizer ---------- */
+
+/* A settings card action that belongs to the left edge, such as the scan
+   button: it starts where the card text starts, not under the last control. */
+.card-actions.start {
+  justify-content: flex-start;
+}
+
+/* The curve is a playback control, so its panel hangs off the player bar and
+   leaves the rest of the app usable. It is deliberately short: ten upright
+   faders fit in one row above the bar, so opening the equalizer never covers
+   the transport it belongs to. Anchored to the bar itself so it still opens
+   from Settings on a narrow window, where the right-hand cluster hides. */
+.eq-panel {
+  position: absolute;
+  right: 18px;
+  bottom: calc(100% + 10px);
+  z-index: 40;
+  display: grid;
+  gap: 10px;
+  width: min(580px, calc(100vw - 36px));
+  max-height: min(calc(100vh - 120px), 420px);
+  overflow: auto;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgb(var(--bg-panel-rgb) / 96%);
+  backdrop-filter: blur(18px) saturate(120%);
+  box-shadow: var(--np-panel-shadow);
+  animation: eq-panel-in 160ms ease-out;
+}
+
+@keyframes eq-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.eq-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.eq-panel-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.eq-panel-title > span {
+  color: var(--accent);
+  font-size: calc(10px * var(--text-scale));
+  font-weight: 650;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+}
+
+.eq-panel-title h2 {
+  margin: 2px 0 0;
+  color: var(--text);
+  font-size: calc(16px * var(--text-scale));
+}
+
+.eq-enable {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-dim);
+  font-size: calc(12px * var(--text-scale));
+  cursor: pointer;
+  user-select: none;
+}
+
+.eq-enable input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.eq-panel-tools {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+}
+
+.eq-preset-field {
+  flex: 1 1 180px;
+  max-width: 240px;
+}
+
+.eq-reset {
+  flex: none;
+}
+
+/* One strip of upright faders, preamp separated from the ten bands. The whole
+   curve is visible at once; a two-row horizontal grid made the panel tall and
+   read as a form rather than a playback control. */
+.eq-faders {
+  display: grid;
+  grid-template-columns: auto 1px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 12px;
+  padding: 10px 12px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+
+.eq-preamp,
+.eq-band {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  justify-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.eq-preamp {
+  min-width: 46px;
+}
+
+.eq-preamp > span:first-child,
+.eq-band > span:first-child {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--text-faint);
+  font-size: calc(10.5px * var(--text-scale));
+  text-align: center;
+  white-space: nowrap;
+}
+
+.eq-fader-divider {
+  width: 1px;
+  background: var(--border);
+}
+
+/* Native range, turned upright. `direction: rtl` puts the top of the travel at
+   the maximum gain, which is how a fader is read. */
+.eq-fader {
+  align-self: center;
+  width: 20px;
+  height: 112px;
+  margin: 0;
+  padding: 0;
+  appearance: auto;
+  accent-color: var(--accent);
+  writing-mode: vertical-lr;
+  direction: rtl;
+}
+
+.eq-bands {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+}
+
+.eq-readout {
+  color: var(--text-dim);
+  font-size: calc(10.5px * var(--text-scale));
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .eq-panel {
+    right: 12px;
+    width: calc(100vw - 24px);
+  }
+
+  .eq-bands {
+    gap: 3px;
+  }
+}
+
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.replay-gain-run {
+  display: grid;
+  gap: 6px;
+}
+
+.replay-gain-run progress {
+  width: 100%;
+  height: 6px;
+  appearance: none;
+  border: none;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--bg-badge);
+}
+
+.replay-gain-run progress::-webkit-progress-bar {
+  background: var(--bg-badge);
+  border-radius: 999px;
+}
+
+.replay-gain-run progress::-webkit-progress-value {
+  background: var(--accent);
+  border-radius: 999px;
+}
+
+.card-hint {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: calc(12.5px * var(--text-scale));
+  line-height: 1.55;
+}
+
+.card-subtitle {
+  margin: 4px 0 0;
+  font-size: calc(12.5px * var(--text-scale));
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  color: var(--text-dim);
+}
+
+.card-subtitle:first-of-type {
+  margin-top: 0;
+}
+
+.card-hint.status-error {
+  color: var(--danger);
+}
+
+.provider-actions {
+  margin-top: -2px;
+}
+
+/* The About card spans both columns, so keep its prose at a readable line length. */
+.about-card .card-hint {
+  max-width: 96ch;
+}
+
+.badge {
+  font-size: calc(10.5px * var(--text-scale));
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--bg-badge);
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.folder-list,
+.path-list,
+.status-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  /* Same trap as .card: without it each row is laid out at the width of the
+     longest unbreakable path inside it. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+.folder-list li,
+.path-list li,
+.status-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: calc(12.5px * var(--text-scale));
+}
+
+.folder-path,
+.path-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: calc(11.5px * var(--text-scale));
+}
+
+.path-label,
+.status-name {
+  color: var(--text-faint);
+  min-width: 88px;
+  font-size: calc(12px * var(--text-scale));
+}
+
+.status-list li.ok {
+  border-color: var(--ok-border);
+}
+
+.status-list li.bad {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+
+.status-list li.ok .status-name::after {
+  content: ' ✓';
+  color: var(--ok);
+}
+
+.status-list li.bad .status-name::after {
+  content: ' ✕';
+  color: var(--danger);
+}
+
+.status-value {
+  color: var(--text-dim);
+  font-size: calc(12px * var(--text-scale));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.choice-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.choice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  cursor: pointer;
+}
+
+.choice.selected {
+  border-color: var(--choice-selected-border);
+  background: var(--choice-selected-bg);
+}
+
+.choice span {
+  display: grid;
+  gap: 3px;
+}
+
+.choice strong {
+  font-size: calc(13px * var(--text-scale));
+}
+
+.choice em {
+  font-style: normal;
+  font-size: calc(12px * var(--text-scale));
+  color: var(--text-faint);
+  line-height: 1.45;
+}
+
+.field-grid {
+  display: grid;
+  gap: 10px;
+  /* min(170px, 100%) keeps the track from forcing a minimum width on the card
+     when the window is narrow. */
+  grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
+}
+
+.field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 5px;
+  min-width: 0;
+}
+
+.field > span {
+  font-size: calc(12px * var(--text-scale));
+  color: var(--text-faint);
+}
+
+.field > span output {
+  margin-left: 4px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.field input[type='range'] {
+  width: 100%;
+}
+
+/* A read-only note under a control. It names the concrete values behind a
+   friendly label (px behind Small/Medium/Large/Extra large) without becoming a
+   second control. */
+.field-note {
+  margin: -2px 0 2px;
+  font-size: calc(11px * var(--text-scale));
+  line-height: 1.4;
+  color: var(--text-faint);
+}
+
+.field.wide {
+  grid-column: 1 / -1;
+}
+
+.field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.field-row input {
+  flex: 1 1 130px;
+}
+
+.field.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  grid-column: 1 / -1;
+}
+
+.field.checkbox span {
+  font-size: calc(12.5px * var(--text-scale));
+  color: var(--text-dim);
+}
+
+/* Column controls are grouped by the lists they actually change: a local list
+   and an imported YouTube list no longer share one ambiguous pair of labels. */
+.column-toggle-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 10px;
+}
+
+.column-toggle-group {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+
+.column-toggle-group h3 {
+  margin: 0;
+  font-size: calc(11.5px * var(--text-scale));
+  font-weight: 650;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.column-toggle-group .field.checkbox {
+  align-items: flex-start;
+}
+
+.column-toggle-group .field-note {
+  margin: 0;
+}
+
+/* ---------- queue ---------- */
+
+.queue-table {
+  /* Header and rows share one template. The jump button takes the first five
+     tracks and the remove button the last, so the header can be a plain grid. */
+  --queue-columns: 44px minmax(0, 1fr) 156px 156px 92px 44px;
+
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+.queue-head {
+  display: grid;
+  grid-template-columns: var(--queue-columns);
+  align-items: center;
+  flex: none;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+.queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  /* Without this the grid distributes the leftover height across the rows and
+     two queue entries become two 300px bands. */
+  align-content: start;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+.queue-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--queue-columns);
+  align-items: center;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+/* Sits above the jump button rather than inside it: a checkbox inside a button is
+   invalid, and nesting it would make every checkbox click also ask to play. */
+.queue-select {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  cursor: pointer;
+}
+
+.queue-select:hover {
+  background: rgb(var(--overlay-rgb) / 7%);
+}
+
+.queue-select input {
+  display: block;
+  margin: 0;
+}
+
+.queue-item:last-child {
+  border-bottom: none;
+}
+
+.queue-jump {
+  grid-column: 1 / 6;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 156px 156px 92px;
+  align-items: center;
+  gap: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  height: var(--queue-row-height);
+  text-align: left;
+  color: var(--text-dim);
+}
+
+.queue-jump:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: transparent;
+}
+
+.queue-item.current .queue-jump {
+  background: var(--row-current);
+  color: var(--text);
+}
+
+.queue-item.current .queue-title {
+  font-weight: 600;
+}
+
+.queue-jump > span {
+  padding: 0 12px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.queue-jump > .queue-position {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  padding: 0 6px;
+}
+
+.queue-grip {
+  display: none;
+  flex: none;
+  align-items: center;
+  color: var(--text-faint);
+}
+
+/* The number is the at-a-glance position; the grip replaces it under the pointer
+   so a long queue's three-digit index still has the full cell. */
+.queue-item .queue-jump:hover .queue-grip,
+.queue-jump:focus-visible .queue-grip {
+  display: inline-flex;
+}
+
+.queue-item .queue-jump:hover .queue-number,
+.queue-jump:focus-visible .queue-number {
+  display: none;
+}
+
+.queue-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.queue-title-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.queue-title-cell .queue-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.queue-row-art {
+  flex: none;
+  border-radius: 4px;
+}
+
+.queue-position {
+  text-align: right;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.queue-title {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.queue-source {
+  color: var(--text-faint);
+}
+
+.queue-time {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.queue-remove {
+  grid-column: 6;
+  justify-self: center;
+}
+
+/* The row itself is the drag source, but the visible surface is the jump button
+   inside it, so both the cursor and the drop line belong there. */
+.queue-item[draggable='true'] .queue-jump {
+  cursor: grab;
+}
+
+.queue-item.dragging {
+  opacity: 0.4;
+}
+
+.queue-item.dragging .queue-jump {
+  cursor: grabbing;
+}
+
+.queue-item.drop-before .queue-jump {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.queue-item.drop-after .queue-jump {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.queue-item.current.drop-before .queue-jump {
+  box-shadow: inset 2px 0 0 var(--accent), inset 0 2px 0 var(--accent);
+}
+
+.queue-item.current.drop-after .queue-jump {
+  box-shadow: inset 2px 0 0 var(--accent), inset 0 -2px 0 var(--accent);
+}
+
+@media (max-width: 1150px) {
+  .queue-table {
+    --queue-columns: 44px minmax(0, 1fr) 156px 92px 44px;
+  }
+
+  .queue-jump {
+    grid-column: 1 / 5;
+    grid-template-columns: 44px minmax(0, 1fr) 156px 92px;
+  }
+
+  .queue-remove {
+    grid-column: 5;
+  }
+
+  .queue-source {
+    display: none;
+  }
+
+  .queue-head .col-source {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .queue-table {
+    --queue-columns: 44px minmax(0, 1fr) 92px 44px;
+  }
+
+  .queue-jump {
+    grid-column: 1 / 4;
+    grid-template-columns: 44px minmax(0, 1fr) 92px;
+  }
+
+  .queue-remove {
+    grid-column: 4;
+  }
+
+  .queue-artist {
+    display: none;
+  }
+
+  .queue-head .col-artist {
+    display: none;
+  }
+}
+
+/* ---------- player bar ---------- */
+
+.player-bar {
+  position: relative;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: minmax(180px, 280px) minmax(0, 1fr) minmax(140px, 200px);
+  align-items: center;
+  gap: 16px;
+  padding: 10px 18px;
+  background: var(--bg-sunken);
+  border-top: 1px solid var(--border);
+}
+
+/* The cover, spread across the whole bar and masked away towards every edge.
+   Clipped to the now-playing tile (which is what this used to be) it read as a
+   lit rectangle with a border sitting inside a flat bar — visibly a box, and the
+   opposite of ambient. The mask is what removes the border: the glow reaches its
+   strongest near the artwork and is gone before it meets any edge, so there is no
+   line where it stops.
+   Two elements, one mask axis each. A single radial gradient cannot do this: one
+   wide enough to cover the bar is still near its centre at the far edge, and a
+   `mask-composite` of two gradients makes the result depend on which end of the
+   list a browser reads as the base. Nesting removes the ambiguity. */
+.player-bar-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    #000 10%,
+    rgb(0 0 0 / 58%) 46%,
+    transparent 88%
+  );
+  pointer-events: none;
+}
+
+.player-bar-glow {
+  position: absolute;
+  /* Clipped by `.player-bar-bg`, so overscanning here is free. */
+  inset: -80% -20% -30%;
+  background-size: cover;
+  background-position: center;
+  filter: blur(44px) saturate(130%) brightness(118%);
+  opacity: 0.5;
+  mask-image: linear-gradient(180deg, transparent 0%, #000 60%, #000 100%);
+}
+
+/* A theme-coloured scrim keeps the ambience a tint rather than a background.
+   Cream is much less forgiving than the Midnight theme: a blue cover behind dark
+   text took the elapsed-time contrast below 2:1 without this. The scrim is
+   inside the masked element, so it fades with the glow instead of creating a
+   rectangle. */
+.player-bar-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgb(var(--bar-scrim-rgb) / var(--bar-scrim-alpha));
+}
+
+/* Everything in the bar paints over the glow. The equalizer panel is excluded:
+   it is an absolutely positioned popover, and giving it `position: relative`
+   here made it take a grid cell and stretch the whole player block. */
+.player-bar > *:not(.player-bar-bg):not(.eq-panel) {
+  position: relative;
+  z-index: 1;
+}
+
+/* The way into the full-window player, so it is a real button — which means
+   undoing the global button chrome to keep it looking like plain content. */
+.player-track {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px;
+  background: transparent;
+  border-color: transparent;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  color: inherit;
+}
+
+.player-track:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: transparent;
+}
+
+.player-track:disabled {
+  /* The global disabled rule fades the whole area; the placeholder text should
+     stay readable instead. */
+  opacity: 1;
+  cursor: default;
+}
+
+.player-track-text {
+  min-width: 0;
+}
+
+.player-art {
+  border-radius: 5px;
+}
+
+.player-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.player-title {
+  font-size: calc(13.5px * var(--text-scale));
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* The one badge in the bar: a link is playing from a remote CDN, and unlike a
+   local file it is not on this machine. */
+.stream-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 7px 1px 6px;
+  font-size: calc(10.5px * var(--text-scale));
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--accent-strong);
+  background: rgb(var(--accent-rgb) / 14%);
+  border: 1px solid rgb(var(--accent-rgb) / 30%);
+  border-radius: 999px;
+}
+
+.stream-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-strong);
+  animation: stream-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes stream-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.78);
+  }
+}
+
+.player-subtitle {
+  font-size: calc(11.5px * var(--text-scale));
+  color: var(--bar-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-error {
+  font-size: calc(11.5px * var(--text-scale));
+  color: var(--danger);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A reconnect is a temporary state, not a failure: keep it quieter than an error. */
+.player-error.reconnecting {
+  color: var(--bar-text-dim);
+}
+
+/* Buffering is temporary as well, and should not read as a failure. */
+.player-error.buffering {
+  color: var(--bar-text-dim);
+}
+
+.player-controls {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+}
+
+.player-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.player-seek {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.player-seek input[type='range'] {
+  flex: 1;
+}
+
+.time {
+  font-size: calc(11.5px * var(--text-scale));
+  color: var(--bar-text-dim);
+  font-variant-numeric: tabular-nums;
+  min-width: 42px;
+  text-align: center;
+}
+
+.player-volume {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+  /* The same colour as shuffle and repeat, in the bar and in the player window
+     alike. It used to be the faintest icon on screen, which read as disabled. */
+  color: var(--text);
+  justify-self: end;
+  width: 100%;
+}
+
+/* The bar keeps the speaker in the icon row and folds the level above it,
+   matching the full-window player. A visible slider in the footer cost width
+   that the transport and seek bar needed. */
+.player-volume-control {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.player-volume-pop {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 50%;
+  z-index: 20;
+  width: 36px;
+  height: 128px;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  box-shadow: 0 14px 30px rgb(0 0 0 / 45%);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-50%) translateY(8px);
+  transition: opacity 130ms ease, transform 130ms ease, visibility 130ms;
+}
+
+/* An invisible bridge across the gap, so the pointer on its way up does not
+   cross dead space and close the panel behind itself. */
+.player-volume-pop::before {
+  content: '';
+  position: absolute;
+  inset: -16px 0;
+}
+
+.player-volume-control:hover .player-volume-pop,
+.player-volume-control:focus-within .player-volume-pop {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Rotated rather than written vertically, so the track and thumb stay in the
+   horizontal coordinate space the other sliders use. */
+.player-volume-slider {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  appearance: none;
+  width: 106px;
+  height: 20px;
+  background: transparent;
+  transform: translate(-50%, -50%) rotate(-90deg);
+}
+
+/* Neutral, not accent: the accent means playback position. */
+.player-volume-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--text) var(--volume-progress, 0%),
+    rgb(var(--overlay-rgb) / 12%) var(--volume-progress, 0%)
+  );
+}
+
+.player-volume-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  margin-top: -3.5px;
+  border-radius: 50%;
+  background: var(--text);
+  box-shadow: 0 1px 5px rgb(0 0 0 / 55%);
+}
+
+/* The icon is the mute toggle, matching the full-window player; the slider above
+   it stays the level. The button is trimmed to the icon's own footprint so the
+   cluster does not get wider for the privilege. */
+.player-volume .volume-toggle {
+  padding: 2px;
+  color: inherit;
+}
+
+.player-volume .volume-toggle[aria-pressed='true'] {
+  color: var(--text-faint);
+}
+
+/* Toggle buttons (shuffle, repeat) read as "on" without shouting. */
+.icon-button.toggle-on {
+  color: var(--accent);
+  border-color: rgb(var(--accent-rgb) / 45%);
+  background: rgb(var(--accent-rgb) / 12%);
+}
+
+.icon-button.toggle-on:hover:not(:disabled) {
+  color: var(--accent-strong);
+  border-color: var(--accent);
+}
+
+.queue-button {
+  gap: 5px;
+  color: var(--text);
+}
+
+.queue-button.muted {
+  color: var(--text-faint);
+  opacity: 0.65;
+}
+
+.queue-count {
+  font-size: calc(11px * var(--text-scale));
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 900px) {
+  .player-bar {
+    grid-template-columns: minmax(140px, 200px) minmax(0, 1fr);
+  }
+
+  .player-volume {
+    display: none;
+  }
+}
+
+/* ---------- full-window player ---------- */
+
+/* Covers the window rather than replacing a view: the library behind it keeps
+   its scroll position and, more importantly, the <audio> element is never
+   remounted, so opening the player cannot interrupt playback. */
+.now-playing {
+  /* The artwork is the point of this window, so it takes most of the band it
+     sits in, and it is measured in viewport units so a short window still gets
+     an artwork that fits rather than one that overflows. The Settings presets
+     scale this rather than replacing it, for the same reason: a pixel size would
+     be too small on a large screen and too tall on a short one.
+
+     `--np-art-scale` is read with a fallback rather than declared here, because
+     declaring it would shadow the value App sets on `.app` and the presets would
+     do nothing. */
+  --np-art-size: calc(min(50vh, 42vw, 480px) * var(--np-art-scale, 1));
+
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  background: var(--bg);
+  outline: none;
+  /* A short rise-and-fade so the window does not simply appear under the cursor.
+     Kept to opacity and scale only: this element is `position: fixed`, and while
+     a transform would re-establish a containing block for anything inside it
+     that was also fixed, nothing here is. */
+  animation: np-in 240ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* The exit has to play out before the element is unmounted, so App holds the
+   view mounted for the duration and hands down this class. */
+.now-playing.np-closing {
+  animation: np-out 180ms ease-in forwards;
+}
+
+@keyframes np-in {
+  from {
+    opacity: 0;
+    transform: scale(1.025);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes np-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(1.02);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .now-playing,
+  .now-playing.np-closing {
+    animation: none;
+  }
+
+  /* The panel still needs its visibility change, or it would be stuck on screen. */
+  .np-queue-panel,
+  .np-queue-panel.open {
+    transition: visibility 0s;
+  }
+}
+
+/* Owns the clipping. The backdrop is deliberately wider than the window, and a
+   transformed descendant counts as scrollable overflow no matter what the
+   parent's own overflow is set to, so it has to be contained here. */
+.np-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* The album art, blurred and pushed into ambient colour.
+
+   The negative inset and the scale are what stop the blur from sampling
+   transparent pixels outside the element and leaving a halo around the edges of
+   the window.
+
+   Brightening and saturating *before* the opacity is the whole difference between
+   an ambient background and a smudge: most covers are dark, and a dark cover
+   blurred to 46px and dropped to 60% opacity over an already-black window is
+   invisible everywhere except where it happens to be brightest, which is how this
+   first shipped as an isolated patch in one corner rather than a backdrop.
+
+   Both numbers are kept modest on purpose. `saturate()` lands on a texture that is
+   already carrying whatever brand colour the sleeve has, and pushing it hard turns
+   a saturated cover into a neon slab — so this end only has to be bright, not
+   loud. Holding the floor is the wash's job, not this filter's. */
+.np-backdrop {
+  position: absolute;
+  inset: -10%;
+  background-size: cover;
+  background-position: center;
+  filter: blur(46px) saturate(130%) brightness(122%);
+  transform: scale(1.18);
+  opacity: 0.82;
+  pointer-events: none;
+}
+
+/* Nothing to blur: an app-coloured glow instead of a flat black window. */
+.np-backdrop-fallback {
+  background: var(--np-fallback);
+  filter: none;
+  opacity: 1;
+}
+
+/* Reaches every corner, so a near-black cover cannot leave the frame dead.
+   Deliberately colourless: an accent-tinted wash reads well over a blue sleeve and
+   turns an orange one to mud, and this layer has no way to know which it is looking
+   at. It only lifts — the colour is the cover's job, and the fallback gradient
+   above covers the case where there is no cover at all. */
+.np-wash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    120% 90% at 50% 38%,
+    rgb(255 255 255 / 7%) 0%,
+    rgb(255 255 255 / 2%) 55%,
+    rgb(255 255 255 / 0%) 100%
+  );
+  pointer-events: none;
+}
+
+/* A vignette, not a curtain. The middle stays the brightest part so the frame
+   reads as a stage with the artwork standing on it, the edges fall away, and the
+   bottom lands exactly on the app colour so the controls look like they belong to
+   the window rather than to a panel stuck on top of it. */
+.np-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(
+      115% 80% at 50% 34%,
+      rgb(var(--np-scrim-rgb) / 0%) 0%,
+      rgb(var(--np-scrim-rgb) / 26%) 58%,
+      rgb(var(--np-scrim-rgb) / 66%) 100%
+    ),
+    linear-gradient(
+      180deg,
+      rgb(var(--np-scrim-rgb) / 10%) 0%,
+      rgb(var(--np-scrim-rgb) / 26%) 36%,
+      rgb(var(--np-scrim-rgb) / 72%) 62%,
+      var(--bg) 76%
+    );
+  pointer-events: none;
+}
+
+/* Bands are placed explicitly because the queue panel shares the art's band: with
+   auto-placement it would take row 2 and push the art down to row 4. */
+.np-top {
+  grid-row: 1;
+  grid-column: 1;
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+}
+
+.np-close {
+  color: var(--text-dim);
+}
+
+.np-close:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.np-context {
+  text-align: center;
+  font-size: calc(11.5px * var(--text-scale));
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  /* Sits in the part of the vignette that is deliberately left clear, so a bright
+     cover can wash it out. A shadow rather than more scrim: darkening the top of
+     the frame would undo the point of brightening the backdrop in the first place. */
+  color: var(--text);
+  text-shadow: var(--np-context-shadow);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.np-stage {
+  grid-row: 2;
+  grid-column: 1;
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+  padding: 4px 24px;
+}
+
+.np-art {
+  border-radius: 14px;
+  border-color: var(--np-art-border);
+  /* Two shadows rather than one, and neither of them a slab. A single
+     26px-offset, 60px-blur shadow spreads 60px in every direction, which parks a
+     dark rectangle under the cover — the one hard edge in a window that is
+     otherwise all gradient. The negative spread pulls the wide one back under the
+     artwork, and both offsets scale with the artwork so a large cover does not
+     get a small shadow. */
+  box-shadow:
+    0 1px 3px rgb(0 0 0 / 35%),
+    0 calc(var(--np-art-size) * 0.055) calc(var(--np-art-size) * 0.12) calc(var(--np-art-size) * -0.04)
+      rgb(0 0 0 / 50%);
+}
+
+/* The queue, as a panel over the artwork rather than a trip back to the Queue
+   view: leaving the window to see what plays next loses the track that is
+   playing, which is the one thing the window exists to show.
+
+   It shares the art's band on purpose. The header line, the close button, the
+   transport and the button that opens it all stay exactly where they were, so the
+   same button that slid the panel in is the one that slides it back out.
+
+   The host clips because the panel slides, and a transformed descendant is
+   scrollable overflow — unclipped, this is what makes the window scroll sideways.
+   It takes no pointer events of its own, so the artwork is still reachable
+   wherever the panel is not sitting on top of it. */
+.np-queue-host {
+  grid-row: 2;
+  grid-column: 1;
+  position: relative;
+  z-index: 1;
+  /* Clip the sliding panel horizontally, where it would otherwise add 340px of
+     scrollable overflow, but leave the vertical axis visible so the card's
+     shadow can fall over the player bar instead of ending at a hard edge.
+     `clip` is the one overflow value that can pair with `visible`; `hidden`
+     would force the other axis to become a scroll container. */
+  overflow-x: clip;
+  overflow-y: visible;
+  min-width: 0;
+  min-height: 0;
+  pointer-events: none;
+}
+
+.np-queue-panel {
+  position: absolute;
+  inset: 12px 16px 12px auto;
+  display: flex;
+  flex-direction: column;
+  width: min(340px, calc(100% - 32px));
+  pointer-events: auto;
+  background: rgb(var(--np-panel-rgb) / 84%);
+  backdrop-filter: blur(22px) saturate(120%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--np-panel-shadow);
+  /* Hidden rather than unmounted, so the slide can play in both directions and
+     so the rows inside it are out of the tab order while it is closed.
+
+     The fade matters as much as the slide. Sliding a fully opaque slab across a
+     busy cover is what made this read as abrupt however long it took; coming in
+     as it fades, on a curve that eases out of the start rather than snapping,
+     is what makes it look like it belongs there.
+
+     `translate3d` and `will-change` keep the panel on its own composited layer
+     for the whole transition, so the list inside does not repaint at a different
+     moment from the card around it. */
+  visibility: hidden;
+  opacity: 0;
+  transform: translate3d(100%, 0, 0);
+  will-change: transform, opacity;
+  transition:
+    transform 360ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 220ms ease,
+    visibility 0s linear 360ms;
+}
+
+.np-queue-panel.open {
+  visibility: visible;
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  transition:
+    transform 360ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 180ms ease,
+    visibility 0s;
+}
+
+.np-queue-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 14px 12px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.np-queue-head h2 {
+  margin: 0;
+  font-size: calc(12px * var(--text-scale));
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.np-queue-meta {
+  justify-self: start;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: calc(11.5px * var(--text-scale));
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.np-queue-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+}
+
+.np-queue-list > li {
+  position: relative;
+}
+
+/* The same overlay idea as the Queue view: the row stays a button, and the
+   checkbox sits above its empty position cell so selecting never plays. */
+.np-queue-select {
+  position: absolute;
+  left: 6px;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.np-queue-select:hover {
+  background: rgb(var(--np-overlay-rgb) / 7%);
+}
+
+.np-queue-select input {
+  display: block;
+  margin: 0;
+}
+
+/* The name and its duration and very little else: a queue is scanned, not read.
+   The position is the one thing kept beyond that, because it is the only way to
+   see how far through the list the player has got. */
+.np-queue-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  background: transparent;
+  border-color: transparent;
+  border-radius: 7px;
+  color: var(--text-dim);
+  text-align: left;
+}
+
+.np-queue-row:hover:not(:disabled) {
+  background: rgb(var(--np-overlay-rgb) / 7%);
+  border-color: transparent;
+  color: var(--text);
+}
+
+.np-queue-row.current {
+  background: rgb(var(--accent-rgb) / 14%);
+  color: var(--text);
+}
+
+.np-queue-position {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(11px * var(--text-scale));
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.np-queue-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.np-queue-time {
+  font-size: calc(11.5px * var(--text-scale));
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* No border and no background of its own: the scrim behind this band already
+   fades to the app colour, and a hairline on top of that drew a hard edge where
+   the sketch asked for a gradual one. */
+.np-bottom {
+  grid-row: 3;
+  grid-column: 1;
+  position: relative;
+  /* Above the queue panel. The volume slider's popover reaches up into the art's
+     band, and with the panel open it would otherwise slide under it. */
+  z-index: 2;
+  display: grid;
+  gap: 12px;
+  padding: 16px 26px 20px;
+}
+
+.np-meta {
+  min-width: 0;
+  text-align: center;
+}
+
+.np-title {
+  margin: 0 0 3px;
+  font-size: calc(21px * var(--text-scale));
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.np-subtitle {
+  margin: 0;
+  font-size: calc(12.5px * var(--text-scale));
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Three tracks with the transport in the middle one, so the side groups can
+   grow in either direction without the play button drifting off centre. */
+.np-transport {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+}
+
+.np-side {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.np-side-right {
+  justify-content: flex-end;
+}
+
+.np-center {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.np-transport .icon-button {
+  padding: 9px;
+  border-radius: 50%;
+}
+
+.np-skip {
+  color: var(--text-dim);
+}
+
+.np-skip:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.np-transport .icon-button.primary {
+  width: 56px;
+  height: 56px;
+  justify-content: center;
+}
+
+/* The queue count and the volume live in the same row as shuffle and repeat, so
+   they are drawn in the same colour as those two — they were the only dim icons
+   in a row of bright ones, which read as disabled rather than secondary. */
+.np-transport .np-volume {
+  color: var(--text);
+}
+
+/* Volume: the button mutes on click, and the slider is folded away until the
+   pointer or the keyboard is on it. It opens upward so it costs no width in a row
+   that already has to hold the queue count. */
+.np-volume {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin-left: 6px;
+}
+
+.np-volume-pop {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 50%;
+  width: 36px;
+  height: 128px;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  box-shadow: 0 14px 30px rgb(0 0 0 / 50%);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-50%) translateY(8px);
+  transition: opacity 130ms ease, transform 130ms ease, visibility 130ms;
+}
+
+/* An invisible bridge across the gap between the button and the panel. Without
+   it the pointer crosses ~12px of dead space on the way up and the panel closes
+   behind it. */
+.np-volume-pop::before {
+  content: '';
+  position: absolute;
+  inset: -16px 0;
+}
+
+.np-volume:hover .np-volume-pop,
+.np-volume:focus-within .np-volume-pop {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Rotated rather than written vertically: the track and thumb pseudo-elements
+   then stay in the horizontal coordinate space they are documented in, and the
+   whole thing rotates as one.
+   Positioned explicitly rather than centred by the parent: an item wider than its
+   grid track is aligned to the track's start, not centred on it, so relying on
+   `place-items` put the slider 38px off to the right. */
+.np-volume-slider {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  appearance: none;
+  width: 106px;
+  height: 20px;
+  background: transparent;
+  transform: translate(-50%, -50%) rotate(-90deg);
+}
+
+/* A neutral fill, not the accent. Two identical blue sliders on one screen made
+   the volume look like a second progress bar; the accent now belongs to playback
+   position alone. */
+.np-volume-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--text) var(--volume-progress, 0%),
+    rgb(var(--np-overlay-rgb) / 12%) var(--volume-progress, 0%)
+  );
+}
+
+.np-volume-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  margin-top: -3.5px;
+  border-radius: 50%;
+  background: var(--text);
+  box-shadow: 0 1px 5px rgb(0 0 0 / 55%);
+}
+
+/* A square button with the count hung off its corner rather than laid out beside
+   the icon. In flow, the badge makes the button wider than it is tall, and
+   `border-radius: 50%` on a rectangle is an oval — so the one button here that
+   did not match its neighbours. */
+.np-queue {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  justify-content: center;
+}
+
+.np-queue .queue-count {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  height: 15px;
+  min-width: 15px;
+  padding: 0 4px;
+  line-height: 15px;
+  font-size: calc(9.5px * var(--text-scale));
+  background: var(--bg-active);
+  border-radius: 999px;
+}
+
+/* The scrubber: a thick filled bar, where the bottom bar keeps the hairline one.
+   The fill comes from --seek-progress, set by SeekBar. */
+.np-seek {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.np-seek .time {
+  min-width: 52px;
+  font-size: calc(12.5px * var(--text-scale));
+  color: var(--text-dim);
+}
+
+.np-seek input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  height: 16px;
+  background: transparent;
+}
+
+.np-seek input[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--seek-progress, 0%),
+    rgb(var(--np-overlay-rgb) / 14%) var(--seek-progress, 0%)
+  );
+}
+
+.np-seek input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  margin-top: -3.5px;
+  border-radius: 50%;
+  background: var(--knob);
+  box-shadow: 0 1px 5px rgb(0 0 0 / 55%);
+}
+
+/* Short windows: the artwork gives way before the controls do, so the band at
+   the bottom never gets pushed off the screen. */
+@media (max-height: 700px) {
+  .now-playing {
+    /* The size presets are a multiplier rather than a value, so they have to be
+       re-applied here: overwriting `--np-art-size` wholesale would quietly make
+       the setting do nothing on exactly the windows where it matters most. */
+    --np-art-size: calc(min(36vh, 40vw, 320px) * var(--np-art-scale, 1));
+  }
+
+  .np-bottom {
+    gap: 9px;
+    padding: 12px 22px 15px;
+  }
+
+  .np-transport .icon-button.primary {
+    width: 48px;
+    height: 48px;
+  }
+}
+
+/* ---------- playlists ---------- */
+
+/* The index and the tracks sit side by side and each scrolls on its own: a long
+   playlist must not push the list of playlists off the top of the screen. */
+.playlists-layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  /* The index is a splitter column away from the tracks, not a gap: dragging the
+     splitter changes the first track directly. The stored width is clamped by
+     what is left after the tracks' 440px and the splitter's 16px, so a width
+     picked in a wide window cannot swallow the pane after the window shrinks. */
+  grid-template-columns:
+    clamp(160px, var(--playlist-index-width, 220px), calc(100% - 456px))
+    16px
+    minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.playlist-index,
+.playlist-splitter,
+.playlist-pane {
+  grid-row: 1;
+}
+
+.playlists-layout.dragging,
+.playlists-layout.dragging * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+.playlist-splitter {
+  position: relative;
+  touch-action: none;
+  cursor: col-resize;
+  outline: none;
+}
+
+/* A hairline in the middle of the 16px hit area: invisible until the pointer is
+   over it, so the pane boundary still reads as whitespace. */
+.playlist-splitter::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 7px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background 120ms ease;
+}
+
+.playlist-splitter:hover::before,
+.playlist-splitter.dragging::before {
+  background: var(--border);
+}
+
+.playlist-splitter:focus-visible::before {
+  background: var(--accent);
+}
+
+/* Two panes stop being worth it once the track list loses more to its columns
+   than it keeps for titles: the index becomes a strip above the list, which
+   still scrolls on its own when there are many playlists. */
+@media (max-width: 1040px) {
+  .playlists-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .playlist-index {
+    grid-row: 1;
+    max-height: 180px;
+  }
+
+  .playlist-pane {
+    grid-row: 2;
+  }
+
+  .playlist-splitter {
+    display: none;
+  }
+}
+
+.playlist-index {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+}
+
+/* On the side-by-side layout the index ends where its playlists end: a short
+   index should not draw a full-height empty panel just because the track pane
+   next to it is tall. `max-height: 100%` still caps a long index at the pane
+   height so it scrolls instead of pushing the footnote down. */
+@media (min-width: 1041px) {
+  .playlist-index {
+    align-self: start;
+    max-height: 100%;
+  }
+}
+
+.playlist-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-radius: var(--radius-sm);
+  padding: 1px 2px 1px 1px;
+}
+
+.playlist-row:hover {
+  background: var(--bg-hover);
+}
+
+.playlist-row.active {
+  background: var(--row-selected);
+}
+
+/* Name, count, badge: the badge sits after both so a long name can use the
+   whole flexible column. The action lives outside this button. */
+.playlist-open {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 8px;
+  background: transparent;
+  border-color: transparent;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  color: var(--text-dim);
+}
+
+.playlist-open:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text);
+}
+
+.playlist-row.active .playlist-open {
+  color: var(--text);
+}
+
+.playlist-row.active .playlist-title {
+  font-weight: 600;
+}
+
+.playlist-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playlist-count {
+  font-size: calc(11.5px * var(--text-scale));
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.playlist-row-menu {
+  padding: 5px;
+  color: var(--text-faint);
+}
+
+/* ---------- Custom / Imported groups in the index ---------- */
+
+.playlist-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.playlist-group + .playlist-group {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.playlist-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 2px 6px 4px;
+  font-size: calc(10.5px * var(--text-scale));
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.playlist-group-count {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.playlist-group-empty {
+  margin: 2px 6px 6px;
+  font-size: calc(11.5px * var(--text-scale));
+  line-height: 1.45;
+  color: var(--text-faint);
+}
+
+.playlist-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.playlist-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playlist-kind {
+  flex: none;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: calc(9.5px * var(--text-scale));
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.playlist-kind.album {
+  color: var(--tag-album-text);
+  border-color: var(--tag-album-border);
+}
+
+.playlist-kind.mix {
+  color: var(--tag-mix-text);
+  border-color: var(--tag-mix-border);
+}
+
+.playlist-kind.list {
+  color: var(--tag-list-text);
+  border-color: var(--tag-list-border);
+}
+
+.playlist-note {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  font-size: calc(12px * var(--text-scale));
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.import-offer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.import-offer > span {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.playlist-row .icon-button {
+  padding: 5px;
+}
+
+.playlist-new,
+.playlist-rename {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 8px;
+}
+
+.playlist-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The opened list borrows the album page's hero: a large sleeve beside the
+   name, the facts and the actions, with the rows underneath. It reads as one
+   object instead of a toolbar over a table. */
+.playlist-pane-head.playlist-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: end;
+  gap: 0 clamp(14px, 2vw, 24px);
+  padding: clamp(12px, 1.6vw, 22px) clamp(14px, 2vw, 24px);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 6px);
+  background:
+    linear-gradient(135deg, rgb(var(--accent-rgb) / 14%), transparent 62%),
+    var(--bg-panel);
+}
+
+.playlist-hero-art {
+  display: block;
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  flex: none;
+  width: clamp(92px, 15vw, 168px);
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-art);
+  box-shadow: 0 16px 38px rgb(0 0 0 / 0.22);
+}
+
+.playlist-cover {
+  flex: none;
+  border-radius: 8px;
+}
+
+.playlist-hero-art .playlist-cover {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+}
+
+.playlist-hero-copy {
+  grid-column: 2;
+  grid-row: 1;
+  flex: 1;
+}
+
+.playlist-pane-head.playlist-hero .header-actions {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.playlist-pane-head h2 {
+  margin: 0 0 3px;
+  font-size: calc(17px * var(--text-scale));
+  overflow-wrap: anywhere;
+}
+
+.playlist-pane-head.playlist-hero h2 {
+  font-size: clamp(
+    calc(22px * var(--text-scale)),
+    3vw,
+    calc(34px * var(--text-scale))
+  );
+  line-height: 1.15;
+}
+
+/* ---------- drag to reorder ---------- */
+
+/* The cursor is the only affordance a draggable row gets: a grip in the gutter
+   would take width from the title for something the footnote already explains. */
+.track-row[draggable='true'] {
+  cursor: grab;
+}
+
+.track-row.dragging {
+  opacity: 0.4;
+}
+
+/* The drop line is an inset shadow rather than a positioned element: rows live in
+   a translated window inside a scroller, and an absolutely positioned marker
+   would have to be re-measured on every scroll for no gain. */
+.track-row.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.track-row.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.track-row.active.drop-before {
+  box-shadow: inset 2px 0 0 var(--accent), inset 0 2px 0 var(--accent);
+}
+
+.track-row.active.drop-after {
+  box-shadow: inset 2px 0 0 var(--accent), inset 0 -2px 0 var(--accent);
+}
+
+/* ---------- queue actions (overflow menu) ---------- */
+
+.queue-actions {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.queue-actions-trigger {
+  flex: none;
+}
+
+.queue-actions-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  display: grid;
+  gap: 2px;
+  width: 260px;
+  padding: 6px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 40px rgb(0 0 0 / 55%);
+}
+
+.queue-actions-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--text-dim);
+  font-size: calc(12.5px * var(--text-scale));
+  text-align: left;
+}
+
+.queue-actions-item svg {
+  flex: none;
+}
+
+.queue-actions-item > span:not(.queue-actions-check) {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-actions-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: transparent;
+  color: var(--text);
+}
+
+.queue-actions-item:disabled {
+  opacity: 0.42;
+}
+
+.queue-actions-item.danger {
+  color: var(--danger);
+}
+
+.queue-actions-item.danger:hover:not(:disabled) {
+  color: var(--danger-text);
+  background: var(--danger-bg);
+}
+
+.queue-actions-check {
+  flex: none;
+  width: 14px;
+  color: var(--accent);
+  text-align: center;
+}
+
+.queue-actions-hint {
+  margin: 0;
+  padding: 0 10px 4px;
+  color: var(--text-faint);
+  font-size: calc(11px * var(--text-scale));
+  line-height: 1.35;
+}
+
+.queue-actions-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border-soft);
+}
+
+.queue-actions-repeat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  color: var(--text-dim);
+  font-size: calc(12.5px * var(--text-scale));
+}
+
+.queue-actions-label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.queue-actions-seg {
+  display: inline-flex;
+  padding: 2px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.queue-actions-seg button {
+  padding: 3px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: calc(10.5px * var(--text-scale));
+  cursor: pointer;
+}
+
+.queue-actions-seg button:hover {
+  color: var(--text);
+}
+
+.queue-actions-seg button.active {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+/* ---------- add to playlist (popover) ---------- */
+
+.add-to-playlist {
+  position: absolute;
+  z-index: 40;
+  display: grid;
+  gap: 4px;
+  width: 260px;
+  padding: 6px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 40px rgb(0 0 0 / 55%);
+}
+
+/* Opened at the pointer, so it is taken out of the host's flow entirely. */
+.add-to-playlist.fixed {
+  position: fixed;
+  z-index: 60;
+}
+
+/* Styled as a plain list: it is already inside a popover, and borders inside a
+   border read as a form. */
+.context-menu > .add-to-playlist {
+  position: static;
+  width: auto;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.atp-head {
+  padding: 6px 8px 4px;
+  font-size: calc(11px * var(--text-scale));
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.atp-list {
+  max-height: 240px;
+  overflow-y: auto;
+  display: grid;
+  gap: 1px;
+}
+
+.atp-empty {
+  padding: 8px;
+  font-size: calc(12.5px * var(--text-scale));
+  color: var(--text-faint);
+}
+
+.atp-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  background: transparent;
+  border-color: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  text-align: left;
+}
+
+.atp-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: transparent;
+  color: var(--text);
+}
+
+.atp-item.new {
+  color: var(--text-dim);
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.atp-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.atp-count {
+  font-size: calc(11.5px * var(--text-scale));
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.atp-foot {
+  border-top: 1px solid var(--border);
+  padding-top: 4px;
+}
+
+.atp-new-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 2px;
+}
+
+.atp-new-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.atp-status {
+  padding: 5px 8px;
+  font-size: calc(12px * var(--text-scale));
+  color: var(--ok);
+}
+
+.atp-error {
+  padding: 5px 8px;
+  font-size: calc(12px * var(--text-scale));
+  color: var(--danger);
+}
+
+/* ---------- track context menu ---------- */
+
+.context-menu {
+  position: fixed;
+  z-index: 60;
+  display: grid;
+  gap: 1px;
+  width: 240px;
+  padding: 6px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 40px rgb(0 0 0 / 55%);
+}
+
+.context-head {
+  padding: 7px 9px 8px;
+  font-size: calc(12.5px * var(--text-scale));
+  font-weight: 600;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  background: transparent;
+  border-color: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  text-align: left;
+}
+
+.context-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: transparent;
+  color: var(--text);
+}
+
+.context-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.context-item.danger {
+  color: var(--danger);
+}
+
+.context-item.danger:hover:not(:disabled) {
+  color: var(--danger-text);
+  background: var(--danger-bg);
+}
+
+.context-item.confirming {
+  font-weight: 600;
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.context-item svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* The link field has only three actions, so it does not need the row menu's
+   full width. */
+.field-menu {
+  width: 190px;
+}
+
+/* ---------- online ---------- */
+
+.online-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The link field. The Paste button sits inside the box, at the right corner, so
+   "paste" reads as part of typing the link rather than a second action. */
+.online-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 320px;
+  min-width: 0;
+  padding: 0 6px 0 11px;
+  height: 38px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+}
+
+.online-input:focus-within {
+  border-color: var(--accent);
+}
+
+.online-input input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: none;
+}
+
+.online-input input:focus-visible {
+  outline: none;
+}
+
+.online-input input:disabled {
+  opacity: 0.6;
+}
+
+.online-actions-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.online-list {
+  /* Artist and Channel are equal, bounded metadata columns; only the title
+     flexes. Channel is always present, Artist only when YouTube reports one. */
+  --online-meta: minmax(84px, 148px);
+  --online-artist: var(--online-meta);
+  --online-channel: var(--online-meta);
+  --online-time: max(64px, calc(56px * var(--text-scale)));
+
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  /* Without this the grid stretches the rows to fill the view. */
+  align-content: start;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  /* Seven rows at a time. The history can be long, but the YouTube view should
+     not become a second library; older links are one wheel away. 7 × 43px of
+     row + the box's own 2px border. */
+  max-height: 303px;
+  overflow: hidden auto;
+  container-type: inline-size;
+  container-name: online-list;
+}
+
+.online-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+/* The checkbox column only exists while a selection is active, the same
+   transient # column the other lists use. */
+.online-item.selecting {
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+}
+
+.online-select {
+  display: grid;
+  place-items: center;
+  align-self: stretch;
+  width: 34px;
+  cursor: pointer;
+}
+
+.online-select:hover {
+  background: rgb(var(--overlay-rgb) / 7%);
+}
+
+.online-select input {
+  display: block;
+  margin: 0;
+}
+
+.pending-select {
+  pointer-events: none;
+}
+
+.online-item:last-child {
+  border-bottom: none;
+}
+
+.online-item.current {
+  background: rgb(var(--accent-rgb) / 12%);
+}
+
+.online-item.selected {
+  background: var(--row-selected);
+}
+
+.online-item.current.selected {
+  background: var(--row-current-selected);
+}
+
+.online-jump {
+  display: grid;
+  /* The same priority as the library table: the title gets the flexible share,
+     the metadata columns are equal and bounded, Duration stays fixed. */
+  grid-template-columns: 30px minmax(0, 1fr) var(--online-channel) var(--online-time);
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+.online-list[data-artist-column='show'] .online-jump {
+  grid-template-columns: 30px minmax(0, 1fr) var(--online-artist) var(--online-channel) var(--online-time);
+}
+
+button.online-jump:hover {
+  background: var(--bg-hover);
+}
+
+/* Explicit placement keeps the two states aligned: without it, hiding Artist
+   in the narrow container query would let Channel slide into its track while
+   the template still reserved it. */
+.online-jump > .online-art-cell {
+  grid-column: 1;
+}
+
+.online-jump > .online-title {
+  grid-column: 2;
+}
+
+.online-jump > .online-channel {
+  grid-column: 3;
+}
+
+.online-jump > .online-time {
+  grid-column: 4;
+}
+
+.online-list[data-artist-column='show'] .online-jump > .online-artist {
+  grid-column: 3;
+}
+
+.online-list[data-artist-column='show'] .online-jump > .online-channel {
+  grid-column: 4;
+}
+
+.online-list[data-artist-column='show'] .online-jump > .online-time {
+  grid-column: 5;
+}
+
+.online-art-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.online-art {
+  flex: none;
+  border-radius: 5px;
+}
+
+.online-title,
+.online-artist,
+.online-channel,
+.online-time {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.online-title {
+  font-size: calc(13px * var(--text-scale));
+}
+
+.online-artist,
+.online-channel {
+  font-size: calc(12.5px * var(--text-scale));
+  color: var(--text-dim);
+}
+
+.online-time {
+  font-size: calc(12px * var(--text-scale));
+  color: var(--text-faint);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* While a row downloads, its duration slot becomes the progress readout: it is
+   the one cell that can change every second without moving anything else. */
+.online-time.saving-time {
+  color: var(--accent-strong);
+  font-size: calc(11.5px * var(--text-scale));
+}
+
+.online-item.current .online-title {
+  color: var(--accent-strong);
+}
+
+.online-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 8px;
+}
+
+.online-actions button {
+  flex: none;
+}
+
+/* The row that exists before its link has been resolved. It is a placeholder,
+   not a control, so it has no hover and is not a button. */
+.online-pending-body {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 8px;
+}
+
+.online-pending-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.online-sub {
+  font-size: calc(12px * var(--text-scale));
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.online-item.pending {
+  background: rgb(var(--accent-rgb) / 6%);
+}
+
+.online-item.pending.failed {
+  background: rgb(var(--danger-rgb) / 8%);
+}
+
+.online-item.pending.failed .online-sub {
+  color: var(--danger);
+}
+
+/* Channel never drops: it is the row's second identity. Only Artist, the
+   optional extra, gives way when the list is narrow. */
+@container online-list (max-width: 660px) {
+  .online-list[data-artist-column='show'] .online-jump {
+    grid-template-columns: 30px minmax(0, 1fr) var(--online-channel) var(--online-time);
+  }
+
+  .online-list[data-artist-column='show'] .online-jump > .online-artist {
+    display: none;
+  }
+
+  .online-list[data-artist-column='show'] .online-jump > .online-channel {
+    grid-column: 3;
+  }
+
+  .online-list[data-artist-column='show'] .online-jump > .online-time {
+    grid-column: 4;
+  }
+}
+
+/* ---------- imported playlists in the YouTube view ---------- */
+
+/* An imported list is one row here, not one row per track. The history is a log
+   of links the user chose; a 50-track mix would otherwise bury every song they
+   did choose. Two boxes, two purposes. */
+.online-imported {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.online-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  margin: 0 2px;
+}
+
+.online-head-select {
+  flex: none;
+  align-self: center;
+  width: 34px;
+  margin: 0;
+  padding: 4px 0;
+  justify-content: center;
+}
+
+.online-section-head h2 {
+  margin: 0;
+  font-size: calc(11.5px * var(--text-scale));
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.online-section-count {
+  font-size: calc(11.5px * var(--text-scale));
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.online-section-hint {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(11.5px * var(--text-scale));
+  color: var(--text-faint);
+}
+
+.online-imported-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  /* Three recent lists; the rest scroll. 3 × 51px of row + 2px of border. */
+  max-height: 155px;
+  overflow: hidden auto;
+}
+
+.online-imported-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.online-imported-row:last-child {
+  border-bottom: none;
+}
+
+/* The playing list is marked where it lives: its own card carries the current
+   track and position instead of a separate strip repeating them. */
+.online-imported-row.current {
+  background: rgb(var(--accent-rgb) / 10%);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.online-imported-row.current .online-imported-title {
+  color: var(--accent-strong);
+}
+
+.online-imported-row.current .online-imported-meta {
+  color: var(--text-dim);
+}
+
+.online-imported-meta .playing-dot {
+  margin-right: 5px;
+  vertical-align: 1px;
+}
+
+.online-imported-art {
+  border-radius: 5px;
+}
+
+.online-imported-open {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 2px 0;
+  background: transparent;
+  border-color: transparent;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  color: var(--text-dim);
+}
+
+.online-imported-open:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text);
+}
+
+.online-imported-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(13px * var(--text-scale));
+  font-weight: 500;
+  color: var(--text);
+}
+
+.online-imported-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(11.5px * var(--text-scale));
+  color: var(--text-faint);
+}
+
+.online-imported-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ---------- playlist pane: imported name and track count ---------- */
+
+/* The rename form is the only child while it is open, so let it use the whole
+   row instead of sitting in the title column. */
+.playlist-row .playlist-rename {
+  grid-column: 1 / -1;
+}
+
+.playlist-source-id {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: calc(11px * var(--text-scale));
+  letter-spacing: 0;
+  user-select: text;
+}
+
+.playlist-pane-head .header-actions {
+  flex-wrap: wrap;
+}
+
+/* Play is the only accent action in the pane. Add all, Save all, Re-import and
+   Export stay neutral; Remove is the only red one. */
+.playlist-play {
+  color: var(--accent-strong);
+  border-color: rgb(var(--accent-rgb) / 42%);
+  background: rgb(var(--accent-rgb) / 10%);
+}
+
+.playlist-play:hover:not(:disabled) {
+  color: var(--accent-strong);
+  border-color: rgb(var(--accent-rgb) / 66%);
+  background: rgb(var(--accent-rgb) / 18%);
+}
+
+.reimport-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 9px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  font-size: calc(11.5px * var(--text-scale));
+}
+
+.reimport-count:focus-within {
+  border-color: var(--accent);
+}
+
+.reimport-count input {
+  width: 48px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.reimport-count input:focus-visible {
+  outline: none;
+}
+
+/* ---------- track details ---------- */
+
+.details-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgb(4 6 12 / 72%);
+  backdrop-filter: blur(3px);
+}
+
+.details-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(560px, 100%);
+  max-height: min(82vh, 720px);
+  overflow-y: auto;
+  padding: 18px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgb(0 0 0 / 60%);
+  outline: none;
+}
+
+.details-head {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.details-art {
+  border-radius: 8px;
+}
+
+.details-titles {
+  min-width: 0;
+}
+
+.details-titles h2 {
+  margin: 0 0 3px;
+  font-size: calc(17px * var(--text-scale));
+  overflow-wrap: anywhere;
+}
+
+.details-close {
+  align-self: start;
+}
+
+.details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 18px;
+  margin: 0;
+}
+
+.details-field {
+  min-width: 0;
+}
+
+.details-field.wide {
+  grid-column: 1 / -1;
+}
+
+.details-field dt {
+  margin-bottom: 3px;
+  font-size: calc(10.5px * var(--text-scale));
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.details-field dd {
+  margin: 0;
+  font-size: calc(12.5px * var(--text-scale));
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.details-tech {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: calc(11.5px * var(--text-scale));
+  user-select: text;
+}
+
+.details-note {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: rgb(var(--accent-rgb) / 8%);
+  color: var(--text-dim);
+  font-size: calc(12px * var(--text-scale));
+  line-height: 1.5;
+}
+
+.details-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 520px) {
+  .details-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- saves dock ---------- */
+
+.saves-panel {
+  position: fixed;
+  right: 16px;
+  bottom: 86px;
+  z-index: 40;
+  width: min(360px, calc(100vw - 32px));
+  max-height: min(42vh, 360px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgb(var(--bg-raised-rgb) / 96%);
+  box-shadow: 0 14px 38px rgb(0 0 0 / 45%);
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+}
+
+.saves-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: calc(12px * var(--text-scale));
+}
+
+.saves-head strong {
+  color: var(--text);
+  font-size: calc(12.5px * var(--text-scale));
+}
+
+.saves-count {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.saves-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+}
+
+.saves-item {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 7px;
+  border-radius: var(--radius-sm);
+}
+
+.saves-item + .saves-item {
+  border-top: 1px solid rgb(var(--overlay-rgb) / 5%);
+}
+
+.saves-icon {
+  display: grid;
+  place-items: center;
+  color: var(--text-faint);
+}
+
+.saves-item.saved .saves-icon {
+  color: var(--ok);
+}
+
+.saves-item.failed .saves-icon {
+  color: var(--danger);
+}
+
+.saves-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.saves-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: calc(12.5px * var(--text-scale));
+}
+
+.saves-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+  font-size: calc(11px * var(--text-scale));
+}
+
+.saves-item.failed .saves-status {
+  color: var(--danger);
+}
+
+.saves-item.saved .saves-status {
+  color: var(--ok);
+}
+
+.saves-progress {
+  display: block;
+  height: 3px;
+  margin-top: 3px;
+  border-radius: 2px;
+  background: rgb(var(--overlay-rgb) / 8%);
+  overflow: hidden;
+}
+
+.saves-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 180ms ease;
+}
+
+.saves-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+@media (max-height: 620px) {
+  .saves-panel {
+    max-height: 30vh;
+  }
+}
+
+/* ---------- unified search ---------- */
+
+.discover-view {
+  min-height: 0;
+  /* The page itself does not scroll: the header and the search field stay put,
+     and the result box below them owns the only vertical scrollbar. */
+  overflow: hidden;
+}
+
+.discover-view > :not(.discover-results) {
+  flex-shrink: 0;
+}
+
+.discover-results {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: rgb(var(--overlay-rgb) / 2%);
+  overflow: hidden;
+}
+
+.discover-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.discover-input {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgb(var(--overlay-rgb) / 4%);
+  color: var(--text-faint);
+}
+
+.discover-input:focus-within {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.discover-input input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: calc(13px * var(--text-scale));
+  outline: none;
+}
+
+.discover-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--text-faint);
+  font-size: calc(12px * var(--text-scale));
+}
+
+.discover-summary strong {
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.discover-count {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: calc(11px * var(--text-scale));
+  font-variant-numeric: tabular-nums;
+}
+
+.discover-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+
+.discover-list::-webkit-scrollbar {
+  width: 10px;
+}
+
+.discover-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.discover-list::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border: 2px solid var(--bg-panel);
+  border-radius: 999px;
+}
+
+.discover-list::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+}
+
+.discover-pager {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 5px 10px;
+  border-top: 1px solid var(--border);
+  background: rgb(var(--overlay-rgb) / 2%);
+}
+
+.pager-button {
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: calc(16px * var(--text-scale));
+  line-height: 1;
+}
+
+.pager-button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.pager-button:disabled {
+  opacity: 0.35;
+}
+
+.discover-page {
+  min-width: 54px;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: calc(11px * var(--text-scale));
+  font-variant-numeric: tabular-nums;
+}
+
+.discover-shelves {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 12px 12px 18px;
+}
+
+/* One shelf is a heading plus a grid of cards, the same language as Home. The
+   heading says which source answered; the grid never mixes sources. */
+.discover-shelf {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+}
+
+.discover-shelf-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.discover-shelf-note {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: calc(11.5px * var(--text-scale));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.discover-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 154px));
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  align-content: start;
+}
+
+/* A card, not a row: the same square cover, title and meta as Home. Every card
+   in a shelf has the same height because the art is square and both text lines
+   are single-line, so a long title cannot make one card taller than its row. */
+.discover-item {
+  position: relative;
+  min-width: 0;
+  padding: 6px;
+  margin: -6px;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.discover-item:hover {
+  background: rgb(var(--overlay-rgb) / 5%);
+}
+
+.discover-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.discover-item.selected {
+  background: rgb(var(--accent-rgb) / 9%);
+}
+
+/* The playing card follows the library rule: marked while paused, quieter. */
+.discover-item.current .discover-title {
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+.discover-title .playing-dot {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 7px;
+}
+
+.discover-item.selecting {
+  padding-left: 6px;
+}
+
+/* The checkbox appears only once a selection starts, over the cover's
+   top-left corner. The best-match pill and the import source sit bottom-left,
+   the menu top-right and the play badge bottom-right, so nothing overlaps. */
+.discover-select {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 55%);
+  cursor: pointer;
+}
+
+.discover-select input {
+  display: block;
+  margin: 0;
+}
+
+.discover-item .album-card-play {
+  top: auto;
+  right: 9px;
+  bottom: 9px;
+  width: 32px;
+  height: 32px;
+}
+
+.discover-play {
+  pointer-events: none;
+}
+
+/* The one mouse route to the row menu, matching the `…` button elsewhere. It
+   fades in with the play badge but stays reachable by keyboard. */
+.discover-item .discover-menu {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 4;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 48%);
+  color: #fff;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.discover-item:hover .discover-menu,
+.discover-item:focus-within .discover-menu,
+.discover-item.selected .discover-menu {
+  opacity: 1;
+}
+
+.discover-menu:hover:not(:disabled) {
+  background: rgb(0 0 0 / 66%);
+  color: #fff;
+}
+
+.discover-menu:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The first YouTube result is what the user most likely wants, so it is named
+   and ringed rather than merely sorted first. */
+.discover-best-pill {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  z-index: 3;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: calc(10px * var(--text-scale));
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.discover-item.best-match .album-card-art {
+  border-color: rgb(var(--accent-rgb) / 55%);
+  box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 30%), 0 10px 26px rgb(0 0 0 / 0.18);
+}
+
+/* The playlist or history that remembers an imported card. The badge already
+   says Imported; this says which list the video came from. */
+.discover-import-source {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  z-index: 3;
+  max-width: calc(100% - 58px);
+  overflow: hidden;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 52%);
+  color: #fff;
+  font-size: calc(10px * var(--text-scale));
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A quiet note while the database half of a search is still settling. */
+.discover-live {
+  color: var(--text-faint);
+}
+
+/* Show all keeps the page shape stable: eight cards first, the rest on demand
+   from the same shelf. */
+.discover-show-all {
+  align-self: flex-start;
+  padding: 4px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: calc(11.5px * var(--text-scale));
+}
+
+.discover-show-all:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.discover-show-all:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The YouTube shelf's one extra page. It is a network action, so it reads as
+   the accent rather than as the neutral local Show all. */
+.discover-more {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  padding: 4px 11px;
+  border: 1px solid rgb(var(--accent-rgb) / 38%);
+  border-radius: 999px;
+  background: rgb(var(--accent-rgb) / 8%);
+  color: var(--accent-strong);
+  font-size: calc(11.5px * var(--text-scale));
+}
+
+.discover-more:hover:not(:disabled) {
+  background: rgb(var(--accent-rgb) / 16%);
+  color: var(--text);
+}
+
+.discover-more:disabled {
+  opacity: 0.7;
+}
+
+.discover-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Before a submit the YouTube shelf has nothing to show, so it offers the one
+   action that can fill it instead of an empty grid. */
+.search-youtube-cta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 460px;
+  padding: 11px 13px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: rgb(var(--overlay-rgb) / 2%);
+  color: var(--text-dim);
+  text-align: left;
+}
+
+.search-youtube-cta svg {
+  flex: none;
+}
+
+.search-youtube-cta:hover:not(:disabled) {
+  border-color: rgb(var(--accent-rgb) / 40%);
+  background: rgb(var(--accent-rgb) / 8%);
+  color: var(--text);
+}
+
+.search-youtube-cta strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* An answer that came back empty is a fact worth stating, not an error. */
+.discover-empty-shelf {
+  margin: 0;
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-faint);
+  font-size: calc(12px * var(--text-scale));
+}
+
+.discover-time {
+  color: var(--text-faint);
+  font-size: calc(11.5px * var(--text-scale));
+  font-variant-numeric: tabular-nums;
+}
+
+.discover-artist {
+  color: var(--text-dim);
+  font-size: calc(12px * var(--text-scale));
+}
+
+.discover-title,
+.discover-artist,
+.discover-time {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The channel name is the only channel affordance: no extra "Channel"
+   button, no underline on hover. */
+.discover-channel-link {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.discover-channel-link:hover {
+  color: var(--text);
+}
+
+.discover-channel-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.discover-selection-bar {
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: rgb(var(--overlay-rgb) / 3%);
+}
+
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: calc(10px * var(--text-scale));
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.source-badge.local {
+  border-color: rgb(var(--ok-rgb) / 32%);
+  background: rgb(var(--ok-rgb) / 8%);
+  color: var(--ok);
+}
+
+.source-badge.youtube {
+  border-color: rgb(var(--accent-rgb) / 34%);
+  background: rgb(var(--accent-rgb) / 10%);
+  color: var(--accent-strong);
+}
+
+/* Imported is neither of the other two: the database remembers the video, but
+   there is no file and no live answer. A neutral badge keeps it from reading
+   as either On this device or YouTube. */
+.source-badge.imported {
+  border-color: rgb(var(--overlay-rgb) / 14%);
+  background: rgb(var(--overlay-rgb) / 6%);
+  color: var(--text-dim);
+}
+
+/* ---------- mini player ---------- */
+
+/* Mini mode is the same app, not a second window. Everything except the compact
+   panel is hidden rather than unmounted: the views behind keep their scroll
+   position, and the one audio element is never touched. The drop overlay is the
+   one exception, so a file can still be dropped while compact. */
+.app.mini-player-mode {
+  display: block;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-panel);
+}
+
+.app.mini-player-mode > :not(.mini-player):not(.drop-overlay) {
+  display: none;
+}
+
+.mini-player {
+  position: relative;
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  height: 100%;
+  padding: 12px 14px;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 150% at 0% 0%, rgb(var(--accent-rgb) / 10%), transparent 58%),
+    var(--bg-panel);
+}
+
+.mini-player-ambience {
+  position: absolute;
+  inset: -45%;
+  z-index: 0;
+  background-position: center;
+  background-size: cover;
+  filter: blur(32px) saturate(130%);
+  opacity: 0.24;
+  pointer-events: none;
+  transform: scale(1.08);
+}
+
+.mini-player > :not(.mini-player-ambience) {
+  position: relative;
+  z-index: 1;
+}
+
+.mini-player-art {
+  border-radius: 9px;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 28%);
+}
+
+.mini-player-main {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  height: 100%;
+}
+
+.mini-player-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.mini-player-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.mini-player-title {
+  overflow: hidden;
+  color: var(--text);
+  font-size: calc(13.5px * var(--text-scale));
+  font-weight: 650;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mini-player-subtitle {
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: calc(11.5px * var(--text-scale));
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mini-player-expand {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.mini-player-expand:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.mini-player-error {
+  overflow: hidden;
+  color: var(--danger);
+  font-size: calc(10.5px * var(--text-scale));
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mini-player-error.reconnecting {
+  color: var(--text-dim);
+}
+
+.mini-player-error.buffering {
+  color: var(--text-dim);
+}
+
+.mini-player-seek {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+}
+
+.mini-player-seek input[type='range'] {
+  flex: 1;
+  min-width: 0;
+}
+
+.mini-player-seek .time {
+  min-width: 37px;
+  font-size: calc(10.5px * var(--text-scale));
+  text-align: center;
+}
+
+.mini-player-controls {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.mini-player-controls .icon-button {
+  color: var(--text);
+}
+
+.mini-player-play {
+  width: 32px;
+  height: 32px;
+}
+
+.mini-player-play:disabled {
+  background: var(--bg-badge);
+  border-color: var(--border);
+  color: var(--text-faint);
+}
+
+.mini-player-volume {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  margin-left: auto;
+  color: var(--text-faint);
+}
+
+.mini-player-volume input[type='range'] {
+  width: 62px;
+  min-width: 34px;
+  accent-color: var(--text-dim);
+}
+
+.mini-player-count {
+  flex: none;
+  min-width: 30px;
+  color: var(--text-faint);
+  font-size: calc(10.5px * var(--text-scale));
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* ---------- file drop ---------- */
+
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(var(--bg-rgb) / 74%);
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+
+.drop-card {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  max-width: 440px;
+  padding: 28px 34px;
+  border: 1.5px dashed rgb(var(--accent-rgb) / 70%);
+  border-radius: 18px;
+  background: var(--bg-elevated);
+  box-shadow: 0 24px 70px rgb(0 0 0 / 45%);
+  text-align: center;
+}
+
+.drop-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 3px;
+  border-radius: 50%;
+  background: rgb(var(--accent-rgb) / 14%);
+  color: var(--accent-strong);
+}
+
+.drop-card strong {
+  color: var(--text);
+  font-size: calc(17px * var(--text-scale));
+}
+
+.drop-card > span:last-child {
+  max-width: 330px;
+  color: var(--text-dim);
+  font-size: calc(12.5px * var(--text-scale));
+  line-height: 1.4;
+}
+
+/* ---------- appearance controls ---------- */
+
+/* Accented mode gives the shell an accent wash behind translucent panels.
+   Solid mode leaves the body colour untouched, so the effect is opt-in and has
+   a flat fallback. */
+.app {
+  background: var(--bg);
+}
+
+:root[data-surface='accented'] .app {
+  background:
+    radial-gradient(1200px 640px at 12% -8%, rgb(var(--accent-rgb) / 16%), transparent 62%),
+    radial-gradient(900px 520px at 100% 0%, rgb(var(--accent-rgb) / 9%), transparent 58%),
+    var(--bg);
+}
+
+:root[data-surface='accented'] .sidebar,
+:root[data-surface='accented'] .player-bar,
+:root[data-surface='accented'] .settings-tabs,
+:root[data-surface='accented'] .settings-body,
+:root[data-surface='accented'] .card,
+:root[data-surface='accented'] .track-list,
+:root[data-surface='accented'] .queue-table,
+:root[data-surface='accented'] .playlist-index,
+:root[data-surface='accented'] .online-list,
+:root[data-surface='accented'] .online-imported-list {
+  background: rgb(var(--bg-raised-rgb) / 72%);
+  backdrop-filter: blur(18px) saturate(128%);
+}
+
+/* Without backdrop-filter, translucency would only reduce contrast. */
+@supports not (backdrop-filter: blur(1px)) {
+  :root[data-surface='accented'] .sidebar,
+  :root[data-surface='accented'] .player-bar,
+  :root[data-surface='accented'] .settings-tabs,
+  :root[data-surface='accented'] .settings-body,
+  :root[data-surface='accented'] .card,
+  :root[data-surface='accented'] .track-list,
+  :root[data-surface='accented'] .queue-table,
+  :root[data-surface='accented'] .playlist-index,
+  :root[data-surface='accented'] .online-list,
+  :root[data-surface='accented'] .online-imported-list {
+    background: var(--bg-raised);
+  }
+}
+
+/* The density value is applied in three places: the token block above, the
+   virtualizer's rowHeight prop in TrackList, and these spacing rules. The row
+   height must stay in step with the prop or scrolling jumps. */
+.main-view {
+  padding: var(--density-view-pad);
+  gap: var(--density-gap);
+}
+
+.nav-item {
+  padding: var(--density-nav-pad);
+}
+
+.settings-panel {
+  padding: var(--density-panel-pad);
+}
+
+.cards,
+.cards-col {
+  gap: var(--density-gap);
+}
+
+.card {
+  padding: var(--density-card-pad);
+  gap: calc(var(--density-gap) - 2px);
+}
+
+.field-grid {
+  gap: var(--density-field-gap);
+}
+
+/* Theme choices are miniature previews, not swatches: the dark, cream and
+   split system options have to be distinguishable before their labels are read. */
+.theme-choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.theme-choice {
+  display: grid;
+  justify-items: stretch;
+  gap: 5px;
+  padding: 7px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  text-align: left;
+}
+
+.theme-choice:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.theme-choice.active {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--text);
+}
+
+.theme-preview {
+  display: grid;
+  grid-template-columns: 26% minmax(0, 1fr);
+  height: 52px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #f2ece1;
+}
+
+.theme-preview.dark {
+  background: #0f1016;
+  border-color: #333852;
+}
+
+.theme-preview.light {
+  background: #f2ece1;
+}
+
+.theme-preview.system {
+  background: linear-gradient(105deg, #0f1016 0 50%, #f2ece1 50% 100%);
+}
+
+.theme-preview-sidebar {
+  background: #e3d9c9;
+}
+
+.theme-preview.dark .theme-preview-sidebar {
+  background: #0c0e14;
+}
+
+.theme-preview-body {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px;
+}
+
+.theme-preview-line,
+.theme-preview-card {
+  display: block;
+  border-radius: 2px;
+}
+
+.theme-preview-line {
+  height: 4px;
+  background: #cfc3b0;
+}
+
+.theme-preview.dark .theme-preview-line {
+  background: #3a4160;
+}
+
+.theme-preview-line.short {
+  width: 62%;
+}
+
+.theme-preview-card {
+  height: 13px;
+  background: #fbf7ef;
+  border: 1px solid #d8cdbb;
+}
+
+.theme-preview.dark .theme-preview-card {
+  background: #1e2130;
+  border-color: #262a3a;
+}
+
+.theme-preview.system .theme-preview-line {
+  background: linear-gradient(90deg, #3a4160 0 50%, #cfc3b0 50% 100%);
+}
+
+.theme-preview.system .theme-preview-card {
+  background: linear-gradient(90deg, #1e2130 0 50%, #fbf7ef 50% 100%);
+}
+
+.theme-choice-label {
+  overflow: hidden;
+  color: var(--text);
+  font-size: calc(12.5px * var(--text-scale));
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-choice-hint {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: calc(10.5px * var(--text-scale));
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accent-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.accent-choice {
+  padding: 6px 9px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  font-size: calc(12px * var(--text-scale));
+}
+
+.accent-choice:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.accent-choice.active {
+  background: rgb(var(--accent-rgb) / 10%);
+  border-color: var(--accent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.accent-swatch {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border: 1px solid rgb(var(--overlay-rgb) / 22%);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 22%);
+}
+
+.segmented {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+}
+
+.segmented button {
+  flex: 1 1 0;
+  justify-content: center;
+  min-width: 0;
+  padding: 6px 8px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: calc(12px * var(--text-scale));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.segmented button + button {
+  border-left: 1px solid var(--border);
+}
+
+.segmented button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: transparent;
+}
+
+.segmented button.active {
+  background: var(--bg-active);
+  box-shadow: inset 0 -2px 0 var(--accent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.appearance-reset {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: rgb(var(--overlay-rgb) / 2%);
+}
+
+.appearance-reset strong {
+  font-size: calc(13px * var(--text-scale));
+}
+
+.appearance-reset p {
+  margin: 2px 0 0;
+  color: var(--text-faint);
+  font-size: calc(11.5px * var(--text-scale));
+  line-height: 1.4;
+}
+
+/* A small disclosure next to a control label. The bubble lives in a portal and
+   is positioned against the viewport, so a card's overflow can never clip it.
+   Focus keeps it keyboard reachable. */
+.info-hint {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 2px;
+  vertical-align: middle;
+}
+
+.info-hint-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  color: var(--text-faint);
+  cursor: help;
+  outline: none;
+}
+
+.info-hint-trigger:hover,
+.info-hint-trigger:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.info-hint-trigger:focus-visible {
+  box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 35%);
+}
+
+.info-hint-bubble {
+  position: fixed;
+  z-index: 1000;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  box-shadow: 0 12px 30px rgb(0 0 0 / 28%);
+  color: var(--text-dim);
+  font-size: calc(12px * var(--text-scale));
+  font-weight: 400;
+  line-height: 1.45;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transition: opacity 120ms ease, visibility 120ms ease;
+}
+
+.info-hint-bubble.open {
+  opacity: 1;
+  visibility: visible;
+}
+
+.settings-footer {
+  display: grid;
+  gap: 10px;
+  margin-top: var(--density-gap);
+  padding: var(--density-card-pad);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: rgb(var(--overlay-rgb) / 2%);
+}
+
+.settings-footer-head {
+  display: grid;
+  gap: 4px;
+}
+
+.settings-footer h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: calc(15px * var(--text-scale));
+}
+
+.settings-section-resets {
+  display: grid;
+  gap: 7px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.settings-section-resets > span {
+  color: var(--text-faint);
+  font-size: calc(12px * var(--text-scale));
+}
+
+.settings-footer .settings-reset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.settings-reset {
+  margin: 4px 0 10px;
+  padding: 12px 14px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: rgb(var(--overlay-rgb) / 2%);
+}
+
+.settings-reset .field-row {
+  align-items: center;
+}
+
+.settings-reset [role='status'],
+.data-note {
+  color: var(--ok);
+  font-size: calc(12px * var(--text-scale));
+}
+
+.data-note {
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.reset-confirm p {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: calc(13px * var(--text-scale));
+  font-weight: 600;
+}
+
+.settings-panel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -4px;
+  border-radius: var(--radius);
+}
+
+/* The full-window player's artwork and ambience are independent choices. The
+   bar keeps its own artwork tile either way; the large cover and the ambient
+   colour are the expensive, optional parts. */
+.app[data-player-artwork='false'] .np-stage {
+  display: none;
+}
+
+.app[data-player-ambience='false'] .player-bar-bg,
+.app[data-player-ambience='false'] .np-bg {
+  display: none;
+}
+
+/* Motion: system follows Windows, reduced folds the transition to nothing,
+   and full leaves the authored animation alone. Keeping the visibility
+   transition alive matters for the queue panel, which relies on it to stay
+   closed rather than merely transparent. */
+:root[data-motion='reduced'] *,
+:root[data-motion='reduced'] *::before,
+:root[data-motion='reduced'] *::after {
+  animation-delay: 0s !important;
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-delay: 0s !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-motion='system'] *,
+  :root[data-motion='system'] *::before,
+  :root[data-motion='system'] *::after {
+    animation-delay: 0s !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-delay: 0s !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* A spinner is how the app says "still working". Freezing it at one frame makes
+   a slow resolve look broken, so reduced motion slows it down instead of removing
+   it. This is the one intentional exception. */
+:root[data-motion='reduced'] .spin,
+:root[data-motion='reduced'] .spin * {
+  animation-delay: 0s !important;
+  animation-duration: 1.2s !important;
+  animation-iteration-count: infinite !important;
+  animation-timing-function: linear !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-motion='system'] .spin,
+  :root[data-motion='system'] .spin * {
+    animation-delay: 0s !important;
+    animation-duration: 1.2s !important;
+    animation-iteration-count: infinite !important;
+    animation-timing-function: linear !important;
+  }
+}
+
+/* ---------- downloads ---------- */
+
+.downloads-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.downloads-header {
+  align-items: flex-end;
+}
+
+.downloads-kicker {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--accent);
+  font-size: calc(10.5px * var(--text-scale));
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.downloads-header .view-heading p {
+  max-width: 62ch;
+  margin: 0;
+  color: var(--text-faint);
+  font-size: calc(12.5px * var(--text-scale));
+}
+
+.downloads-tabs {
+  display: flex;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgb(var(--overlay-rgb) / 3%);
+}
+
+.downloads-tab {
+  min-height: 34px;
+  padding: 6px 13px;
+  border-color: transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: calc(12px * var(--text-scale));
+}
+
+.downloads-tab:hover:not(:disabled) {
+  background: rgb(var(--overlay-rgb) / 6%);
+  border-color: transparent;
+  color: var(--text);
+}
+
+.downloads-tab.active {
+  background: var(--bg-raised);
+  border-color: var(--border);
+  color: var(--text);
+  box-shadow: 0 2px 9px rgb(0 0 0 / 18%);
+}
+
+.downloads-tab-count {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgb(var(--accent-rgb) / 17%);
+  color: var(--accent);
+  font-size: calc(10px * var(--text-scale));
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.downloads-panel {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+.downloads-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: rgb(var(--overlay-rgb) / 2%);
+}
+
+.downloads-toolbar-note {
+  flex: 1;
+  min-width: 120px;
+  color: var(--text-faint);
+  font-size: calc(11.5px * var(--text-scale));
+  font-variant-numeric: tabular-nums;
+}
+
+.downloads-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.downloads-toolbar-actions .button,
+.downloads-toolbar-actions .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.downloads-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-dim);
+  font-size: calc(11.5px * var(--text-scale));
+  cursor: pointer;
+  user-select: none;
+}
+
+.downloads-check input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.downloads-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.download-item {
+  display: grid;
+  grid-template-columns: 22px 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 68px;
+  padding: 9px 14px;
+}
+
+.download-item + .download-item {
+  border-top: 1px solid rgb(var(--overlay-rgb) / 5%);
+}
+
+.download-item:hover {
+  background: rgb(var(--overlay-rgb) / 3%);
+}
+
+.download-item.pinned {
+  background: rgb(var(--accent-rgb) / 5%);
+}
+
+.download-item.removed {
+  opacity: 0.88;
+}
+
+.download-select {
+  display: grid;
+  place-items: center;
+}
+
+.download-select input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.download-select-spacer {
+  width: 14px;
+  height: 14px;
+}
+
+.download-art {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgb(var(--overlay-rgb) / 4%);
+  color: var(--text-faint);
+}
+
+.download-item.downloading .download-art {
+  color: var(--accent);
+}
+
+.download-item.paused .download-art {
+  color: var(--accent);
+  border-color: rgb(var(--accent-rgb) / 35%);
+}
+
+.download-item.saved .download-art {
+  color: var(--ok);
+}
+
+.download-item.failed .download-art {
+  color: var(--danger);
+}
+
+.download-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.download-title {
+  overflow: hidden;
+  color: var(--text);
+  font-size: calc(13px * var(--text-scale));
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.download-meta,
+.download-status {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: calc(11px * var(--text-scale));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.download-item.downloading .download-status,
+.download-item.paused .download-status {
+  color: var(--accent);
+}
+
+.download-item.saved .download-status {
+  color: var(--ok);
+}
+
+.download-item.failed .download-status {
+  color: var(--danger);
+}
+
+.download-item.removed .download-status {
+  color: var(--accent);
+}
+
+.download-progress {
+  display: block;
+  height: 3px;
+  margin-top: 3px;
+  border-radius: 2px;
+  background: rgb(var(--overlay-rgb) / 8%);
+  overflow: hidden;
+}
+
+.download-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 180ms ease;
+}
+
+.download-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.download-actions .icon-button {
+  padding: 6px;
+}
+
+.text-button {
+  padding: 5px 8px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: calc(11.5px * var(--text-scale));
+}
+
+.text-button:hover:not(:disabled) {
+  background: rgb(var(--overlay-rgb) / 6%);
+  border-color: transparent;
+  color: var(--text);
+}
+
+.text-button.active {
+  color: var(--accent);
+  background: rgb(var(--accent-rgb) / 10%);
+}
+
+.danger-quiet {
+  color: var(--danger);
+}
+
+button.danger-quiet:disabled {
+  color: var(--danger);
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-weight: 500 !important;
+  letter-spacing: -0.01em;
+}
+
+.downloads-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 280px;
+  padding: 38px 22px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: rgb(var(--overlay-rgb) / 2%);
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.downloads-empty.compact {
+  min-height: 150px;
+}
+
+.downloads-empty svg {
+  color: var(--accent);
+  opacity: 0.8;
+}
+
+.downloads-empty h2 {
+  margin: 3px 0 0;
+  color: var(--text);
+  font-size: calc(16px * var(--text-scale));
+}
+
+.downloads-empty p {
+  max-width: 54ch;
+  margin: 0;
+  font-size: calc(12px * var(--text-scale));
+  line-height: 1.5;
+}
+
+.downloads-empty .button {
+  margin-top: 8px;
+}
+
+.cache-summary {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 16px 14px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.cache-usage {
+  flex: 1;
+  min-width: 240px;
+}
+
+.cache-usage-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-dim);
+  font-size: calc(11.5px * var(--text-scale));
+}
+
+.cache-usage-head strong {
+  color: var(--text);
+  font-size: calc(13px * var(--text-scale));
+  font-variant-numeric: tabular-nums;
+}
+
+.cache-usage-head strong span {
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+.cache-bar {
+  height: 6px;
+  margin: 8px 0 7px;
+  border-radius: 999px;
+  background: rgb(var(--overlay-rgb) / 8%);
+  overflow: hidden;
+}
+
+.cache-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), rgb(var(--accent-rgb) / 60%));
+  transition: width 200ms ease;
+}
+
+.cache-usage p {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: calc(11px * var(--text-scale));
+}
+
+.cache-usage .cache-policy {
+  margin-top: 6px;
+  line-height: 1.5;
+}
+
+.cache-summary-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cache-notice {
+  margin: 0;
+  padding: 9px 14px;
+  border-bottom: 1px solid rgb(var(--accent-rgb) / 22%);
+  background: rgb(var(--accent-rgb) / 9%);
+  color: var(--text-dim);
+  font-size: calc(11.5px * var(--text-scale));
+  line-height: 1.5;
+}
+
+.cache-retention {
+  margin: 0;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: calc(11px * var(--text-scale));
+  line-height: 1.5;
+}
+
+.cache-list .download-body {
+  gap: 3px;
+}
+
+@media (max-width: 720px) {
+  .downloads-header {
+    align-items: flex-start;
+  }
+
+  .downloads-tabs {
+    width: 100%;
+  }
+
+  .downloads-tab {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .download-item {
+    grid-template-columns: 18px 32px minmax(0, 1fr);
+  }
+
+  .download-actions {
+    grid-column: 2 / -1;
+    justify-content: flex-start;
+    padding-top: 2px;
+  }
+}

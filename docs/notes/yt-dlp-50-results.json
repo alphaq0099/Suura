@@ -1,0 +1,1079 @@
+{
+  "summary": {
+    "measuredAt": "2026-10-20T09:37:13.548Z",
+    "ytDlp": "yt-dlp",
+    "requested": 50,
+    "collected": 50,
+    "resolved": 50,
+    "failed": 0,
+    "resolveMs": {
+      "median": 8316.5,
+      "min": 6845,
+      "max": 11456
+    },
+    "firstRangeMs": {
+      "median": 458.5,
+      "min": 176,
+      "max": 1263
+    },
+    "formats": [
+      "webm/opus",
+      "m4a/mp4a.40.2"
+    ],
+    "ranges": [
+      "206/2048"
+    ]
+  },
+  "results": [
+    {
+      "videoId": "FLGCGc7sAUw",
+      "searchTitle": "Bella Poarch - Build a B*tch (Official Music Video)",
+      "searchChannel": "Bella Poarch",
+      "durationSec": 170,
+      "query": "official music video 2021",
+      "resolvedTitle": "Bella Poarch - Build a B*tch (Official Music Video)",
+      "resolvedChannel": "Bella Poarch",
+      "resolveMs": 11456,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 131,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 456,
+        "contentRange": "bytes 0-2047/2791562"
+      }
+    },
+    {
+      "videoId": "h7MYJghRWt0",
+      "searchTitle": "Die For You ft. Grabbitz // Official Music Video // VALORANT Champions 2021",
+      "searchChannel": "VALORANT",
+      "durationSec": 218,
+      "query": "official music video 2021",
+      "resolvedTitle": "Die For You ft. Grabbitz // Official Music Video // VALORANT Champions 2021",
+      "resolvedChannel": "VALORANT",
+      "resolveMs": 10172,
+      "formatId": "140",
+      "ext": "m4a",
+      "acodec": "mp4a.40.2",
+      "abr": 129,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 469,
+        "contentRange": "bytes 0-2047/3529808"
+      }
+    },
+    {
+      "videoId": "5f1O74GwWJM",
+      "searchTitle": "KOMOLA - Ankita Bhattacharyya | Bengali Folk Song | Music Video 2021| Dance",
+      "searchChannel": "Ankita Bhattacharyya",
+      "durationSec": 185,
+      "query": "official music video 2021",
+      "resolvedTitle": "KOMOLA - Ankita Bhattacharyya | Bengali Folk Song | Music Video 2021| Dance",
+      "resolvedChannel": "Ankita Bhattacharyya",
+      "resolveMs": 10519,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 131,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 265,
+        "contentRange": "bytes 0-2047/3025776"
+      }
+    },
+    {
+      "videoId": "S2dRcipMCpw",
+      "searchTitle": "Billie Eilish - Lost Cause (Official Music Video)",
+      "searchChannel": "Billie Eilish",
+      "durationSec": 229,
+      "query": "official music video 2021",
+      "resolvedTitle": "Billie Eilish - Lost Cause (Official Music Video)",
+      "resolvedChannel": "Billie Eilish",
+      "resolveMs": 9133,
+      "formatId": "140",
+      "ext": "m4a",
+      "acodec": "mp4a.40.2",
+      "abr": 129,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 908,
+        "contentRange": "bytes 0-2047/3699283"
+      }
+    },
+    {
+      "videoId": "nJNooQDc0Bs",
+      "searchTitle": "EMIWAY - MACHAYENGE 3 | SWAALINA | ( OFFICIAL MUSIC VIDEO )",
+      "searchChannel": "Emiway Bantai",
+      "durationSec": 239,
+      "query": "official music video 2021",
+      "resolvedTitle": "EMIWAY - MACHAYENGE 3 | SWAALINA | ( OFFICIAL MUSIC VIDEO )",
+      "resolvedChannel": "Emiway Bantai",
+      "resolveMs": 10797,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 129,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 209,
+        "contentRange": "bytes 0-2047/3858155"
+      }
+    },
+    {
+      "videoId": "rCiBgLOcuKU",
+      "searchTitle": "Cardi B - Up [Official Music Video]",
+      "searchChannel": "Cardi B",
+      "durationSec": 170,
+      "query": "official music video 2021",
+      "resolvedTitle": "Cardi B - Up [Official Music Video]",
+      "resolvedChannel": "Cardi B",
+      "resolveMs": 9195,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 144,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 326,
+        "contentRange": "bytes 0-2047/3050899"
+      }
+    },
+    {
+      "videoId": "lZizLbWxr_E",
+      "searchTitle": "Spice, Sean Paul, Shaggy - Go Down Deh | Official Music Video",
+      "searchChannel": "Spice Official",
+      "durationSec": 186,
+      "query": "official music video 2021",
+      "resolvedTitle": "Spice, Sean Paul, Shaggy - Go Down Deh | Official Music Video",
+      "resolvedChannel": "Spice Official",
+      "resolveMs": 8287,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 134,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 192,
+        "contentRange": "bytes 0-2047/3098950"
+      }
+    },
+    {
+      "videoId": "hmUyEDG7Jy0",
+      "searchTitle": "Marshmello x Jonas Brothers - Leave Before You Love Me (Official Music Video)",
+      "searchChannel": "Marshmello",
+      "durationSec": 165,
+      "query": "official music video 2021",
+      "resolvedTitle": "Marshmello x Jonas Brothers - Leave Before You Love Me (Official Music Video)",
+      "resolvedChannel": "Marshmello",
+      "resolveMs": 11067,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 130,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 569,
+        "contentRange": "bytes 0-2047/2687655"
+      }
+    },
+    {
+      "videoId": "WcIcVapfqXw",
+      "searchTitle": "Rema, Selena Gomez - Calm Down (Official Music Video)",
+      "searchChannel": "Selena Gomez",
+      "durationSec": 239,
+      "query": "official music video 2021",
+      "resolvedTitle": "Rema, Selena Gomez - Calm Down (Official Music Video)",
+      "resolvedChannel": "Selena Gomez",
+      "resolveMs": 8196,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 140,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 269,
+        "contentRange": "bytes 0-2047/4183558"
+      }
+    },
+    {
+      "videoId": "I1nX5EuvwzE",
+      "searchTitle": "Shubh - Elevated (Official Music Video)",
+      "searchChannel": "SHUBH",
+      "durationSec": 229,
+      "query": "official music video 2021",
+      "resolvedTitle": "Shubh - Elevated (Official Music Video)",
+      "resolvedChannel": "SHUBH",
+      "resolveMs": 7920,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 139,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 281,
+        "contentRange": "bytes 0-2047/3985901"
+      }
+    },
+    {
+      "videoId": "V-xkKrSmutw",
+      "searchTitle": "[FANCAM] ATEEZ at 82WORLD in Los Angeles 10/19/2026 (full performances)",
+      "searchChannel": "kojaky",
+      "durationSec": 4507,
+      "query": "live concert full performance",
+      "resolvedTitle": "[FANCAM] ATEEZ at 82WORLD in Los Angeles 10/19/2026 (full performances)",
+      "resolvedChannel": "kojaky",
+      "resolveMs": 9108,
+      "formatId": "140",
+      "ext": "m4a",
+      "acodec": "mp4a.40.2",
+      "abr": 129,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 1046,
+        "contentRange": "bytes 0-2047/72938089"
+      }
+    },
+    {
+      "videoId": "UZnGKJwnHig",
+      "searchTitle": "Anupam Roy // Live at Balurghat // Full Concert",
+      "searchChannel": "Guinea Emporium Gold & Diamond",
+      "durationSec": 5473,
+      "query": "live concert full performance",
+      "resolvedTitle": "Anupam Roy // Live at Balurghat // Full Concert",
+      "resolvedChannel": "Guinea Emporium Gold & Diamond",
+      "resolveMs": 8399,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 134,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 200,
+        "contentRange": "bytes 0-2047/91472665"
+      }
+    },
+    {
+      "videoId": "VbrWXT40MHY",
+      "searchTitle": "Maroon 5 - Live at Casino de Paris FULL HD CONCERT",
+      "searchChannel": "Qello Concerts by Stingray",
+      "durationSec": 3218,
+      "query": "live concert full performance",
+      "resolvedTitle": "Maroon 5 - Live at Casino de Paris FULL HD CONCERT",
+      "resolvedChannel": "Qello Concerts by Stingray",
+      "resolveMs": 7234,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 129,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 323,
+        "contentRange": "bytes 0-2047/52076709"
+      }
+    },
+    {
+      "videoId": "5tB3mXD72Co",
+      "searchTitle": "Tyla - The A*Pop World Tour (Full Live Concert) at O2 Academy Brixton on (16/10/2026) London",
+      "searchChannel": "Jeremiah Ojan",
+      "durationSec": 5949,
+      "query": "live concert full performance",
+      "resolvedTitle": "Tyla - The A*Pop World Tour (Full Live Concert) at O2 Academy Brixton on (16/10/2026) London",
+      "resolvedChannel": "Jeremiah Ojan",
+      "resolveMs": 7784,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 129,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 352,
+        "contentRange": "bytes 0-2047/95703513"
+      }
+    },
+    {
+      "videoId": "mJje9Xpp5GE",
+      "searchTitle": "Metallica: Live in Manchester, England - June 18, 2019 (Full Concert)",
+      "searchChannel": "Metallica",
+      "durationSec": 8875,
+      "query": "live concert full performance",
+      "resolvedTitle": "Metallica: Live in Manchester, England - June 18, 2019 (Full Concert)",
+      "resolvedChannel": "Metallica",
+      "resolveMs": 7693,
+      "formatId": "140",
+      "ext": "m4a",
+      "acodec": "mp4a.40.2",
+      "abr": 129,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 1163,
+        "contentRange": "bytes 0-2047/143634856"
+      }
+    },
+    {
+      "videoId": "VA1TiemKEHE",
+      "searchTitle": "BTS Chile Live Concert Day 2 FULL FANCAM Jungkook and BTS Members Arirang Tour in Santiago",
+      "searchChannel": "KPOP MEDIA",
+      "durationSec": 1084,
+      "query": "live concert full performance",
+      "resolvedTitle": "BTS Chile Live Concert Day 2 FULL FANCAM Jungkook and BTS Members Arirang Tour in Santiago",
+      "resolvedChannel": "KPOP MEDIA",
+      "resolveMs": 7277,
+      "formatId": "140",
+      "ext": "m4a",
+      "acodec": "mp4a.40.2",
+      "abr": 129,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 584,
+        "contentRange": "bytes 0-2047/17539259"
+      }
+    },
+    {
+      "videoId": "dGuyO8pfHlA",
+      "searchTitle": "PAPON LIVE CONCERT || Papon LIVE PERFORMANCE || BEST Bollywood Hindi Songs || BEST LIVE concert 2025",
+      "searchChannel": "The SinginG FoodiE",
+      "durationSec": 4389,
+      "query": "live concert full performance",
+      "resolvedTitle": "PAPON LIVE CONCERT || Papon LIVE PERFORMANCE || BEST Bollywood Hindi Songs || BEST LIVE concert 2025",
+      "resolvedChannel": "The SinginG FoodiE",
+      "resolveMs": 9216,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 132,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 221,
+        "contentRange": "bytes 0-2047/72396946"
+      }
+    },
+    {
+      "videoId": "1oBATitnUsA",
+      "searchTitle": "Omah Lay - Live at L'Olympia Paris 2023 [Official Full Concert]",
+      "searchChannel": "Omah Lay",
+      "durationSec": 5505,
+      "query": "live concert full performance",
+      "resolvedTitle": "Omah Lay - Live at L'Olympia Paris 2023 [Official Full Concert]",
+      "resolvedChannel": "Omah Lay",
+      "resolveMs": 8320,
+      "formatId": "140",
+      "ext": "m4a",
+      "acodec": "mp4a.40.2",
+      "abr": 129,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 1195,
+        "contentRange": "bytes 0-2047/89098529"
+      }
+    },
+    {
+      "videoId": "ty8FIejR-I0",
+      "searchTitle": "Jason Mraz, live in Paris - Folies Bergère Performance (Full Concert) - ARTE Concert",
+      "searchChannel": "ARTE Concert",
+      "durationSec": 5526,
+      "query": "live concert full performance",
+      "resolvedTitle": "Jason Mraz, live in Paris - Folies Bergère Performance (Full Concert) - ARTE Concert",
+      "resolvedChannel": "ARTE Concert",
+      "resolveMs": 7276,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 135,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 919,
+        "contentRange": "bytes 0-2047/93239569"
+      }
+    },
+    {
+      "videoId": "2loN0JFZa0Y",
+      "searchTitle": "MEUTE - Live in Paris [Full Concert]",
+      "searchChannel": "MEUTE",
+      "durationSec": 5829,
+      "query": "live concert full performance",
+      "resolvedTitle": "MEUTE - Live in Paris [Full Concert]",
+      "resolvedChannel": "MEUTE",
+      "resolveMs": 6845,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 137,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 700,
+        "contentRange": "bytes 0-2047/100035103"
+      }
+    },
+    {
+      "videoId": "lTRiuFIWV54",
+      "searchTitle": "1 A.M Study Session 📚 [lofi hip hop]",
+      "searchChannel": "Lofi Girl",
+      "durationSec": 3674,
+      "query": "lofi hip hop mix 1 hour",
+      "resolvedTitle": "1 A.M Study Session 📚 [lofi hip hop]",
+      "resolvedChannel": "Lofi Girl",
+      "resolveMs": 7502,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 140,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 233,
+        "contentRange": "bytes 0-2047/64384290"
+      }
+    },
+    {
+      "videoId": "yxX5azQB1_U",
+      "searchTitle": "1 Hour of Night Hindi Lofi Songs To \\Chill \\Relax \\Refreshing",
+      "searchChannel": "vynora echo music",
+      "durationSec": 3999,
+      "query": "lofi hip hop mix 1 hour",
+      "resolvedTitle": "1 Hour of Night Hindi Lofi Songs To \\Chill \\Relax \\Refreshing",
+      "resolvedChannel": "vynora echo music",
+      "resolveMs": 8411,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 135,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 756,
+        "contentRange": "bytes 0-2047/67430759"
+      }
+    },
+    {
+      "videoId": "n61ULEU7CO0",
+      "searchTitle": "Best of lofi hip hop 2021 ✨ [beats to relax/study to]",
+      "searchChannel": "Lofi Girl",
+      "durationSec": 22258,
+      "query": "lofi hip hop mix 1 hour",
+      "resolvedTitle": "Best of lofi hip hop 2021 ✨ [beats to relax/study to]",
+      "resolvedChannel": "Lofi Girl",
+      "resolveMs": 7308,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 143,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 191,
+        "contentRange": "bytes 0-2047/398884282"
+      }
+    },
+    {
+      "videoId": "CFGLoQIhmow",
+      "searchTitle": "lofi hip hop mix 📚 beats to relax/study to (Part 1)",
+      "searchChannel": "Lofi Girl",
+      "durationSec": 10240,
+      "query": "lofi hip hop mix 1 hour",
+      "resolvedTitle": "lofi hip hop mix 📚 beats to relax/study to (Part 1)",
+      "resolvedChannel": "Lofi Girl",
+      "resolveMs": 9232,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 141,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 354,
+        "contentRange": "bytes 0-2047/180275375"
+      }
+    },
+    {
+      "videoId": "CLeZyIID9Bo",
+      "searchTitle": "Chill Lofi Mix [chill lo-fi hip hop beats]",
+      "searchChannel": "Settle",
+      "durationSec": 6292,
+      "query": "lofi hip hop mix 1 hour",
+      "resolvedTitle": "Chill Lofi Mix [chill lo-fi hip hop beats]",
+      "resolvedChannel": "Settle",
+      "resolveMs": 7763,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 140,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 176,
+        "contentRange": "bytes 0-2047/110353665"
+      }
+    },
+    {
+      "videoId": "i43tkaTXtwI",
+      "searchTitle": "Best of lofi hip hop 2022 🎆 - beats to relax/study to",
+      "searchChannel": "Lofi Girl",
+      "durationSec": 11474,
+      "query": "lofi hip hop mix 1 hour",
+      "resolvedTitle": "Best of lofi hip hop 2022 🎆 - beats to relax/study to",
+      "resolvedChannel": "Lofi Girl",
+      "resolveMs": 8264,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 142,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 612,
+        "contentRange": "bytes 0-2047/203710309"
+      }
+    },
+    {
+      "videoId": "8b3fqIBrNW0",
+      "searchTitle": "lofi hip hop mix 📚 beats to relax/study to (Part 2)",
+      "searchChannel": "Lofi Girl",
+      "durationSec": 14701,
+      "query": "lofi hip hop mix 1 hour",
+      "resolvedTitle": "lofi hip hop mix 📚 beats to relax/study to (Part 2)",
+      "resolvedChannel": "Lofi Girl",
+      "resolveMs": 7562,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 139,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 478,
+        "contentRange": "bytes 0-2047/255037280"
+      }
+    },
+    {
+      "videoId": "vWjl07A3rZg",
+      "searchTitle": "1 Hour - Relax & study with me Lofi | Tunes of Capy #timer  #1hour #1hourloop #lofi #relaxing #calm",
+      "searchChannel": "Chill Pills Studio",
+      "durationSec": 3604,
+      "query": "lofi hip hop mix 1 hour",
+      "resolvedTitle": "1 Hour - Relax & study with me Lofi | Tunes of Capy #timer  #1hour #1hourloop #lofi #relaxing #calm",
+      "resolvedChannel": "Chill Pills Studio",
+      "resolveMs": 8554,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 140,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 287,
+        "contentRange": "bytes 0-2047/63135792"
+      }
+    },
+    {
+      "videoId": "t8yVk0bm684",
+      "searchTitle": "1 Hour of Night Hindi Lofi Songs To \\Chill \\Relax \\Refreshing",
+      "searchChannel": "viral vicky vlogs ",
+      "durationSec": 3999,
+      "query": "lofi hip hop mix 1 hour",
+      "resolvedTitle": "1 Hour of Night Hindi Lofi Songs To \\Chill \\Relax \\Refreshing",
+      "resolvedChannel": "viral vicky vlogs ",
+      "resolveMs": 7688,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 135,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 294,
+        "contentRange": "bytes 0-2047/67411340"
+      }
+    },
+    {
+      "videoId": "Q89Dzox4jAE",
+      "searchTitle": "Lofi Work Space 📂 Deep Focus Study/Work Concentration [chill lo-fi hip hop beats]",
+      "searchChannel": "𝗖 𝗛 𝗜 𝗟 𝗟   𝗩 𝗜 𝗟 𝗟 𝗔 𝗚 𝗘",
+      "durationSec": 42896,
+      "query": "lofi hip hop mix 1 hour",
+      "resolvedTitle": "Lofi Work Space 📂 Deep Focus Study/Work Concentration [chill lo-fi hip hop beats]",
+      "resolvedChannel": "𝗖 𝗛 𝗜 𝗟 𝗟   𝗩 𝗜 𝗟 𝗟 𝗔 𝗚 𝗘",
+      "resolveMs": 8376,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 144,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 535,
+        "contentRange": "bytes 0-2047/774693383"
+      }
+    },
+    {
+      "videoId": "lgBLqo8TwgE",
+      "searchTitle": "Death Investigator: What Dead Bodies Reveal About Murder | Barbara Butcher | FO575 Raj Shamani",
+      "searchChannel": "Raj Shamani and Barbara Butcher",
+      "durationSec": 7825,
+      "query": "podcast episode interview",
+      "resolvedTitle": "Death Investigator: What Dead Bodies Reveal About Murder | Barbara Butcher | FO575 Raj Shamani",
+      "resolvedChannel": "Raj Shamani",
+      "resolveMs": 8313,
+      "formatId": "140-1",
+      "ext": "m4a",
+      "acodec": "mp4a.40.2",
+      "abr": 129,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 318,
+        "contentRange": "bytes 0-2047/126641893"
+      }
+    },
+    {
+      "videoId": "5vPMjEeRMZ0",
+      "searchTitle": "From 3 Lakh Debt to a 2 Crore Mercedes | Success Podcast With @SONUSHARMAMotivation",
+      "searchChannel": "SKT Official: Business & Motivation",
+      "durationSec": 5368,
+      "query": "podcast episode interview",
+      "resolvedTitle": "3 लाख के कर्ज़ से 2 करोड़ की मर्सिडीज तक | Success Podcast With @SONUSHARMAMotivation",
+      "resolvedChannel": "SKT Official: Business & Motivation",
+      "resolveMs": 8404,
+      "formatId": "140-3",
+      "ext": "m4a",
+      "acodec": "mp4a.40.2",
+      "abr": 129,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 650,
+        "contentRange": "bytes 0-2047/86882855"
+      }
+    },
+    {
+      "videoId": "R3L6edOy5bY",
+      "searchTitle": "Fake Podcast with Middle Class Baap | Rajesh Uncle | Season Finale EP-10",
+      "searchChannel": "Satish Ray",
+      "durationSec": 2109,
+      "query": "podcast episode interview",
+      "resolvedTitle": "Fake Podcast with Middle Class Baap | राजेश अंकल | Season Finale EP-10",
+      "resolvedChannel": "Satish Ray",
+      "resolveMs": 8222,
+      "formatId": "251-1",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 149,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 216,
+        "contentRange": "bytes 0-2047/39327283"
+      }
+    },
+    {
+      "videoId": "MdeQMVBuGgY",
+      "searchTitle": "Vijay Mallya Podcast: Rise & Downfall Of Kingfisher Airlines, Loans & RCB | FO364 Raj Shamani",
+      "searchChannel": "Raj Shamani",
+      "durationSec": 15528,
+      "query": "podcast episode interview",
+      "resolvedTitle": "Vijay Mallya Podcast: Rise & Downfall Of Kingfisher Airlines, Loans & RCB | FO364 Raj Shamani",
+      "resolvedChannel": "Raj Shamani",
+      "resolveMs": 9117,
+      "formatId": "140",
+      "ext": "m4a",
+      "acodec": "mp4a.40.2",
+      "abr": 129,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 571,
+        "contentRange": "bytes 0-2047/251300793"
+      }
+    },
+    {
+      "videoId": "yi-AJd7ygHY",
+      "searchTitle": "Unplugged ft. Pawan Jallad | Muskan Rastogi & Sahil | Nirbhaya Case | Blue Drum Case | Saurabh Ra...",
+      "searchChannel": "Shubhankar Mishra ",
+      "durationSec": 4707,
+      "query": "podcast episode interview",
+      "resolvedTitle": "Unplugged ft. Pawan Jallad | Muskan Rastogi & Sahil | Nirbhaya Case | Blue Drum Case| Saurabh Rajput",
+      "resolvedChannel": "Shubhankar Mishra ",
+      "resolveMs": 9432,
+      "formatId": "140-4",
+      "ext": "m4a",
+      "acodec": "mp4a.40.2",
+      "abr": 129,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 676,
+        "contentRange": "bytes 0-2047/76184804"
+      }
+    },
+    {
+      "videoId": "lqOH-zxtCDE",
+      "searchTitle": "QUEEN OF INDIAN MEDIA - Ekta Kapoor On TRS | Business, AI & More",
+      "searchChannel": "Ranveer Allahbadia",
+      "durationSec": 3185,
+      "query": "podcast episode interview",
+      "resolvedTitle": "QUEEN OF INDIAN MEDIA - Ekta Kapoor On TRS | Business, AI & More",
+      "resolvedChannel": "Ranveer Allahbadia",
+      "resolveMs": 8911,
+      "formatId": "140-4",
+      "ext": "m4a",
+      "acodec": "mp4a.40.2",
+      "abr": 129,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 705,
+        "contentRange": "bytes 0-2047/51546688"
+      }
+    },
+    {
+      "videoId": "biCrIlhZrC4",
+      "searchTitle": "#Podcast | #Episode01: Inside The Mind Of India’s AI Kid Raul John: Law, Education, Cyborg Future",
+      "searchChannel": "Business Today and Raultherockstar",
+      "durationSec": 2082,
+      "query": "podcast episode interview",
+      "resolvedTitle": "#Podcast | #Episode01: Inside The Mind Of India’s AI Kid Raul John: Law, Education, Cyborg Future",
+      "resolvedChannel": "Business Today",
+      "resolveMs": 8129,
+      "formatId": "140",
+      "ext": "m4a",
+      "acodec": "mp4a.40.2",
+      "abr": 129,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 565,
+        "contentRange": "bytes 0-2047/33695934"
+      }
+    },
+    {
+      "videoId": "JqwfZdW4WvI",
+      "searchTitle": "Rashmika & Vijay | FIRST Hindi Podcast After Marriage | Love, Life & Ranabaali | Shubhankar Mishra",
+      "searchChannel": "Shubhankar Mishra ",
+      "durationSec": 5361,
+      "query": "podcast episode interview",
+      "resolvedTitle": "Rashmika & Vijay | शादी के बाद FIRST Hindi Podcast | Love, Life & Ranabaali | Shubhankar Mishra",
+      "resolvedChannel": "Shubhankar Mishra ",
+      "resolveMs": 8620,
+      "formatId": "140-4",
+      "ext": "m4a",
+      "acodec": "mp4a.40.2",
+      "abr": 129,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 1263,
+        "contentRange": "bytes 0-2047/86768569"
+      }
+    },
+    {
+      "videoId": "x63HCoDfAhQ",
+      "searchTitle": "Protecting the President: Security, VIP Threats & ADC Life | Major Rishabh | FO560 Raj Shamani",
+      "searchChannel": "Raj Shamani and Rishabh Singh Sambyal ",
+      "durationSec": 7967,
+      "query": "podcast episode interview",
+      "resolvedTitle": "Protecting the President: Security, VIP Threats & ADC Life | Major Rishabh | FO560 Raj Shamani",
+      "resolvedChannel": "Raj Shamani",
+      "resolveMs": 8072,
+      "formatId": "251-0",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 135,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 289,
+        "contentRange": "bytes 0-2047/134581602"
+      }
+    },
+    {
+      "videoId": "I4BgRWAEuA8",
+      "searchTitle": "Would You Forgive This Cheater? | Ft. Himanshu Awasthi and Yashika Sharma | Interview Part 2",
+      "searchChannel": "Directors Kut Productions and 2 more",
+      "durationSec": 1655,
+      "query": "podcast episode interview",
+      "resolvedTitle": "Would You Forgive This Cheater?  |  Ft. Himanshu Awasthi and Yashika Sharma | Interview Part 2",
+      "resolvedChannel": "Directors Kut Productions",
+      "resolveMs": 9686,
+      "formatId": "140-1",
+      "ext": "m4a",
+      "acodec": "mp4a.40.2",
+      "abr": 129,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 700,
+        "contentRange": "bytes 0-2047/26788565"
+      }
+    },
+    {
+      "videoId": "HPbPg7JT0bM",
+      "searchTitle": "Symphony No. 2 / Sergei Rachmaninoff / Vasily Petrenko / Oslo Philharmonic",
+      "searchChannel": "Oslo Philharmonic and Maestro Vasily Petrenko. Official YouTube Channel",
+      "durationSec": 3681,
+      "query": "classical symphony full",
+      "resolvedTitle": "Symphony No. 2 / Sergei Rachmaninoff / Vasily Petrenko / Oslo Philharmonic",
+      "resolvedChannel": "Oslo Philharmonic",
+      "resolveMs": 7797,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 131,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 461,
+        "contentRange": "bytes 0-2047/60418692"
+      }
+    },
+    {
+      "videoId": "FwDo7MdaxhA",
+      "searchTitle": "Beethoven: Symphony No. 9 | Jordi Savall with Le Concert des Nations (complete symphony)",
+      "searchChannel": "DW Classical Music",
+      "durationSec": 4059,
+      "query": "classical symphony full",
+      "resolvedTitle": "Beethoven: Symphony No. 9 | Jordi Savall with Le Concert des Nations (complete symphony)",
+      "resolvedChannel": "DW Classical Music",
+      "resolveMs": 7266,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 135,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 313,
+        "contentRange": "bytes 0-2047/68366890"
+      }
+    },
+    {
+      "videoId": "u420qsrNTRQ",
+      "searchTitle": "The Best of Classical Music that You Should Listen to Once In Your Life🎻Mozart, Beethoven, Vivaldi..",
+      "searchChannel": "Classical Symphony Music",
+      "durationSec": 12830,
+      "query": "classical symphony full",
+      "resolvedTitle": "The Best of Classical Music that You Should Listen to Once In Your Life🎻Mozart, Beethoven, Vivaldi..",
+      "resolvedChannel": "Classical Symphony Music",
+      "resolveMs": 8645,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 138,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 371,
+        "contentRange": "bytes 0-2047/221192357"
+      }
+    },
+    {
+      "videoId": "Rd0HnxWm5CY",
+      "searchTitle": "Beethoven: Symphony No. 7 | Bernard Haitink & the Royal Concertgebouw Orchestra",
+      "searchChannel": "DW Classical Music",
+      "durationSec": 2511,
+      "query": "classical symphony full",
+      "resolvedTitle": "Beethoven: Symphony No. 7 | Bernard Haitink & the Royal Concertgebouw Orchestra",
+      "resolvedChannel": "DW Classical Music",
+      "resolveMs": 7398,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 134,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 309,
+        "contentRange": "bytes 0-2047/42051830"
+      }
+    },
+    {
+      "videoId": "Ip06DEeY_U8",
+      "searchTitle": "Schubert: Symphony in C major 'The Great' | Marek Janowski & the Dresdner Philharmonie",
+      "searchChannel": "DW Classical Music",
+      "durationSec": 3440,
+      "query": "classical symphony full",
+      "resolvedTitle": "Schubert: Symphony in C major 'The Great' | Marek Janowski & the Dresdner Philharmonie",
+      "resolvedChannel": "DW Classical Music",
+      "resolveMs": 8364,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 135,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 669,
+        "contentRange": "bytes 0-2047/57983390"
+      }
+    },
+    {
+      "videoId": "XzCUlxKrHCc",
+      "searchTitle": "30 Most Famous of Classical Music that You Should Listen to Once in Your Life 🎻🎶",
+      "searchChannel": "Classical Symphony Music",
+      "durationSec": 19641,
+      "query": "classical symphony full",
+      "resolvedTitle": "30 Most Famous of Classical Music that You Should Listen to Once in Your Life 🎻🎶",
+      "resolvedChannel": "Classical Symphony Music",
+      "resolveMs": 7857,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 134,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 343,
+        "contentRange": "bytes 0-2047/327845057"
+      }
+    },
+    {
+      "videoId": "z_4jMxbwmVc",
+      "searchTitle": "Mozart: Symphony No. 40 | Nikolaus Harnoncourt & Concentus Musicus",
+      "searchChannel": "DW Classical Music",
+      "durationSec": 2147,
+      "query": "classical symphony full",
+      "resolvedTitle": "Mozart: Symphony No. 40 | Nikolaus Harnoncourt & Concentus Musicus",
+      "resolvedChannel": "DW Classical Music",
+      "resolveMs": 9135,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 135,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 939,
+        "contentRange": "bytes 0-2047/36214923"
+      }
+    },
+    {
+      "videoId": "DWwppYEEdcI",
+      "searchTitle": "Beethoven: Symphony No. 3 Eroica | Michael Boder & ORF Vienna Radio Symphony Orchestra",
+      "searchChannel": "DW Classical Music",
+      "durationSec": 2895,
+      "query": "classical symphony full",
+      "resolvedTitle": "Beethoven: Symphony No. 3 Eroica | Michael Boder & ORF Vienna Radio Symphony Orchestra",
+      "resolvedChannel": "DW Classical Music",
+      "resolveMs": 7481,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 135,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 405,
+        "contentRange": "bytes 0-2047/48692224"
+      }
+    },
+    {
+      "videoId": "bd2I9xfcVr8",
+      "searchTitle": "Rachmaninoff: Symphony No. 2 | Antonio Pappano & the London Symphony Orchestra (full concert)",
+      "searchChannel": "DW Classical Music and London Symphony Orchestra",
+      "durationSec": 3567,
+      "query": "classical symphony full",
+      "resolvedTitle": "Rachmaninoff: Symphony No. 2 | Antonio Pappano & the London Symphony Orchestra (full concert)",
+      "resolvedChannel": "DW Classical Music",
+      "resolveMs": 8337,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 131,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 705,
+        "contentRange": "bytes 0-2047/58397297"
+      }
+    },
+    {
+      "videoId": "JAGip4nOsOg",
+      "searchTitle": "Beethoven: Symphony No. 1 | Michael Boder and the ORF Vienna Radio Symphony Orchestra",
+      "searchChannel": "DW Classical Music",
+      "durationSec": 1603,
+      "query": "classical symphony full",
+      "resolvedTitle": "Beethoven: Symphony No. 1 | Michael Boder and the ORF Vienna Radio Symphony Orchestra",
+      "resolvedChannel": "DW Classical Music",
+      "resolveMs": 7568,
+      "formatId": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 135,
+      "audioOnly": true,
+      "range": {
+        "status": 206,
+        "bytes": 2048,
+        "ms": 581,
+        "contentRange": "bytes 0-2047/27047282"
+      }
+    }
+  ]
+}
