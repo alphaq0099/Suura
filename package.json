@@ -5,7 +5,7 @@
   "private": true,
   "description": "Desktop music player for local files and YouTube links, with optional saving into the library.",
   "author": "Suura",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",

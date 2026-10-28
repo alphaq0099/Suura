@@ -9,7 +9,7 @@ library, one queue, one search box.
 - **A real library.** Tags and embedded cover art, sortable and searchable lists, smart views, playlists, a queue that
   survives a restart, and a mini player for when the window is in the way.
 
-Suura **0.1.0** is a private pre-release. There is no public download yet, so "installing it" today means building the
+Suura **0.1.0** is an early pre-release. There is no public download yet, so "installing it" today means building the
 installer from source — about five minutes, and no compiler is needed.
 
 ---
@@ -321,8 +321,8 @@ Playing files you already own is unaffected by any of this.
 
 ## Licence
 
-Private pre-release. `package.json` says `UNLICENSED`: no licence is granted and all rights are reserved. Ask before
-redistributing or publishing a build.
+MIT. The full text is in [`LICENSE`](./LICENSE). Suura is an early pre-release — unsigned, with no public download and
+no support promised — but the source is yours to use, change and redistribute under those terms.
 
 ---
 
