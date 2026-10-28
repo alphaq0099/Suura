@@ -867,27 +867,28 @@ export function PlaylistsView(props: PlaylistsViewProps) {
         <div className="playlist-pane">
           {showingOnline && onlineDetail ? (
             <>
-              <div className="playlist-pane-head">
-                <div className="playlist-pane-heading">
+              <header className="playlist-pane-head playlist-hero">
+                <span className="playlist-hero-art">
                   <ArtworkImage
                     track={headerTrack}
                     artworkKey={onlineDetail.playlist.coverKey ?? undefined}
-                    size={coverSize}
+                    size="100%"
                     iconSize={coverIconSize}
                     className="playlist-cover"
                   />
-                  <div className="playlist-pane-titles">
-                    <h2>{onlineDetail.playlist.title}</h2>
-                    <p className="subtitle">
-                      {subtitle}
-                      {onlineDetail.playlist.owner ? ` · ${onlineDetail.playlist.owner}` : ''} ·{' '}
-                      <span className="playlist-source-id" title="YouTube list id">
-                        {onlineDetail.playlist.listId}
-                      </span>
-                    </p>
-                  </div>
+                </span>
+                <div className="album-detail-copy playlist-hero-copy">
+                  <span className="home-kicker">{kindLabel}</span>
+                  <h2>{onlineDetail.playlist.title}</h2>
+                  <p className="album-detail-meta">
+                    {subtitle}
+                    {onlineDetail.playlist.owner ? ` · ${onlineDetail.playlist.owner}` : ''} ·{' '}
+                    <span className="playlist-source-id" title="YouTube list id">
+                      {onlineDetail.playlist.listId}
+                    </span>
+                  </p>
                 </div>
-                <div className="header-actions">
+                <div className="album-detail-actions header-actions">
                   <button
                     type="button"
                     className="playlist-play"
@@ -976,7 +977,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                     {confirmDeleteOnline === onlineDetail.playlist.id ? 'Remove playlist?' : 'Remove'}
                   </button>
                 </div>
-              </div>
+              </header>
 
               {onlineTruncated ? (
                 <p className="playlist-note">
@@ -1052,20 +1053,21 @@ export function PlaylistsView(props: PlaylistsViewProps) {
             </div>
           ) : (
             <>
-              <div className="playlist-pane-head">
-                <div className="playlist-pane-heading">
+              <header className="playlist-pane-head playlist-hero">
+                <span className="playlist-hero-art">
                   <ArtworkImage
                     track={headerTrack}
-                    size={coverSize}
+                    size="100%"
                     iconSize={coverIconSize}
                     className="playlist-cover"
                   />
-                  <div className="playlist-pane-titles">
-                    <h2>{detail.playlist.name}</h2>
-                    <p className="subtitle">{subtitle}</p>
-                  </div>
+                </span>
+                <div className="album-detail-copy playlist-hero-copy">
+                  <span className="home-kicker">Playlist</span>
+                  <h2>{detail.playlist.name}</h2>
+                  <p className="album-detail-meta">{subtitle}</p>
                 </div>
-                <div className="header-actions">
+                <div className="album-detail-actions header-actions">
                   <button
                     type="button"
                     className="playlist-play"
@@ -1115,7 +1117,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                     {confirmClear ? 'Clear all?' : 'Clear'}
                   </button>
                 </div>
-              </div>
+              </header>
 
               {selectionBar}
 

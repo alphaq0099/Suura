@@ -4447,25 +4447,34 @@ input[type='radio'] {
   min-height: 0;
 }
 
-.playlist-pane-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
+/* The opened list borrows the album page's hero: a large sleeve beside the
+   name, the facts and the actions, with the rows underneath. It reads as one
+   object instead of a toolbar over a table. */
+.playlist-pane-head.playlist-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: end;
+  gap: 0 clamp(14px, 2vw, 24px);
+  padding: clamp(12px, 1.6vw, 22px) clamp(14px, 2vw, 24px);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 6px);
+  background:
+    linear-gradient(135deg, rgb(var(--accent-rgb) / 14%), transparent 62%),
+    var(--bg-panel);
 }
 
-/* Cover beside the title, not above it: the pane is wide and short, and a taller
-   header block would push the first row down for nothing. */
-.playlist-pane-heading {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
-.playlist-pane-titles {
-  min-width: 0;
+.playlist-hero-art {
+  display: block;
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  flex: none;
+  width: clamp(92px, 15vw, 168px);
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-art);
+  box-shadow: 0 16px 38px rgb(0 0 0 / 0.22);
 }
 
 .playlist-cover {
@@ -4473,10 +4482,36 @@ input[type='radio'] {
   border-radius: 8px;
 }
 
+.playlist-hero-art .playlist-cover {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+}
+
+.playlist-hero-copy {
+  grid-column: 2;
+  grid-row: 1;
+  flex: 1;
+}
+
+.playlist-pane-head.playlist-hero .header-actions {
+  grid-column: 2;
+  grid-row: 2;
+}
+
 .playlist-pane-head h2 {
   margin: 0 0 3px;
   font-size: calc(17px * var(--text-scale));
   overflow-wrap: anywhere;
+}
+
+.playlist-pane-head.playlist-hero h2 {
+  font-size: clamp(
+    calc(22px * var(--text-scale)),
+    3vw,
+    calc(34px * var(--text-scale))
+  );
+  line-height: 1.15;
 }
 
 /* ---------- drag to reorder ---------- */
