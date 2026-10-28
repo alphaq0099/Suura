@@ -62,11 +62,14 @@ export function splitCommandLine(input: string): string[] {
   return args
 }
 
-// The bgutil provider pulls in jsdom before it binds its port; a cold start on
-// this machine takes 11-12 seconds, and a resolve or update running beside it
-// can push that past 15. The wait runs in the background, so a longer deadline
-// costs nothing except a later "provider ready" message.
-const START_TIMEOUT_MS = 45_000
+// The bgutil provider loads jsdom and its dependency tree (thousands of files)
+// before it binds its port. A warm start takes a few seconds; the first start
+// after a reboot can take far longer because nothing is cached and the virus
+// scanner reads every file for the first time. So the first deadline only ends
+// the wait, never the process: a child that is still loading is reported as
+// still starting and keeps being watched until it answers.
+const START_WAIT_MS = 45_000
+const GIVE_UP_MS = 180_000
 const PING_TIMEOUT_MS = 2_000
 const STOP_WAIT_MS = 2_000
 const MAX_LOG_TAIL = 4_000
@@ -91,8 +94,20 @@ export class PoTokenProvider {
     private readonly deps: {
       engine: () => EngineSettings
       log: Logger
+      // Overridable so the smoke test can watch a slow start without waiting
+      // minutes; the app always uses the defaults above.
+      readyWaitMs?: number
+      giveUpMs?: number
     }
   ) {}
+
+  private get readyWaitMs(): number {
+    return this.deps.readyWaitMs ?? START_WAIT_MS
+  }
+
+  private get giveUpMs(): number {
+    return this.deps.giveUpMs ?? GIVE_UP_MS
+  }
 
   /** Reads the current switch, URL and process state, then probes `/ping`. */
   async status(): Promise<PoTokenStatus> {
@@ -206,7 +221,7 @@ export class PoTokenProvider {
   }
 
   private async launch(command: string, args: string[], providerUrl: string): Promise<PoTokenStatus> {
-    this.deps.log.info('starting PO Token provider', { command, argCount: args.length, providerUrl })
+    this.deps.log.info('starting PO Token provider', { command, args, providerUrl })
 
     let child: ChildProcess
     try {
@@ -221,6 +236,7 @@ export class PoTokenProvider {
     }
 
     this.child = child
+    this.deps.log.debug('PO Token provider process started', { pid: child.pid ?? null })
     child.stdout?.on('data', (chunk: Buffer) => {
       this.stderrTail = (this.stderrTail + chunk.toString('utf8')).slice(-MAX_LOG_TAIL)
     })
@@ -241,7 +257,8 @@ export class PoTokenProvider {
       }
     })
 
-    const deadline = Date.now() + START_TIMEOUT_MS
+    const startedAt = Date.now()
+    const deadline = startedAt + this.readyWaitMs
     while (Date.now() < deadline) {
       if (this.child === null) {
         throw new Error(this.lastError ?? 'The PO Token provider exited before it was ready.')
@@ -253,12 +270,60 @@ export class PoTokenProvider {
       await delay(250)
     }
 
-    const tail = this.stderrTail.trim()
-    this.lastError = `The PO Token provider did not answer at ${providerUrl} within ${Math.round(
-      START_TIMEOUT_MS / 1000
-    )} seconds.${tail ? ` Output: ${tail.slice(-1000)}` : ''}`
-    this.dispose()
-    throw new Error(this.lastError)
+    if (this.child === null) {
+      throw new Error(this.lastError ?? 'The PO Token provider exited before it was ready.')
+    }
+
+    // Still loading is not the same as broken, so the first deadline only ends
+    // the wait. Returning here keeps the caller responsive, and the watcher
+    // picks the provider up whenever it finally binds.
+    this.deps.log.warn('PO Token provider is still starting', {
+      providerUrl,
+      pid: this.child.pid ?? null,
+      waitedMs: Date.now() - startedAt
+    })
+    this.watch(this.child, providerUrl, startedAt)
+    return this.status()
+  }
+
+  /**
+   * Watches a child that was still loading when the first wait ended.
+   *
+   * The process is only killed when the give-up deadline passes, so a cold
+   * start that needs a minute is slow rather than fatal. The loops also end as
+   * soon as the child exits or is stopped, and a later child is never confused
+   * with this one.
+   */
+  private watch(child: ChildProcess, providerUrl: string, startedAt: number): void {
+    const giveUpAt = startedAt + this.giveUpMs
+    void (async () => {
+      while (this.child === child) {
+        if (await this.isReachable(providerUrl)) {
+          this.lastError = null
+          this.deps.log.info('PO Token provider is ready', {
+            providerUrl,
+            pid: child.pid ?? null,
+            waitedMs: Date.now() - startedAt
+          })
+          return
+        }
+        if (Date.now() >= giveUpAt) {
+          const tail = this.stderrTail.trim()
+          this.lastError = `The PO Token provider did not answer at ${providerUrl} within ${Math.round(
+            this.giveUpMs / 1000
+          )} seconds.${tail ? ` Output: ${tail.slice(-1000)}` : ''}`
+          this.deps.log.warn('PO Token provider never answered', {
+            providerUrl,
+            pid: child.pid ?? null,
+            waitedMs: Date.now() - startedAt,
+            output: tail.slice(-1000)
+          })
+          this.dispose()
+          return
+        }
+        await delay(1000)
+      }
+    })()
   }
 
   private async isReachable(providerUrl: string): Promise<boolean> {

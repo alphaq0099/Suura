@@ -486,7 +486,7 @@ export function SettingsView(props: SettingsViewProps) {
             : `A provider was already answering${status.serverVersion ? ` (v${status.serverVersion})` : ''}.`
         )
       } else {
-        setProviderNote('The command started, but the provider is not answering yet. Check its log.')
+        setProviderNote('The command started; the provider is still loading and will be used as soon as it answers.')
       }
     } catch (cause) {
       setProviderError(cause instanceof Error ? cause.message : String(cause))
@@ -1276,7 +1276,7 @@ export function SettingsView(props: SettingsViewProps) {
                     <span>
                       Start the provider automatically
                       <InfoHint label="About automatic provider start">
-                        Runs the command above; stops only the process it started.
+                        Starts the command above, stops only that process, and waits for a slow start.
                       </InfoHint>
                     </span>
                   </label>
@@ -1330,12 +1330,22 @@ export function SettingsView(props: SettingsViewProps) {
                         {engineStatus.poToken.enabled ? 'enabled' : 'off'}
                       </span>
                     </li>
-                    <li className={engineStatus.poToken.serverReachable ? 'ok' : 'bad'}>
+                    <li
+                      className={
+                        engineStatus.poToken.serverReachable
+                          ? 'ok'
+                          : engineStatus.poToken.managedRunning
+                            ? ''
+                            : 'bad'
+                      }
+                    >
                       <span className="status-name">Server</span>
                       <span className="status-value" title={engineStatus.poToken.providerUrl}>
                         {engineStatus.poToken.serverReachable
                           ? `reachable at ${engineStatus.poToken.providerUrl.replace(/^https?:\/\//, '')}${engineStatus.poToken.serverVersion ? `, v${engineStatus.poToken.serverVersion}` : ''}`
-                          : `no answer at ${engineStatus.poToken.providerUrl.replace(/^https?:\/\//, '')}`}
+                          : engineStatus.poToken.managedRunning
+                            ? `starting at ${engineStatus.poToken.providerUrl.replace(/^https?:\/\//, '')}`
+                            : `no answer at ${engineStatus.poToken.providerUrl.replace(/^https?:\/\//, '')}`}
                       </span>
                     </li>
                     <li className={engineStatus.poToken.managedRunning ? 'ok' : ''}>

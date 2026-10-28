@@ -3064,6 +3064,94 @@ async function main(): Promise<void> {
       provider.dispose()
     }
 
+    // A cold start takes far longer than a warm one: the provider loads
+    // thousands of small files before it binds, and the first launch after a
+    // reboot can pass 45 seconds. The first deadline must only end the wait;
+    // killing the child there left the provider down for the rest of the
+    // session. These two children start slowly and never at all.
+    const slowScript = join(settingsRoot, 'slow-provider.mjs')
+    await writeFile(
+      slowScript,
+      [
+        "import { createServer } from 'node:http'",
+        'const port = Number(process.argv[2])',
+        'const server = createServer((request, response) => {',
+        "  if (request.url === '/ping') {",
+        "    response.setHeader('content-type', 'application/json')",
+        "    response.end(JSON.stringify({ version: 'slow-1', server_uptime: 1 }))",
+        '    return',
+        '  }',
+        '  response.statusCode = 404',
+        '  response.end()',
+        '})',
+        "setTimeout(() => server.listen(port, '127.0.0.1'), 1200)"
+      ].join('\n'),
+      'utf8'
+    )
+    const slowProvider = new PoTokenProvider({
+      engine: () => ({
+        ...DEFAULT_SETTINGS.engine,
+        poTokenEnabled: true,
+        poTokenProviderUrl: `http://127.0.0.1:${providerPort}`,
+        poTokenProviderCommand: `"${process.execPath}" "${slowScript}" ${providerPort}`
+      }),
+      log: silentLogger,
+      readyWaitMs: 300,
+      giveUpMs: 15_000
+    })
+    try {
+      const slowStarted = await slowProvider.start()
+      check(
+        'provider: a child that is still loading is reported as starting, not killed',
+        slowStarted.managedRunning && !slowStarted.serverReachable && slowStarted.error === null,
+        JSON.stringify(slowStarted)
+      )
+      await delay(2500)
+      const slowReady = await slowProvider.status()
+      check(
+        'provider: a slow child is picked up once it answers',
+        slowReady.serverReachable && slowReady.managedRunning,
+        JSON.stringify(slowReady)
+      )
+    } finally {
+      // Awaited so the port is free for the child below; `dispose` only signals
+      // the kill and returns.
+      await slowProvider.stop()
+    }
+
+    const stuckScript = join(settingsRoot, 'stuck-provider.mjs')
+    await writeFile(stuckScript, 'setInterval(() => {}, 1000)\n', 'utf8')
+    const stuckProvider = new PoTokenProvider({
+      engine: () => ({
+        ...DEFAULT_SETTINGS.engine,
+        poTokenEnabled: true,
+        poTokenProviderUrl: `http://127.0.0.1:${providerPort}`,
+        poTokenProviderCommand: `"${process.execPath}" "${stuckScript}" ${providerPort}`
+      }),
+      log: silentLogger,
+      readyWaitMs: 200,
+      giveUpMs: 2000
+    })
+    try {
+      const stuckStarted = await stuckProvider.start()
+      check(
+        'provider: a child past the first deadline keeps running while it is watched',
+        stuckStarted.managedRunning && !stuckStarted.serverReachable,
+        JSON.stringify(stuckStarted)
+      )
+      await delay(4000)
+      const stuckEnded = await stuckProvider.status()
+      check(
+        'provider: a child that never answers is stopped at the give-up deadline',
+        !stuckEnded.managedRunning &&
+          typeof stuckEnded.error === 'string' &&
+          stuckEnded.error.includes('did not answer'),
+        JSON.stringify(stuckEnded)
+      )
+    } finally {
+      stuckProvider.dispose()
+    }
+
     // The other half of the ownership rule: a server the user already runs is
     // never killed just because the app is asked to stop "its" provider.
     const externalServer = createServer((request, response) => {

@@ -336,7 +336,8 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
       search/channel cache with single-flight, one transient-failure retry, and a bot-check breaker (5 min / 15 min on
       a repeat) that leaves already-resolved streams playing. Search/channel now use InnerTube, so they do not start a
       sidecar at all. Prefetch is a setting. Browser cookies are off by default and can be used never, once after a
-      bot check, or always; a PO Token provider is an optional external HTTP server with an optional managed command.
+      bot check, or always; a PO Token provider is an optional external HTTP server with an optional managed command,
+      and a start that is slow to bind is watched instead of killed.
 - [x] Next-track prefetch: four seconds into a stream the player asks the main process to resolve the entry it will
       play next (`media:prefetch` → `ResolverRegistry.prefetch` → `YouTubeResolver.prefetch`), filling the cache the
       play will read without registering a token, recording history or failing the caller. A video id is asked for once
