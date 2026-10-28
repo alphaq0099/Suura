@@ -7,6 +7,7 @@ import type {
   AppSettings,
   DeepPartial,
   EngineStatus,
+  OnlinePlaylist,
   PoTokenStatus,
   ReplayGainStatus,
   RepeatMode,
@@ -656,6 +657,30 @@ export function App() {
   )
 
   /**
+   * Plays an imported list from a Home card.
+   *
+   * Its rows are YouTube entries, so they queue under the list's name rather
+   * than the library's. The list is kept as the playing list too: the Online
+   * view marks the card it came from, even after a trip through another view.
+   */
+  const playImportedTracks = useCallback(
+    (tracks: Track[], index: number, playlist: OnlinePlaylist): void => {
+      if (tracks.length === 0) return
+      setPlayingList({ title: playlist.title, tracks, playlistId: playlist.id })
+      player.playQueue(tagQueueTracks(tracks, { kind: 'playlist', label: playlist.title }), index)
+    },
+    [player]
+  )
+
+  const queueImportedTracks = useCallback(
+    (tracks: Track[], playlist: OnlinePlaylist): void => {
+      if (tracks.length === 0) return
+      player.enqueue(tagQueueTracks(tracks, { kind: 'playlist', label: playlist.title }))
+    },
+    [player]
+  )
+
+  /**
    * Plays one Home card.
    *
    * The shelf can now hold a played YouTube song beside local albums and
@@ -989,6 +1014,8 @@ export function App() {
           onPlayLocal={playLocalTracks}
           onPlayTrack={playHomeTrack}
           onQueueLocal={queueLocalTracks}
+          onPlayImported={playImportedTracks}
+          onQueueImported={queueImportedTracks}
           onReveal={(trackId) => void revealTrack(trackId)}
           onAddTracksToPlaylist={playlists.addTracks}
           onCreatePlaylist={playlists.create}

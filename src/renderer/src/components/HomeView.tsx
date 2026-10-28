@@ -1,5 +1,5 @@
 import { Children, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode, RefObject } from 'react'
+import type { CSSProperties, ReactNode, RefObject } from 'react'
 import type {
   AddTracksOutcome,
   AlbumSortField,
@@ -14,11 +14,11 @@ import type {
 } from '@shared/types'
 import { buildArtworkUrl } from '@shared/artwork-url'
 import { formatBytes, formatCount, formatDuration } from '@shared/format'
-import { onlinePlaylistArtworkTrack, streamPlayToTrack } from '@shared/online'
+import { onlinePlaylistArtworkTrack, onlinePlaylistItemToTrack, streamPlayToTrack } from '@shared/online'
 import { mergeAddedShelf, mergePlayedShelf, type ShelfEntry } from '@shared/played-shelf'
 import { api, messageOf } from '../api'
 import { useAlbums } from '../hooks/useAlbums'
-import { useArtwork } from '../hooks/useArtwork'
+import { resolveArtwork, useArtwork } from '../hooks/useArtwork'
 import { ArtworkImage } from './ArtworkImage'
 import {
   ArrowLeftIcon,
@@ -28,13 +28,19 @@ import {
   CloseIcon,
   DiscIcon,
   FolderIcon,
+  HistoryIcon,
   LibraryIcon,
+  ListMusicIcon,
+  MoreIcon,
+  NewMusicIcon,
   PlayIcon,
   QueueIcon,
   RefreshIcon,
   SearchIcon,
+  SlidersIcon,
   SpinnerIcon
 } from './Icons'
+import { RowMenu } from './RowMenu'
 import { TrackContextMenu } from './TrackContextMenu'
 import { TrackDetails } from './TrackDetails'
 import { TrackList } from './TrackList'
@@ -63,6 +69,9 @@ export interface HomeViewProps {
   /** Plays one shelf card. A stream card needs the YouTube queue, not the library. */
   onPlayTrack: (track: Track) => void
   onQueueLocal: (tracks: Track[]) => void
+  /** Plays an imported list, keeping its name on the queue. */
+  onPlayImported: (tracks: Track[], index: number, playlist: OnlinePlaylist) => void
+  onQueueImported: (tracks: Track[], playlist: OnlinePlaylist) => void
   onReveal: (trackId: number) => void
   onAddTracksToPlaylist: (playlistId: number, trackIds: number[]) => Promise<AddTracksOutcome>
   onCreatePlaylist: (name: string) => Promise<Playlist>
@@ -117,6 +126,52 @@ function firstShelfKey(entries: readonly ShelfEntry[]): string | null {
 const HERO_SLIDE_INTERVAL_MS = 12_000
 const HERO_SLIDE_LIMIT = 8
 
+/** The temporary look controls: percentages, and seconds between slides. */
+interface HeroLook {
+  light: number
+  dark: number
+  interval: number
+}
+
+const HERO_LOOK_KEY = 'player.home.hero-look'
+
+/**
+ * The values the hero ships with. The panel writes a local copy while the art is
+ * being judged; the final numbers go into the stylesheet once they are chosen.
+ */
+const DEFAULT_HERO_LOOK: HeroLook = {
+  light: 68,
+  dark: 24,
+  interval: Math.round(HERO_SLIDE_INTERVAL_MS / 1000)
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
+function readHeroLook(): HeroLook {
+  try {
+    const raw = window.localStorage.getItem(HERO_LOOK_KEY)
+    if (!raw) return DEFAULT_HERO_LOOK
+    const parsed = JSON.parse(raw) as Partial<HeroLook>
+    return {
+      light: clamp(Math.round(Number(parsed.light) || DEFAULT_HERO_LOOK.light), 5, 100),
+      dark: clamp(Math.round(Number(parsed.dark) || DEFAULT_HERO_LOOK.dark), 5, 100),
+      interval: clamp(Math.round(Number(parsed.interval) || DEFAULT_HERO_LOOK.interval), 3, 60)
+    }
+  } catch {
+    return DEFAULT_HERO_LOOK
+  }
+}
+
+function storeHeroLook(look: HeroLook): void {
+  try {
+    window.localStorage.setItem(HERO_LOOK_KEY, JSON.stringify(look))
+  } catch {
+    // A blocked storage write only loses the preview, never the app's settings.
+  }
+}
+
 function albumKeyOf(album: AlbumSummary): string {
   return `${album.album}\u001f${album.albumArtist}`
 }
@@ -168,7 +223,7 @@ function useNearViewport(ref: RefObject<HTMLElement | null>): boolean {
  * preference is read from the root data attribute (with the OS setting as the
  * `system` fallback) so changing it in Settings takes effect immediately.
  */
-function useHeroSlides(count: number): { index: number; running: boolean } {
+function useHeroSlides(count: number, intervalMs: number): { index: number; running: boolean } {
   const [index, setIndex] = useState(0)
   const [motionAllowed, setMotionAllowed] = useState(() => allowsMotion())
   const [pageVisible, setPageVisible] = useState(() => !document.hidden)
@@ -205,9 +260,9 @@ function useHeroSlides(count: number): { index: number; running: boolean } {
     if (!running) return
     const timer = window.setInterval(() => {
       setIndex((current) => (current + 1) % count)
-    }, HERO_SLIDE_INTERVAL_MS)
+    }, intervalMs)
     return () => window.clearInterval(timer)
-  }, [count, running])
+  }, [count, intervalMs, running])
 
   return { index: count === 0 ? 0 : index % count, running }
 }
@@ -373,45 +428,96 @@ function ArtistCard({
   )
 }
 
-function PlaylistCard({ playlist, onOpen }: { playlist: Playlist; onOpen: (playlist: Playlist) => void }) {
+/**
+ * A hand-made playlist on Home.
+ *
+ * It used to be a letter tile that opened Playlists. Home is for listening, so
+ * the whole card now starts the list; the first track's cover stands in for art
+ * the playlist does not own. Open and Queue stay one click away behind the
+ * overflow button, which is where a card's less common actions belong.
+ */
+function PlaylistCard({
+  playlist,
+  busy,
+  onPlay,
+  onMenu
+}: {
+  playlist: Playlist
+  busy: boolean
+  onPlay: (playlist: Playlist) => void
+  onMenu: (playlist: Playlist, at: { x: number; y: number }) => void
+}) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const visible = useNearViewport(ref)
+  const resolvedKey = useArtwork(
+    null,
+    visible && playlist.artworkTrackId !== null ? LOCAL_REQUEST(playlist.artworkTrackId) : null
+  )
+  const coverKey = playlist.artworkKey ?? resolvedKey
+  const meta = `${formatCount(playlist.trackCount)} ${
+    playlist.trackCount === 1 ? 'track' : 'tracks'
+  }`
+
   return (
-    <button
-      type="button"
-      className="playlist-card"
-      onClick={() => onOpen(playlist)}
-      title={`Open ${playlist.name}`}
-    >
-      <span className="playlist-card-cover" data-tone={toneOf(playlist.name)}>
-        <span className="playlist-card-initial">{initialOf(playlist.name)}</span>
-      </span>
-      <span className="album-card-title" title={playlist.name}>
-        {playlist.name}
-      </span>
-      <span className="album-card-meta">
-        {formatCount(playlist.trackCount)} {playlist.trackCount === 1 ? 'track' : 'tracks'}
-      </span>
-    </button>
+    <div className="album-card playlist-card" ref={ref}>
+      <button
+        type="button"
+        className="album-card-main"
+        onClick={() => onPlay(playlist)}
+        title={`Play ${playlist.name}`}
+        aria-label={`Play ${playlist.name}`}
+      >
+        <span className="playlist-card-cover" data-tone={toneOf(playlist.name)}>
+          {coverKey ? (
+            <img className="artwork album-cover" src={buildArtworkUrl(coverKey)} alt="" draggable={false} />
+          ) : (
+            <span className="playlist-card-initial">{initialOf(playlist.name)}</span>
+          )}
+          <span className="album-card-shade" aria-hidden="true" />
+        </span>
+        <span className="album-card-title" title={playlist.name}>
+          {playlist.name}
+        </span>
+        <span className="album-card-meta" title={meta}>
+          {meta}
+        </span>
+      </button>
+      <button
+        type="button"
+        className="card-overflow"
+        onClick={(event) => onMenu(playlist, { x: event.clientX, y: event.clientY })}
+        aria-label={`More actions for ${playlist.name}`}
+        title={`More actions for ${playlist.name}`}
+      >
+        {busy ? <SpinnerIcon size={14} /> : <MoreIcon size={16} />}
+      </button>
+    </div>
   )
 }
 
 /**
  * A playlist imported from a link, on Home.
  *
- * It keeps the playlist-card shell so the shelf stays one row of covers, but
- * shows the list's own cover (or its first video's still) instead of an initial.
- * Opening it lands in Playlists, where the imported pane can play, save or edit
- * it; the YouTube view is not the only doorway any more.
+ * Like a hand-made list, the card plays the list instead of navigating; its
+ * cover is the list's own sleeve or its first video's still. Opening it in
+ * Playlists, where it can be played, saved or edited, is the menu's first item.
  */
 function OnlinePlaylistCard({
   playlist,
-  onOpen
+  busy,
+  onPlay,
+  onMenu
 }: {
   playlist: OnlinePlaylist
-  onOpen: (playlist: OnlinePlaylist) => void
+  busy: boolean
+  onPlay: (playlist: OnlinePlaylist) => void
+  onMenu: (playlist: OnlinePlaylist, at: { x: number; y: number }) => void
 }) {
-  const ref = useRef<HTMLButtonElement | null>(null)
+  const ref = useRef<HTMLDivElement | null>(null)
   const visible = useNearViewport(ref)
   const art = onlinePlaylistArtworkTrack(playlist)
+  const resolvedKey = useArtwork(visible ? art : null)
+  const coverKey = playlist.coverKey ?? resolvedKey
   const kind = playlist.kind === 'album' ? 'Album' : playlist.kind === 'mix' ? 'Mix' : 'Playlist'
   const meta = [
     `YouTube ${kind.toLowerCase()}`,
@@ -419,28 +525,39 @@ function OnlinePlaylistCard({
   ].join(' · ')
 
   return (
-    <button
-      type="button"
-      className="playlist-card online-playlist-card"
-      ref={ref}
-      onClick={() => onOpen(playlist)}
-      title={`Open ${playlist.title} in Playlists`}
-    >
-      <span className="playlist-card-cover">
-        <ArtworkImage
-          track={visible ? art : null}
-          size="100%"
-          artworkKey={playlist.coverKey ?? undefined}
-          className="album-cover"
-        />
-      </span>
-      <span className="album-card-title" title={playlist.title}>
-        {playlist.title}
-      </span>
-      <span className="album-card-meta" title={meta}>
-        {meta}
-      </span>
-    </button>
+    <div className="album-card playlist-card online-playlist-card" ref={ref}>
+      <button
+        type="button"
+        className="album-card-main"
+        onClick={() => onPlay(playlist)}
+        title={`Play ${playlist.title}`}
+        aria-label={`Play ${playlist.title}`}
+      >
+        <span className="playlist-card-cover" data-tone={toneOf(playlist.title)}>
+          {coverKey ? (
+            <img className="artwork album-cover" src={buildArtworkUrl(coverKey)} alt="" draggable={false} />
+          ) : (
+            <span className="playlist-card-initial">{initialOf(playlist.title)}</span>
+          )}
+          <span className="album-card-shade" aria-hidden="true" />
+        </span>
+        <span className="album-card-title" title={playlist.title}>
+          {playlist.title}
+        </span>
+        <span className="album-card-meta" title={meta}>
+          {meta}
+        </span>
+      </button>
+      <button
+        type="button"
+        className="card-overflow"
+        onClick={(event) => onMenu(playlist, { x: event.clientX, y: event.clientY })}
+        aria-label={`More actions for ${playlist.title}`}
+        title={`More actions for ${playlist.title}`}
+      >
+        {busy ? <SpinnerIcon size={14} /> : <MoreIcon size={16} />}
+      </button>
+    </div>
   )
 }
 
@@ -575,6 +692,8 @@ export function HomeView(props: HomeViewProps) {
     onPlayLocal,
     onPlayTrack,
     onQueueLocal,
+    onPlayImported,
+    onQueueImported,
     onReveal,
     onAddTracksToPlaylist,
     onCreatePlaylist
@@ -591,6 +710,17 @@ export function HomeView(props: HomeViewProps) {
   const [shelvesError, setShelvesError] = useState<string | null>(null)
   const [busyAlbum, setBusyAlbum] = useState<string | null>(null)
   const [busyArtist, setBusyArtist] = useState<string | null>(null)
+  /** The card whose menu is open, and the custom list it belongs to. */
+  const [playlistMenu, setPlaylistMenu] = useState<
+    | { kind: 'custom'; playlist: Playlist; at: { x: number; y: number } }
+    | { kind: 'online'; playlist: OnlinePlaylist; at: { x: number; y: number } }
+    | null
+  >(null)
+  /** The card whose tracks are being fetched for play or queue. */
+  const [busyPlaylist, setBusyPlaylist] = useState<string | null>(null)
+  const [heroLook, setHeroLook] = useState<HeroLook>(readHeroLook)
+  const [heroLookOpen, setHeroLookOpen] = useState(false)
+  const [heroArtKeys, setHeroArtKeys] = useState<string[]>([])
 
   const [openAlbum, setOpenAlbum] = useState<AlbumSummary | null>(null)
   /** An artist opened from the shelf. Albums use the same detail shell. */
@@ -678,25 +808,67 @@ export function HomeView(props: HomeViewProps) {
   useRevealNewest(playedShelfRef, firstShelfKey(playedShelf))
   useRevealNewest(addedShelfRef, firstShelfKey(addedShelf))
 
-  const heroAlbum = playedAlbums[0] ?? recentAlbums[0] ?? null
-  const heroFallback = heroAlbum && !heroAlbum.artworkKey ? LOCAL_REQUEST(heroAlbum.trackId) : null
-  const heroResolved = useArtwork(null, heroFallback)
-
-  // Recent covers, newest first, without repeating an album that appears in
-  // both shelves. The hero falls back to the resolved art of its album when no
-  // shelf row has embedded art yet.
-  const heroSlides = useMemo(() => {
+  /**
+   * The covers the hero cycles are the cards on Recently played, not a separate
+   * album query. That is the difference between "the art of what I last heard"
+   * and "the art of the last albums that happen to have a sleeve": a YouTube
+   * listen, a single, or a track from a playlist now reaches the hero by the same
+   * path as an album. A row with no stored key is resolved through the shared
+   * artwork cache, so the band does not wait on eight IPC calls to appear.
+   */
+  const heroCandidates = useMemo(() => {
+    const shelf = playedShelf.length > 0 ? playedShelf : addedShelf
     const seen = new Set<string>()
-    const slides: string[] = []
-    for (const album of [...playedAlbums, ...recentAlbums]) {
-      if (!album.artworkKey || seen.has(album.artworkKey)) continue
-      seen.add(album.artworkKey)
-      slides.push(album.artworkKey)
+    const candidates: Array<{
+      key: string | null
+      request: Pick<Track, 'id' | 'sourceKind' | 'sourceId'>
+    }> = []
+    for (const entry of shelf) {
+      let key: string | null
+      let request: Pick<Track, 'id' | 'sourceKind' | 'sourceId'>
+      if (entry.kind === 'album') {
+        key = entry.album.artworkKey
+        request = LOCAL_REQUEST(entry.album.trackId)
+      } else {
+        const track = entry.track
+        key = track.artworkKey
+        request =
+          track.sourceKind === 'youtube' && track.sourceId
+            ? { id: track.id, sourceKind: 'youtube', sourceId: track.sourceId }
+            : LOCAL_REQUEST(track.id)
+      }
+      const identity = `${
+        request.sourceKind === 'youtube' ? `youtube:${request.sourceId}` : `local:${request.id}`
+      }`
+      if (seen.has(identity)) continue
+      seen.add(identity)
+      candidates.push({ key, request })
+      if (candidates.length >= HERO_SLIDE_LIMIT) break
     }
-    if (slides.length === 0 && heroResolved) slides.push(heroResolved)
-    return slides.slice(0, HERO_SLIDE_LIMIT)
-  }, [heroResolved, playedAlbums, recentAlbums])
-  const heroSlide = useHeroSlides(heroSlides.length)
+    return candidates
+  }, [addedShelf, playedShelf])
+
+  useEffect(() => {
+    let cancelled = false
+    void Promise.all(
+      heroCandidates.map(async (candidate) => candidate.key ?? (await resolveArtwork(candidate.request)))
+    ).then((resolvedKeys) => {
+      if (cancelled) return
+      const seen = new Set<string>()
+      const slides: string[] = []
+      for (const key of resolvedKeys) {
+        if (!key || seen.has(key)) continue
+        seen.add(key)
+        slides.push(key)
+      }
+      setHeroArtKeys(slides)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [heroCandidates])
+
+  const heroSlide = useHeroSlides(heroArtKeys.length, heroLook.interval * 1000)
 
   const hasLibrary = (stats?.tracks ?? 0) > 0
   const combinedError = error ?? shelvesError ?? albums.error
@@ -877,6 +1049,99 @@ export function HomeView(props: HomeViewProps) {
       gridHeadingRef.current?.focus({ preventScroll: true })
     })
   }, [albums])
+
+  /**
+   * Plays a hand-made list from Home.
+   *
+   * A card carries only a summary; the entries live behind one detail call, the
+   * same call the Playlists pane makes. Nothing navigates here: the card is a
+   * play control first, and Open is in its menu.
+   */
+  const playCustomPlaylist = useCallback(
+    async (playlist: Playlist): Promise<void> => {
+      if (busyPlaylist !== null) return
+      setBusyPlaylist(`custom-${playlist.id}`)
+      try {
+        const detail = await api.getPlaylist(playlist.id)
+        const tracks = detail?.items.map((item) => item.track) ?? []
+        if (tracks.length > 0) onPlayLocal(tracks, 0)
+      } catch (cause) {
+        setShelvesError(messageOf(cause))
+      } finally {
+        setBusyPlaylist(null)
+      }
+    },
+    [busyPlaylist, onPlayLocal]
+  )
+
+  const queueCustomPlaylist = useCallback(
+    async (playlist: Playlist): Promise<void> => {
+      if (busyPlaylist !== null) return
+      setBusyPlaylist(`custom-${playlist.id}`)
+      try {
+        const detail = await api.getPlaylist(playlist.id)
+        const tracks = detail?.items.map((item) => item.track) ?? []
+        if (tracks.length > 0) onQueueLocal(tracks)
+      } catch (cause) {
+        setShelvesError(messageOf(cause))
+      } finally {
+        setBusyPlaylist(null)
+      }
+    },
+    [busyPlaylist, onQueueLocal]
+  )
+
+  /** The imported counterpart: its rows are YouTube entries, not library files. */
+  const playOnlinePlaylist = useCallback(
+    async (playlist: OnlinePlaylist): Promise<void> => {
+      if (busyPlaylist !== null) return
+      setBusyPlaylist(`online-${playlist.id}`)
+      try {
+        const detail = await api.getOnlinePlaylist(playlist.id)
+        const tracks = detail
+          ? detail.items.map((item) => onlinePlaylistItemToTrack(item, detail.playlist))
+          : []
+        if (tracks.length > 0) onPlayImported(tracks, 0, playlist)
+      } catch (cause) {
+        setShelvesError(messageOf(cause))
+      } finally {
+        setBusyPlaylist(null)
+      }
+    },
+    [busyPlaylist, onPlayImported]
+  )
+
+  const queueOnlinePlaylist = useCallback(
+    async (playlist: OnlinePlaylist): Promise<void> => {
+      if (busyPlaylist !== null) return
+      setBusyPlaylist(`online-${playlist.id}`)
+      try {
+        const detail = await api.getOnlinePlaylist(playlist.id)
+        const tracks = detail
+          ? detail.items.map((item) => onlinePlaylistItemToTrack(item, detail.playlist))
+          : []
+        if (tracks.length > 0) onQueueImported(tracks, playlist)
+      } catch (cause) {
+        setShelvesError(messageOf(cause))
+      } finally {
+        setBusyPlaylist(null)
+      }
+    },
+    [busyPlaylist, onQueueImported]
+  )
+
+  const updateHeroLook = useCallback((patch: Partial<HeroLook>): void => {
+    setHeroLook((current) => {
+      const next = { ...current, ...patch }
+      storeHeroLook(next)
+      return next
+    })
+  }, [])
+
+  const resetHeroLook = useCallback((): void => {
+    storeHeroLook(DEFAULT_HERO_LOOK)
+    setHeroLook(DEFAULT_HERO_LOOK)
+  }, [])
 
   const selectedTracks = useMemo(
     () => albumTracks.filter((track) => albumSelection.has(track.id)),
@@ -1113,6 +1378,15 @@ export function HomeView(props: HomeViewProps) {
           </p>
         </div>
         <div className="header-actions">
+          <button
+            type="button"
+            onClick={() => setHeroLookOpen((open) => !open)}
+            aria-pressed={heroLookOpen}
+            title="Adjust the hero art while choosing final values"
+          >
+            <SlidersIcon />
+            <span>Hero look</span>
+          </button>
           <button type="button" onClick={onOpenLibrary}>
             <LibraryIcon />
             <span>Library</span>
@@ -1130,12 +1404,85 @@ export function HomeView(props: HomeViewProps) {
 
       {combinedError ? <div className="banner error">{combinedError}</div> : null}
 
+      {heroLookOpen ? (
+        <section className="hero-look" aria-label="Hero look">
+          <div className="hero-look-head">
+            <div>
+              <h2>Hero look</h2>
+              <p>Temporary: these numbers stay in this app until the final ones are baked in.</p>
+            </div>
+            <button
+              type="button"
+              className="icon-button subtle"
+              onClick={() => setHeroLookOpen(false)}
+              aria-label="Close hero look"
+              title="Close hero look"
+            >
+              <CloseIcon />
+            </button>
+          </div>
+          <div className="hero-look-grid">
+            <label className="hero-look-field">
+              <span>
+                Dark art opacity <output>{heroLook.dark}%</output>
+              </span>
+              <input
+                type="range"
+                min={5}
+                max={100}
+                step={1}
+                value={heroLook.dark}
+                onChange={(event) => updateHeroLook({ dark: Number(event.target.value) })}
+              />
+            </label>
+            <label className="hero-look-field">
+              <span>
+                Light art opacity <output>{heroLook.light}%</output>
+              </span>
+              <input
+                type="range"
+                min={5}
+                max={100}
+                step={1}
+                value={heroLook.light}
+                onChange={(event) => updateHeroLook({ light: Number(event.target.value) })}
+              />
+            </label>
+            <label className="hero-look-field">
+              <span>
+                Seconds per slide <output>{heroLook.interval}s</output>
+              </span>
+              <input
+                type="range"
+                min={3}
+                max={60}
+                step={1}
+                value={heroLook.interval}
+                onChange={(event) => updateHeroLook({ interval: Number(event.target.value) })}
+              />
+            </label>
+          </div>
+          <div className="hero-look-foot">
+            <span>The art crossfades behind the copy; opacity is how strongly it shows through.</span>
+            <button type="button" onClick={resetHeroLook}>
+              Reset
+            </button>
+          </div>
+        </section>
+      ) : null}
+
       <section
         className="home-hero"
+        style={
+          {
+            '--hero-art-dark': heroLook.dark / 100,
+            '--hero-art-light': heroLook.light / 100
+          } as CSSProperties
+        }
         data-slide-state={heroSlide.running ? 'running' : 'still'}
-        data-slide-count={heroSlides.length}
+        data-slide-count={heroArtKeys.length}
       >
-        {heroSlides.map((key, index) => (
+        {heroArtKeys.map((key, index) => (
           <img
             key={key}
             className={index === heroSlide.index ? 'home-hero-backdrop active' : 'home-hero-backdrop'}
@@ -1243,7 +1590,7 @@ export function HomeView(props: HomeViewProps) {
           {playedShelf.length > 0 ? (
             <Shelf
               title="Recently played"
-              icon={<PlayIcon size={15} />}
+              icon={<HistoryIcon size={15} />}
               scrollRef={playedShelfRef}
               action={
                 playedAlbums.length > 0 ? (
@@ -1282,7 +1629,7 @@ export function HomeView(props: HomeViewProps) {
           {addedShelf.length > 0 ? (
             <Shelf
               title="Recently added"
-              icon={<DiscIcon size={15} />}
+              icon={<NewMusicIcon size={15} />}
               scrollRef={addedShelfRef}
               action={
                 recentAlbums.length > 0 ? (
@@ -1333,19 +1680,23 @@ export function HomeView(props: HomeViewProps) {
           ) : null}
 
           {playlists.length + onlinePlaylists.length > 0 ? (
-            <Shelf title="Playlists" icon={<PlayIcon size={15} />}>
+            <Shelf title="Playlists" icon={<ListMusicIcon size={15} />}>
               {playlists.map((playlist) => (
                 <PlaylistCard
                   key={`custom-${playlist.id}`}
                   playlist={playlist}
-                  onOpen={(next) => onOpenPlaylist(next.id)}
+                  busy={busyPlaylist === `custom-${playlist.id}`}
+                  onPlay={(next) => void playCustomPlaylist(next)}
+                  onMenu={(next, at) => setPlaylistMenu({ kind: 'custom', playlist: next, at })}
                 />
               ))}
               {onlinePlaylists.map((playlist) => (
                 <OnlinePlaylistCard
                   key={`online-${playlist.id}`}
                   playlist={playlist}
-                  onOpen={(next) => onOpenOnlinePlaylist(next.id)}
+                  busy={busyPlaylist === `online-${playlist.id}`}
+                  onPlay={(next) => void playOnlinePlaylist(next)}
+                  onMenu={(next, at) => setPlaylistMenu({ kind: 'online', playlist: next, at })}
                 />
               ))}
             </Shelf>
@@ -1484,6 +1835,62 @@ export function HomeView(props: HomeViewProps) {
           </>
         )}
       </section>
+
+      {playlistMenu ? (
+        <RowMenu
+          at={playlistMenu.at}
+          title={
+            playlistMenu.kind === 'custom'
+              ? playlistMenu.playlist.name
+              : playlistMenu.playlist.title
+          }
+          portal
+          onClose={() => setPlaylistMenu(null)}
+          items={
+            playlistMenu.kind === 'custom'
+              ? [
+                  {
+                    id: 'open',
+                    label: 'Open in Playlists',
+                    icon: <ListMusicIcon size={15} />,
+                    onSelect: () => {
+                      onOpenPlaylist(playlistMenu.playlist.id)
+                      setPlaylistMenu(null)
+                    }
+                  },
+                  {
+                    id: 'queue',
+                    label: 'Add to queue',
+                    icon: <QueueIcon size={15} />,
+                    onSelect: () => {
+                      void queueCustomPlaylist(playlistMenu.playlist)
+                      setPlaylistMenu(null)
+                    }
+                  }
+                ]
+              : [
+                  {
+                    id: 'open',
+                    label: 'Open in Playlists',
+                    icon: <ListMusicIcon size={15} />,
+                    onSelect: () => {
+                      onOpenOnlinePlaylist(playlistMenu.playlist.id)
+                      setPlaylistMenu(null)
+                    }
+                  },
+                  {
+                    id: 'queue',
+                    label: 'Add to queue',
+                    icon: <QueueIcon size={15} />,
+                    onSelect: () => {
+                      void queueOnlinePlaylist(playlistMenu.playlist)
+                      setPlaylistMenu(null)
+                    }
+                  }
+                ]
+          }
+        />
+      ) : null}
     </section>
   )
 }

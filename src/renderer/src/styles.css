@@ -866,13 +866,15 @@ input[type='radio'] {
 }
 
 .home-hero-backdrop.active {
-  opacity: 0.24;
+  opacity: var(--hero-art-dark, 0.24);
 }
 
 /* Cream mode has less contrast to lose, so the same 0.24 reads as a haze
-   instead of art. The mask keeps the copy side clean; the right can carry more. */
+   instead of art. The mask keeps the copy side clean; the right can carry more.
+   Both values are variables so the temporary Hero look panel can move them
+   independently while the final numbers are chosen. */
 :root[data-theme='light'] .home-hero-backdrop.active {
-  opacity: 0.68;
+  opacity: var(--hero-art-light, 0.68);
   filter: saturate(1.05);
 }
 
@@ -988,6 +990,81 @@ input[type='radio'] {
   text-transform: uppercase;
 }
 
+/* The temporary Hero look panel. It is deliberately a dashed, accent-tinted
+   card: a preview tool, not a setting, and it will disappear once the values
+   are written into the stylesheet. */
+.hero-look {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px dashed rgb(var(--accent-rgb) / 46%);
+  border-radius: var(--radius);
+  background: rgb(var(--bg-panel-rgb) / 72%);
+}
+
+.hero-look-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hero-look-head h2 {
+  margin: 0;
+  font-size: calc(15px * var(--text-scale));
+  letter-spacing: -0.01em;
+}
+
+.hero-look-head p {
+  margin: 3px 0 0;
+  color: var(--text-dim);
+  font-size: calc(12px * var(--text-scale));
+}
+
+.hero-look-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px 20px;
+}
+
+.hero-look-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: calc(12px * var(--text-scale));
+}
+
+.hero-look-field > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.hero-look-field output {
+  color: var(--accent-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-look-field input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.hero-look-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text-faint);
+  font-size: calc(11.5px * var(--text-scale));
+}
+
 .home-section {
   display: flex;
   flex-direction: column;
@@ -1088,7 +1165,15 @@ input[type='radio'] {
   overflow-y: hidden;
   padding: 2px 2px 10px;
   scroll-snap-type: x proximity;
-  scrollbar-width: thin;
+  /* The arrows are the shelf's visible navigation. A scrollbar under every row
+     turned Home into a stack of bars, so the shelf still scrolls but hides its
+     track; the heading's prev/next buttons and the wheel-free drag remain. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.home-shelf::-webkit-scrollbar {
+  display: none;
 }
 
 .home-shelf > * {
@@ -1227,6 +1312,37 @@ input[type='radio'] {
 
 .album-card-play:disabled {
   opacity: 0.75;
+}
+
+/* The overflow control on a playlist card. It is always visible, because it is
+   the only way to Open a list now that the card itself plays; it sits over the
+   art like the play badge, at a smaller weight. */
+.card-overflow {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 50%;
+  background: rgb(12 14 20 / 46%);
+  color: #fff;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  opacity: 0.82;
+  transition: opacity 140ms ease, background 120ms ease;
+}
+
+.card-overflow:hover:not(:disabled),
+.card-overflow:focus-visible {
+  background: rgb(12 14 20 / 70%);
+  border-color: rgb(255 255 255 / 34%);
+  color: #fff;
+  opacity: 1;
 }
 
 .album-card-title {

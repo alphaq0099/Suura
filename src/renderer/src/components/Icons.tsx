@@ -77,6 +77,29 @@ export function RefreshIcon({ size = 16 }: IconProps) {
   )
 }
 
+/** A clock wound backwards: Recently played, as a history rather than a play button. */
+export function HistoryIcon({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <path d="M3.6 12a8.4 8.4 0 1 0 2.5-6" />
+      <path d="M3.5 4.5v4.2h4.2" />
+      <path d="M12 8.2V12l2.8 1.7" />
+    </svg>
+  )
+}
+
+/** A music note with a plus: a file that has just joined the library. */
+export function NewMusicIcon({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <path d="M8.6 18V7.4a1 1 0 0 1 .8-1l5.2-1a1 1 0 0 1 1.2 1v8.2" />
+      <circle cx="6.1" cy="18" r="2.5" />
+      <circle cx="14.8" cy="15.6" r="2.5" />
+      <path d="M19 3.4v5M16.5 5.9h5" />
+    </svg>
+  )
+}
+
 export function TrashIcon({ size = 16 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">

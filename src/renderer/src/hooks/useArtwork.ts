@@ -93,3 +93,19 @@ export function useArtwork(track: Track | null, fallback: ArtworkRequest | null 
   if (embedded) return embedded
   return looked && looked.identity === identity ? looked.key : null
 }
+
+/**
+ * Resolves artwork for a caller that is not a row.
+ *
+ * The hero asks about several tracks at once and has no element to keep the
+ * answer on, so it shares this cache and the in-flight map with every card. A
+ * cover already seen by a row costs nothing here, and a request that a card is
+ * already making is not sent twice.
+ */
+export function resolveArtwork(target: ArtworkRequest): Promise<string | null> {
+  const normalized = targetOf(target)
+  const identity = identityOf(normalized)
+  const known = resolved.get(identity)
+  if (known !== undefined) return Promise.resolve(known)
+  return request(normalized, identity)
+}

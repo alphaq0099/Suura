@@ -21,6 +21,8 @@ interface PlaylistRow {
   updated_at: number
   sort_order: number
   track_count: number
+  artwork_key: string | null
+  artwork_track_id: number | null
 }
 
 export interface PositionedItem {
@@ -44,7 +46,15 @@ const PLAYLIST_COLUMNS = `
   p.id, p.name, p.created_at, p.updated_at, p.sort_order,
   (SELECT COUNT(*) FROM playlist_items i
    JOIN tracks t ON t.id = i.track_id AND ${PLAYABLE_ROW}
-   WHERE i.playlist_id = p.id) AS track_count
+   WHERE i.playlist_id = p.id) AS track_count,
+  (SELECT t.artwork_key FROM playlist_items i
+   JOIN tracks t ON t.id = i.track_id AND ${PLAYABLE_ROW}
+   WHERE i.playlist_id = p.id
+   ORDER BY i.position, i.id LIMIT 1) AS artwork_key,
+  (SELECT t.id FROM playlist_items i
+   JOIN tracks t ON t.id = i.track_id AND ${PLAYABLE_ROW}
+   WHERE i.playlist_id = p.id
+   ORDER BY i.position, i.id LIMIT 1) AS artwork_track_id
 `
 
 function mapPlaylist(row: PlaylistRow): Playlist {
@@ -53,7 +63,9 @@ function mapPlaylist(row: PlaylistRow): Playlist {
     name: row.name,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    trackCount: row.track_count
+    trackCount: row.track_count,
+    artworkKey: row.artwork_key,
+    artworkTrackId: row.artwork_track_id
   }
 }
 

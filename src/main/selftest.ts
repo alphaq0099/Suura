@@ -241,6 +241,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       slideState: string
       reducedStops: boolean
       fullState: string
+      heroMatchesRecent: boolean
       cardFocus: boolean
       cardLift: number
       cardRest: number
@@ -277,7 +278,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            shelfHints: 0, moreLabels: '', moreFocusedGrid: false, sortOptions: '',
            playedSortActive: false, statBlur: '', statTint: '', slideCount: 0,
            slideLayers: 0, activeSlides: 0, slideState: '', reducedStops: false,
-           fullState: '', cardFocus: false, cardLift: 0, cardRest: 0,
+           fullState: '', heroMatchesRecent: false, cardFocus: false, cardLift: 0, cardRest: 0,
            livePlayShelf: false, livePlayAlbum: false
          }
 
@@ -439,6 +440,22 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.heroResumeAfter = (
            document.querySelector('.home-hero-actions .primary')?.textContent || ''
          ).trim()
+
+         // The backdrop must be the art of that newest card, not a separate
+         // album query that can lag behind what was actually played. Resolve
+         // the card's own cover first, then wait for the crossfade to point at
+         // the same cache key.
+         const shelfCover = recentShelf
+           ?.querySelector('.album-card .artwork[data-artwork="ready"]')
+           ?.getAttribute('src') || ''
+         const heroDeadline = Date.now() + 5000
+         let heroSrc = ''
+         while (Date.now() < heroDeadline) {
+           heroSrc = document.querySelector('.home-hero-backdrop.active')?.getAttribute('src') || ''
+           if (shelfCover && heroSrc === shelfCover) break
+           await sleep(100)
+         }
+         out.heroMatchesRecent = Boolean(shelfCover) && heroSrc === shelfCover
 
          // A real hover is the state the feedback is about. Bring the badge into
          // view here; its exact box is taken just before the pointer moves, once
@@ -672,6 +689,13 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         reduced: home.reducedStops,
         full: home.fullState
       }
+    )
+    record(
+      home.heroMatchesRecent,
+      'home: the hero backdrop follows the newest Recently played card',
+      home.heroMatchesRecent
+        ? 'the active layer uses the first card cover'
+        : 'the active layer did not match the first card cover'
     )
     record(
       home.cardFocus && Math.abs(home.cardLift + 4) < 0.5 && Math.abs(home.cardRest) < 0.5,
@@ -5797,6 +5821,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       artistRows: number
       artistHasSingle: boolean
       artistAlbumColumn: string
+      playStarted: boolean
+      openMenuItems: string
       onPlaylists: boolean
       paneTitle: string
       paneRows: number
@@ -5830,6 +5856,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            shelfScrolled: 0, arrowBackEnabled: false, shelfNodeStable: false,
            artistKicker: '', artistTitle: '', artistRows: 0, artistHasSingle: false,
            artistAlbumColumn: '',
+           playStarted: false, openMenuItems: '',
            onPlaylists: false, paneTitle: '', paneRows: 0
          }
 
@@ -5941,7 +5968,40 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          const backDeadline = Date.now() + 6000
          while (Date.now() < backDeadline && !document.querySelector('.home-shelf')) await sleep(100)
 
-         onlineCard('Shelf Test Album')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         // A card is a play control now: one click queues the list's tracks.
+         // The queue length is set synchronously, before any stream resolves,
+         // so this does not depend on the engine answering.
+         const online = onlineCard('Shelf Test Album')
+         online
+           ?.querySelector('.album-card-main')
+           ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         const queueDeadline = Date.now() + 6000
+         while (Date.now() < queueDeadline) {
+           const title = document.querySelector('.queue-button')?.getAttribute('title') || ''
+           if (title === 'Queue (2)') {
+             out.playStarted = true
+             break
+           }
+           await sleep(100)
+         }
+
+         // Opening the list for editing is the overflow menu's first item.
+         online
+           ?.querySelector('.card-overflow')
+           ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         const menuDeadline = Date.now() + 3000
+         let openItem = null
+         while (Date.now() < menuDeadline) {
+           openItem = [...document.querySelectorAll('.context-item')].find((el) =>
+             text(el).includes('Open in Playlists')
+           )
+           if (openItem) break
+           await sleep(50)
+         }
+         out.openMenuItems = [...document.querySelectorAll('.context-item')]
+           .map((el) => text(el).trim())
+           .join('|')
+         openItem?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
          // The pane is filled by an IPC round trip, so wait for the title rather
          // than assuming one paint.
          const paneDeadline = Date.now() + 6000
@@ -5980,11 +6040,17 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       `${homeShelves.addedTitle || 'none'} · ${homeShelves.addedMeta || 'no meta'} · leaked ${homeShelves.addedInPlayed}`
     )
     record(
+      homeShelves.playStarted,
+      'home: clicking a playlist card plays the list instead of navigating',
+      `queue after click ${homeShelves.playStarted ? 'held the two tracks' : 'did not change'}`
+    )
+    record(
       homeShelves.onPlaylists &&
         homeShelves.paneTitle === 'Shelf Test Album' &&
-        homeShelves.paneRows === 2,
-      'home: the imported playlist card opens the list in Playlists',
-      `view ${homeShelves.onPlaylists ? 'Playlists' : 'other'}, pane ${homeShelves.paneTitle || 'none'}, ${homeShelves.paneRows} rows`
+        homeShelves.paneRows === 2 &&
+        homeShelves.openMenuItems.includes('Open in Playlists'),
+      'home: the playlist card menu opens the list in Playlists',
+      `menu ${homeShelves.openMenuItems || 'none'}, view ${homeShelves.onPlaylists ? 'Playlists' : 'other'}, pane ${homeShelves.paneTitle || 'none'}, ${homeShelves.paneRows} rows`
     )
     record(
       streamPlaysBefore === 0 && container.streamPlays.getByVideoId('shelftest03') !== null,

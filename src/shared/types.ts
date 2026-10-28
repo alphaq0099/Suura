@@ -232,6 +232,16 @@ export interface Playlist {
    * show the count for every playlist without loading any of their contents.
    */
   trackCount: number
+  /**
+   * The cover of the first playable entry, when it already has one.
+   *
+   * A hand-made playlist owns no artwork of its own. Its first track is the
+   * closest thing to a face, exactly as an imported list uses its first video,
+   * and carrying the key here lets Home paint the card without opening the list.
+   */
+  artworkKey: string | null
+  /** The first playable entry's row id, for resolving art that is not extracted yet. */
+  artworkTrackId: number | null
 }
 
 /**
