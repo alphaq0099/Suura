@@ -561,16 +561,14 @@ reporting, compatibility and sidecar packaging are resolved.
 
 ### M11 — Long-Term / Nice-to-Have  *(continuous)*
 - [ ] Last.fm scrobbling · Discord Rich Presence
-- [ ] Lyrics: local `.lrc` + fetched with offset editor
 - [ ] Audio visualiser, spectrum analyser
 - [ ] Podcast/soundtrack mode, chapters, playback speed & pitch
 - [ ] Advanced: WASAPI exclusive output, ASIO, bit-perfect/hi-res path, device selection
 - [ ] Plugin/extension API for community resolvers
 - [ ] Optional CLI companion for scripting
-- [ ] **Richer song metadata** for YouTube rows: infer artist/album from titles (`Artist - Song`, `Artist - Topic`)
-      or enrich from a music database (MusicBrainz, Spotify, Last.fm), mark inferred values clearly, and never overwrite
-      explicit tags. YouTube itself only supplies `artist` for Music/Topic uploads; for ordinary videos the channel is
-      the only reliable identity, so this is a parser/database problem rather than a missing field.
+
+Tag writing, auto-tagging, artwork replacement and lyrics are no longer here: they became **M13**, because they are
+planned desktop work with a schema change, not continuous extras.
 
 ### M12 — Offline Cache & Downloads *(complete)*
 **Goal:** the other half of the original M4: a bounded cache that writes while a stream plays, an honest retention
@@ -616,6 +614,45 @@ and its tabs.
 
 ---
 
+### M13 — Library Metadata & Lyrics  *(~6 weeks; scheduled after M8, before M9)*
+**Goal:** fix the tags YouTube got wrong, and show the lyrics a file already has, without leaving the player.
+
+The number is next because the milestone was added last; the **schedule** is after M8 and before M9, so the Android
+port inherits the metadata core instead of reimplementing it. M12 set the same precedent.
+
+**Phase 1 — write path (the foundation)**
+- [ ] One `TagWriter` with a per-format strategy: `node-id3` for MP3 `USLT`/`SYLT`, ffmpeg `-c copy` for FLAC/Ogg/Opus
+      and M4A (verified: ffmpeg writes `TXXX:USLT` on MP3, not a real `USLT` frame)
+- [ ] Atomic write: temp file in the same folder → verify by parsing → replace; the original survives any failure
+- [ ] Refuse while the track is playing, handle read-only and locked files, update the row and artwork afterwards
+- [ ] Manual tag editor: title, artist, album artist, album, year, genre, track/disc, lyrics, cover
+
+**Phase 2 — lyrics, read-only**
+- [ ] `track_lyrics` table (track, source, language, synced, LRC, offset, fetched at)
+- [ ] Embedded lyrics: `USLT`/`SYLT`, Vorbis `LYRICS`, `©lyr`, plus a `TXXX` fallback for files ffmpeg wrote
+- [ ] `.lrc` sidecar, synced scroll and an offset control; no network
+
+**Phase 3 — single-track auto-tag and artwork**
+- [ ] iTunes + MusicBrainz lookup, duration-aware scoring, review dialog, apply through the writer
+- [ ] Artwork picker: embedded / `cover.jpg` / video still / provider cover, with a square-crop preview
+
+**Phase 4 — lyrics finder**
+- [ ] LRCLIB fetch, match, cache, source label, offset; optional "write into the file"
+
+**Phase 5 — batch**
+- [ ] Selection queue, review, undo, per-provider rate limits, "fetch missing lyrics"
+
+**Phase 6 — fingerprint fallback**
+- [ ] `fpcalc` sidecar, AcoustID key, MusicBrainz lookup, Cover Art Archive
+
+**Phase 7 — deferred**
+- [ ] AI transcription: local, opt-in, labelled "generated"; only if the rest is done and asked for
+
+**Exit:** a wrong tag can be fixed and a lyric found from inside the app on MP3/FLAC/M4A/Ogg; every write is reversible
+and survives a kill between the temp write and the replace.
+
+---
+
 ## 8. Milestone Summary
 
 | # | Milestone | Focus | Est. | Dependency |
@@ -631,12 +668,14 @@ and its tabs.
 | M8 | Windows Release Engineering *(in progress)* | Installer, update, telemetry, a11y | 2 w | M7 |
 | M9 | Android Port | New engine + player + UI | 4–6 w | M8 |
 | M10 | Two-Device Continuity *(optional)* | LAN companion server | 2–4 w | M9 |
-| M11 | Long-term extras | Scrobbling, lyrics, hi-res | continuous | — |
+| M11 | Long-term extras | Scrobbling, hi-res, plugins, visualiser | continuous | — |
 | M12 | Offline Cache & Downloads *(complete)* | Cache engine, offline replay, history; manager and Downloads screens | 2–3 w | M4, M6 |
+| M13 | Library Metadata & Lyrics *(next, after M8)* | Tag writing, auto-tag, artwork, lyrics | 6 w | M1, M7 |
 
-**Critical path:** M0 → M1 → M3 → M4 → M5 → M6 → M8 → M9. M2 can be interleaved, M7 is data-care hygiene, and M12 is
-complete (data layer plus manager and Downloads screens). The visual revamp landed as Home plus the album grid, and
-**Windows release engineering (M8) is in progress**: the per-user NSIS installer, manual diagnostics export and
+**Critical path:** M0 → M1 → M3 → M4 → M5 → M6 → M8 → M13 → M9. M2 can be interleaved, M7 is data-care hygiene, and M12 is
+complete (data layer plus manager and Downloads screens). M13 is numbered next because it was added last; it is scheduled
+after M8 and before M9 so the Android port inherits the metadata core. The visual revamp landed as Home plus the album
+grid, and **Windows release engineering (M8) is in progress**: the per-user NSIS installer, manual diagnostics export and
 renderer sandbox are built and verified; the update channel, crash reporting, compatibility pass and sidecar packaging
 are still open.
 
@@ -742,3 +781,5 @@ slider (3–60 s) instead of a constant.
 **Windows release engineering (M8) is in progress**: the per-user NSIS installer, icon, uninstall data prompt and
 renderer sandbox are in place and the packaged app passes its self-test; signing is documented but not configured, and
 update, crash reporting and sidecar packaging remain.
+
+**Next:** finish M8 (signing, update channel, sidecar bundling, CI), then **M13 (tags & lyrics)** before M9.
