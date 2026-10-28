@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { DENSITY_ROW_HEIGHT } from '@shared/appearance'
 import type { DownloadStatus, LibraryClickAction, SortDirection, Track, TrackSortField } from '@shared/types'
 import { formatDuration } from '@shared/format'
@@ -124,6 +124,12 @@ export interface TrackListProps {
   isSaved?: (track: Track) => boolean
   /** Progress for a row that is saving, so the button becomes a spinner. */
   saveState?: (track: Track) => { status: DownloadStatus; percent: number | null; error: string | null } | undefined
+  /**
+   * A small label after the title, for a list whose rows come from more than one
+   * place. Home's All tracks uses it for the source badge; every other list
+   * leaves it out and keeps the plain title.
+   */
+  rowBadge?: (track: Track, index: number) => ReactNode
 }
 
 interface Column {
@@ -184,7 +190,8 @@ export function TrackList(props: TrackListProps) {
     showAlbumColumn = true,
     onSave,
     isSaved,
-    saveState
+    saveState,
+    rowBadge
   } = props
 
   const scrollerRef = useRef<HTMLDivElement | null>(null)
@@ -661,6 +668,7 @@ export function TrackList(props: TrackListProps) {
                   <div role="gridcell" className="cell col-title" title={track.title}>
                     <ArtworkImage track={track} size={24} className="row-art" />
                     <span className="row-title-text">{track.title}</span>
+                    {rowBadge ? rowBadge(track, index) : null}
                   </div>
                   <div role="gridcell" className="cell col-artist">
                     <ScrollingText text={track.artist ?? '—'} title={track.artist ?? undefined} />

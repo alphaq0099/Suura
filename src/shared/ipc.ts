@@ -7,6 +7,8 @@
 import type {
   AddTracksOutcome,
   AlbumPage,
+  AllTracksPage,
+  AllTracksQuery,
   AppPaths,
   AppSettings,
   ArtistSummary,
@@ -73,6 +75,7 @@ export const IPC = {
   librarySearch: 'library:search',
   libraryTracksByIds: 'library:tracks-by-ids',
   libraryListAlbums: 'library:list-albums',
+  libraryAllTracks: 'library:all-tracks',
   libraryListArtists: 'library:list-artists',
   libraryStats: 'library:stats',
   libraryRemoveFolder: 'library:remove-folder',
@@ -255,6 +258,14 @@ export interface PlayerApi {
    */
   getPathForFile(file: File): string
   listTracks(query?: ListTracksQuery): Promise<TrackPage>
+  /**
+   * The merged, deduped feed Home shows below its shelves.
+   *
+   * One call instead of four, because the list is ordered across all of them:
+   * local files, counted stream listens, imported playlist entries and remembered
+   * YouTube links, newest activity first.
+   */
+  listAllTracks(query?: AllTracksQuery): Promise<AllTracksPage>
   /**
    * Searches local files and database-only imported YouTube tracks together.
    *

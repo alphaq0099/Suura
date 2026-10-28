@@ -20,6 +20,8 @@ import { clampPlaylistIndexWidth } from '@shared/playlists'
 import type {
   AccentName,
   AlbumSortField,
+  AllTracksFilter,
+  AllTracksQuery,
   AppSettings,
   ArtworkFit,
   ArtworkShape,
@@ -80,6 +82,7 @@ import {
   normalizeCookieBrowserProfile
 } from '@shared/youtube'
 import type { AppContainer } from './services/container'
+import { listAllTracks } from './all-tracks'
 import { broadcast } from './broadcast'
 import { readLogTail, sanitizeDiagnosticsSummary, writeDiagnosticsFile } from './diagnostics'
 import { LIBRARY_SEARCH_LIMIT, searchLibrary } from './library-search'
@@ -523,6 +526,25 @@ function sanitizeAlbumListQuery(input: unknown): ListAlbumsQuery {
   return query
 }
 
+function sanitizeAllTracksQuery(input: unknown): AllTracksQuery {
+  if (!isPlainObject(input)) return {}
+  const query: AllTracksQuery = {}
+  if (typeof input.search === 'string' && input.search.trim().length > 0) {
+    query.search = input.search.trim().slice(0, 200)
+  }
+  // The filter is a closed set, because it decides which sources are read.
+  if (input.filter === 'all' || input.filter === 'played' || input.filter === 'library') {
+    query.filter = input.filter as AllTracksFilter
+  }
+  if (typeof input.limit === 'number' && Number.isFinite(input.limit)) {
+    query.limit = Math.round(clamp(input.limit, 1, 200))
+  }
+  if (typeof input.offset === 'number' && Number.isFinite(input.offset)) {
+    query.offset = Math.max(0, Math.round(input.offset))
+  }
+  return query
+}
+
 function sanitizeArtistLimit(input: unknown): number {
   if (typeof input !== 'number' || !Number.isFinite(input)) return 24
   return Math.round(clamp(input, 1, 500))
@@ -842,6 +864,10 @@ export function registerIpcHandlers(container: AppContainer): void {
 
   ipcMain.handle(IPC.libraryListAlbums, (_event, query: unknown) =>
     library.listAlbums(sanitizeAlbumListQuery(query))
+  )
+
+  ipcMain.handle(IPC.libraryAllTracks, (_event, query: unknown) =>
+    listAllTracks(container, sanitizeAllTracksQuery(query))
   )
 
   ipcMain.handle(IPC.libraryListArtists, (_event, limit: unknown) =>

@@ -2,8 +2,9 @@ import { Children, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import type { CSSProperties, ReactNode, RefObject } from 'react'
 import type {
   AddTracksOutcome,
-  AlbumSortField,
   AlbumSummary,
+  AllTracksFilter,
+  AllTracksSource,
   ArtistSummary,
   LibraryClickAction,
   LibraryStats,
@@ -17,7 +18,7 @@ import { formatBytes, formatCount, formatDuration } from '@shared/format'
 import { onlinePlaylistArtworkTrack, onlinePlaylistItemToTrack, streamPlayToTrack } from '@shared/online'
 import { mergeAddedShelf, mergePlayedShelf, type ShelfEntry } from '@shared/played-shelf'
 import { api, messageOf } from '../api'
-import { useAlbums } from '../hooks/useAlbums'
+import { useAllTracks } from '../hooks/useAllTracks'
 import { resolveArtwork, useArtwork } from '../hooks/useArtwork'
 import { ArtworkImage } from './ArtworkImage'
 import {
@@ -32,6 +33,7 @@ import {
   LibraryIcon,
   ListMusicIcon,
   MoreIcon,
+  MusicIcon,
   NewMusicIcon,
   PlayIcon,
   QueueIcon,
@@ -78,6 +80,17 @@ export interface HomeViewProps {
 }
 
 const LOCAL_REQUEST = (trackId: number) => ({ id: trackId, sourceKind: 'local' as const, sourceId: null })
+
+/** The All tracks list has no selection; TrackList still takes the props. */
+const NO_SELECTION: ReadonlySet<number> = new Set()
+
+/** How a source reads in the row badge, and which existing badge colour it uses. */
+const SOURCE_BADGE: Record<AllTracksSource, { label: string; tone: string }> = {
+  library: { label: 'Library', tone: 'local' },
+  youtube: { label: 'YouTube', tone: 'youtube' },
+  stream: { label: 'YouTube', tone: 'youtube' },
+  playlist: { label: 'Playlist', tone: 'imported' }
+}
 
 /** True unless the user asked for reduced motion in Settings or the OS. */
 function allowsMotion(): boolean {
@@ -699,7 +712,7 @@ export function HomeView(props: HomeViewProps) {
     onCreatePlaylist
   } = props
 
-  const albums = useAlbums()
+  const allTracks = useAllTracks()
   const [recentAlbums, setRecentAlbums] = useState<AlbumSummary[]>([])
   const [addedSingles, setAddedSingles] = useState<Track[]>([])
   const [playedAlbums, setPlayedAlbums] = useState<AlbumSummary[]>([])
@@ -871,7 +884,7 @@ export function HomeView(props: HomeViewProps) {
   const heroSlide = useHeroSlides(heroArtKeys.length, heroLook.interval * 1000)
 
   const hasLibrary = (stats?.tracks ?? 0) > 0
-  const combinedError = error ?? shelvesError ?? albums.error
+  const combinedError = error ?? shelvesError
 
   /**
    * The hero's one action follows the last listen, not a fixed album.
@@ -1021,34 +1034,56 @@ export function HomeView(props: HomeViewProps) {
     else onPlayTrack(entry.track)
   }, [heroResume, playAlbum, onPlayTrack])
 
-  const filterByArtist = useCallback((artist: ArtistSummary): void => {
-    // An artist can own tracks without owning an album card: a single, or a
-    // credit on someone else's album. Filtering the grid for them would show an
-    // empty page, so those artists open their tracks instead.
-    if (artist.albumCount === 0) {
-      openArtistDetail(artist)
-      return
-    }
-    albums.setArtist(artist.artist)
-    requestAnimationFrame(() => {
-      gridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    })
-  }, [albums, openArtistDetail])
+  /**
+   * Plays one row from All tracks.
+   *
+   * The list mixes files and streams. A stream row is still one video played by
+   * the YouTube queue, exactly as a stream row elsewhere. A file row plays the
+   * files around it, so the rest of the visible list becomes the queue; the
+   * streams in between are skipped rather than handed to a queue that cannot
+   * resolve them.
+   */
+  const playAllTracksRow = useCallback(
+    (index: number): void => {
+      const row = allTracks.rows[index]
+      if (!row) return
+      if (row.track.sourceKind === 'youtube') {
+        onPlayTrack(row.track)
+        return
+      }
+      const localRows = allTracks.rows.filter((entry) => entry.track.sourceKind !== 'youtube')
+      const start = localRows.findIndex((entry) => entry.track.id === row.track.id)
+      onPlayLocal(
+        localRows.map((entry) => entry.track),
+        start >= 0 ? start : 0
+      )
+    },
+    [allTracks.rows, onPlayLocal, onPlayTrack]
+  )
 
   /**
-   * A shelf's **More** turns the album grid below into the full version of that
-   * shelf instead of opening a second list: the same albums, sorted the same
-   * way, with the paging and search the grid already has. Focus moves to the
-   * grid heading so a keyboard user lands where the page just scrolled.
+   * A shelf's More opens the full version of that shelf in the list below.
+   *
+   * It is not a second view: the list scrolls into place, takes the shelf's
+   * filter and shows a chip naming it. Clearing the chip is the way back to All
+   * tracks, which is why the chip has to be the same control that set it.
    */
-  const showAlbumShelf = useCallback((sort: AlbumSortField): void => {
-    albums.setArtist(null)
-    albums.setSort(sort)
-    requestAnimationFrame(() => {
-      gridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      gridHeadingRef.current?.focus({ preventScroll: true })
-    })
-  }, [albums])
+  const showAllTracks = useCallback(
+    (filter: AllTracksFilter): void => {
+      allTracks.setFilter(filter)
+      // The scroll is a frame concern; the focus is not. A frame callback can be
+      // paused while the window is in the background, which would leave the
+      // scroll with nothing focused, so the focus is queued as its own task
+      // after React has committed the filtered heading.
+      requestAnimationFrame(() => {
+        gridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
+      window.setTimeout(() => {
+        gridHeadingRef.current?.focus({ preventScroll: true })
+      }, 0)
+    },
+    [allTracks]
+  )
 
   /**
    * Plays a hand-made list from Home.
@@ -1147,6 +1182,9 @@ export function HomeView(props: HomeViewProps) {
     () => albumTracks.filter((track) => albumSelection.has(track.id)),
     [albumTracks, albumSelection]
   )
+
+  /** TrackList wants tracks; the source badge reaches them by the row's index. */
+  const allTrackRows = useMemo(() => allTracks.rows.map((row) => row.track), [allTracks.rows])
 
   const playOpenAlbum = useCallback((): void => {
     if (albumTracks.length > 0) onPlayLocal(albumTracks, 0)
@@ -1593,17 +1631,15 @@ export function HomeView(props: HomeViewProps) {
               icon={<HistoryIcon size={15} />}
               scrollRef={playedShelfRef}
               action={
-                playedAlbums.length > 0 ? (
-                  <button
-                    type="button"
-                    className="home-more"
-                    onClick={() => showAlbumShelf('played')}
-                    title="Show every album, most recently played first"
-                    aria-label="More recently played albums"
-                  >
-                    More
-                  </button>
-                ) : undefined
+                <button
+                  type="button"
+                  className="home-more"
+                  onClick={() => showAllTracks('played')}
+                  title="Show every track you have played, newest listen first"
+                  aria-label="More recently played tracks"
+                >
+                  More
+                </button>
               }
             >
               {playedShelf.map((entry) =>
@@ -1632,17 +1668,15 @@ export function HomeView(props: HomeViewProps) {
               icon={<NewMusicIcon size={15} />}
               scrollRef={addedShelfRef}
               action={
-                recentAlbums.length > 0 ? (
-                  <button
-                    type="button"
-                    className="home-more"
-                    onClick={() => showAlbumShelf('recent')}
-                    title="Show every album, newest first"
-                    aria-label="More recently added albums"
-                  >
-                    More
-                  </button>
-                ) : undefined
+                <button
+                  type="button"
+                  className="home-more"
+                  onClick={() => showAllTracks('library')}
+                  title="Show every file in your library, newest first"
+                  aria-label="More recently added tracks"
+                >
+                  More
+                </button>
               }
             >
               {addedShelf.map((entry) =>
@@ -1672,7 +1706,7 @@ export function HomeView(props: HomeViewProps) {
                   key={artist.artist}
                   artist={artist}
                   busy={busyArtist === artist.artist}
-                  onFilter={filterByArtist}
+                  onFilter={openArtistDetail}
                   onPlay={(next) => void playArtist(next)}
                 />
               ))}
@@ -1704,133 +1738,140 @@ export function HomeView(props: HomeViewProps) {
         </>
       )}
 
-      <section className="home-section album-grid-section" ref={gridRef} hidden={!hasLibrary}>
-        <div className="album-grid-head">
+      <section className="home-section all-tracks-section" ref={gridRef} hidden={!hasLibrary}>
+        <div className="album-grid-head all-tracks-head">
           <div>
             <h2 ref={gridHeadingRef} tabIndex={-1}>
-              <DiscIcon size={16} />
-              {albums.artist ? `Albums by ${albums.artist}` : 'All albums'}
+              {allTracks.filter === 'played' ? (
+                <HistoryIcon size={16} />
+              ) : allTracks.filter === 'library' ? (
+                <NewMusicIcon size={16} />
+              ) : (
+                <MusicIcon size={16} />
+              )}
+              {allTracks.filter === 'played'
+                ? 'Recently played'
+                : allTracks.filter === 'library'
+                  ? 'Recently added'
+                  : 'All tracks'}
             </h2>
             <p>
-              {albums.loading
-                ? 'Loading albums…'
-                : `${formatCount(albums.total)} ${albums.total === 1 ? 'album' : 'albums'}`}
-              {albums.search ? ` matching “${albums.search}”` : ''}
+              {allTracks.loading
+                ? 'Loading tracks…'
+                : allTracks.truncated
+                  ? `Newest ${formatCount(allTracks.rows.length)} tracks`
+                  : `${formatCount(allTracks.rows.length)} ${
+                      allTracks.rows.length === 1 ? 'track' : 'tracks'
+                    }`}
+              {allTracks.search ? ` matching “${allTracks.search}”` : ''}
             </p>
           </div>
           <div className="album-grid-tools">
-            {albums.artist ? (
+            {allTracks.filter !== 'all' ? (
               <button
                 type="button"
-                className="filter-chip album-artist-chip"
-                onClick={() => albums.setArtist(null)}
-                title="Show every artist"
+                className="filter-chip all-tracks-chip"
+                onClick={() => allTracks.setFilter('all')}
+                title="Show every track again"
               >
-                <span>{albums.artist}</span>
+                <span>{allTracks.filter === 'played' ? 'Recently played' : 'Recently added'}</span>
                 <CloseIcon size={12} />
               </button>
             ) : null}
-            <div className="search-field album-search">
+            <div className="search-field tracks-search">
               <SearchIcon size={14} />
               <input
-                value={albums.search}
-                onChange={(event) => albums.setSearch(event.target.value)}
-                placeholder="Find an album"
-                aria-label="Search albums"
+                value={allTracks.search}
+                onChange={(event) => allTracks.setSearch(event.target.value)}
+                placeholder="Find a track"
+                aria-label="Search all tracks"
               />
-              {albums.search ? (
+              {allTracks.search ? (
                 <button
                   type="button"
                   className="icon-button subtle clear-search"
-                  onClick={() => albums.setSearch('')}
-                  title="Clear album search"
-                  aria-label="Clear album search"
+                  onClick={() => allTracks.setSearch('')}
+                  title="Clear track search"
+                  aria-label="Clear track search"
                 >
                   <CloseIcon />
                 </button>
               ) : null}
             </div>
-            <div className="segmented album-sort" role="group" aria-label="Sort albums">
-              <button
-                type="button"
-                className={albums.sort === 'recent' ? 'active' : undefined}
-                aria-pressed={albums.sort === 'recent'}
-                onClick={() => albums.setSort('recent')}
-              >
-                Newest
-              </button>
-              <button
-                type="button"
-                className={albums.sort === 'played' ? 'active' : undefined}
-                aria-pressed={albums.sort === 'played'}
-                onClick={() => albums.setSort('played')}
-              >
-                Played
-              </button>
-              <button
-                type="button"
-                className={albums.sort === 'title' ? 'active' : undefined}
-                aria-pressed={albums.sort === 'title'}
-                onClick={() => albums.setSort('title')}
-              >
-                A–Z
-              </button>
-            </div>
           </div>
         </div>
 
-        {albumError && !openAlbum ? <div className="banner error">{albumError}</div> : null}
+        {allTracks.error ? <div className="banner error">{allTracks.error}</div> : null}
 
-        {albums.loading && albums.albums.length === 0 ? (
+        {allTracks.loading && allTracks.rows.length === 0 ? (
           <div className="home-shelves-loading" role="status">
             <SpinnerIcon size={18} />
-            <span>Loading albums…</span>
+            <span>Loading tracks…</span>
           </div>
-        ) : albums.albums.length === 0 ? (
-          <div className="empty-state album-grid-empty">
+        ) : allTracks.rows.length === 0 ? (
+          <div className="empty-state all-tracks-empty">
             <SearchIcon size={28} />
-            <h2>{albums.search || albums.artist ? 'No albums match' : 'No albums yet'}</h2>
+            <h2>
+              {allTracks.search || allTracks.filter !== 'all' ? 'No tracks match' : 'No tracks yet'}
+            </h2>
             <p>
-              {albums.search || albums.artist
-                ? 'Try a shorter search, or clear the artist filter.'
-                : 'Albums appear as soon as your folders have been indexed.'}
+              {allTracks.search || allTracks.filter !== 'all'
+                ? 'Try a shorter search, or clear the filter.'
+                : 'Tracks appear as soon as your folders have been indexed or a link has been played.'}
             </p>
-            {albums.artist ? (
-              <button type="button" onClick={() => albums.setArtist(null)}>
-                Show all albums
+            {allTracks.filter !== 'all' ? (
+              <button type="button" onClick={() => allTracks.setFilter('all')}>
+                Show all tracks
               </button>
-            ) : albums.search ? (
-              <button type="button" onClick={() => albums.setSearch('')}>
+            ) : allTracks.search ? (
+              <button type="button" onClick={() => allTracks.setSearch('')}>
                 Clear search
               </button>
             ) : null}
           </div>
         ) : (
           <>
-            <div className="album-grid">
-              {albums.albums.map((album) => (
-                <AlbumCard
-                  key={albumKeyOf(album)}
-                  album={album}
-                  busy={busyAlbum === albumKeyOf(album)}
-                  onOpen={openAlbumDetail}
-                  onPlay={(next) => void playAlbum(next)}
-                />
-              ))}
+            <div className="all-tracks-list">
+              <TrackList
+                tracks={allTrackRows}
+                // The feed reports whether another page exists rather than a
+                // total, so the virtualizer's one extra row is what asks for it.
+                total={allTracks.rows.length + (allTracks.hasMore ? 1 : 0)}
+                sort={null}
+                direction="desc"
+                currentTrackId={currentTrackId}
+                isPlaying={isPlaying}
+                selectedIds={NO_SELECTION}
+                loadingMore={allTracks.loadingMore}
+                onToggleSort={() => undefined}
+                onActivate={playAllTracksRow}
+                onSelect={() => undefined}
+                onSelectAll={() => undefined}
+                onClearSelection={() => undefined}
+                onReveal={onReveal}
+                onRequestMore={allTracks.hasMore ? allTracks.loadMore : undefined}
+                // Home is a launch surface: a row starts playing on a click,
+                // exactly like a shelf card. Selection settings still govern
+                // the Library, playlists and queue, where selection has a job.
+                singleClick="play"
+                doubleClick="play"
+                sortable={false}
+                rowHeight={rowHeight}
+                listKey={`all-tracks:${allTracks.filter}:${allTracks.search}`}
+                rowBadge={(_track, index) => {
+                  const source = allTracks.rows[index]?.source ?? 'library'
+                  const badge = SOURCE_BADGE[source]
+                  return (
+                    <span className={`row-badge source-badge ${badge.tone}`}>{badge.label}</span>
+                  )
+                }}
+              />
             </div>
-            {albums.hasMore ? (
-              <div className="album-grid-more">
-                <button type="button" onClick={albums.loadMore} disabled={albums.loadingMore}>
-                  {albums.loadingMore ? <SpinnerIcon /> : <DiscIcon />}
-                  <span>
-                    {albums.loadingMore
-                      ? 'Loading…'
-                      : `Show more (${formatCount(albums.total - albums.albums.length)} left)`}
-                  </span>
-                </button>
-              </div>
-            ) : albums.total > 60 ? (
-              <p className="album-grid-end">That is all {formatCount(albums.total)} albums.</p>
+            {allTracks.truncated ? (
+              <p className="album-grid-end">
+                Showing the newest {formatCount(allTracks.rows.length)} tracks. Search to narrow the
+                list.
+              </p>
             ) : null}
           </>
         )}

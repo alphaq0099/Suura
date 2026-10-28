@@ -945,6 +945,47 @@ export interface TrackPage {
 }
 
 /**
+ * Where a row in Home's merged list came from.
+ *
+ * It is deliberately about the *record*, not the file: a YouTube video saved to
+ * disk is a library row, while the same video heard from a link is a stream.
+ */
+export type AllTracksSource = 'library' | 'playlist' | 'stream' | 'youtube'
+
+/**
+ * Which slice of the merged list Home shows.
+ *
+ * `played` is every track with a listen, newest listen first, and is what the
+ * Recently played shelf's More asks for. `library` is the files on disk, which
+ * is what the Recently added shelf can actually offer; imported links and stream
+ * listens have been saved or heard, not added. `all` is the whole feed.
+ */
+export type AllTracksFilter = 'all' | 'played' | 'library'
+
+export interface AllTracksQuery {
+  search?: string
+  filter?: AllTracksFilter
+  limit?: number
+  offset?: number
+}
+
+export interface AllTracksRow {
+  track: Track
+  source: AllTracksSource
+}
+
+export interface AllTracksPage {
+  rows: AllTracksRow[]
+  /** More rows exist behind the ones returned. */
+  hasMore: boolean
+  /**
+   * A source held more rows than the merge scanned, so the newest `rows` are all
+   * that was looked at. The UI says so instead of claiming to show everything.
+   */
+  truncated: boolean
+}
+
+/**
  * One album, grouped by album title and album artist.
  *
  * The grouping artist falls back to the track artist when a file has no

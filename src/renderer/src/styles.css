@@ -1148,9 +1148,9 @@ input[type='radio'] {
   display: block;
 }
 
-/* The grid heading takes focus after a shelf's More, so the scroll lands
+/* The list heading takes focus after a shelf's More, so the scroll lands
    somewhere a screen reader announces. */
-.album-grid-head h2:focus-visible {
+.all-tracks-head h2:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
   border-radius: 4px;
@@ -1459,13 +1459,13 @@ input[type='radio'] {
   opacity: 0.9;
 }
 
-/* ---------- album grid ---------- */
+/* ---------- all tracks ---------- */
 
-.album-grid-section {
+.all-tracks-section {
   scroll-margin-top: 18px;
 }
 
-.album-grid-head {
+.all-tracks-head {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
@@ -1473,7 +1473,7 @@ input[type='radio'] {
   gap: 12px;
 }
 
-.album-grid-head h2 {
+.all-tracks-head h2 {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1482,50 +1482,47 @@ input[type='radio'] {
   letter-spacing: -0.015em;
 }
 
-.album-grid-head h2 svg {
+.all-tracks-head h2 svg {
   color: var(--accent);
 }
 
-.album-grid-head p {
+.all-tracks-head p {
   margin: 3px 0 0;
   color: var(--text-faint);
   font-size: calc(11.5px * var(--text-scale));
 }
 
-.album-grid-tools {
+.all-tracks-tools {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
 
-.album-search input {
-  width: 168px;
-}
-
-.album-artist-chip {
+.all-tracks-chip {
   color: var(--text);
   border-color: var(--choice-selected-border);
   background: var(--choice-selected-bg);
 }
 
-.album-sort {
-  display: inline-flex;
+.tracks-search input {
+  width: 188px;
 }
 
-.album-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(146px, 1fr));
-  gap: 20px 16px;
-}
-
-.album-grid-more {
+/* The list is a scrolling table inside a scrolling page, so it needs a height of
+   its own. The clamp keeps it useful on a laptop without swallowing a tall
+   window whole. */
+.all-tracks-list {
   display: flex;
-  justify-content: center;
-  padding: 4px 0 8px;
+  height: clamp(300px, 52vh, 640px);
+  min-height: 0;
 }
 
-.album-grid-end {
+.all-tracks-list > * {
+  flex: 1;
+}
+
+.all-tracks-end {
   margin: 0;
   padding: 4px 0;
   color: var(--text-faint);
@@ -1533,8 +1530,20 @@ input[type='radio'] {
   text-align: center;
 }
 
-.album-grid-empty {
+.all-tracks-empty {
   min-height: 200px;
+}
+
+/* A quiet source label after a row's title. It borrows the badge palette of the
+   Search view but drops the uppercase shout: every row carries one, and eight
+   shouting labels in a row is noise. */
+.row-badge.source-badge {
+  flex: none;
+  padding: 1px 5px;
+  font-size: calc(9.5px * var(--text-scale));
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
 }
 
 /* ---------- album detail ---------- */
@@ -1697,27 +1706,14 @@ input[type='radio'] {
     grid-auto-columns: minmax(116px, 138px);
   }
 
-  .album-grid {
-    grid-template-columns: repeat(auto-fill, minmax(122px, 1fr));
-    gap: 16px 12px;
-  }
-
-  .album-grid-tools,
-  .album-search,
-  .album-search input {
+  .all-tracks-tools,
+  .tracks-search,
+  .tracks-search input {
     width: 100%;
   }
 
-  .album-grid-tools {
+  .all-tracks-tools {
     align-items: stretch;
-  }
-
-  .album-sort {
-    flex: 1;
-  }
-
-  .album-sort button {
-    flex: 1;
   }
 }
 

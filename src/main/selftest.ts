@@ -199,11 +199,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     )
     record(scanStats?.tracks === 2, 'scan through the IPC bridge indexed the fixtures', scanStats)
 
-    // ---- 3b. home and the album grid ------------------------------------
+    // ---- 3b. home and the merged track list ------------------------------
     // Home is the first thing a new install shows, so these checks start there
     // before the rest of the suite moves to the Library. They exercise the same
-    // album summary queries the dashboard uses, including the artist fallback
-    // that puts two files with different track artists into two groups.
+    // merged feed the dashboard uses: files, listens and links in one list,
+    // deduped and newest activity first, with each row naming its source.
     const home = await evaluate<{
       isHome: boolean
       activeNav: string
@@ -212,16 +212,18 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       shelfTitles: string
       shelfAlbums: number
       artistCards: number
-      gridCards: number
+      allRows: number
+      allBadges: string
       detailTitle: string
       detailRows: number
       detailHasTone: boolean
       backWorks: boolean
       searchEmpty: boolean
       searchCleared: boolean
-      artistFiltered: boolean
-      artistChip: string
-      artistCleared: boolean
+      artistKicker: string
+      artistTitle: string
+      artistRows: number
+      artistBackWorks: boolean
       onLibrary: boolean
       heroAction: string
       heroActionCount: number
@@ -230,9 +232,13 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       heroScanNote: boolean
       shelfHints: number
       moreLabels: string
-      moreFocusedGrid: boolean
-      sortOptions: string
-      playedSortActive: boolean
+      moreFocusedList: boolean
+      activeElement: string
+      moreHeading: string
+      moreChip: string
+      moreOnlyLibrary: boolean
+      chipCleared: boolean
+      chipHeading: string
       statBlur: string
       statTint: string
       slideCount: number
@@ -260,7 +266,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            while (Date.now() < deadline && !document.querySelector(select)) await sleep(100)
            return document.querySelector(select)
          }
-         const gridCards = () => [...document.querySelectorAll('.album-grid .album-card')]
+         const allRows = () => [...document.querySelectorAll('.all-tracks-list .track-row')]
+         const allBadges = () =>
+           [...document.querySelectorAll('.all-tracks-list .track-row .row-badge')]
+             .map((el) => (el.textContent || '').trim())
+             .join('|')
          const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
          const translateY = (element) => {
            if (!element) return 0
@@ -270,13 +280,17 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
 
          const out = {
            isHome: false, activeNav: '', heroTitle: '', stats: '', shelfTitles: '',
-           shelfAlbums: 0, artistCards: 0, gridCards: 0, detailTitle: '', detailRows: 0,
+           shelfAlbums: 0, artistCards: 0, allRows: 0, allBadges: '',
+           detailTitle: '', detailRows: 0,
            detailHasTone: false, backWorks: false, searchEmpty: false, searchCleared: false,
-           artistFiltered: false, artistChip: '', artistCleared: false, onLibrary: false,
+           artistKicker: '', artistTitle: '', artistRows: 0, artistBackWorks: false,
+           onLibrary: false,
            heroAction: '', heroActionCount: 0, heroResumeAfter: '', heroHasLastScan: false,
            heroScanNote: false,
-           shelfHints: 0, moreLabels: '', moreFocusedGrid: false, sortOptions: '',
-           playedSortActive: false, statBlur: '', statTint: '', slideCount: 0,
+           shelfHints: 0, moreLabels: '', moreFocusedList: false, moreHeading: '',
+           activeElement: '',
+           moreChip: '', moreOnlyLibrary: false, chipCleared: false, chipHeading: '',
+           statBlur: '', statTint: '', slideCount: 0,
            slideLayers: 0, activeSlides: 0, slideState: '', reducedStops: false,
            fullState: '', heroMatchesRecent: false, cardFocus: false, cardLift: 0, cardRest: 0,
            livePlayShelf: false, livePlayAlbum: false
@@ -284,7 +298,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
 
          nav('Home')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
          await sleep(350)
-         await waitFor('.album-grid .album-card')
+         await waitFor('.all-tracks-list .track-row')
          await waitFor('.home-shelf .album-card')
          out.isHome = Boolean(document.querySelector('.home-view'))
          out.activeNav = (document.querySelector('.nav-item.active')?.textContent || '').trim()
@@ -297,7 +311,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            .join('|')
          out.shelfAlbums = document.querySelectorAll('.home-shelf .album-card').length
          out.artistCards = document.querySelectorAll('.artist-card').length
-         out.gridCards = gridCards().length
+         out.allRows = allRows().length
+         out.allBadges = allBadges()
 
          // The stat boxes are glass over artwork: they need an accent wash and a
          // real backdrop blur, not a flat panel. The hero keeps one active image
@@ -323,7 +338,10 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          root.dataset.motion = previousMotion
          await sleep(160)
 
-         const target = gridCards().find((card) => {
+         // An album card in a shelf opens the same detail view it always did;
+         // the bottom section is a track list now, so the album is reached from
+         // Recently added rather than from a grid card.
+         const target = [...document.querySelectorAll('.home-shelf .album-card')].find((card) => {
            const title = (card.querySelector('.album-card-title')?.textContent || '').trim()
            const meta = (card.querySelector('.album-card-meta')?.textContent || '').trim()
            return title === 'Selftest Album' && meta.includes('Selftest') && !meta.includes('Zzz')
@@ -336,39 +354,46 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            (el) => (el.textContent || '').trim() === 'Selftest Tone'
          )
          document.querySelector('.home-back')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-         await waitFor('.album-grid')
-         out.backWorks = Boolean(document.querySelector('.album-grid')) && !detail?.isConnected
+         await waitFor('.all-tracks-list')
+         out.backWorks = Boolean(document.querySelector('.all-tracks-list')) && !detail?.isConnected
 
-         const search = document.querySelector('.album-search input')
+         const search = document.querySelector('.tracks-search input')
          if (search) {
            setValue.call(search, 'NoSuchAlbum')
            search.dispatchEvent(new Event('input', { bubbles: true }))
          }
-         await waitFor('.album-grid-empty')
-         out.searchEmpty = Boolean(document.querySelector('.album-grid-empty'))
+         await waitFor('.all-tracks-empty')
+         out.searchEmpty = Boolean(document.querySelector('.all-tracks-empty'))
          document.querySelector('.clear-search')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
          let deadline = Date.now() + 5000
-         while (Date.now() < deadline && gridCards().length < 2) await sleep(100)
-         out.searchCleared = gridCards().length === 2
+         while (Date.now() < deadline && allRows().length < 2) await sleep(100)
+         out.searchCleared = allRows().length === 2
 
+         // An artist card opens the artist's tracks. A credit can exist without
+         // an album card, and the detail view is the honest place for both cases.
          const artistCard = [...document.querySelectorAll('.artist-card')].find(
            (card) => (card.querySelector('.artist-card-name')?.textContent || '').trim() === 'Selftest'
          )
          artistCard?.querySelector('.artist-card-main')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-         await waitFor('.album-artist-chip')
-         await sleep(450)
-         const gridHeading = (document.querySelector('.album-grid-head h2')?.textContent || '').trim()
-         out.artistChip = (document.querySelector('.album-artist-chip')?.textContent || '').trim()
-         out.artistFiltered = gridCards().length === 1 && gridHeading.includes('Selftest')
-         document.querySelector('.album-artist-chip')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-         deadline = Date.now() + 5000
-         while (Date.now() < deadline && gridCards().length < 2) await sleep(100)
-         out.artistCleared = gridCards().length === 2
+         const artistDeadline = Date.now() + 6000
+         let artistDetail = null
+         while (Date.now() < artistDeadline) {
+           artistDetail = document.querySelector('.album-detail')
+           if (artistDetail && artistDetail.querySelector('.track-row')) break
+           await sleep(100)
+         }
+         out.artistKicker = (artistDetail?.querySelector('.home-kicker')?.textContent || '').trim()
+         out.artistTitle = (artistDetail?.querySelector('.album-detail-copy h2')?.textContent || '').trim()
+         out.artistRows = artistDetail?.querySelectorAll('.track-row').length || 0
+         artistDetail?.querySelector('.home-back')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         const artistBackDeadline = Date.now() + 6000
+         while (Date.now() < artistBackDeadline && !document.querySelector('.all-tracks-list')) await sleep(100)
+         out.artistBackWorks = Boolean(document.querySelector('.all-tracks-list')) && !artistDetail?.isConnected
 
-         // A shelf's More must lead somewhere real: it turns the grid at the
-         // bottom of Home into the full version of that shelf and moves focus
-         // there. The hero carries one contextual action, never a copy of the
-         // header buttons and never a scan date.
+         // A shelf's More must lead somewhere real: it turns the list at the
+         // bottom of Home into the full version of that shelf, filters it and
+         // names the filter in a chip. The hero carries one contextual action,
+         // never a copy of the header buttons and never a scan date.
          const heroText = (document.querySelector('.home-hero-copy')?.textContent || '').trim()
          out.heroAction = (document.querySelector('.home-hero-actions .primary')?.textContent || '').trim()
          out.heroActionCount = document.querySelectorAll('.home-hero-actions .primary').length
@@ -379,27 +404,44 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            .map((el) => el.getAttribute('aria-label'))
            .join('|')
          const moreAdded = [...document.querySelectorAll('.home-more')].find(
-           (el) => el.getAttribute('aria-label') === 'More recently added albums'
+           (el) => el.getAttribute('aria-label') === 'More recently added tracks'
          )
          moreAdded?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-         await sleep(450)
-         out.moreFocusedGrid = document.activeElement === document.querySelector('.album-grid-head h2')
-         const sortButtons = () => [...document.querySelectorAll('.album-sort button')]
-         out.sortOptions = sortButtons()
-           .map((el) => (el.textContent || '').trim())
-           .join('|')
-         const playedSort = sortButtons().find((el) => (el.textContent || '').trim() === 'Played')
-         playedSort?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-         await sleep(450)
-         out.playedSortActive = playedSort?.getAttribute('aria-pressed') === 'true'
-         const newestSort = sortButtons().find((el) => (el.textContent || '').trim() === 'Newest')
-         newestSort?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-         await sleep(350)
+         const moreDeadline = Date.now() + 6000
+         while (Date.now() < moreDeadline) {
+           const heading = (document.querySelector('.all-tracks-head h2')?.textContent || '').trim()
+           const chip = (document.querySelector('.all-tracks-chip')?.textContent || '').trim()
+           if (heading === 'Recently added' && chip.includes('Recently added') && allRows().length === 2) break
+           await sleep(100)
+         }
+          const moreFocusDeadline = Date.now() + 4000
+          while (
+            Date.now() < moreFocusDeadline &&
+            document.activeElement !== document.querySelector('.all-tracks-head h2')
+          ) {
+            await sleep(50)
+          }
+         out.moreFocusedList = document.activeElement === document.querySelector('.all-tracks-head h2')
+         out.activeElement = document.activeElement
+           ? document.activeElement.tagName + '.' + String(document.activeElement.className)
+           : 'none'
+         out.moreHeading = (document.querySelector('.all-tracks-head h2')?.textContent || '').trim()
+         out.moreChip = (document.querySelector('.all-tracks-chip')?.textContent || '').trim()
+         out.moreOnlyLibrary = allRows().length === 2 && allBadges() === 'Library|Library'
+         document.querySelector('.all-tracks-chip')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         const chipDeadline = Date.now() + 6000
+         while (Date.now() < chipDeadline) {
+           const heading = (document.querySelector('.all-tracks-head h2')?.textContent || '').trim()
+           if (heading === 'All tracks' && !document.querySelector('.all-tracks-chip') && allRows().length === 2) break
+           await sleep(100)
+         }
+         out.chipCleared = !document.querySelector('.all-tracks-chip') && allRows().length === 2
+         out.chipHeading = (document.querySelector('.all-tracks-head h2')?.textContent || '').trim()
 
          // Hover is not available to a script, so focus the card's own main
          // control: the same :focus-within state a keyboard user gets. The card
          // must move up rather than draw a shadow over its artwork.
-         const liftCard = document.querySelector('.album-grid .album-card')
+         const liftCard = document.querySelector('.home-shelf .album-card')
          const liftMain = liftCard?.querySelector('.album-card-main')
          liftMain?.focus()
          await sleep(280)
@@ -457,17 +499,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          }
          out.heroMatchesRecent = Boolean(shelfCover) && heroSrc === shelfCover
 
-         // A real hover is the state the feedback is about. Bring the badge into
-         // view here; its exact box is taken just before the pointer moves, once
-         // any shelf above it has finished appearing.
-         const cardPlay = document.querySelector('.album-grid .album-card .album-card-play')
-         if (cardPlay) {
-           cardPlay.scrollIntoView({ block: 'center' })
-           await sleep(180)
-           cardPlay.style.transition = 'none'
-         }
-         return out
-       })()`
+          return out
+        })()`
     )
     // Hover is independent of window focus, unlike :focus, so this is stable
     // even when the test window sits behind the terminal.
@@ -478,20 +511,23 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       accent: '',
       contrast: ''
     }
-    // The box captured above can go stale: Home keeps loading shelves in the
-    // background, and a section appearing above the grid moves the badge. Take
-    // the position again once the page has settled, immediately before moving
-    // the pointer, so the check is about the CSS and not about a race.
-    const hoverTarget = await evaluate<{ x: number; y: number }>(
-      window,
-      `(() => {
-         const badge = document.querySelector('.album-grid .album-card .album-card-play')
-         if (!badge) return { x: 0, y: 0 }
-         const box = badge.getBoundingClientRect()
-         return { x: box.left + box.width / 2, y: box.top + box.height / 2 }
-       })()`
-    )
-    if (hoverTarget.x > 0 && hoverTarget.y > 0) {
+    // The box can go stale: Home keeps loading shelves in the background, and a
+    // section appearing above a card moves its badge. Each attempt scrolls the
+    // badge into view, measures it and moves the pointer, so a late shelf costs
+    // one retry instead of failing a check about colour.
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const hoverTarget = await evaluate<{ x: number; y: number }>(
+        window,
+        `(async () => {
+           const badge = document.querySelector('.home-shelf .album-card .album-card-play')
+           if (!badge) return { x: 0, y: 0 }
+           badge.scrollIntoView({ block: 'center' })
+           await new Promise((resolve) => setTimeout(resolve, 180))
+           const box = badge.getBoundingClientRect()
+           return { x: box.left + box.width / 2, y: box.top + box.height / 2 }
+         })()`
+      )
+      if (!(hoverTarget.x > 0 && hoverTarget.y > 0)) break
       window.webContents.sendInputEvent({
         type: 'mouseMove',
         x: Math.round(hoverTarget.x),
@@ -501,7 +537,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       playHover = await evaluate<typeof playHover>(
         window,
         `(() => {
-           const badge = document.querySelector('.album-grid .album-card .album-card-play')
+           const badge = document.querySelector('.home-shelf .album-card .album-card-play')
            const probe = document.createElement('span')
            probe.style.background = 'var(--accent-strong)'
            document.body.append(probe)
@@ -518,6 +554,10 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            }
          })()`
       )
+      if (playHover.hovered) break
+      await delay(250)
+    }
+    if (playHover.hovered) {
       window.webContents.sendInputEvent({ type: 'mouseMove', x: 2, y: 2 })
       await delay(60)
     }
@@ -618,14 +658,16 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         home.shelfTitles.includes('Recently added') &&
         home.shelfAlbums === 2 &&
         home.artistCards === 2 &&
-        home.gridCards === 2,
-      'home shows library stats, album shelves, artists and the album grid',
+        home.allRows === 2 &&
+        home.allBadges === 'Library|Library',
+      'home shows library stats, shelves, artists and one merged track list',
       {
         stats: home.stats,
         shelves: home.shelfTitles,
         albums: home.shelfAlbums,
         artists: home.artistCards,
-        grid: home.gridCards
+        rows: home.allRows,
+        badges: home.allBadges
       }
     )
     record(
@@ -633,7 +675,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         home.detailRows === 1 &&
         home.detailHasTone &&
         home.backWorks,
-      'an album card opens its exact album and returns to the grid',
+      'an album card opens its exact album and returns to Home',
       {
         title: home.detailTitle,
         rows: home.detailRows,
@@ -643,26 +685,42 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     )
     record(
       home.searchEmpty && home.searchCleared,
-      'the album grid can search down to nothing and clear again',
+      'the track list can search down to nothing and clear again',
       { empty: home.searchEmpty, cleared: home.searchCleared }
     )
     record(
-      home.artistFiltered && home.artistChip.includes('Selftest') && home.artistCleared,
-      'an artist card filters the album grid and the chip removes the filter',
-      { filtered: home.artistFiltered, chip: home.artistChip, cleared: home.artistCleared }
+      home.artistKicker === 'Artist' &&
+        home.artistTitle === 'Selftest' &&
+        home.artistRows === 1 &&
+        home.artistBackWorks,
+      "an artist card opens the artist's tracks and returns to Home",
+      {
+        kicker: home.artistKicker,
+        title: home.artistTitle,
+        rows: home.artistRows,
+        back: home.artistBackWorks
+      }
     )
     record(
-      home.moreLabels.includes('More recently added albums') &&
+      home.moreLabels === 'More recently added tracks' &&
         home.shelfHints === 0 &&
-        home.moreFocusedGrid &&
-        home.sortOptions === 'Newest|Played|A–Z' &&
-        home.playedSortActive,
-      'home: shelf hints give way to More actions that open the full list in place',
+        home.moreFocusedList &&
+        home.moreHeading === 'Recently added' &&
+        home.moreChip.includes('Recently added') &&
+        home.moreOnlyLibrary &&
+        home.chipCleared &&
+        home.chipHeading === 'All tracks',
+      'home: a shelf More filters the list below and a chip clears the filter',
       {
         more: home.moreLabels,
         hints: home.shelfHints,
-        focusedGrid: home.moreFocusedGrid,
-        sorts: home.sortOptions
+        focusedList: home.moreFocusedList,
+        active: home.activeElement,
+        heading: home.moreHeading,
+        chip: home.moreChip,
+        sources: home.moreOnlyLibrary,
+        cleared: home.chipCleared,
+        clearedHeading: home.chipHeading
       }
     )
     record(
@@ -5826,6 +5884,17 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       onPlaylists: boolean
       paneTitle: string
       paneRows: number
+      allTitles: string
+      allBadges: string
+      allPlaylistBadge: string
+      allLibraryBadge: string
+      allHasStreamBadge: boolean
+      playedHeading: string
+      playedChip: string
+      playedBadges: string
+      playedHasPlaylistOnly: boolean
+      playedCleared: boolean
+      playedClearedHeading: string
     }>(
       window,
       `(async () => {
@@ -5857,7 +5926,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            artistKicker: '', artistTitle: '', artistRows: 0, artistHasSingle: false,
            artistAlbumColumn: '',
            playStarted: false, openMenuItems: '',
-           onPlaylists: false, paneTitle: '', paneRows: 0
+           onPlaylists: false, paneTitle: '', paneRows: 0,
+           allTitles: '', allBadges: '', allPlaylistBadge: '', allLibraryBadge: '',
+           allHasStreamBadge: false, playedHeading: '', playedChip: '',
+           playedBadges: '', playedHasPlaylistOnly: false, playedCleared: false,
+           playedClearedHeading: ''
          }
 
          nav('Home')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -5934,8 +6007,58 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            else document.documentElement.dataset.motion = motionBefore
          }
 
-         // An artist can have tracks without owning an album card. That card
-         // must open the tracks, not filter the album grid down to nothing.
+         // The list below the shelves is one merged feed: seeded playlist entries,
+         // the counted stream listen and the new file all have to show up with
+         // the badge that says where each row came from. More on Recently played
+         // narrows that same list to tracks with a listen and a chip brings back
+         // the full feed.
+         const rowEls = () => [...document.querySelectorAll('.all-tracks-list .track-row')]
+         const titleOf = (row) => text(row.querySelector('.row-title-text')).trim()
+         const badgeOf = (row) => text(row.querySelector('.row-badge')).trim()
+         const rowFor = (title) => rowEls().find((row) => titleOf(row) === title)
+         const feedDeadline = Date.now() + 8000
+         while (Date.now() < feedDeadline && !rowFor('Shelf Test Second')) await sleep(100)
+         out.allTitles = rowEls().map(titleOf).join('|')
+         out.allBadges = rowEls().map(badgeOf).join('|')
+         out.allPlaylistBadge = badgeOf(rowFor('Shelf Test Second') || document.createElement('div'))
+         out.allLibraryBadge = badgeOf(rowFor('Shelf Test Single') || document.createElement('div'))
+         out.allHasStreamBadge = rowEls().some(
+           (row) => titleOf(row) === 'Shelf Test Stream' && badgeOf(row) === 'YouTube'
+         )
+
+         const morePlayed = [...document.querySelectorAll('.home-more')].find(
+           (el) => el.getAttribute('aria-label') === 'More recently played tracks'
+         )
+         morePlayed?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         const playedDeadline = Date.now() + 8000
+         while (Date.now() < playedDeadline) {
+           const heading = text(document.querySelector('.all-tracks-head h2')).trim()
+           const chip = text(document.querySelector('.all-tracks-chip')).trim()
+           if (heading === 'Recently played' && chip.includes('Recently played')) break
+           await sleep(100)
+         }
+         const playedLoadedDeadline = Date.now() + 8000
+         while (Date.now() < playedLoadedDeadline && rowFor('Shelf Test Second')) {
+           await sleep(100)
+         }
+         out.playedHeading = text(document.querySelector('.all-tracks-head h2')).trim()
+         out.playedChip = text(document.querySelector('.all-tracks-chip')).trim()
+         out.playedBadges = rowEls().map(badgeOf).join('|')
+         out.playedHasPlaylistOnly = Boolean(rowFor('Shelf Test Second'))
+         document
+           .querySelector('.all-tracks-chip')
+           ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         const feedBackDeadline = Date.now() + 8000
+         while (Date.now() < feedBackDeadline) {
+           const heading = text(document.querySelector('.all-tracks-head h2')).trim()
+           if (heading === 'All tracks' && rowFor('Shelf Test Second')) {
+             out.playedCleared = true
+             break
+           }
+           await sleep(100)
+         }
+         out.playedClearedHeading = text(document.querySelector('.all-tracks-head h2')).trim()
+
          let artistCard = null
          const artistDeadline = Date.now() + 6000
          while (Date.now() < artistDeadline) {
@@ -6066,6 +6189,38 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         homeShelves.shelfNodeStable,
       'home: a shelf has prev/next arrows that agree with its edges and scroll it',
       `arrows ${homeShelves.arrowCount}, at ${homeShelves.arrowStartScroll}px of ${homeShelves.shelfWidth}/${homeShelves.shelfContent}, back at start ${homeShelves.arrowStartsDisabled}, forward ${homeShelves.arrowForwardEnabled}, scrolled ${homeShelves.shelfScrolled}px, back after ${homeShelves.arrowBackEnabled}, same node ${homeShelves.shelfNodeStable}`
+    )
+    record(
+      homeShelves.allTitles.includes('Shelf Test Single') &&
+        homeShelves.allTitles.includes('Shelf Test Second') &&
+        homeShelves.allTitles.includes('Shelf Test Stream') &&
+        homeShelves.allPlaylistBadge === 'Playlist' &&
+        homeShelves.allLibraryBadge === 'Library' &&
+        homeShelves.allHasStreamBadge,
+      'home: All tracks merges files, listens and playlist entries behind a source badge',
+      {
+        titles: homeShelves.allTitles,
+        badges: homeShelves.allBadges,
+        playlist: homeShelves.allPlaylistBadge,
+        library: homeShelves.allLibraryBadge,
+        stream: homeShelves.allHasStreamBadge
+      }
+    )
+    record(
+      homeShelves.playedHeading === 'Recently played' &&
+        homeShelves.playedChip.includes('Recently played') &&
+        !homeShelves.playedHasPlaylistOnly &&
+        homeShelves.playedCleared &&
+        homeShelves.playedClearedHeading === 'All tracks',
+      'home: More on Recently played filters the merged list and the chip restores it',
+      {
+        heading: homeShelves.playedHeading,
+        chip: homeShelves.playedChip,
+        badges: homeShelves.playedBadges,
+        playlistOnly: homeShelves.playedHasPlaylistOnly,
+        cleared: homeShelves.playedCleared,
+        clearedHeading: homeShelves.playedClearedHeading
+      }
     )
     record(
       homeShelves.artistKicker === 'Artist' &&

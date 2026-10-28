@@ -8,6 +8,7 @@ import {
   type PlayerEvents
 } from '@shared/ipc'
 import type {
+  AllTracksQuery,
   AppSettings,
   DeepPartial,
   ListAlbumsQuery,
@@ -65,6 +66,8 @@ const api: PlayerApi = {
   getTracks: (trackIds: number[]) => ipcRenderer.invoke(IPC.libraryTracksByIds, trackIds),
 
   listAlbums: (query?: ListAlbumsQuery) => ipcRenderer.invoke(IPC.libraryListAlbums, query),
+
+  listAllTracks: (query?: AllTracksQuery) => ipcRenderer.invoke(IPC.libraryAllTracks, query),
 
   listArtists: (limit?: number) => ipcRenderer.invoke(IPC.libraryListArtists, limit),
 
