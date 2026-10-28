@@ -68,6 +68,8 @@ The feedback is not one visual-polish pass. It contains:
 - Put All tracks' filter chip and search in a toolbar under the heading instead of on the heading's row.
 - Replace All tracks' Album column with **Source**, with each row's badge in that column.
 - Give YouTube rows in All tracks the same save action as YouTube Links.
+- Make a one-track album's card play the song instead of opening a one-row detail page; a real album keeps its detail.
+- Give the opened playlist the album page's hero: large sleeve, kicker, name, facts and actions above the rows.
 
 ## Decisions
 
@@ -103,6 +105,8 @@ The feedback is not one visual-polish pass. It contains:
 - The hero art shows at full strength in both themes, with the left fade keeping the copy readable.
 - The hero pace is set in Settings → Appearance, and Reset returns it to 12 seconds.
 - All tracks shows a Source column with each row's badge in that column, and only YouTube rows offer Save.
+- A one-track album card plays its song; a multi-track album card opens its detail page and Back returns to Home.
+- The opened playlist, custom or imported, shows the album-style hero above its rows.
 - An artist with tracks but no albums opens their track list, not an empty album grid.
 - Every shelf has prev/next arrows that disable at its ends.
 - Typing fills **On this device** and **Imported** without a network call; the button or Enter is the only way to ask YouTube.
@@ -143,6 +147,8 @@ All four slices are implemented and verified.
 - Search redesign, card grid, best match and guarded warm-up: `25ae4da`
 - Home All tracks, source badges and the shelf More filter: `9c0ad2a`
 - Home hero bake, Source column and the All tracks toolbar: `5ed40c7`
+- Home single-card play and the real-album detail test: `f541a9c`
+- Playlist pane hero, matching the album page: `6c879c8`
 
 A counted listen (30 seconds or completion) now refreshes **Recently played** while Home is open, and is counted once per listen instead of again when the track ends or changes. A played file with no album tag now appears there as a track card, merged with the played albums by newest listen, instead of being omitted because it has no album summary. The equalizer is one row of upright faders with the preamp apart, hangs above the player bar without covering it, and uses a faders icon that cannot be confused with Settings or Queue. Album-card play badges keep their accent when hovered or focused.
 
@@ -169,6 +175,11 @@ The bottom of Home is now a list rather than an album grid:
 - **More** on Recently played or Recently added scrolls to the list and filters it in place: to tracks with a listen, or to local files only. A chip names the filter and clears back to All tracks.
 - The feed is merged and paged in the main process: each source contributes a bounded window, pages are 100 rows, and a footer says when the scan stopped at its limit rather than claiming the whole library is shown.
 - Artist cards open the artist's tracks instead of filtering an album grid, which this list replaced.
+
+A card is now the play control a song deserves:
+
+- A one-track album is a single. Its card plays the song instead of opening a detail page with one row; the card's own play badge still does the same thing. A multi-track album keeps its detail page, with Play and Queue, and Back returns to Home.
+- The opened playlist borrows the album page's hero: a large sleeve, a kicker naming the kind (Playlist, Album, Mix), the name, the track count and duration, then Play, Add all and the list's own actions, with the rows underneath. Custom and imported lists share the layout; imported lists keep their owner and YouTube list id in the meta line.
 
 Search is now three shelves rather than one mixed list:
 

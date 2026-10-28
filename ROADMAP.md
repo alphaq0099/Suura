@@ -285,7 +285,8 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
 - [x] Home dashboard and album grid (visual revamp): cover-led hero with the library stats under its heading, recently
       played/added shelves, artist cards that open the artist's tracks, playlist cards, and one searchable **All tracks**
       list with a **Source** column, plus an in-place album/artist detail view. Album summaries group by title plus the
-      album-artist fallback; covers load lazily as cards approach the viewport. Home is the fresh-install launch view.
+      album-artist fallback; covers load lazily as cards approach the viewport. A one-track album is a single, so its
+      card plays the song; a real album still opens its detail page. Home is the fresh-install launch view.
 - [x] Now Playing: full-window player with a blurred art backdrop, transport, volume, queue and a scrubber; the queue
       as a panel inside the window, slid in by the button that opened it and dismissed by a press anywhere outside it
 - [x] Visuals settings: artwork square or circular, cropped to a square or given the cover's own shape, and sized from
@@ -299,7 +300,9 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
       prunes what disappeared; a setting to turn it off for slow or network drives
 - [x] Basic playlists: create, rename, delete; add from the library selection bar, a row's context menu or the queue in
       the player window; remove entries; reorder by drag or Alt+↑/↓ with a gap-based position that keeps the order exact;
-      a resizable (and remembered) playlist index; playlist columns that respond to the pane's own width
+      a resizable (and remembered) playlist index; playlist columns that respond to the pane's own width; the opened
+      list uses the album page's hero (large sleeve, name, facts and actions above the rows) for custom and imported
+      playlists alike
 - [x] Persist play state; resume last session on start
 - [x] 10,000-track check (`npm run scale`): cold start 0.5 s, first audio 46 ms (median), first page 12 ms, search 2 ms
 **Exit:** 10,000-track library is fast, searchable and pleasant; audio starts in < 300 ms.
