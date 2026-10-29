@@ -5059,6 +5059,12 @@ input[type='radio'] {
   width: 190px;
 }
 
+/* A field menu opened inside a dialog has to sit above its backdrop (95) and
+   still below the file-drop overlay (200). */
+.text-menu {
+  z-index: 120;
+}
+
 /* ---------- online ---------- */
 
 .online-bar {

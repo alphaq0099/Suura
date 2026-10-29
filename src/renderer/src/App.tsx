@@ -38,6 +38,7 @@ import { SavesPanel } from './components/SavesPanel'
 import { SearchView, type SearchSelectionItem } from './components/SearchView'
 import { SettingsView } from './components/SettingsView'
 import { Sidebar, type ViewName } from './components/Sidebar'
+import { TextFieldMenuHost } from './components/TextFieldMenu'
 import { useDownloads } from './hooks/useDownloads'
 import { useFileDrop } from './hooks/useFileDrop'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
@@ -1335,6 +1336,9 @@ export function App() {
           </div>
         </div>
       ) : null}
+
+      {/* One listener covers every text field in the app, dialogs included. */}
+      <TextFieldMenuHost />
     </div>
   )
 }

@@ -293,7 +293,7 @@ export function LibraryView(props: LibraryViewProps) {
           <p className="subtitle">{subtitle}</p>
         </div>
         <div className="header-actions">
-          <div className="search-field" onContextMenu={fieldMenu.open}>
+          <div className="search-field" data-field-menu onContextMenu={fieldMenu.open}>
             <SearchIcon />
             <input
               ref={searchInputRef}

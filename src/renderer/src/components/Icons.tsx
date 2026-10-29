@@ -413,6 +413,27 @@ export function CopyIcon({ size = 14 }: IconProps) {
   )
 }
 
+/** Scissors: cutting the selection out of a text field. */
+export function CutIcon({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <circle cx="6.5" cy="17.5" r="2.5" />
+      <circle cx="17.5" cy="17.5" r="2.5" />
+      <path d="M8.4 15.4 18 4.5M15.6 15.4 6 4.5" />
+    </svg>
+  )
+}
+
+/** A dashed box around a filled one: selecting everything in a field. */
+export function SelectAllIcon({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <rect x="4" y="4" width="16" height="16" rx="2" strokeDasharray="3 2.4" />
+      <rect x="8.5" y="8.5" width="7" height="7" rx="1" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
 /** A down arrow into a tray: keeping a link in the local library. */
 export function DownloadIcon({ size = 14 }: IconProps) {
   return (

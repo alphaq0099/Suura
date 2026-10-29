@@ -4732,6 +4732,141 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       'the Search field offers Paste and Clear from its context menu'
     )
 
+    // ---- 13b. the tag editor's text fields have a working right-click -----
+    // Electron draws no menu for an input on its own, and the tag editor is
+    // exactly where a mangled artist name gets fixed by hand, so cut, copy and
+    // paste have to work there. The menu is drawn once for the whole app, so
+    // the check also proves it lands above the dialog it was opened in.
+    const fieldMenu = await evaluate<{
+      opened: boolean
+      items: string
+      aboveDialog: boolean
+      zIndex: string
+      copied: string
+      pasted: string
+      cutValue: string
+      cutClipboard: string
+      editorClosed: boolean
+      sheetClosed: boolean
+    }>(
+      window,
+      `(async () => {
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const pick = (selector) => document.querySelector(selector)
+         const pickAll = (selector) => [...document.querySelectorAll(selector)]
+         const text = (element) => (element ? (element.textContent || '').trim() : '')
+         const press = (element) => {
+           if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         }
+         const out = {
+           opened: false, items: '', aboveDialog: false, zIndex: '',
+           copied: '', pasted: '', cutValue: '', cutClipboard: '',
+           editorClosed: false, sheetClosed: false
+         }
+         const openMenu = async (field) => {
+           const rect = field.getBoundingClientRect()
+           field.dispatchEvent(
+             new MouseEvent('contextmenu', {
+               bubbles: true,
+               clientX: rect.left + 20,
+               clientY: rect.top + rect.height / 2
+             })
+           )
+           await sleep(250)
+           return pick('.text-menu')
+         }
+         const item = (label) =>
+           pickAll('.text-menu .context-item').find((el) => text(el) === label)
+
+         const row = pickAll('.track-row').find(
+           (el) => text(el.querySelector('.row-title-text')) === 'Selftest Tone'
+         )
+         if (row) {
+           row.dispatchEvent(
+             new MouseEvent('contextmenu', { bubbles: true, clientX: 240, clientY: 240 })
+           )
+         }
+         await sleep(300)
+         press(
+           pickAll('.context-menu .context-item').find((el) => text(el) === 'Edit tags…')
+         )
+         await sleep(600)
+
+         const title = pick('.tag-dialog .tag-grid input')
+         if (title) {
+           title.focus()
+           title.setSelectionRange(0, 8)
+           const menu = await openMenu(title)
+           out.opened = Boolean(menu) && Boolean(pick('.tag-dialog'))
+           out.items = pickAll('.text-menu .context-item').map(text).join(' | ')
+           if (menu) {
+             const rect = menu.getBoundingClientRect()
+             const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + 12)
+             out.aboveDialog = Boolean(hit && hit.closest('.text-menu'))
+             out.zIndex = getComputedStyle(menu).zIndex
+           }
+
+           press(item('Copy'))
+           await sleep(350)
+           out.copied = await window.player.readClipboardText()
+
+           await window.player.writeClipboardText('Pasted')
+           await openMenu(title)
+           press(item('Paste'))
+           await sleep(350)
+           out.pasted = title.value
+
+           // A marker on the clipboard, then Cut: only a real copy-then-remove
+           // leaves the field's old text behind on the clipboard.
+           await window.player.writeClipboardText('marker')
+           await openMenu(title)
+           press(item('Select all'))
+           await sleep(200)
+           await openMenu(title)
+           press(item('Cut'))
+           await sleep(350)
+           out.cutValue = title.value
+           out.cutClipboard = await window.player.readClipboardText()
+         }
+
+         const dialog = pick('.tag-dialog')
+         if (dialog) {
+           dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+         }
+         await sleep(400)
+         out.editorClosed = !pick('.tag-dialog')
+         press(pick('.details-close'))
+         await sleep(400)
+         out.sheetClosed = !pick('.details-backdrop')
+         return out
+       })()`
+    )
+    record(
+      fieldMenu.opened && fieldMenu.items === 'Cut | Copy | Paste | Select all | Clear',
+      'right-clicking a tag field offers Cut, Copy, Paste, Select all and Clear',
+      fieldMenu.items
+    )
+    record(
+      fieldMenu.aboveDialog && fieldMenu.zIndex === '120',
+      'the field menu sits above the tag editor that owns the field',
+      `above ${fieldMenu.aboveDialog}, z-index ${fieldMenu.zIndex}`
+    )
+    record(
+      fieldMenu.copied === 'Selftest' && fieldMenu.pasted === 'Pasted Tone',
+      'Copy and Paste edit a tag field without losing the rest of its text',
+      `copied ${fieldMenu.copied}, pasted ${fieldMenu.pasted}`
+    )
+    record(
+      fieldMenu.cutValue === '' && fieldMenu.cutClipboard === 'Pasted Tone',
+      'Cut copies the selection before removing it',
+      `value ${fieldMenu.cutValue}, clipboard ${fieldMenu.cutClipboard}`
+    )
+    record(
+      fieldMenu.editorClosed && fieldMenu.sheetClosed,
+      'the tag editor and its details sheet close cleanly after the field menu was used',
+      `editor ${fieldMenu.editorClosed}, sheet ${fieldMenu.sheetClosed}`
+    )
+
     // ---- 14. the library keeps up with the disk by itself ----------------
     // File watching is the difference between "the album I just copied in is
     // missing" and it appearing on its own. The fixture folder is already being

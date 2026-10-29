@@ -1148,7 +1148,7 @@ export function SearchView(props: SearchViewProps) {
       ) : (
         <>
           <form className="discover-bar" onSubmit={submit}>
-            <div className="discover-input" onContextMenu={fieldMenu.open}>
+            <div className="discover-input" data-field-menu onContextMenu={fieldMenu.open}>
               <SearchIcon />
               <input
                 ref={inputRef}

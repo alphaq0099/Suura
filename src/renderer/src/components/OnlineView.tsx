@@ -537,7 +537,7 @@ export function OnlineView(props: OnlineViewProps) {
       </header>
 
       <form className="online-bar" onSubmit={submit}>
-        <div className="online-input" onContextMenu={openFieldMenu}>
+        <div className="online-input" data-field-menu onContextMenu={openFieldMenu}>
           <LinkIcon />
           <input
             ref={inputRef}

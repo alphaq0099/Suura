@@ -145,7 +145,8 @@ Suura remembers the queue, the track and the position, and restores them paused 
 
 Right-click a local track and choose **Edit tags…**, or open **Details** and press **Edit tags**. Title, artist, album
 artist, album, year, genre, track and disc numbers (with their totals) and lyrics can be changed; blanking a field
-removes that tag.
+removes that tag. Every text field also has a right-click menu — Cut, Copy, Paste, Select all and Clear — so a mangled
+artist name can be replaced from the clipboard without touching the keyboard.
 
 The file itself is rewritten, not just the library row. The new version is written to a temporary file in the same
 folder, read back to check it, and only then swapped in; the previous version is kept in `backups/tags` under the app
