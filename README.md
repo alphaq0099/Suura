@@ -141,6 +141,18 @@ anywhere.
 Suura remembers the queue, the track and the position, and restores them paused on the next start — unless you turn on
 **Resume playback automatically** in Settings. Tracks that have since been deleted are left out.
 
+### Editing tags
+
+Right-click a local track and choose **Edit tags…**, or open **Details** and press **Edit tags**. Title, artist, album
+artist, album, year, genre, track and disc numbers (with their totals) and lyrics can be changed; blanking a field
+removes that tag.
+
+The file itself is rewritten, not just the library row. The new version is written to a temporary file in the same
+folder, read back to check it, and only then swapped in; the previous version is kept in `backups/tags` under the app
+data folder. MP3, FLAC, M4A/M4B, Ogg and Opus are writable today, and WAV, AIFF, AAC, WMA, APE, WavPack and Musepack are
+refused rather than half-written. A file that is open for playback, read-only, or locked by another program is reported
+instead of being changed.
+
 ### Keyboard shortcuts
 
 | Key | Action |

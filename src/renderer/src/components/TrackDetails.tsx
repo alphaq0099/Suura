@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Track } from '@shared/types'
 import {
   formatAudioSummary,
@@ -10,12 +10,15 @@ import {
   formatTimestamp
 } from '@shared/format'
 import { ArtworkImage } from './ArtworkImage'
-import { CloseIcon, FolderIcon } from './Icons'
+import { CloseIcon, FolderIcon, PencilIcon } from './Icons'
+import { TagEditor } from './TagEditor'
 
 export interface TrackDetailsProps {
   track: Track
   /** Reveals a local file in Explorer. Omitted for entries with no file. */
   onReveal?: (trackId: number) => void
+  /** Opens the editor straight away, for the row menu's "Edit tags" item. */
+  initialEditing?: boolean
   onClose: () => void
 }
 
@@ -48,50 +51,66 @@ function youtubeIdOf(track: Track): string | null {
  * this is where that fact, and the rest of the technical sheet, still lives.
  */
 export function TrackDetails(props: TrackDetailsProps) {
-  const { track, onReveal, onClose } = props
+  const { track, onReveal, initialEditing = false, onClose } = props
   const dialogRef = useRef<HTMLDivElement | null>(null)
+  // A tag edit replaces the row, and the sheet has to show the new one without
+  // waiting for the parent's list to refresh.
+  const [current, setCurrent] = useState(track)
+  const [editing, setEditing] = useState(initialEditing)
 
   useEffect(() => {
     dialogRef.current?.focus()
   }, [])
 
-  const youtubeId = youtubeIdOf(track)
-  const local = track.filePath !== null
+  useEffect(() => {
+    setCurrent(track)
+  }, [track])
+
+  useEffect(() => {
+    if (initialEditing) setEditing(true)
+  }, [initialEditing])
+
+  const youtubeId = youtubeIdOf(current)
+  const local = current.filePath !== null
 
   const rows: Array<{ label: string; value: string; wide?: boolean }> = [
-    { label: 'Artist', value: track.artist ?? '—' },
-    { label: 'Album', value: track.album ?? '—' },
-    { label: 'Album artist', value: track.albumArtist ?? '—' },
-    { label: 'Duration', value: formatDuration(track.durationMs) },
-    { label: 'Year', value: track.year ? String(track.year) : '—' },
-    { label: 'Genre', value: track.genre ?? '—' },
+    { label: 'Artist', value: current.artist ?? '—' },
+    { label: 'Album', value: current.album ?? '—' },
+    { label: 'Album artist', value: current.albumArtist ?? '—' },
+    { label: 'Duration', value: formatDuration(current.durationMs) },
+    { label: 'Year', value: current.year ? String(current.year) : '—' },
+    { label: 'Genre', value: current.genre ?? '—' },
     {
       label: 'Track',
       value:
-        track.trackNo || track.discNo
-          ? `${track.trackNo ?? '—'}${track.discNo ? ` · disc ${track.discNo}` : ''}`
+        current.trackNo || current.discNo
+          ? `${current.trackNo ?? '—'}${current.trackTotal ? `/${current.trackTotal}` : ''}${
+              current.discNo
+                ? ` · disc ${current.discNo}${current.discTotal ? `/${current.discTotal}` : ''}`
+                : ''
+            }`
           : '—'
     },
-    { label: 'Format', value: local ? formatAudioSummary(track.codec, track.bitrateKbps) : 'Stream only' }
+    { label: 'Format', value: local ? formatAudioSummary(current.codec, current.bitrateKbps) : 'Stream only' }
   ]
 
   if (local) {
     rows.push(
-      { label: 'Codec', value: formatCodec(track.codec) },
-      { label: 'Bitrate', value: formatBitrate(track.bitrateKbps) },
-      { label: 'Sample rate', value: formatSampleRate(track.sampleRate) },
-      { label: 'Channels', value: formatChannels(track.channels) },
-      { label: 'File size', value: formatBytes(track.fileSize) },
-      { label: 'Added', value: formatTimestamp(track.addedAt) },
-      { label: 'Play count', value: formatCount(track.playCount) },
-      { label: 'Last played', value: formatTimestamp(track.lastPlayedAt) },
-      { label: 'Path', value: track.filePath ?? '—', wide: true }
+      { label: 'Codec', value: formatCodec(current.codec) },
+      { label: 'Bitrate', value: formatBitrate(current.bitrateKbps) },
+      { label: 'Sample rate', value: formatSampleRate(current.sampleRate) },
+      { label: 'Channels', value: formatChannels(current.channels) },
+      { label: 'File size', value: formatBytes(current.fileSize) },
+      { label: 'Added', value: formatTimestamp(current.addedAt) },
+      { label: 'Play count', value: formatCount(current.playCount) },
+      { label: 'Last played', value: formatTimestamp(current.lastPlayedAt) },
+      { label: 'Path', value: current.filePath ?? '—', wide: true }
     )
   } else {
     rows.push(
-      { label: 'Added', value: formatTimestamp(track.addedAt) },
-      { label: 'Play count', value: formatCount(track.playCount) },
-      { label: 'Last played', value: formatTimestamp(track.lastPlayedAt) }
+      { label: 'Added', value: formatTimestamp(current.addedAt) },
+      { label: 'Play count', value: formatCount(current.playCount) },
+      { label: 'Last played', value: formatTimestamp(current.lastPlayedAt) }
     )
   }
 
@@ -124,12 +143,12 @@ export function TrackDetails(props: TrackDetailsProps) {
         }}
       >
         <header className="details-head">
-          <ArtworkImage track={track} size={64} iconSize={22} className="details-art" />
+          <ArtworkImage track={current} size={64} iconSize={22} className="details-art" />
           <div className="details-titles">
-            <h2 id="track-details-title">{track.title}</h2>
+            <h2 id="track-details-title">{current.title}</h2>
             <p className="subtitle">
-              {track.artist ?? 'Unknown artist'}
-              {track.album ? ` · ${track.album}` : ''}
+              {current.artist ?? 'Unknown artist'}
+              {current.album ? ` · ${current.album}` : ''}
             </p>
           </div>
           <button
@@ -162,11 +181,17 @@ export function TrackDetails(props: TrackDetailsProps) {
         )}
 
         <footer className="details-foot">
+          {local ? (
+            <button type="button" onClick={() => setEditing(true)}>
+              <PencilIcon />
+              <span>Edit tags</span>
+            </button>
+          ) : null}
           {local && onReveal ? (
             <button
               type="button"
               onClick={() => {
-                onReveal(track.id)
+                onReveal(current.id)
                 onClose()
               }}
             >
@@ -178,6 +203,17 @@ export function TrackDetails(props: TrackDetailsProps) {
             <span>Close</span>
           </button>
         </footer>
+
+        {editing ? (
+          <TagEditor
+            track={current}
+            onSaved={setCurrent}
+            onClose={() => {
+              setEditing(false)
+              if (initialEditing) onClose()
+            }}
+          />
+        ) : null}
       </div>
     </div>
   )

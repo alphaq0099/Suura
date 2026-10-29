@@ -28,6 +28,9 @@ export interface ExtractedMetadata {
   album: string | null
   trackNo: number | null
   discNo: number | null
+  /** The second half of `3/12`, kept so a tag edit does not drop it. */
+  trackTotal: number | null
+  discTotal: number | null
   year: number | null
   genre: string | null
   durationMs: number | null
@@ -81,6 +84,8 @@ export async function extractMetadata(filePath: string): Promise<ExtractedMetada
     album: clean(common.album),
     trackNo: common.track?.no ?? null,
     discNo: common.disk?.no ?? null,
+    trackTotal: common.track?.of ?? null,
+    discTotal: common.disk?.of ?? null,
     year: common.year ?? null,
     genre: clean(genre),
     durationMs: typeof format.duration === 'number' ? Math.round(format.duration * 1000) : null,

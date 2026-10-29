@@ -620,12 +620,13 @@ and its tabs.
 The number is next because the milestone was added last; the **schedule** is after M8 and before M9, so the Android
 port inherits the metadata core instead of reimplementing it. M12 set the same precedent.
 
-**Phase 1 — write path (the foundation)**
-- [ ] One `TagWriter` with a per-format strategy: `node-id3` for MP3 `USLT`/`SYLT`, ffmpeg `-c copy` for FLAC/Ogg/Opus
+**Phase 1 - write path (the foundation)**
+- [x] One `TagWriter` with a per-format strategy: `node-id3` for MP3 `USLT`/`SYLT`, ffmpeg `-c copy` for FLAC/Ogg/Opus
       and M4A (verified: ffmpeg writes `TXXX:USLT` on MP3, not a real `USLT` frame)
-- [ ] Atomic write: temp file in the same folder → verify by parsing → replace; the original survives any failure
-- [ ] Refuse while the track is playing, handle read-only and locked files, update the row and artwork afterwards
-- [ ] Manual tag editor: title, artist, album artist, album, year, genre, track/disc, lyrics, cover
+- [x] Atomic write: temp file in the same folder → verify by parsing → replace; the original survives any failure
+- [x] Refuse while the track is playing, handle read-only and locked files, update the row afterwards
+- [x] Manual tag editor: title, artist, album artist, album, year, genre, track/disc, lyrics
+- [ ] Cover in the manual editor (moved to Phase 3 with the rest of the artwork work)
 
 **Phase 2 — lyrics, read-only**
 - [ ] `track_lyrics` table (track, source, language, synced, LRC, offset, fetched at)

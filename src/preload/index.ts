@@ -14,7 +14,9 @@ import type {
   ListAlbumsQuery,
   ListTracksQuery,
   PlaybackSnapshot,
-  ResolvedSource
+  ResolvedSource,
+  Track,
+  TrackTagFields
 } from '@shared/types'
 
 /**
@@ -72,6 +74,9 @@ const api: PlayerApi = {
   listArtists: (limit?: number) => ipcRenderer.invoke(IPC.libraryListArtists, limit),
 
   getStats: () => ipcRenderer.invoke(IPC.libraryStats),
+
+  updateTrackTags: (trackId: number, fields: TrackTagFields) =>
+    ipcRenderer.invoke(IPC.libraryUpdateTags, trackId, fields) as Promise<Track>,
 
   removeLibraryFolder: (folder: string) =>
     ipcRenderer.invoke(IPC.libraryRemoveFolder, folder) as Promise<AppSettings>,

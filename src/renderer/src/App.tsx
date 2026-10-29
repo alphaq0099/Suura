@@ -391,9 +391,13 @@ export function App() {
 
   useEffect(() => {
     void api
-      .setTaskbarState({ hasTrack: Boolean(player.current), isPlaying: player.isPlaying })
+      .setTaskbarState({
+        hasTrack: Boolean(player.current),
+        isPlaying: player.isPlaying,
+        trackId: player.current?.sourceKind === 'local' ? player.current.id : null
+      })
       .catch(() => undefined)
-  }, [player.current?.id, player.isPlaying])
+  }, [player.current?.id, player.current?.sourceKind, player.isPlaying])
 
   // Carries the queue across restarts. Bound to the player rather than to the
   // view, so it keeps working from any screen.

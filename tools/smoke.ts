@@ -8,7 +8,7 @@
  */
 import { execFile } from 'node:child_process'
 import { copyFileSync, existsSync, readdirSync, statSync } from 'node:fs'
-import { copyFile, mkdir, mkdtemp, readFile, rename, rm, unlink, utimes, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rename, rm, unlink, utimes, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
@@ -93,7 +93,17 @@ import { PlayStateRepository } from '@core/library/play-state-repository'
 import { PlaybackService } from '@core/library/playback-service'
 import { isPathInside, localContentKey, normalizePath } from '@core/library/content-key'
 import { scanLibraryFolders } from '@core/library/scanner'
-import { youtubeOriginOf, youtubeOriginOfNative } from '@core/library/metadata'
+import { youtubeOriginOf, youtubeOriginOfNative, extractMetadata, loadMetadataParser } from '@core/library/metadata'
+import {
+  TAG_TEMP_PREFIX,
+  TagWriteError,
+  TagWriter,
+  isTagTempFile,
+  rawLyricsOf,
+  sweepTagTempFile,
+  type TagFields,
+  type TagWriteResult
+} from '@core/library/tag-writer'
 import { artworkKeyFor, extractArtwork, extensionForMime } from '@core/library/artwork'
 import { LocalFileResolver } from '@engine/local-file-resolver'
 import { parseEbur128Summary } from '@engine/replay-gain'
@@ -161,6 +171,7 @@ import { parseRangeHeader } from '@shared/range'
 import { isImportedPlaylistTrackId, onlineEntryToTrack, onlinePlaylistItemToTrack } from '@shared/online'
 import { canPrefetchSearchMatch, mergeLibrarySearch, type SearchPrefetchGate } from '@shared/search'
 import { sanitizeFilePart, savePathParts } from '@shared/files'
+import { sanitizeTagFields } from '@shared/tags'
 import { AsyncTtlCache } from '../src/main/async-cache'
 import { cleanupAbandonedDownloads, DownloadService } from '../src/main/download-service'
 import { ReplayGainService } from '../src/main/replay-gain-service'
@@ -678,6 +689,8 @@ async function main(): Promise<void> {
         album: null,
         trackNo: null,
         discNo: null,
+        trackTotal: null,
+        discTotal: null,
         year: null,
         genre: null,
         durationMs: 1000,
@@ -881,6 +894,16 @@ async function main(): Promise<void> {
       'taskbar state rejects malformed input',
       sanitizeTaskbarState({ hasTrack: true }) === null &&
         sanitizeTaskbarState({ hasTrack: true, isPlaying: true })?.isPlaying === true
+    )
+    checkEqual(
+      'taskbar state carries the playing row id',
+      sanitizeTaskbarState({ hasTrack: true, isPlaying: true, trackId: 42 })?.trackId,
+      42
+    )
+    check(
+      'taskbar state drops a nonsense track id rather than trusting it',
+      sanitizeTaskbarState({ hasTrack: true, isPlaying: true, trackId: -3 })?.trackId === null &&
+        sanitizeTaskbarState({ hasTrack: true, isPlaying: true, trackId: 'x' })?.trackId === null
     )
 
     const sequence = ['a', 'b', 'c', 'd', 'e']
@@ -4341,6 +4364,392 @@ async function main(): Promise<void> {
       handle.close()
       await rm(root, { recursive: true, force: true }).catch(() => undefined)
     }
+  }
+
+  // --- tag writing ---------------------------------------------------------
+  // The write path is the only code that modifies a user's music, so every
+  // container it claims to support is exercised on a real file: fields are
+  // written, read back through the library's own parser, and the original is
+  // kept under `backups/tags`. A writer that "succeeds" but produces a file the
+  // scanner cannot read would show up here, not in a user's library.
+  const tagRoot = await mkdtemp(join(tmpdir(), 'player-tags-'))
+  try {
+    const tagWriter = new TagWriter({
+      backupDir: join(tagRoot, 'backups'),
+      resolveFfmpeg: async () => ffmpegPath
+    })
+
+    const makeTagFixture = async (
+      fileName: string,
+      codec: string[],
+      extra: Array<[string, string]> = []
+    ): Promise<string> => {
+      const target = join(tagRoot, fileName)
+      await execFileAsync(
+        ffmpegPath,
+        [
+          '-hide_banner',
+          '-loglevel',
+          'error',
+          '-y',
+          '-f',
+          'lavfi',
+          '-i',
+          'sine=frequency=440:duration=1.2',
+          ...codec,
+          '-metadata',
+          'title=Old Title',
+          '-metadata',
+          'artist=Old Artist',
+          '-metadata',
+          'album=Old Album',
+          '-metadata',
+          'comment=https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          ...extra.flatMap(([key, value]) => ['-metadata', `${key}=${value}`]),
+          target
+        ],
+        { timeout: 60_000 }
+      )
+      return target
+    }
+
+    const edited: TagFields = {
+      title: 'Naya Gaana — নতুন',
+      artist: 'Arijit Singh',
+      albumArtist: 'Arijit Singh',
+      album: 'Album One',
+      trackNo: 3,
+      trackTotal: 12,
+      discNo: 1,
+      discTotal: 2,
+      year: 2024,
+      genre: 'Filmi',
+      lyrics: 'first line\nsecond line\nতৃতীয় লাইন'
+    }
+
+    const parseTags = async (filePath: string) => {
+      const parseFile = await loadMetadataParser()
+      return await parseFile(filePath, { duration: false, skipCovers: true })
+    }
+    const lyricsOf = async (filePath: string): Promise<string | null> =>
+      rawLyricsOf((await parseTags(filePath)).native)
+
+    const containers: Array<{ name: string; file: string; codec: string[] }> = [
+      { name: 'mp3', file: 'track.mp3', codec: ['-c:a', 'libmp3lame'] },
+      { name: 'flac', file: 'track.flac', codec: ['-c:a', 'flac'] },
+      { name: 'm4a', file: 'track.m4a', codec: ['-c:a', 'aac'] },
+      { name: 'ogg', file: 'track.ogg', codec: ['-c:a', 'libvorbis'] },
+      { name: 'opus', file: 'track.opus', codec: ['-c:a', 'libopus'] }
+    ]
+
+    const written = new Map<string, TagWriteResult>()
+    for (const container of containers) {
+      const filePath = await makeTagFixture(container.file, container.codec)
+      let result: TagWriteResult | null = null
+      let failure: unknown = null
+      try {
+        result = await tagWriter.write(filePath, edited)
+      } catch (error) {
+        failure = error
+      }
+      check(`tags: ${container.name} accepts every field`, result !== null, String(failure))
+      if (!result) continue
+      written.set(container.name, result)
+
+      const metadata = await extractMetadata(filePath)
+      checkEqual(
+        `tags: ${container.name} reads back the names`,
+        [metadata.title, metadata.artist, metadata.albumArtist, metadata.album].join(' | '),
+        'Naya Gaana — নতুন | Arijit Singh | Arijit Singh | Album One'
+      )
+      checkEqual(
+        `tags: ${container.name} reads back year, genre, track and disc`,
+        [metadata.year, metadata.genre, metadata.trackNo, metadata.discNo].join(' | '),
+        '2024 | Filmi | 3 | 1'
+      )
+      checkEqual(`tags: ${container.name} keeps the lyrics`, await lyricsOf(filePath), edited.lyrics ?? null)
+      const parsedForComment = await parseTags(filePath)
+      checkEqual(
+        `tags: ${container.name} keeps the YouTube comment`,
+        // MP3 stores ffmpeg's comment as `TXXX:comment`, which music-metadata
+        // keeps native rather than mapping onto `common.comment`.
+        youtubeOriginOf(parsedForComment.common.comment) ??
+          youtubeOriginOfNative(parsedForComment.native),
+        'dQw4w9WgXcQ'
+      )
+      check(
+        `tags: ${container.name} leaves no temp file behind`,
+        readdirSync(tagRoot).every((name) => !isTagTempFile(name))
+      )
+      check(
+        `tags: ${container.name} keeps a backup of the original`,
+        Boolean(result.backupPath && existsSync(result.backupPath))
+      )
+    }
+
+    // The regression that started this milestone: ffmpeg's MP3 lyrics are a
+    // `TXXX:USLT` text frame that no reader maps back to lyrics.
+    const mp3Frames = (await parseTags(join(tagRoot, 'track.mp3'))).native
+    const frameIds = Object.values(mp3Frames).flatMap((frames) =>
+      frames.map((frame) => (frame as { id?: string }).id ?? '')
+    )
+    check('tags: MP3 lyrics are a real USLT frame', frameIds.includes('USLT'))
+
+    const mp3Backup = written.get('mp3')?.backupPath
+    checkEqual(
+      'tags: the backup still holds the old tags',
+      mp3Backup ? (await extractMetadata(mp3Backup)).title : null,
+      'Old Title'
+    )
+
+    // Clearing is a distinct operation from leaving a field alone: a blank input
+    // must remove the frame, not write an empty one.
+    const clearTarget = await makeTagFixture('clear.flac', ['-c:a', 'flac'])
+    await tagWriter.write(clearTarget, { title: 'Kept Title', album: 'Gone Album', lyrics: 'to be removed' })
+    await tagWriter.write(clearTarget, { album: null, lyrics: null })
+    const cleared = await extractMetadata(clearTarget)
+    checkEqual(
+      'tags: clearing removes only the fields that were cleared',
+      JSON.stringify([cleared.title, cleared.album]),
+      JSON.stringify(['Kept Title', null])
+    )
+    checkEqual('tags: clearing the lyrics removes them', await lyricsOf(clearTarget), null)
+
+    // Long text is where a naive writer truncates or corrupts the frame.
+    const longPath = await makeTagFixture('long.mp3', ['-c:a', 'libmp3lame'])
+    const longLyrics = Array.from({ length: 400 }, (_, index) => `line ${index + 1}`).join('\n')
+    await tagWriter.write(longPath, { lyrics: longLyrics })
+    checkEqual('tags: a 3 KB lyric survives intact', (await lyricsOf(longPath))?.length ?? 0, longLyrics.length)
+
+    // LRC is stored verbatim; the reader is what turns it into timed lines.
+    const lrcPath = await makeTagFixture('lrc.flac', ['-c:a', 'flac'])
+    const lrc = '[00:00.00]first line\n[00:12.50]second line'
+    await tagWriter.write(lrcPath, { lyrics: lrc })
+    checkEqual('tags: LRC text is stored verbatim', await lyricsOf(lrcPath), lrc)
+    const lrcParsed = await parseTags(lrcPath)
+    checkEqual(
+      'tags: LRC becomes timed lines when read back',
+      lrcParsed.common.lyrics?.[0]?.syncText.length ?? 0,
+      2
+    )
+
+    let unsupported: unknown = null
+    await tagWriter.write(join(tagRoot, 'sample.wav'), { title: 'x' }).catch((error) => {
+      unsupported = error
+    })
+    checkEqual(
+      'tags: a container with no writer is refused',
+      unsupported instanceof TagWriteError ? unsupported.code : 'no-error',
+      'unsupported'
+    )
+
+    let missing: unknown = null
+    await tagWriter.write(join(tagRoot, 'nope.mp3'), { title: 'x' }).catch((error) => {
+      missing = error
+    })
+    checkEqual(
+      'tags: a missing file is refused',
+      missing instanceof TagWriteError ? missing.code : 'no-error',
+      'missing'
+    )
+
+    // A read-only file is the closest thing to "another program has it open"
+    // that a test can set up on Windows. The write must fail *and* leave the
+    // original byte-for-byte intact.
+    const lockedPath = await makeTagFixture('locked.mp3', ['-c:a', 'libmp3lame'])
+    const lockedBefore = await readFile(lockedPath)
+    await chmod(lockedPath, 0o444)
+    let locked: unknown = null
+    await tagWriter.write(lockedPath, { title: 'Should not stick' }).catch((error) => {
+      locked = error
+    })
+    await chmod(lockedPath, 0o666)
+    checkEqual(
+      'tags: a read-only file is reported as locked',
+      locked instanceof TagWriteError ? locked.code : 'no-error',
+      'locked'
+    )
+    checkEqual(
+      'tags: a refused write leaves the original untouched',
+      (await readFile(lockedPath)).equals(lockedBefore),
+      true
+    )
+    check(
+      'tags: a refused write leaves no temp file behind',
+      readdirSync(tagRoot).every((name) => !isTagTempFile(name))
+    )
+
+    // A crash between the temp write and the rename can only leave the temp
+    // file, so the scanner has to know both to skip it and to sweep it later.
+    const sweepDir = join(tagRoot, 'sweep')
+    await mkdir(sweepDir, { recursive: true })
+    const staleName = `${TAG_TEMP_PREFIX}stale.mp3`
+    const freshName = `${TAG_TEMP_PREFIX}fresh.mp3`
+    await writeFile(join(sweepDir, staleName), 'x')
+    await writeFile(join(sweepDir, freshName), 'x')
+    const longAgo = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    await utimes(join(sweepDir, staleName), longAgo, longAgo)
+    await sweepTagTempFile(sweepDir, staleName)
+    await sweepTagTempFile(sweepDir, freshName)
+    check('tags: an abandoned temp file is swept', !existsSync(join(sweepDir, staleName)))
+    check('tags: a fresh temp file is left for its writer', existsSync(join(sweepDir, freshName)))
+    check('tags: temp files are recognisable by name', isTagTempFile(freshName) && !isTagTempFile('track.mp3'))
+
+    // --- the edit as a whole ---------------------------------------------
+    // The writer is only half of it: the row has to be rebuilt from the file
+    // afterwards, and a position or origin the editor did not touch must
+    // survive the rewrite. This is the path the dialog actually calls.
+    const editedPath = await makeTagFixture('service.mp3', ['-c:a', 'libmp3lame'], [
+      ['track', '3/12'],
+      ['disc', '1/2']
+    ])
+    // A database of its own: the main one belongs to the scan block above and
+    // is closed by the time this runs.
+    const servicePaths = resolveAppPaths(join(tagRoot, 'userData'))
+    ensureAppDirectories(servicePaths)
+    const serviceDb = openLibraryDatabase(servicePaths.database, silentLogger)
+      try {
+      const serviceRepo = new TrackRepository(serviceDb.db)
+      const serviceSettings = new SettingsService(servicePaths.config, silentLogger)
+      const editedId = serviceRepo.insert(
+        {
+          contentKey: 'smoke-tag-service',
+          sourceKind: 'local',
+          sourceId: null,
+          originKind: 'youtube',
+          originId: 'dQw4w9WgXcQ',
+          title: 'Old Title',
+          artist: 'Old Artist',
+          albumArtist: null,
+          album: 'Old Album',
+          trackNo: 3,
+          discNo: 1,
+          trackTotal: 12,
+          discTotal: 2,
+          year: 2001,
+          genre: null,
+          durationMs: 1200,
+          codec: 'mp3',
+          bitrateKbps: null,
+          sampleRate: null,
+          channels: null,
+          fileSize: null,
+          fileMtimeMs: null,
+          filePath: editedPath
+        },
+        Date.now()
+      )
+      const tagLibrary = new LibraryService(serviceRepo, serviceSettings, silentLogger, {}, tagWriter)
+      const editedRow = await tagLibrary.updateTags(editedId, { title: 'Edited Title', genre: 'Filmi' })
+      checkEqual(
+        'tags: the row is rebuilt from the rewritten file',
+        [editedRow.title, editedRow.genre].join(' | '),
+        'Edited Title | Filmi'
+      )
+      checkEqual(
+        'tags: an untouched track total survives the edit',
+        [editedRow.trackNo, editedRow.trackTotal, editedRow.discNo, editedRow.discTotal].join('/'),
+        '3/12/1/2'
+      )
+      checkEqual(
+        'tags: the video origin survives the edit',
+        [editedRow.originKind, editedRow.originId].join(':'),
+        'youtube:dQw4w9WgXcQ'
+      )
+
+      // Changing one half of `3/12` sends the other half from the row, because
+      // the container holds them in one frame. A missing fill would silently
+      // rewrite the number as `0/5` or drop the track number entirely.
+      const totalOnly = await tagLibrary.updateTags(editedId, { trackTotal: 5 })
+      checkEqual(
+        'tags: editing only the total keeps the track number',
+        [totalOnly.trackNo, totalOnly.trackTotal].join('/'),
+        '3/5'
+      )
+      const clearedDisc = await tagLibrary.updateTags(editedId, { discNo: null })
+      checkEqual(
+        'tags: clearing the disc number clears both halves',
+        [clearedDisc.discNo, clearedDisc.discTotal].join('/'),
+        '/'
+      )
+      checkEqual(
+        'tags: the row and the file agree after the edit',
+        (await extractMetadata(editedPath)).title,
+        'Edited Title'
+      )
+
+      let remoteEdit: unknown = null
+      const remoteId = serviceRepo.insert(
+        {
+          contentKey: 'smoke-tag-remote',
+          sourceKind: 'youtube',
+          sourceId: 'dQw4w9WgXcQ',
+          originKind: null,
+          originId: null,
+          title: 'Remote Only',
+          artist: null,
+          albumArtist: null,
+          album: null,
+          trackNo: null,
+          discNo: null,
+          trackTotal: null,
+          discTotal: null,
+          year: null,
+          genre: null,
+          durationMs: 1000,
+          codec: null,
+          bitrateKbps: null,
+          sampleRate: null,
+          channels: null,
+          fileSize: null,
+          fileMtimeMs: null,
+          filePath: null
+        },
+        Date.now()
+      )
+      await tagLibrary.updateTags(remoteId, { title: 'Nope' }).catch((error) => {
+        remoteEdit = error
+      })
+      check(
+        'tags: a stream-only track cannot be edited',
+        remoteEdit instanceof Error && remoteEdit.message.includes('Only files')
+      )
+    } finally {
+      serviceDb.close()
+    }
+
+    // The bridge sanitises before anything reaches the writer, because these
+    // values are written into the file and read back as the truth later.
+    checkEqual(
+      'tags: blank text clears instead of writing an empty frame',
+      JSON.stringify(sanitizeTagFields({ title: '   ', album: 'A\r\nB' })),
+      JSON.stringify({ title: null, album: 'A\nB' })
+    )
+    checkEqual(
+      'tags: the sanitiser keeps only the keys it was given',
+      JSON.stringify(Object.keys(sanitizeTagFields({ title: 'T' }))),
+      JSON.stringify(['title'])
+    )
+    const rejects = (input: unknown): boolean => {
+      try {
+        sanitizeTagFields(input)
+        return false
+      } catch {
+        return true
+      }
+    }
+    check('tags: an over-long lyric is refused', rejects({ lyrics: 'x'.repeat(100_001) }))
+    check('tags: a year outside 1000-3000 is refused', rejects({ year: 99 }))
+    check('tags: a fractional track number is refused', rejects({ trackNo: 1.5 }))
+    check('tags: a non-string title is refused', rejects({ title: 7 }))
+    check('tags: an empty edit is refused', rejects({}))
+    checkEqual(
+      'tags: a cleared year is allowed',
+      JSON.stringify(sanitizeTagFields({ year: null })),
+      JSON.stringify({ year: null })
+    )
+  } finally {
+    await rm(tagRoot, { recursive: true, force: true }).catch(() => undefined)
   }
 
   // The scale budgets are a pure decision, so they are held to their edges here

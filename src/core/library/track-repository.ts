@@ -30,6 +30,8 @@ export interface TrackRow {
   album: string | null
   track_no: number | null
   disc_no: number | null
+  track_total: number | null
+  disc_total: number | null
   year: number | null
   genre: string | null
   duration_ms: number | null
@@ -79,6 +81,8 @@ export interface TrackWriteInput {
   album: string | null
   trackNo: number | null
   discNo: number | null
+  trackTotal: number | null
+  discTotal: number | null
   year: number | null
   genre: string | null
   durationMs: number | null
@@ -137,6 +141,8 @@ const TRACK_COLUMN_NAMES = [
   'album',
   'track_no',
   'disc_no',
+  'track_total',
+  'disc_total',
   'year',
   'genre',
   'duration_ms',
@@ -377,6 +383,8 @@ export function mapTrackRow(row: TrackRow): Track {
     album: row.album,
     trackNo: row.track_no,
     discNo: row.disc_no,
+    trackTotal: row.track_total ?? null,
+    discTotal: row.disc_total ?? null,
     year: row.year,
     genre: row.genre,
     durationMs: row.duration_ms,
@@ -785,9 +793,9 @@ export class TrackRepository {
       .prepare(
         `INSERT INTO tracks (
            source_kind, source_id, origin_kind, origin_id, content_key, title, artist, album_artist, album,
-           track_no, disc_no, year, genre, duration_ms, codec, bitrate_kbps,
+           track_no, disc_no, track_total, disc_total, year, genre, duration_ms, codec, bitrate_kbps,
            sample_rate, channels, file_size, file_mtime_ms, file_path, added_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         input.sourceKind,
@@ -801,6 +809,8 @@ export class TrackRepository {
         input.album,
         input.trackNo,
         input.discNo,
+        input.trackTotal,
+        input.discTotal,
         input.year,
         input.genre,
         input.durationMs,
@@ -823,6 +833,7 @@ export class TrackRepository {
         `UPDATE tracks SET
            origin_kind = ?, origin_id = ?,
            title = ?, artist = ?, album_artist = ?, album = ?, track_no = ?, disc_no = ?,
+           track_total = ?, disc_total = ?,
            year = ?, genre = ?, duration_ms = ?, codec = ?, bitrate_kbps = ?, sample_rate = ?,
            channels = ?, file_size = ?, file_mtime_ms = ?, file_path = ?,
            replay_gain_db = NULL, replay_gain_peak = NULL,
@@ -838,6 +849,8 @@ export class TrackRepository {
         input.album,
         input.trackNo,
         input.discNo,
+        input.trackTotal,
+        input.discTotal,
         input.year,
         input.genre,
         input.durationMs,

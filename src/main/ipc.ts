@@ -19,6 +19,7 @@ import { isLocalLibraryFilter, streamFallbackFor } from '@shared/library'
 import { isImportedPlaylistTrackId } from '@shared/online'
 import { countsAsPlay } from '@shared/play-count'
 import { clampPlaylistIndexWidth } from '@shared/playlists'
+import { sanitizeTagFields } from '@shared/tags'
 import type {
   AccentName,
   AlbumSortField,
@@ -561,6 +562,12 @@ function sanitizeArtistLimit(input: unknown): number {
 export function registerIpcHandlers(container: AppContainer): void {
   const { settings, library, log } = container
 
+  // The renderer owns playback, so it is the only place that knows which file
+  // is open. Windows will not let us replace a file that is being streamed, and
+  // a write that fails after the user typed a page of lyrics is a bad trade, so
+  // the id is kept here and checked before any tag write starts.
+  let playingTrackId: number | null = null
+
   /**
    * Resolves a queue entry without recording a play. The local branch attaches
    * ReplayGain here rather than in the resolver: gain belongs to the file, and a
@@ -883,6 +890,17 @@ export function registerIpcHandlers(container: AppContainer): void {
   )
 
   ipcMain.handle(IPC.libraryStats, () => library.stats())
+
+  ipcMain.handle(IPC.libraryUpdateTags, async (_event, trackId: unknown, input: unknown) => {
+    const id = toTrackId(trackId)
+    const fields = sanitizeTagFields(input)
+    if (playingTrackId === id) {
+      throw new Error(
+        'Stop this track, or play something else, before editing its tags: the file is open for playback.'
+      )
+    }
+    return library.updateTags(id, fields)
+  })
 
   ipcMain.handle(IPC.libraryRemoveFolder, (_event, folder: unknown) => {
     if (typeof folder !== 'string' || folder.trim().length === 0) {
@@ -1351,6 +1369,7 @@ export function registerIpcHandlers(container: AppContainer): void {
   ipcMain.handle(IPC.windowSetTaskbarState, (event, input: unknown) => {
     const state = sanitizeTaskbarState(input)
     if (!state) throw new Error('Malformed taskbar state.')
+    playingTrackId = state.hasTrack ? state.trackId : null
     const window = BrowserWindow.fromWebContents(event.sender)
     return window ? applyTaskbarControls(window, state, log.child('taskbar')) : false
   })

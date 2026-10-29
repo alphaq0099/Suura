@@ -44,6 +44,7 @@ import type {
   StreamPlay,
   Track,
   TrackPage,
+  TrackTagFields,
   YouTubeChannel,
   YouTubeSearchResult
 } from './types'
@@ -78,6 +79,7 @@ export const IPC = {
   libraryAllTracks: 'library:all-tracks',
   libraryListArtists: 'library:list-artists',
   libraryStats: 'library:stats',
+  libraryUpdateTags: 'library:update-tags',
   libraryRemoveFolder: 'library:remove-folder',
   libraryRevealTrack: 'library:reveal-track',
   libraryArtwork: 'library:artwork',
@@ -177,6 +179,11 @@ export type PlayerCommand =
 export interface TaskbarState {
   hasTrack: boolean
   isPlaying: boolean
+  /**
+   * The local row being played, so the main process can refuse to rewrite a
+   * file it is currently streaming. Null for a remote track or nothing playing.
+   */
+  trackId: number | null
 }
 
 /** Payload type for each push event, so `on()` can be strongly typed. */
@@ -285,6 +292,14 @@ export interface PlayerApi {
   /** Artists for the Home shelf, most recently played first. */
   listArtists(limit?: number): Promise<ArtistSummary[]>
   getStats(): Promise<LibraryStats>
+  /**
+   * Writes tags into a local file and refreshes its row.
+   *
+   * The file is rewritten atomically and a copy is kept under `backups/tags`,
+   * so this is not a "maybe it worked" operation: it either resolves with the
+   * updated row or rejects with a message that says why nothing changed.
+   */
+  updateTrackTags(trackId: number, fields: TrackTagFields): Promise<Track>
   removeLibraryFolder(folder: string): Promise<AppSettings>
   revealTrack(trackId: number): Promise<void>
   /**

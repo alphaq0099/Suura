@@ -9,13 +9,16 @@ import type {
   ListTracksQuery,
   ScanProgress,
   Track,
-  TrackPage
+  TrackPage,
+  TrackTagFields
 } from '@shared/types'
 import { isAudioFile } from '@shared/mime'
 import { countsAsPlay } from '@shared/play-count'
-import { isPathInside, normalizePath } from './content-key'
+import { isPathInside, localContentKey, normalizePath } from './content-key'
+import { extractMetadata } from './metadata'
 import { scanLibraryFolders } from './scanner'
-import type { TrackRepository } from './track-repository'
+import type { TagFields, TagWriter } from './tag-writer'
+import type { TrackRepository, TrackWriteInput } from './track-repository'
 import type { SettingsService } from '../settings/settings-service'
 import type { Logger } from '../logging/logger'
 
@@ -45,7 +48,9 @@ export class LibraryService {
     private readonly repo: TrackRepository,
     private readonly settings: SettingsService,
     private readonly log: Logger,
-    private readonly events: LibraryServiceEvents = {}
+    private readonly events: LibraryServiceEvents = {},
+    /** Null in tests and in any build without a tag writer; editing then fails. */
+    private readonly tagWriter: TagWriter | null = null
   ) {}
 
   isScanning(): boolean {
@@ -273,6 +278,63 @@ export class LibraryService {
     void this.scanWhenIdle().catch((error: unknown) => {
       this.log.warn('queued rescan failed', error)
     })
+  }
+
+  /**
+   * Writes tags into a local file and refreshes its row.
+   *
+   * The file is the source of truth, so the row is rebuilt from the file that
+   * was just written rather than from the request: a writer that silently
+   * ignored a field would then show up in the UI instead of being remembered as
+   * if it had worked. `content_key` is the path, so the row keeps its identity
+   * (and its playlists) across the rewrite.
+   */
+  async updateTags(id: number, input: TrackTagFields): Promise<Track> {
+    const track = this.repo.getById(id)
+    if (!track) throw new Error('That track is no longer in the library.')
+    if (track.sourceKind !== 'local' || !track.filePath) {
+      throw new Error('Only files in your library can have their tags edited.')
+    }
+    if (!this.tagWriter) throw new Error('Tag editing is not available in this build.')
+    if (this.activeScan) throw new Error('Wait for the library scan to finish, then try again.')
+
+    const fields: TagFields = { ...input }
+    // A position is one frame (`3/12`), so changing either half sends both. The
+    // row already knows the half the editor did not touch.
+    if ('trackNo' in fields || 'trackTotal' in fields) {
+      if (!('trackNo' in fields)) fields.trackNo = track.trackNo
+      if (!('trackTotal' in fields)) fields.trackTotal = track.trackTotal
+    }
+    if ('discNo' in fields || 'discTotal' in fields) {
+      if (!('discNo' in fields)) fields.discNo = track.discNo
+      if (!('discTotal' in fields)) fields.discTotal = track.discTotal
+    }
+
+    await this.tagWriter.write(track.filePath, fields)
+
+    const metadata = await extractMetadata(track.filePath)
+    const info = await stat(track.filePath)
+    const next: TrackWriteInput = {
+      contentKey: localContentKey(track.filePath),
+      sourceKind: track.sourceKind,
+      sourceId: track.sourceId,
+      ...metadata,
+      // A tag edit must never cost a track its video: if the file's comment was
+      // the only record of it and the writer could not keep it, the row's own
+      // answer is still the right one.
+      originKind: metadata.originKind ?? track.originKind,
+      originId: metadata.originId ?? track.originId,
+      fileSize: info.size,
+      fileMtimeMs: Math.trunc(info.mtimeMs),
+      filePath: track.filePath
+    }
+    this.repo.update(id, next, Date.now())
+    this.log.info('tags written', { trackId: id, filePath: track.filePath, fields: Object.keys(fields) })
+    this.emitChanged()
+
+    const updated = this.repo.getById(id)
+    if (!updated) throw new Error('The track disappeared while its tags were being written.')
+    return updated
   }
 
   /** Called by the player when a track has been played enough to count. */

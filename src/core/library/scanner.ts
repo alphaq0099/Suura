@@ -4,6 +4,7 @@ import type { ScanProgress } from '@shared/types'
 import { isAudioFile } from '@shared/mime'
 import { localContentKey } from './content-key'
 import { extractMetadata } from './metadata'
+import { isTagTempFile, sweepTagTempFile } from './tag-writer'
 import type { TrackRepository, TrackWriteInput } from './track-repository'
 import type { Logger } from '../logging/logger'
 
@@ -195,6 +196,13 @@ async function enumerate(
 
       // Symlinks are skipped rather than followed, which avoids cycles.
       if (!entry.isFile()) continue
+      // A tag write that was killed mid-flight leaves its temp file next to the
+      // track. Indexing it would show a phantom duplicate, so it is skipped and
+      // swept when it is old enough to be abandoned.
+      if (isTagTempFile(name)) {
+        void sweepTagTempFile(directory, name)
+        continue
+      }
       if (!isAudioFile(name)) continue
 
       const filePath = join(directory, name)

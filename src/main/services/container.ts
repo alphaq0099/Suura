@@ -9,6 +9,7 @@ import { openLibraryDatabase, type DatabaseHandle } from '@core/db/database'
 import { TrackRepository } from '@core/library/track-repository'
 import { DownloadHistoryRepository } from '@core/library/download-history-repository'
 import { LibraryService } from '@core/library/library-service'
+import { TagWriter } from '@core/library/tag-writer'
 import { FolderWatcher } from '@core/library/folder-watcher'
 import { PlaylistRepository } from '@core/library/playlist-repository'
 import { PlaylistService } from '@core/library/playlist-service'
@@ -22,6 +23,7 @@ import { InnerTubeMetadataClient } from '@engine/innertube'
 import { LocalFileResolver } from '@engine/local-file-resolver'
 import { ResolverRegistry } from '@engine/resolver'
 import { PoTokenProvider } from '@engine/sidecar/po-token'
+import { probeExecutable } from '@engine/sidecar/locate'
 import { YtDlpClient } from '@engine/sidecar/yt-dlp'
 import { YouTubeResolver } from '@engine/youtube-resolver'
 import { IPC_EVENTS } from '@shared/ipc'
@@ -75,6 +77,8 @@ export interface AppContainer {
   poToken: PoTokenProvider
   /** Measures ReplayGain for local files in the background. */
   replayGain: ReplayGainService
+  /** The only writer that modifies a user's files; exposed for later phases. */
+  tagWriter: TagWriter
   dispose(): void
 }
 
@@ -177,11 +181,35 @@ export function createContainer(): AppContainer {
     onPlayHistory: () => broadcast(IPC_EVENTS.playHistoryChanged, null)
   })
 
-  const library = new LibraryService(repo, settings, log.child('library'), {
-    onScanProgress: (progress) => broadcast(IPC_EVENTS.scanProgress, progress),
-    onLibraryChanged: () => broadcast(IPC_EVENTS.libraryChanged, null),
-    onPlayHistoryChanged: () => broadcast(IPC_EVENTS.playHistoryChanged, null)
+  const tagWriter = new TagWriter({
+    backupDir: join(paths.backups, 'tags'),
+    // Resolved per write rather than at startup: ffmpeg is optional until the
+    // first edit, and Settings can change the folder between edits.
+    resolveFfmpeg: async () => {
+      const ffmpeg = await probeExecutable('ffmpeg', {
+        configuredDir: settings.get().engine.binDir,
+        versionArgs: ['-version']
+      })
+      if (!ffmpeg.found || !ffmpeg.path) {
+        throw new Error(
+          ffmpeg.error ?? 'ffmpeg was not found. Install it, or point Settings at the folder that holds it.'
+        )
+      }
+      return ffmpeg.path
+    }
   })
+
+  const library = new LibraryService(
+    repo,
+    settings,
+    log.child('library'),
+    {
+      onScanProgress: (progress) => broadcast(IPC_EVENTS.scanProgress, progress),
+      onLibraryChanged: () => broadcast(IPC_EVENTS.libraryChanged, null),
+      onPlayHistoryChanged: () => broadcast(IPC_EVENTS.playHistoryChanged, null)
+    },
+    tagWriter
+  )
 
   // A crash or a force-quit never runs the download's `finally`, so sweep the
   // temp folders before anything can start writing a new one.
@@ -298,6 +326,7 @@ export function createContainer(): AppContainer {
     streamPlays,
     poToken,
     replayGain,
+    tagWriter,
     dispose: () => {
       unwatchSettings()
       unwatchTheme()

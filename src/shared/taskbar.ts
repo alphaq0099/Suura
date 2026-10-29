@@ -29,5 +29,9 @@ export function sanitizeTaskbarState(value: unknown): TaskbarState | null {
   if (!value || typeof value !== 'object') return null
   const candidate = value as Record<string, unknown>
   if (typeof candidate.hasTrack !== 'boolean' || typeof candidate.isPlaying !== 'boolean') return null
-  return { hasTrack: candidate.hasTrack, isPlaying: candidate.isPlaying }
+  const trackId =
+    typeof candidate.trackId === 'number' && Number.isInteger(candidate.trackId) && candidate.trackId > 0
+      ? candidate.trackId
+      : null
+  return { hasTrack: candidate.hasTrack, isPlaying: candidate.isPlaying, trackId }
 }

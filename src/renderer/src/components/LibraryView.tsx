@@ -154,6 +154,9 @@ export function LibraryView(props: LibraryViewProps) {
   const [contextMenu, setContextMenu] = useState<{ track: Track; x: number; y: number } | null>(null)
   const [streamMenu, setStreamMenu] = useState<{ track: Track; x: number; y: number } | null>(null)
   const [detailsTrack, setDetailsTrack] = useState<Track | null>(null)
+  // Set when the row menu asked for the editor rather than the sheet, so the
+  // details dialog opens straight into it.
+  const [detailsEditing, setDetailsEditing] = useState(false)
   const [bulkBusy, setBulkBusy] = useState(false)
   const [bulkError, setBulkError] = useState<string | null>(null)
   const fieldMenu = useFieldContextMenu(searchInputRef)
@@ -578,7 +581,18 @@ export function LibraryView(props: LibraryViewProps) {
             const index = tracks.findIndex((track) => track.id === contextMenu.track.id)
             if (index >= 0) onPlay(index)
           }}
-          onDetails={() => setDetailsTrack(contextMenu.track)}
+          onDetails={() => {
+            setDetailsEditing(false)
+            setDetailsTrack(contextMenu.track)
+          }}
+          onEditTags={
+            contextMenu.track.filePath
+              ? () => {
+                  setDetailsEditing(true)
+                  setDetailsTrack(contextMenu.track)
+                }
+              : undefined
+          }
           onReveal={() => onReveal(contextMenu.track.id)}
           isSelected={selectedIds.has(contextMenu.track.id)}
           onToggleSelection={() => onSelect(contextMenu.track.id, 'toggle')}
@@ -627,7 +641,10 @@ export function LibraryView(props: LibraryViewProps) {
               id: 'details',
               label: 'Details',
               icon: <InfoIcon />,
-              onSelect: () => setDetailsTrack(streamMenu.track)
+              onSelect: () => {
+                setDetailsEditing(false)
+                setDetailsTrack(streamMenu.track)
+              }
             },
             {
               id: 'remove',
@@ -644,8 +661,12 @@ export function LibraryView(props: LibraryViewProps) {
       {detailsTrack ? (
         <TrackDetails
           track={detailsTrack}
+          initialEditing={detailsEditing}
           onReveal={showingStreams ? undefined : onReveal}
-          onClose={() => setDetailsTrack(null)}
+          onClose={() => {
+            setDetailsTrack(null)
+            setDetailsEditing(false)
+          }}
         />
       ) : null}
     </section>

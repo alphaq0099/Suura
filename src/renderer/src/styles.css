@@ -5506,6 +5506,147 @@ button.online-jump:hover {
   }
 }
 
+/* ---------- tag editor ---------- */
+
+.tag-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgb(4 6 12 / 78%);
+  backdrop-filter: blur(3px);
+}
+
+.tag-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(620px, 100%);
+  max-height: min(88vh, 820px);
+  overflow-y: auto;
+  padding: 18px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgb(0 0 0 / 60%);
+  outline: none;
+}
+
+.tag-head {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.tag-art {
+  border-radius: 7px;
+}
+
+.tag-titles {
+  min-width: 0;
+}
+
+.tag-titles h2 {
+  margin: 0 0 3px;
+  font-size: calc(17px * var(--text-scale));
+}
+
+.tag-titles .subtitle {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: calc(11px * var(--text-scale));
+}
+
+.tag-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+}
+
+.tag-grid .field.wide {
+  grid-column: 1 / -1;
+}
+
+.tag-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.tag-pair-of {
+  font-size: calc(11px * var(--text-scale));
+  color: var(--text-faint);
+}
+
+.tag-lyrics {
+  gap: 5px;
+}
+
+.tag-dialog textarea {
+  font: inherit;
+  color: inherit;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  min-width: 0;
+  resize: vertical;
+  line-height: 1.5;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: calc(12px * var(--text-scale));
+}
+
+.tag-dialog textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.tag-lyrics-remove {
+  margin: -4px 0 0;
+}
+
+.tag-dialog .field-note {
+  margin: -6px 0 0;
+}
+
+.tag-note {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: rgb(var(--accent-rgb) / 8%);
+  color: var(--text-dim);
+  font-size: calc(11.5px * var(--text-scale));
+  line-height: 1.5;
+}
+
+.tag-problem {
+  margin: 0;
+  color: var(--danger-text);
+  font-size: calc(12px * var(--text-scale));
+}
+
+.tag-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 520px) {
+  .tag-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* ---------- saves dock ---------- */
 
 .saves-panel {

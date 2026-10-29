@@ -130,6 +130,8 @@ function artworkTrack(result: YouTubeSearchResult): Track {
     album: null,
     trackNo: null,
     discNo: null,
+    trackTotal: null,
+    discTotal: null,
     year: null,
     genre: null,
     durationMs: result.durationMs,

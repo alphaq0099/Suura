@@ -711,6 +711,8 @@ export function HomeView(props: HomeViewProps) {
   const [albumSelection, setAlbumSelection] = useState<ReadonlySet<number>>(() => new Set())
   const [albumMenu, setAlbumMenu] = useState<{ track: Track; at: { x: number; y: number } } | null>(null)
   const [albumDetails, setAlbumDetails] = useState<Track | null>(null)
+  // The row menu can ask for the editor instead of the sheet.
+  const [albumEditing, setAlbumEditing] = useState(false)
 
   const scrollRef = useRef<HTMLElement | null>(null)
   const gridRef = useRef<HTMLElement | null>(null)
@@ -1350,9 +1352,19 @@ export function HomeView(props: HomeViewProps) {
               setAlbumMenu(null)
             }}
             onDetails={() => {
+              setAlbumEditing(false)
               setAlbumDetails(albumMenu.track)
               setAlbumMenu(null)
             }}
+            onEditTags={
+              albumMenu.track.filePath
+                ? () => {
+                    setAlbumEditing(true)
+                    setAlbumDetails(albumMenu.track)
+                    setAlbumMenu(null)
+                  }
+                : undefined
+            }
             onReveal={() => {
               onReveal(albumMenu.track.id)
               setAlbumMenu(null)
@@ -1367,7 +1379,15 @@ export function HomeView(props: HomeViewProps) {
         ) : null}
 
         {albumDetails ? (
-          <TrackDetails track={albumDetails} onReveal={onReveal} onClose={() => setAlbumDetails(null)} />
+          <TrackDetails
+            track={albumDetails}
+            initialEditing={albumEditing}
+            onReveal={onReveal}
+            onClose={() => {
+              setAlbumDetails(null)
+              setAlbumEditing(false)
+            }}
+          />
         ) : null}
       </section>
     )

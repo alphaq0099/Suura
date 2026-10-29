@@ -444,6 +444,19 @@ export const MIGRATIONS: readonly Migration[] = [
           ON stream_plays(last_played_at DESC);
       `)
     }
+  },
+  {
+    version: 14,
+    name: 'track and disc totals',
+    up: (db) => {
+      // A position is one container frame, `3/12`, but only the number was
+      // stored. The tag editor has to show the total and write it back, and a
+      // write that dropped it would silently shorten every edited album.
+      db.exec(`
+        ALTER TABLE tracks ADD COLUMN track_total INTEGER;
+        ALTER TABLE tracks ADD COLUMN disc_total INTEGER;
+      `)
+    }
   }
 ]
 

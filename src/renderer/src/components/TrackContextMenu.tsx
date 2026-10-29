@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AddTracksOutcome, Playlist, Track } from '@shared/types'
-import { CheckIcon, PlayIcon, InfoIcon, PlaylistIcon, QueueIcon, RevealIcon } from './Icons'
+import { CheckIcon, PlayIcon, InfoIcon, PencilIcon, PlaylistIcon, QueueIcon, RevealIcon } from './Icons'
 import { AddToPlaylistMenu } from './AddToPlaylistMenu'
 
 export interface TrackContextMenuProps {
@@ -12,6 +12,8 @@ export interface TrackContextMenuProps {
   onCreatePlaylist: (name: string) => Promise<Playlist>
   onPlay: () => void
   onDetails: () => void
+  /** Absent for a stream: only a file can have its tags edited. */
+  onEditTags?: () => void
   onReveal: () => void
   isSelected: boolean
   onToggleSelection: () => void
@@ -26,6 +28,7 @@ export interface TrackContextMenuProps {
 const WIDTH = 240
 const BASE_HEIGHT = 236
 const SELECTED_ACTION_HEIGHT = 72
+const EDIT_ITEM_HEIGHT = 34
 
 /**
  * The right-click menu on a library row.
@@ -44,6 +47,7 @@ export function TrackContextMenu(props: TrackContextMenuProps) {
     onCreatePlaylist,
     onPlay,
     onDetails,
+    onEditTags,
     onReveal,
     isSelected,
     onToggleSelection,
@@ -77,7 +81,7 @@ export function TrackContextMenu(props: TrackContextMenuProps) {
   }, [onClose])
 
   // Clamped so a right-click near the right or bottom edge stays on screen.
-  const height = BASE_HEIGHT + (isSelected ? SELECTED_ACTION_HEIGHT : 0)
+  const height = BASE_HEIGHT + (isSelected ? SELECTED_ACTION_HEIGHT : 0) + (onEditTags ? EDIT_ITEM_HEIGHT : 0)
   const style = {
     left: Math.max(8, Math.min(at.x, window.innerWidth - WIDTH - 8)),
     top: Math.max(8, Math.min(at.y, window.innerHeight - height - 8))
@@ -158,6 +162,20 @@ export function TrackContextMenu(props: TrackContextMenuProps) {
             <InfoIcon size={14} />
             <span>Details…</span>
           </button>
+          {onEditTags ? (
+            <button
+              type="button"
+              role="menuitem"
+              className="context-item"
+              onClick={() => {
+                onEditTags()
+                onClose()
+              }}
+            >
+              <PencilIcon size={14} />
+              <span>Edit tags…</span>
+            </button>
+          ) : null}
           <button
             type="button"
             role="menuitem"

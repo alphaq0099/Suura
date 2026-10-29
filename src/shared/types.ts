@@ -122,6 +122,8 @@ export interface Track {
   album: string | null
   trackNo: number | null
   discNo: number | null
+  trackTotal: number | null
+  discTotal: number | null
   year: number | null
   genre: string | null
   durationMs: number | null
@@ -165,6 +167,28 @@ export interface Track {
  * cannot accidentally start trusting renderer-supplied metadata.
  */
 export type ResolvableTrack = Pick<Track, 'id' | 'sourceKind' | 'sourceId' | 'filePath'>
+
+/**
+ * A tag edit, as the renderer sends it.
+ *
+ * `undefined` means "leave this field alone" and `null` means "clear it", which
+ * is what lets the auto-tagger write three fields without touching the rest.
+ * The editor sends both halves of a track/disc number when it changes either,
+ * because the container stores them in one frame.
+ */
+export interface TrackTagFields {
+  title?: string | null
+  artist?: string | null
+  albumArtist?: string | null
+  album?: string | null
+  trackNo?: number | null
+  trackTotal?: number | null
+  discNo?: number | null
+  discTotal?: number | null
+  year?: number | null
+  genre?: string | null
+  lyrics?: string | null
+}
 
 export interface LibraryStats {
   tracks: number
