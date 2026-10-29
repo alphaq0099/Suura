@@ -43,6 +43,7 @@ import type {
   ScanProgress,
   StreamPlay,
   Track,
+  TrackLyrics,
   TrackPage,
   TrackTagFields,
   YouTubeChannel,
@@ -80,6 +81,8 @@ export const IPC = {
   libraryListArtists: 'library:list-artists',
   libraryStats: 'library:stats',
   libraryUpdateTags: 'library:update-tags',
+  libraryLyrics: 'library:lyrics',
+  libraryLyricsOffset: 'library:lyrics-offset',
   libraryRemoveFolder: 'library:remove-folder',
   libraryRevealTrack: 'library:reveal-track',
   libraryArtwork: 'library:artwork',
@@ -300,6 +303,21 @@ export interface PlayerApi {
    * updated row or rejects with a message that says why nothing changed.
    */
   updateTrackTags(trackId: number, fields: TrackTagFields): Promise<Track>
+  /**
+   * The lyrics already on disk for a local track, or null when it has none.
+   *
+   * A tag inside the file is read first; a `.lrc` with the same base name wins
+   * over it, because that is the copy a user can edit without rewriting the
+   * audio. Nothing here touches the network.
+   */
+  getTrackLyrics(trackId: number): Promise<TrackLyrics | null>
+  /**
+   * Remembers how far the lyrics should be shifted for this track.
+   *
+   * Positive values show the lines later. The offset is the user's, so it is
+   * stored in the database rather than written into the file.
+   */
+  setTrackLyricsOffset(trackId: number, offsetMs: number): Promise<TrackLyrics | null>
   removeLibraryFolder(folder: string): Promise<AppSettings>
   revealTrack(trackId: number): Promise<void>
   /**

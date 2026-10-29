@@ -6,8 +6,8 @@ library, one queue, one search box.
 - **Your files stay yours.** Suura indexes folders you choose. It never moves, renames or uploads anything.
 - **YouTube when you want it.** Paste a link, a playlist, an album or a mix and play it through `yt-dlp`. Streaming is
   the default; saving a track into your library is a click you make, not something that happens behind your back.
-- **A real library.** Tags and embedded cover art, sortable and searchable lists, smart views, playlists, a queue that
-  survives a restart, and a mini player for when the window is in the way.
+- **A real library.** Tags, lyrics and embedded cover art, sortable and searchable lists, smart views, playlists, a queue
+  that survives a restart, and a mini player for when the window is in the way.
 
 Suura **0.1.0** is an early pre-release. There is no public download yet, so "installing it" today means building the
 installer from source — about five minutes, and no compiler is needed.
@@ -152,6 +152,26 @@ folder, read back to check it, and only then swapped in; the previous version is
 data folder. MP3, FLAC, M4A/M4B, Ogg and Opus are writable today, and WAV, AIFF, AAC, WMA, APE, WavPack and Musepack are
 refused rather than half-written. A file that is open for playback, read-only, or locked by another program is reported
 instead of being changed.
+
+The lyrics box opens with the lyrics the file already has. Leaving it alone keeps them, editing it replaces them, and
+**Remove the lyrics already in this file** clears them on purpose — an empty box never wipes a lyric you did not touch.
+If the lyrics come from a `.lrc` file beside the track, the box shows them read-only: that file is what the player
+shows, so edit or remove it instead.
+
+### Lyrics
+
+The player window has a **Lyrics** button beside the queue. It shows lyrics that are already on your disk: a tag inside
+the file (`USLT`/`SYLT` on MP3, `LYRICS` on FLAC/Ogg/Opus, `©lyr` on M4A) or a `.lrc` file with the same name next to
+the track. When both exist the `.lrc` wins, because it is the copy you can edit without rewriting the audio. UTF-8 and
+UTF-16 sidecars are both read, with or without a byte-order mark.
+
+Timed lyrics follow the song: the current line is highlighted and scrolled into view, and clicking a line seeks there.
+**−0.5 s** and **+0.5 s** correct a lyric that runs early or late, and **Reset** removes the correction. The offset is
+saved per track and source in the library database, never written into the file. A `[offset:]` tag inside the `.lrc` is
+honoured on top of it.
+
+This is read-only. Nothing here touches the network or rewrites a file, and a stream has no file to read, so it shows no
+lyrics.
 
 ### Keyboard shortcuts
 

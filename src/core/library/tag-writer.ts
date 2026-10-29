@@ -5,6 +5,11 @@ import { basename, dirname, extname, join } from 'node:path'
 import NodeID3 from 'node-id3'
 import { extensionOf } from '@shared/mime'
 import { loadMetadataParser, youtubeOriginOf } from './metadata'
+import { rawLyricsOf } from './lyrics'
+
+// The reader owns the frame lookup; the writer only needs it to prove a write
+// landed. Re-exported so the smoke tests and any caller keep one import.
+export { rawLyricsOf } from './lyrics'
 
 /**
  * Writing tags back into local files.
@@ -629,34 +634,6 @@ function positionString(common: CommonTags, kind: 'track' | 'disc'): string | nu
   const no = current?.no != null ? String(current.no) : null
   const total = current?.of != null ? String(current.of) : null
   return positionOf(no, total)
-}
-
-/**
- * The exact lyrics text from the container's own tag, whichever frame this
- * format uses. `TXXX:USLT` is included so a file written by ffmpeg earlier can
- * still be verified after we rewrite it.
- */
-export function rawLyricsOf(native: unknown): string | null {
-  if (!native || typeof native !== 'object') return null
-  for (const frames of Object.values(native as Record<string, unknown>)) {
-    if (!Array.isArray(frames)) continue
-    for (const frame of frames) {
-      if (!frame || typeof frame !== 'object') continue
-      const { id, value } = frame as { id?: unknown; value?: unknown }
-      if (typeof id !== 'string') continue
-      if (id === 'USLT' || id === 'SYLT') {
-        if (value && typeof value === 'object') {
-          const text = (value as { text?: unknown }).text
-          if (typeof text === 'string' && text.length > 0) return text
-        }
-        continue
-      }
-      if (id === 'LYRICS' || id === 'UNSYNCEDLYRICS' || id === '©lyr' || id === 'TXXX:USLT') {
-        if (typeof value === 'string' && value.length > 0) return value
-      }
-    }
-  }
-  return null
 }
 
 function sameText(expected: string | null, actual: string | null | undefined): boolean {

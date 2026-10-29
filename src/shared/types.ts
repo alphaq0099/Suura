@@ -190,6 +190,32 @@ export interface TrackTagFields {
   lyrics?: string | null
 }
 
+/**
+ * Where a set of lyrics came from.
+ *
+ * `embedded` is a tag inside the file, `sidecar` is a `.lrc` next to it. The
+ * other two are reserved for the finder and the optional transcription, so a
+ * fetched lyric can be labelled and kept apart from the file's own.
+ */
+export type LyricsSource = 'embedded' | 'sidecar' | 'lrclib' | 'generated'
+
+/** The lyrics the player found for one local track. */
+export interface TrackLyrics {
+  trackId: number
+  source: LyricsSource
+  /** The language tag the file carries, when it carries one. */
+  language: string | null
+  /** True when `text` is LRC with timestamps the player can follow. */
+  synced: boolean
+  /** The lyrics exactly as stored: LRC when synced, plain text otherwise. */
+  text: string
+  /** The user's own shift in ms; positive means the lines appear later. */
+  offsetMs: number
+  /** The sidecar's file name, or null for lyrics read from the file's tags. */
+  origin: string | null
+  fetchedAt: number
+}
+
 export interface LibraryStats {
   tracks: number
   artists: number

@@ -10,6 +10,8 @@ import { TrackRepository } from '@core/library/track-repository'
 import { DownloadHistoryRepository } from '@core/library/download-history-repository'
 import { LibraryService } from '@core/library/library-service'
 import { TagWriter } from '@core/library/tag-writer'
+import { LyricsRepository } from '@core/library/lyrics-repository'
+import { LyricsService } from '@core/library/lyrics-service'
 import { FolderWatcher } from '@core/library/folder-watcher'
 import { PlaylistRepository } from '@core/library/playlist-repository'
 import { PlaylistService } from '@core/library/playlist-service'
@@ -79,6 +81,8 @@ export interface AppContainer {
   replayGain: ReplayGainService
   /** The only writer that modifies a user's files; exposed for later phases. */
   tagWriter: TagWriter
+  /** Embedded and `.lrc` lyrics, plus the user's timing correction. */
+  lyrics: LyricsService
   dispose(): void
 }
 
@@ -211,6 +215,8 @@ export function createContainer(): AppContainer {
     tagWriter
   )
 
+  const lyrics = new LyricsService(repo, new LyricsRepository(database.db), log.child('lyrics'))
+
   // A crash or a force-quit never runs the download's `finally`, so sweep the
   // temp folders before anything can start writing a new one.
   cleanupAbandonedDownloads(paths.downloads, log.child('downloads'))
@@ -327,6 +333,7 @@ export function createContainer(): AppContainer {
     poToken,
     replayGain,
     tagWriter,
+    lyrics,
     dispose: () => {
       unwatchSettings()
       unwatchTheme()

@@ -457,6 +457,31 @@ export const MIGRATIONS: readonly Migration[] = [
         ALTER TABLE tracks ADD COLUMN disc_total INTEGER;
       `)
     }
+  },
+  {
+    version: 15,
+    name: 'track lyrics',
+    up: (db) => {
+      // Lyrics are found in the file or in a `.lrc` beside it, but two things
+      // about them are not in either: the user's timing correction and the
+      // network sources that arrive later. This table is that home, one row per
+      // track and source, so a fetched lyric can sit next to the file's own
+      // instead of overwriting it. `text` is LRC when `synced` is 1, plain
+      // otherwise. The foreign key means removing a track removes its lyrics.
+      db.exec(`
+        CREATE TABLE track_lyrics (
+          track_id   INTEGER NOT NULL,
+          source     TEXT    NOT NULL,
+          language   TEXT,
+          synced     INTEGER NOT NULL DEFAULT 0,
+          text       TEXT    NOT NULL,
+          offset_ms  INTEGER NOT NULL DEFAULT 0,
+          fetched_at INTEGER NOT NULL,
+          PRIMARY KEY (track_id, source),
+          FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
+        );
+      `)
+    }
   }
 ]
 

@@ -17,12 +17,14 @@ import type { UseDownloadsResult } from '../hooks/useDownloads'
 import { useArtwork } from '../hooks/useArtwork'
 import { useWheelVolume } from '../hooks/useWheelVolume'
 import { ArtworkImage } from './ArtworkImage'
+import { LyricsPanel } from './LyricsPanel'
 import { QueueActionsMenu } from './QueueActionsMenu'
 import { RowMenu } from './RowMenu'
 import { SeekBar } from './SeekBar'
 import {
   CheckIcon,
   ChevronDownIcon,
+  LyricsIcon,
   NextIcon,
   PauseIcon,
   PlayIcon,
@@ -146,6 +148,7 @@ export function NowPlayingView(props: NowPlayingViewProps) {
   const currentRowRef = useRef<HTMLButtonElement | null>(null)
   const queueListRef = useRef<HTMLOListElement | null>(null)
   const [queueOpen, setQueueOpen] = useState(false)
+  const [lyricsOpen, setLyricsOpen] = useState(false)
   const [selectedPositions, setSelectedPositions] = useState<ReadonlySet<number>>(
     () => new Set<number>()
   )
@@ -243,9 +246,9 @@ export function NowPlayingView(props: NowPlayingViewProps) {
     }
   }, [queueOpen, queueIndex])
 
-  // Escape unwinds one layer at a time: the panel first, then the window. This
-  // runs on the dialog rather than the global shortcut so that a closed panel
-  // still closes the window, and so the two never both fire.
+  // Escape unwinds one layer at a time: a menu, then whichever panel is open,
+  // then the window. This runs on the dialog rather than the global shortcut so
+  // that a closed panel still closes the window, and so the two never both fire.
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key !== 'Escape') return
     event.stopPropagation()
@@ -257,25 +260,42 @@ export function NowPlayingView(props: NowPlayingViewProps) {
       setQueueOpen(false)
       return
     }
+    if (lyricsOpen) {
+      setLyricsOpen(false)
+      return
+    }
     onClose()
   }
 
-  // A press anywhere outside the panel closes it, so the black space and the
-  // album art behave like the queue button and Escape. Presses inside the panel
-  // are left alone: a row is how a track is picked, and that should not also
-  // shut the panel. The queue button is excluded because its own handler
-  // toggles the panel, and both firing would only close it twice.
+  // A press anywhere outside the open panel closes it, so the black space and
+  // the album art behave like the panel button and Escape. Presses inside the
+  // panel are left alone: a row is how a track is picked, and that should not
+  // also shut the panel. The buttons are excluded because their own handlers
+  // toggle the panels, and both firing would only close them twice.
   const onPointerDown = (event: PointerEvent<HTMLDivElement>): void => {
-    if (!queueOpen) return
+    if (!queueOpen && !lyricsOpen) return
     const target = event.target as HTMLElement | null
     if (
       target?.closest(
-        '.np-queue-panel, .np-queue, .add-to-playlist, .queue-actions-menu, .context-menu'
+        '.np-queue-panel, .np-lyrics-panel, .np-queue, .np-lyrics-button, .add-to-playlist, .queue-actions-menu, .context-menu'
       )
     ) {
       return
     }
     setQueueOpen(false)
+    setLyricsOpen(false)
+  }
+
+  // Two panels share the same corner, so opening one closes the other rather
+  // than stacking them.
+  const toggleQueue = (): void => {
+    setLyricsOpen(false)
+    setQueueOpen((open) => !open)
+  }
+
+  const toggleLyrics = (): void => {
+    setQueueOpen(false)
+    setLyricsOpen((open) => !open)
   }
 
   const hasQueue = queue.length > 0 && queueIndex >= 0
@@ -435,6 +455,13 @@ export function NowPlayingView(props: NowPlayingViewProps) {
             ))}
           </ol>
         </aside>
+        <LyricsPanel
+          track={current}
+          positionMs={positionMs}
+          durationMs={durationMs}
+          open={lyricsOpen}
+          onSeek={onSeek}
+        />
       </div>
 
       <div className="np-bottom">
@@ -507,8 +534,20 @@ export function NowPlayingView(props: NowPlayingViewProps) {
           <div className="np-side np-side-right">
             <button
               type="button"
+              className={`icon-button np-lyrics-button${lyricsOpen ? ' toggle-on' : ''}`}
+              onClick={toggleLyrics}
+              disabled={!current}
+              title={lyricsOpen ? 'Hide lyrics' : 'Lyrics'}
+              aria-label={lyricsOpen ? 'Hide lyrics' : 'Show lyrics'}
+              aria-expanded={lyricsOpen}
+              aria-controls="np-lyrics"
+            >
+              <LyricsIcon size={20} />
+            </button>
+            <button
+              type="button"
               className={`icon-button queue-button np-queue${queueOpen ? ' toggle-on' : ''}`}
-              onClick={() => setQueueOpen((open) => !open)}
+              onClick={toggleQueue}
               title={queueOpen ? 'Hide queue' : `Queue (${queue.length})`}
               aria-label={queueOpen ? 'Hide queue' : `Show queue, ${queue.length} tracks`}
               aria-expanded={queueOpen}

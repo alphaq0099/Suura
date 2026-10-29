@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { Track, TrackTagFields } from '@shared/types'
+import type { Track, TrackLyrics, TrackTagFields } from '@shared/types'
 import { TAG_POSITION_MAX, TAG_YEAR_MAX, TAG_YEAR_MIN } from '@shared/tags'
 import { api, messageOf } from '../api'
 import { ArtworkImage } from './ArtworkImage'
@@ -39,9 +39,9 @@ function draftOf(track: Track): Draft {
     trackTotal: track.trackTotal ? String(track.trackTotal) : '',
     discNo: track.discNo ? String(track.discNo) : '',
     discTotal: track.discTotal ? String(track.discTotal) : '',
-    // Lyrics are not read back yet, so this box starts empty and is only sent
-    // when the user actually types in it. Sending an untouched blank would
-    // erase lyrics the editor never showed.
+    // Filled in when the file's lyrics arrive. An empty box until then is not
+    // a statement about the file: `patchOf` compares against what was loaded,
+    // so an untouched box never erases the lyrics it is showing.
     lyrics: ''
   }
 }
@@ -74,8 +74,17 @@ function unchanged(raw: string, current: number | null): boolean {
  * Sending every input would rewrite fields nobody touched, and a tag writer
  * that guesses is how libraries get damaged: an untouched field is left out of
  * the patch entirely, and a cleared one is sent as `null`.
+ *
+ * `loadedLyrics` is what the file already holds. Comparing against it is what
+ * lets the box start full without turning "I changed the artist" into "I
+ * rewrote the lyrics too".
  */
-function patchOf(track: Track, draft: Draft, removeLyrics: boolean): TrackTagFields {
+function patchOf(
+  track: Track,
+  draft: Draft,
+  removeLyrics: boolean,
+  loadedLyrics: TrackLyrics | null
+): TrackTagFields {
   const patch: TrackTagFields = {}
 
   const texts: Array<['title' | 'artist' | 'albumArtist' | 'album' | 'genre', string, string | null]> = [
@@ -112,12 +121,22 @@ function patchOf(track: Track, draft: Draft, removeLyrics: boolean): TrackTagFie
     patch.year = numberField(draft.year, 'Year', TAG_YEAR_MIN, TAG_YEAR_MAX)
   }
 
-  // Only a non-empty box replaces lyrics. Emptying a box the user was typing in
-  // must not wipe the file's lyrics by accident; removing them is its own
-  // explicit choice, made with the checkbox.
-  const lyrics = draft.lyrics.trim()
-  if (lyrics.length > 0) patch.lyrics = lyrics
-  else if (removeLyrics) patch.lyrics = null
+  // An empty box does not clear the file's lyrics: emptying a box the user was
+  // typing in must not wipe them by accident. Removing them is its own explicit
+  // choice, made with the checkbox. A box that still shows what was loaded is
+  // not a change either.
+  //
+  // A `.lrc` beside the file is what the player shows, so writing lyrics into
+  // the tag would be invisible. The editor locks the box in that case; this
+  // guard also stops a keystroke that arrived before the read finished from
+  // writing a tag nothing will ever show.
+  if (loadedLyrics?.source !== 'sidecar') {
+    const lyrics = draft.lyrics.replace(/\r\n?/g, '\n').trim()
+    if (removeLyrics) patch.lyrics = null
+    else if (lyrics.length > 0 && lyrics !== (loadedLyrics?.text ?? '').replace(/\r\n?/g, '\n').trim()) {
+      patch.lyrics = lyrics
+    }
+  }
 
   return patch
 }
@@ -133,27 +152,64 @@ function patchOf(track: Track, draft: Draft, removeLyrics: boolean): TrackTagFie
 export function TagEditor(props: TagEditorProps) {
   const { track, onSaved, onClose } = props
   const [draft, setDraft] = useState<Draft>(() => draftOf(track))
+  const [loadedLyrics, setLoadedLyrics] = useState<TrackLyrics | null>(null)
+  const [lyricsLoading, setLyricsLoading] = useState(true)
   const [removeLyrics, setRemoveLyrics] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const titleRef = useRef<HTMLInputElement | null>(null)
+  // Once the user has typed in the box, a slow read must not overwrite it.
+  const lyricsTouchedRef = useRef(false)
 
   useEffect(() => {
     titleRef.current?.focus()
     titleRef.current?.select()
   }, [])
 
+  // The file is the source of truth, so the box shows what is actually in it
+  // rather than a blank that looks like "no lyrics" and invites a needless
+  // rewrite. A read failure is not worth an error banner: the rest of the
+  // editor works, and saving simply leaves the lyrics alone.
+  useEffect(() => {
+    let live = true
+    setLyricsLoading(true)
+    api
+      .getTrackLyrics(track.id)
+      .then((found) => {
+        if (!live) return
+        setLoadedLyrics(found)
+        if (found && !lyricsTouchedRef.current) {
+          setDraft((current) => ({ ...current, lyrics: found.text }))
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (live) setLyricsLoading(false)
+      })
+    return () => {
+      live = false
+    }
+  }, [track.id])
+
   const { patch, problem } = useMemo(() => {
     try {
-      return { patch: patchOf(track, draft, removeLyrics), problem: null as string | null }
+      return {
+        patch: patchOf(track, draft, removeLyrics, loadedLyrics),
+        problem: null as string | null
+      }
     } catch (cause) {
       return { patch: {} as TrackTagFields, problem: messageOf(cause) }
     }
-  }, [track, draft, removeLyrics])
+  }, [track, draft, removeLyrics, loadedLyrics])
 
   const dirty = Object.keys(patch).length > 0
   const canSave = dirty && !problem && !saving
+
+  // A `.lrc` beside the file is what the player shows, so the box is a preview
+  // there rather than a tag editor: writing the tag would change nothing the
+  // user can see, and removing it would not remove the lyrics on screen.
+  const lyricsFromSidecar = loadedLyrics?.source === 'sidecar'
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]): void => {
     setDraft((current) => ({ ...current, [key]: value }))
@@ -335,25 +391,43 @@ export function TagEditor(props: TagEditorProps) {
             value={draft.lyrics}
             rows={6}
             spellCheck={false}
-            placeholder="Type or paste lyrics to replace the ones in the file"
-            onChange={(event) => set('lyrics', event.target.value)}
+            disabled={lyricsLoading || removeLyrics || lyricsFromSidecar}
+            placeholder={
+              lyricsLoading
+                ? 'Reading the lyrics already in this file…'
+                : lyricsFromSidecar
+                  ? 'These lyrics live in the .lrc file beside this track'
+                  : loadedLyrics
+                    ? 'Edit these lyrics to replace them'
+                    : 'Type or paste lyrics to add them to this file'
+            }
+            onChange={(event) => {
+              lyricsTouchedRef.current = true
+              set('lyrics', event.target.value)
+            }}
           />
         </label>
         <label className="field checkbox tag-lyrics-remove">
           <input
             type="checkbox"
             checked={removeLyrics}
-            disabled={draft.lyrics.trim().length > 0}
+            disabled={lyricsLoading || !loadedLyrics || lyricsFromSidecar}
             onChange={(event) => setRemoveLyrics(event.target.checked)}
           />
           <span>Remove the lyrics already in this file</span>
         </label>
         <p className="field-note">
-          {draft.lyrics.trim().length > 0
-            ? 'These lyrics replace the ones in the file.'
-            : removeLyrics
-              ? 'Saving removes the lyrics from the file.'
-              : 'The lyrics already in the file are kept.'}
+          {lyricsLoading
+            ? 'Reading the lyrics already in this file…'
+            : lyricsFromSidecar
+              ? `Loaded from ${loadedLyrics?.origin ?? 'the .lrc file'}. A .lrc beside the track wins over its tags, so the player shows that file: edit or remove it to change these lyrics.`
+              : removeLyrics
+                ? 'Saving removes the lyrics from the file.'
+                : loadedLyrics
+                  ? 'Loaded from the file’s tags. Editing them replaces them; leaving them alone keeps them.'
+                  : draft.lyrics.trim().length > 0
+                    ? 'These lyrics will be added to the file.'
+                    : 'This file has no lyrics yet.'}
         </p>
 
         <p className="tag-note">

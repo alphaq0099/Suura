@@ -105,6 +105,9 @@ import {
   type TagWriteResult
 } from '@core/library/tag-writer'
 import { artworkKeyFor, extractArtwork, extensionForMime } from '@core/library/artwork'
+import { decodeLyricsFile } from '@core/library/lyrics'
+import { LyricsRepository } from '@core/library/lyrics-repository'
+import { LyricsService } from '@core/library/lyrics-service'
 import { LocalFileResolver } from '@engine/local-file-resolver'
 import { parseEbur128Summary } from '@engine/replay-gain'
 import { getEngineStatus } from '@engine/sidecar/engine-status'
@@ -172,6 +175,13 @@ import { isImportedPlaylistTrackId, onlineEntryToTrack, onlinePlaylistItemToTrac
 import { canPrefetchSearchMatch, mergeLibrarySearch, type SearchPrefetchGate } from '@shared/search'
 import { sanitizeFilePart, savePathParts } from '@shared/files'
 import { sanitizeTagFields } from '@shared/tags'
+import {
+  LYRICS_OFFSET_MAX,
+  activeLyricIndex,
+  formatLyricsOffset,
+  parseLyrics,
+  sanitizeLyricsOffset
+} from '@shared/lyrics'
 import { AsyncTtlCache } from '../src/main/async-cache'
 import { cleanupAbandonedDownloads, DownloadService } from '../src/main/download-service'
 import { ReplayGainService } from '../src/main/replay-gain-service'
@@ -4750,6 +4760,213 @@ async function main(): Promise<void> {
     )
   } finally {
     await rm(tagRoot, { recursive: true, force: true }).catch(() => undefined)
+  }
+
+  // --- lyrics --------------------------------------------------------------
+  // The parser is pure and decides both what the panel draws and whether the
+  // file counts as timed, so its edges are pinned down before the file path is
+  // exercised. The service is then run against real containers: a tag has to
+  // come back from every format the writer supports, and a `.lrc` beside the
+  // file has to win over it.
+  {
+    const lrc = '[ti:Song]\n[00:12.50]second line\n[00:00.00]first line\n[00:20.00][00:40.00]chorus'
+    const parsed = parseLyrics(lrc)
+    checkEqual(
+      'lyrics: timestamps are read, repeated and sorted',
+      parsed.lines.map((line) => `${line.timeMs}:${line.text}`).join('|'),
+      '0:first line|12500:second line|20000:chorus|40000:chorus'
+    )
+    checkEqual('lyrics: a metadata tag is not a line', parseLyrics('[ar:Someone]').lines.length, 0)
+    checkEqual('lyrics: plain text has no timed lines', parseLyrics('just words\nand more').lines.length, 0)
+    checkEqual('lyrics: two fractional digits are centiseconds', parseLyrics('[00:01.25]a').lines[0]?.timeMs, 1250)
+    checkEqual('lyrics: three fractional digits are milliseconds', parseLyrics('[00:01.234]a').lines[0]?.timeMs, 1234)
+    checkEqual('lyrics: a file offset tag is read', parseLyrics('[offset:+500]\n[00:01.00]a').fileOffsetMs, 500)
+    checkEqual('lyrics: the offset tag is not a line', parseLyrics('[offset:100]').lines.length, 0)
+
+    const timed = parseLyrics('[00:01.00]one\n[00:05.00]two').lines
+    checkEqual('lyrics: nothing is current before the first line', activeLyricIndex(timed, 500), -1)
+    checkEqual('lyrics: a line is current on its own timestamp', activeLyricIndex(timed, 1000), 0)
+    checkEqual('lyrics: the last line stays current', activeLyricIndex(timed, 9000), 1)
+    checkEqual('lyrics: a positive offset shows the line later', activeLyricIndex(timed, 1000, 500), -1)
+
+    checkEqual(
+      'lyrics: an offset is shown in seconds',
+      [formatLyricsOffset(0), formatLyricsOffset(500), formatLyricsOffset(-500)].join(' '),
+      `0.0 s +0.5 s \u22120.5 s`
+    )
+    const rejectsOffset = (value: unknown): boolean => {
+      try {
+        sanitizeLyricsOffset(value)
+        return false
+      } catch {
+        return true
+      }
+    }
+    check(
+      'lyrics: an offset outside the range is refused',
+      rejectsOffset(LYRICS_OFFSET_MAX + 1) && rejectsOffset(-LYRICS_OFFSET_MAX - 1)
+    )
+    check('lyrics: a fractional offset is refused', rejectsOffset(0.5))
+    checkEqual(
+      'lyrics: the offset limits themselves are allowed',
+      [sanitizeLyricsOffset(LYRICS_OFFSET_MAX), sanitizeLyricsOffset(-LYRICS_OFFSET_MAX)].join('|'),
+      `${LYRICS_OFFSET_MAX}|-${LYRICS_OFFSET_MAX}`
+    )
+
+    const utf16Text = '[00:01.00]গান গান গান'
+    checkEqual(
+      'lyrics: a UTF-8 BOM is dropped',
+      decodeLyricsFile(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('hi', 'utf8')])),
+      'hi'
+    )
+    checkEqual(
+      'lyrics: UTF-16 LE with a BOM is read',
+      decodeLyricsFile(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(utf16Text, 'utf16le')])),
+      utf16Text
+    )
+    checkEqual(
+      'lyrics: UTF-16 LE without a BOM is detected',
+      decodeLyricsFile(Buffer.from(utf16Text, 'utf16le')),
+      utf16Text
+    )
+  }
+
+  const lyricsRoot = await mkdtemp(join(tmpdir(), 'player-lyrics-'))
+  try {
+    const lyricsPaths = resolveAppPaths(join(lyricsRoot, 'userData'))
+    ensureAppDirectories(lyricsPaths)
+    const lyricsDb = openLibraryDatabase(lyricsPaths.database, silentLogger)
+    try {
+      const lyricsRepo = new TrackRepository(lyricsDb.db)
+      const lyricsService = new LyricsService(lyricsRepo, new LyricsRepository(lyricsDb.db), silentLogger)
+      const writer = new TagWriter({
+        backupDir: join(lyricsRoot, 'backups'),
+        resolveFfmpeg: async () => ffmpegPath
+      })
+
+      const makeLyricsFixture = async (fileName: string, codec: string[]): Promise<string> => {
+        const target = join(lyricsRoot, fileName)
+        await execFileAsync(
+          ffmpegPath,
+          [
+            '-hide_banner',
+            '-loglevel',
+            'error',
+            '-y',
+            '-f',
+            'lavfi',
+            '-i',
+            'sine=frequency=440:duration=1.2',
+            ...codec,
+            target
+          ],
+          { timeout: 60_000 }
+        )
+        return target
+      }
+
+      const insertTrack = (
+        contentKey: string,
+        filePath: string | null,
+        sourceKind: 'local' | 'youtube' = 'local'
+      ): number =>
+        lyricsRepo.insert(
+          {
+            contentKey,
+            sourceKind,
+            sourceId: sourceKind === 'youtube' ? 'dQw4w9WgXcQ' : null,
+            originKind: null,
+            originId: null,
+            title: 'Lyrics',
+            artist: null,
+            albumArtist: null,
+            album: null,
+            trackNo: null,
+            discNo: null,
+            trackTotal: null,
+            discTotal: null,
+            year: null,
+            genre: null,
+            durationMs: 1200,
+            codec: null,
+            bitrateKbps: null,
+            sampleRate: null,
+            channels: null,
+            fileSize: null,
+            fileMtimeMs: null,
+            filePath
+          },
+          Date.now()
+        )
+
+      const embeddedText = '[00:01.00]first line\n[00:03.00]second line'
+      const containers: Array<{ name: string; file: string; codec: string[] }> = [
+        { name: 'mp3', file: 'embedded.mp3', codec: ['-c:a', 'libmp3lame'] },
+        { name: 'flac', file: 'embedded.flac', codec: ['-c:a', 'flac'] },
+        { name: 'm4a', file: 'embedded.m4a', codec: ['-c:a', 'aac'] },
+        { name: 'ogg', file: 'embedded.ogg', codec: ['-c:a', 'libvorbis'] },
+        { name: 'opus', file: 'embedded.opus', codec: ['-c:a', 'libopus'] }
+      ]
+      for (const container of containers) {
+        const filePath = await makeLyricsFixture(container.file, container.codec)
+        await writer.write(filePath, { lyrics: embeddedText })
+        const id = insertTrack(`smoke-lyrics-${container.name}`, filePath)
+        const found = await lyricsService.read(id)
+        checkEqual(
+          `lyrics: ${container.name} lyrics are found in the file`,
+          [found?.source, found?.synced, found?.text].join('|'),
+          `embedded|true|${embeddedText}`
+        )
+      }
+
+      // A sidecar is the copy a user can edit without rewriting the audio, so it
+      // is the one the player shows when both exist.
+      const sidecarFile = await makeLyricsFixture('sidecar.flac', ['-c:a', 'flac'])
+      await writer.write(sidecarFile, { lyrics: '[00:01.00]tag version' })
+      const sidecarId = insertTrack('smoke-lyrics-sidecar', sidecarFile)
+      const tagOnly = await lyricsService.read(sidecarId)
+      checkEqual('lyrics: an embedded tag is used when there is no sidecar', tagOnly?.source, 'embedded')
+
+      await writeFile(join(lyricsRoot, 'sidecar.lrc'), '[00:02.00]sidecar version', 'utf8')
+      const withSidecar = await lyricsService.read(sidecarId)
+      checkEqual(
+        'lyrics: a .lrc beside the file wins over the tag',
+        [withSidecar?.source, withSidecar?.origin, withSidecar?.text].join('|'),
+        'sidecar|sidecar.lrc|[00:02.00]sidecar version'
+      )
+
+      // The timing correction belongs to the user, not the file, so re-reading
+      // the same sidecar must not reset it.
+      checkEqual('lyrics: an offset is remembered', lyricsService.setOffset(sidecarId, 1500)?.offsetMs, 1500)
+      checkEqual('lyrics: reading the file again keeps the offset', (await lyricsService.read(sidecarId))?.offsetMs, 1500)
+
+      await writeFile(join(lyricsRoot, 'sidecar.lrc'), '[00:02.00]edited sidecar', 'utf8')
+      const editedSidecar = await lyricsService.read(sidecarId)
+      checkEqual(
+        'lyrics: a changed sidecar keeps the timing correction',
+        [editedSidecar?.text, editedSidecar?.offsetMs].join('|'),
+        '[00:02.00]edited sidecar|1500'
+      )
+
+      await rm(join(lyricsRoot, 'sidecar.lrc'))
+      checkEqual(
+        'lyrics: removing the sidecar falls back to the tag',
+        (await lyricsService.read(sidecarId))?.source,
+        'embedded'
+      )
+
+      const bareFile = await makeLyricsFixture('bare.flac', ['-c:a', 'flac'])
+      const bareId = insertTrack('smoke-lyrics-none', bareFile)
+      checkEqual('lyrics: a file with no lyrics returns null', await lyricsService.read(bareId), null)
+      checkEqual('lyrics: an offset with no lyrics is refused', lyricsService.setOffset(bareId, 500), null)
+
+      const remoteLyricsId = insertTrack('smoke-lyrics-remote', null, 'youtube')
+      checkEqual('lyrics: a stream has no file lyrics', await lyricsService.read(remoteLyricsId), null)
+    } finally {
+      lyricsDb.close()
+    }
+  } finally {
+    await rm(lyricsRoot, { recursive: true, force: true }).catch(() => undefined)
   }
 
   // The scale budgets are a pure decision, so they are held to their edges here

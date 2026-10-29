@@ -476,9 +476,21 @@ export function ListMusicIcon({ size = 18 }: IconProps) {
   )
 }
 
-/** A playing row above the rest: Queue in the Modern sidebar set. */
-export function QueueModernIcon({ size = 18 }: IconProps) {
+/** A page of text with a music note: the lyrics panel. */
+export function LyricsIcon({ size = 18 }: IconProps) {
   return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <path d="M5 4.5h9.5L19 9v10.5H5z" />
+      <path d="M14.5 4.5V9H19" />
+      <path d="M8 12.5h6M8 15.5h4" />
+      <circle cx="16.4" cy="16.4" r="1.7" />
+      <path d="M18.1 16.4v-3.6" />
+    </svg>
+  )
+}
+
+/** A playing row above the rest: Queue in the Modern sidebar set. */
+export function QueueModernIcon({ size = 18 }: IconProps) {  return (
     <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
       <rect x="3.5" y="4.5" width="17" height="6" rx="1.5" />
       <path d="m7 6 2.6 1.5L7 9z" fill="currentColor" />

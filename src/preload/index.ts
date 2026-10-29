@@ -16,6 +16,7 @@ import type {
   PlaybackSnapshot,
   ResolvedSource,
   Track,
+  TrackLyrics,
   TrackTagFields
 } from '@shared/types'
 
@@ -77,6 +78,12 @@ const api: PlayerApi = {
 
   updateTrackTags: (trackId: number, fields: TrackTagFields) =>
     ipcRenderer.invoke(IPC.libraryUpdateTags, trackId, fields) as Promise<Track>,
+
+  getTrackLyrics: (trackId: number) =>
+    ipcRenderer.invoke(IPC.libraryLyrics, trackId) as Promise<TrackLyrics | null>,
+
+  setTrackLyricsOffset: (trackId: number, offsetMs: number) =>
+    ipcRenderer.invoke(IPC.libraryLyricsOffset, trackId, offsetMs) as Promise<TrackLyrics | null>,
 
   removeLibraryFolder: (folder: string) =>
     ipcRenderer.invoke(IPC.libraryRemoveFolder, folder) as Promise<AppSettings>,

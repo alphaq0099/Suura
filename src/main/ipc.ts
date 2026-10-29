@@ -20,6 +20,7 @@ import { isImportedPlaylistTrackId } from '@shared/online'
 import { countsAsPlay } from '@shared/play-count'
 import { clampPlaylistIndexWidth } from '@shared/playlists'
 import { sanitizeTagFields } from '@shared/tags'
+import { sanitizeLyricsOffset } from '@shared/lyrics'
 import type {
   AccentName,
   AlbumSortField,
@@ -901,6 +902,16 @@ export function registerIpcHandlers(container: AppContainer): void {
     }
     return library.updateTags(id, fields)
   })
+
+  // Reading is safe while the track plays: it opens the file for a moment and
+  // writes nothing. The timing correction is a database row, never a tag.
+  ipcMain.handle(IPC.libraryLyrics, (_event, trackId: unknown) =>
+    container.lyrics.read(toTrackId(trackId))
+  )
+
+  ipcMain.handle(IPC.libraryLyricsOffset, (_event, trackId: unknown, offset: unknown) =>
+    container.lyrics.setOffset(toTrackId(trackId), sanitizeLyricsOffset(offset))
+  )
 
   ipcMain.handle(IPC.libraryRemoveFolder, (_event, folder: unknown) => {
     if (typeof folder !== 'string' || folder.trim().length === 0) {

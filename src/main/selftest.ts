@@ -158,6 +158,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         'artist=Selftest',
         '-metadata',
         'album=Selftest Album',
+        // Timed on purpose: the lyrics panel is driven against a real LRC tag,
+        // so it can tell a synced line from a plain one and can be asked to
+        // follow the song.
+        '-metadata',
+        'lyrics=[00:00.50]first line\n[00:01.50]second line',
         fixturePath
       ],
       { timeout: 60_000 }
@@ -3666,10 +3671,18 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       panelCloseState: string
       escapeKeptWindow: boolean
       escapeClosedWindow: boolean
+      lyricsOpened: boolean
+      queueClosedByLyrics: boolean
+      lyricRows: number
+      lyricMeta: string
+      lyricCurrent: number
+      lyricSeeked: boolean
+      escapeHidLyrics: boolean
+      escapeKeptWindowAfterLyrics: boolean
     }>(
       window,
       `(async () => {
-         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, volumeBeforeWheel: -1, volumeAfterWheel: -1, volumeWheelTop: -1, volumeWheelBottom: -1, wheelCancelled: false, barVolumeBefore: -1, barVolumeMuted: -1, barMutePressed: '', barVolumeRestored: -1, barPopHidden: false, barPopVertical: false, barPopWithin: false, barPopShownByFocus: false, barKeyBefore: -1, barKeyAfter: -1, barKeyProgress: '', barKeyRestored: -1, panelClosedByOutsidePress: false, panelStayedOpenOnInsidePress: false, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false, panelCloseState: '' }
+         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, volumeBeforeWheel: -1, volumeAfterWheel: -1, volumeWheelTop: -1, volumeWheelBottom: -1, wheelCancelled: false, barVolumeBefore: -1, barVolumeMuted: -1, barMutePressed: '', barVolumeRestored: -1, barPopHidden: false, barPopVertical: false, barPopWithin: false, barPopShownByFocus: false, barKeyBefore: -1, barKeyAfter: -1, barKeyProgress: '', barKeyRestored: -1, panelClosedByOutsidePress: false, panelStayedOpenOnInsidePress: false, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false, panelCloseState: '', lyricsOpened: false, queueClosedByLyrics: false, lyricRows: 0, lyricMeta: '', lyricCurrent: 0, lyricSeeked: false, escapeHidLyrics: false, escapeKeptWindowAfterLyrics: false }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (selector) => document.querySelector(selector)
          const press = (element) => { if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
@@ -3958,6 +3971,53 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          await sleep(400)
          out.panelStayedOpenOnInsidePress = panel() ? getComputedStyle(panel()).visibility === 'visible' : false
 
+        // ---- the lyrics panel ------------------------------------------------
+        // The tone fixture carries two timed lines, so this is the read path end
+        // to end: the main process parses the tag, the renderer draws the lines,
+        // and the panel follows the song. The queue is open at this point, which
+        // is also the chance to prove the two share one corner.
+        const lyricsPanel = () => pick('.np-lyrics-panel')
+        const lyricLines = () => [...document.querySelectorAll('.np-lyric-line')]
+        const toneQueueRow = rows().find((row) => {
+          const title = row.querySelector('.np-queue-title')
+          return title && title.textContent === 'Selftest Tone'
+        })
+        if (toneQueueRow) toneQueueRow.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await sleep(300)
+        // The fixture is three seconds long; pause it so the checks below are
+        // about the lyrics and not about which track is playing by then.
+        pause()
+        press(pick('.np-lyrics-button'))
+        await sleep(400)
+        out.lyricsOpened = lyricsPanel() ? getComputedStyle(lyricsPanel()).visibility === 'visible' : false
+        out.queueClosedByLyrics = await panelHidden(2000)
+        for (let attempt = 0; attempt < 40 && lyricLines().length === 0; attempt += 1) await sleep(100)
+        out.lyricRows = lyricLines().length
+        out.lyricMeta = (pick('.np-lyrics-meta') || {}).textContent || ''
+        // A line is a seek target, so pressing one moves the song and the
+        // highlight follows without the panel being reopened. The first press
+        // also proves a line lights up at all: the fixture starts before its
+        // first timestamp, where nothing is being sung yet.
+        if (lyricLines()[0]) press(lyricLines()[0])
+        await sleep(400)
+        out.lyricCurrent =
+          lyricLines().filter((line) => line.classList.contains('current')).length === 1 &&
+          lyricLines()[0].classList.contains('current')
+            ? 1
+            : 0
+        if (lyricLines()[1]) press(lyricLines()[1])
+        await sleep(500)
+        out.lyricSeeked = lyricLines().findIndex((line) => line.classList.contains('current')) === 1
+        pressEscape()
+        await sleep(400)
+        out.escapeHidLyrics = lyricsPanel() ? getComputedStyle(lyricsPanel()).visibility === 'hidden' : false
+        out.escapeKeptWindowAfterLyrics = Boolean(dialog())
+
+        // Put the queue back: the checks below are about Escape unwinding the
+        // queue panel and then the window, and this is the state they expect.
+        press(pick('.np-queue'))
+        await sleep(400)
+
          // Escape unwinds one layer at a time, and both layers are checked: the
          // panel first, then the window.
          pressEscape()
@@ -4089,6 +4149,25 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       visuals.panelCloseState
     )
     record(visuals.panelStayedOpenOnInsidePress, 'pressing inside the queue panel leaves it open')
+    record(
+      visuals.lyricsOpened && visuals.queueClosedByLyrics,
+      'the lyrics button opens the lyrics panel and closes the queue that shares its corner'
+    )
+    record(
+      visuals.lyricRows === 2 && visuals.lyricMeta.includes('Synced'),
+      'the panel shows the timed lines from the file, labelled as synced',
+      `${visuals.lyricRows} lines, "${visuals.lyricMeta}"`
+    )
+    record(
+      visuals.lyricCurrent === 1,
+      'exactly one lyric line is marked as the one being sung',
+      `${visuals.lyricCurrent} marked`
+    )
+    record(visuals.lyricSeeked, 'clicking a lyric line seeks to it and moves the highlight')
+    record(
+      visuals.escapeHidLyrics && visuals.escapeKeptWindowAfterLyrics,
+      'Escape shuts the lyrics panel without shutting the player window'
+    )
     record(
       visuals.escapeHidPanel && visuals.escapeKeptWindow,
       'Escape shuts the panel without shutting the player window'

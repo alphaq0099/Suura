@@ -3548,9 +3548,11 @@ input[type='radio'] {
     animation: none;
   }
 
-  /* The panel still needs its visibility change, or it would be stuck on screen. */
+  /* The panels still need their visibility change, or they would be stuck on screen. */
   .np-queue-panel,
-  .np-queue-panel.open {
+  .np-queue-panel.open,
+  .np-lyrics-panel,
+  .np-lyrics-panel.open {
     transition: visibility 0s;
   }
 }
@@ -3731,7 +3733,8 @@ input[type='radio'] {
   pointer-events: none;
 }
 
-.np-queue-panel {
+.np-queue-panel,
+.np-lyrics-panel {
   position: absolute;
   inset: 12px 16px 12px auto;
   display: flex;
@@ -3764,7 +3767,8 @@ input[type='radio'] {
     visibility 0s linear 360ms;
 }
 
-.np-queue-panel.open {
+.np-queue-panel.open,
+.np-lyrics-panel.open {
   visibility: visible;
   opacity: 1;
   transform: translate3d(0, 0, 0);
@@ -3888,6 +3892,180 @@ input[type='radio'] {
   font-size: calc(11.5px * var(--text-scale));
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
+}
+
+/* ---------- lyrics panel ---------- */
+
+/* The header and footer are fixed; only the lyrics scroll. A long song should
+   not push the timing controls off the bottom of the panel. */
+.np-lyrics-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px 12px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.np-lyrics-head h2 {
+  margin: 0;
+  font-size: calc(12px * var(--text-scale));
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.np-lyrics-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: calc(11.5px * var(--text-scale));
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.np-lyrics-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* `position: relative` anchors the auto-scroll: the list is scrolled by hand
+   with `offsetTop`, and without a positioned ancestor that value would be
+   measured against the panel instead of the list. */
+.np-lyrics-list {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 14px 10px;
+  list-style: none;
+  scrollbar-gutter: stable;
+}
+
+.np-lyrics-list > li {
+  display: block;
+}
+
+/* Every line is a seek target, so it is a button that looks like a line. The
+   current one is the only bright text: the rest stay readable but recede, which
+   is what makes the highlight legible at a glance from across the room. */
+.np-lyric-line {
+  display: block;
+  width: 100%;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  font: inherit;
+  font-size: calc(14px * var(--text-scale));
+  line-height: 1.45;
+  text-align: left;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition:
+    color 140ms ease,
+    background 140ms ease;
+}
+
+.np-lyric-line:hover {
+  background: rgb(var(--np-overlay-rgb) / 7%);
+  color: var(--text);
+}
+
+.np-lyric-line.current {
+  background: rgb(var(--accent-rgb) / 14%);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.np-lyric-line:focus-visible {
+  outline: 2px solid rgb(var(--accent-rgb) / 70%);
+  outline-offset: -2px;
+}
+
+/* Untimed lyrics keep their line breaks but cannot be followed, so they are
+   plain text rather than rows of buttons that would do nothing. */
+.np-lyrics-plain {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 16px 18px;
+  font-size: calc(14px * var(--text-scale));
+  line-height: 1.55;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.np-lyrics-empty,
+.np-lyrics-error {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin: 0;
+  padding: 22px 20px;
+  font-size: calc(13px * var(--text-scale));
+  line-height: 1.5;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.np-lyrics-error {
+  color: var(--danger-text);
+  overflow-wrap: anywhere;
+}
+
+.np-lyrics-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.np-lyrics-foot button {
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  font: inherit;
+  font-size: calc(12px * var(--text-scale));
+  color: var(--text-dim);
+  cursor: pointer;
+  transition:
+    color 140ms ease,
+    border-color 140ms ease;
+}
+
+.np-lyrics-foot button:hover:not(:disabled) {
+  border-color: rgb(var(--accent-rgb) / 60%);
+  color: var(--text);
+}
+
+.np-lyrics-foot button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.np-lyrics-offset {
+  min-width: 58px;
+  font-size: calc(12px * var(--text-scale));
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.np-lyrics-reset {
+  margin-left: auto;
 }
 
 /* No border and no background of its own: the scrim behind this band already
