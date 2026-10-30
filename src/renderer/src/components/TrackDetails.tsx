@@ -59,8 +59,8 @@ export function TrackDetails(props: TrackDetailsProps) {
   const [editing, setEditing] = useState(initialEditing)
 
   useEffect(() => {
-    dialogRef.current?.focus()
-  }, [])
+    if (!editing) dialogRef.current?.focus()
+  }, [editing])
 
   useEffect(() => {
     setCurrent(track)
@@ -120,6 +120,22 @@ export function TrackDetails(props: TrackDetailsProps) {
       value: `https://www.youtube.com/watch?v=${youtubeId}`,
       wide: true
     })
+  }
+
+  // The editor is its own dialog with its own backdrop. Leaving this sheet
+  // mounted behind it would stack two overlays — 72% plus 78% — and turn the
+  // whole window almost black. The sheet steps aside while the editor is open.
+  if (editing) {
+    return (
+      <TagEditor
+        track={current}
+        onSaved={setCurrent}
+        onClose={() => {
+          setEditing(false)
+          if (initialEditing) onClose()
+        }}
+      />
+    )
   }
 
   return (
@@ -203,17 +219,6 @@ export function TrackDetails(props: TrackDetailsProps) {
             <span>Close</span>
           </button>
         </footer>
-
-        {editing ? (
-          <TagEditor
-            track={current}
-            onSaved={setCurrent}
-            onClose={() => {
-              setEditing(false)
-              if (initialEditing) onClose()
-            }}
-          />
-        ) : null}
       </div>
     </div>
   )

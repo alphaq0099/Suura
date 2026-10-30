@@ -29,7 +29,13 @@ export function createMainWindow(log: Logger): BrowserWindow {
       sandbox: true,
       // Playback is always click-initiated today, but this keeps a future
       // "resume on launch" or tray-triggered play from being blocked.
-      autoplayPolicy: 'no-user-gesture-required'
+      autoplayPolicy: 'no-user-gesture-required',
+      // A player is looked at while it is not the front window: the position
+      // readout, the synced lyrics and the queue all have to keep up when the
+      // window sits behind a browser or is minimised. Chromium otherwise
+      // throttles timers and animation frames in a hidden page, which froze
+      // those updates until the window was clicked again.
+      backgroundThrottling: false
     }
   })
 

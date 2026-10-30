@@ -3726,6 +3726,18 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            const target = dialog()
            if (target) target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
          }
+         // The panels hide with a 360ms transition before 'visibility' flips,
+         // and a slow frame can push that past any fixed wait. Poll for the
+         // settled state instead: what matters is that it ends up shut.
+         const lyricsHidden = async (timeoutMs) => {
+           const deadline = Date.now() + timeoutMs
+           for (;;) {
+             const node = pick('.np-lyrics-panel')
+             if (node && getComputedStyle(node).visibility === 'hidden') return true
+             if (Date.now() > deadline) return false
+             await new Promise((resolve) => setTimeout(resolve, 50))
+           }
+         }
 
          const nav = (label) => {
            const button = [...document.querySelectorAll('.nav-item')].find((el) => (el.textContent || '').trim().startsWith(label))
@@ -4013,7 +4025,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         out.lyricSeeked = lyricLines().findIndex((line) => line.classList.contains('current')) === 1
         pressEscape()
         await sleep(400)
-        out.escapeHidLyrics = lyricsPanel() ? getComputedStyle(lyricsPanel()).visibility === 'hidden' : false
+        out.escapeHidLyrics = await lyricsHidden(2000)
         out.escapeKeptWindowAfterLyrics = Boolean(dialog())
 
         // Put the queue back: the checks below are about Escape unwinding the
@@ -4454,6 +4466,17 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            const button = pickAll('.nav-item').find((el) => text(el).startsWith(label))
            press(button)
          }
+         // Clipboard reads and the resulting React render are a round-trip
+         // through the main process; a fixed wait races that. Poll for the
+         // field to settle instead.
+         const until = async (predicate, timeoutMs) => {
+           const deadline = Date.now() + timeoutMs
+           for (;;) {
+             if (predicate()) return true
+             if (Date.now() > deadline) return false
+             await sleep(50)
+           }
+         }
          const rowTitle = (row) => text(row ? row.querySelector('.row-title-text') : null)
          const rowFor = (title) => pickAll('.track-row').find((row) => rowTitle(row) === title)
          const barTitle = () => text(pick('.player-title'))
@@ -4561,16 +4584,15 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.searchMenuItems = pickAll('.field-menu .context-item').map(text).join(' | ')
          const searchPaste = pickAll('.field-menu .context-item').find((el) => text(el) === 'Paste')
          if (searchPaste) press(searchPaste)
-         await sleep(450)
-         out.searchPasted = Boolean(search) && search.value === 'Selftest Tone'
+         out.searchPasted =
+           Boolean(search) && (await until(() => search.value === 'Selftest Tone', 3000))
          if (search) {
            search.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 140, clientY: 140 }))
          }
          await sleep(200)
          const searchClear = pickAll('.field-menu .context-item').find((el) => text(el) === 'Clear')
          if (searchClear) press(searchClear)
-         await sleep(400)
-         out.searchCleared = Boolean(search) && search.value === ''
+         out.searchCleared = Boolean(search) && (await until(() => search.value === '', 3000))
 
          // The full Queue view: Ctrl+click chooses the first row, then Shift+click
          // the last extends the range. The # header is select-all/clear.
@@ -4650,16 +4672,16 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          await sleep(250)
          const discoverPaste = pickAll('.field-menu .context-item').find((el) => text(el) === 'Paste')
          if (discoverPaste) press(discoverPaste)
-         await sleep(400)
-         out.discoverPasted = Boolean(discover) && discover.value === 'Selftest'
+         out.discoverPasted =
+           Boolean(discover) && (await until(() => discover.value === 'Selftest', 3000))
          if (discover) {
            discover.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 160, clientY: 160 }))
          }
          await sleep(200)
          const discoverClear = pickAll('.field-menu .context-item').find((el) => text(el) === 'Clear')
          if (discoverClear) press(discoverClear)
-         await sleep(350)
-         out.discoverCleared = Boolean(discover) && discover.value === ''
+         out.discoverCleared =
+           Boolean(discover) && (await until(() => discover.value === '', 3000))
 
          nav('Library')
          await sleep(350)
@@ -4924,6 +4946,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       escapeKeptEditor: boolean
       editorClosed: boolean
       sheetClosed: boolean
+      singleBackdrop: boolean
     }>(
       window,
       `(async () => {
@@ -4940,7 +4963,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            panelAfterApply: false, artistAfter: '', albumAfter: '',
            albumArtistAfter: '', genreAfter: '', yearAfter: '', trackAfter: '',
            escapeClosedPanel: false, escapeKeptEditor: false,
-           editorClosed: false, sheetClosed: false
+           editorClosed: false, sheetClosed: false, singleBackdrop: false
          }
          const fieldInput = (label) => {
            const field = pickAll('.tag-grid .field').find(
@@ -4971,6 +4994,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            pickAll('.context-menu .context-item').find((el) => text(el) === 'Edit tags…')
          )
          await sleep(600)
+         // One overlay, not two: the details sheet steps aside while the
+         // editor is open, so the window is dimmed once like the sheet itself.
+         out.singleBackdrop = Boolean(pick('.tag-backdrop')) && !pick('.details-backdrop')
 
          const findTagsButton = () =>
            pickAll('.tag-head-actions .tag-find').find((el) => text(el) === 'Find tags')
@@ -5031,6 +5057,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       autoTag.opened && autoTag.matches === 1 && autoTag.matchText.includes('Selftest Tone'),
       'Find tags lists the matches the provider returned',
       `${autoTag.matches}: ${autoTag.matchText}`
+    )
+    record(
+      autoTag.singleBackdrop,
+      'the tag editor dims the window once, not twice, when opened from details',
+      `single backdrop ${autoTag.singleBackdrop}`
     )
     record(
       autoTag.artistUnticked && autoTag.albumUnticked && autoTag.genreTicked,
