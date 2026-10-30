@@ -188,6 +188,11 @@ in the library database, never written into the file. A `[offset:]` tag inside t
 This is read-only. Nothing here touches the network or rewrites a file, and a stream has no file to read, so it shows no
 lyrics.
 
+The **expand** button in the panel's header turns the whole player into a lyrics stage: the cover sits blurred behind a
+scrim and the lines are large enough to read from across the room. It is the same list, the same timing correction and the
+same fetch as the panel, so nothing reloads when it opens. Clicking a line still seeks, **Esc** or the close button
+returns to the player, and focus goes back to the button that opened it.
+
 ### Keyboard shortcuts
 
 | Key | Action |

@@ -277,7 +277,7 @@ export function NowPlayingView(props: NowPlayingViewProps) {
     const target = event.target as HTMLElement | null
     if (
       target?.closest(
-        '.np-queue-panel, .np-lyrics-panel, .np-queue, .np-lyrics-button, .add-to-playlist, .queue-actions-menu, .context-menu'
+        '.np-queue-panel, .np-lyrics-panel, .np-lyrics-stage, .np-queue, .np-lyrics-button, .add-to-playlist, .queue-actions-menu, .context-menu'
       )
     ) {
       return
@@ -461,6 +461,7 @@ export function NowPlayingView(props: NowPlayingViewProps) {
           durationMs={durationMs}
           open={lyricsOpen}
           onSeek={onSeek}
+          artworkKey={artworkKey}
         />
       </div>
 

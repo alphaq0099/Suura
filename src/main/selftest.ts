@@ -3683,12 +3683,16 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       lyricFill: boolean
       lyricPaused: boolean
       lyricResumed: boolean
+      stageOpened: boolean
+      stageLines: number
+      stageCurrent: number
+      stageClosed: boolean
       escapeHidLyrics: boolean
       escapeKeptWindowAfterLyrics: boolean
     }>(
       window,
       `(async () => {
-         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, volumeBeforeWheel: -1, volumeAfterWheel: -1, volumeWheelTop: -1, volumeWheelBottom: -1, wheelCancelled: false, barVolumeBefore: -1, barVolumeMuted: -1, barMutePressed: '', barVolumeRestored: -1, barPopHidden: false, barPopVertical: false, barPopWithin: false, barPopShownByFocus: false, barKeyBefore: -1, barKeyAfter: -1, barKeyProgress: '', barKeyRestored: -1, panelClosedByOutsidePress: false, panelStayedOpenOnInsidePress: false, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false, panelCloseState: '', lyricsOpened: false, queueClosedByLyrics: false, lyricRows: 0, lyricMeta: '', lyricCurrent: 0, lyricSeeked: false, lyricFill: false, lyricPaused: false, lyricResumed: false, escapeHidLyrics: false, escapeKeptWindowAfterLyrics: false }
+         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, volumeBeforeWheel: -1, volumeAfterWheel: -1, volumeWheelTop: -1, volumeWheelBottom: -1, wheelCancelled: false, barVolumeBefore: -1, barVolumeMuted: -1, barMutePressed: '', barVolumeRestored: -1, barPopHidden: false, barPopVertical: false, barPopWithin: false, barPopShownByFocus: false, barKeyBefore: -1, barKeyAfter: -1, barKeyProgress: '', barKeyRestored: -1, panelClosedByOutsidePress: false, panelStayedOpenOnInsidePress: false, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false, panelCloseState: '', lyricsOpened: false, queueClosedByLyrics: false, lyricRows: 0, lyricMeta: '', lyricCurrent: 0, lyricSeeked: false, lyricFill: false, lyricPaused: false, lyricResumed: false, stageOpened: false, stageLines: 0, stageCurrent: 0, stageClosed: false, escapeHidLyrics: false, escapeKeptWindowAfterLyrics: false }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (selector) => document.querySelector(selector)
          const press = (element) => { if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
@@ -4038,6 +4042,26 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         press(pick('.np-lyrics-resume'))
         await sleep(250)
         out.lyricResumed = !pick('.np-lyrics-resume')
+
+        // The stage is a portal out of the panel: expanding hands the same lines
+        // to a full-window view, and Escape comes back to the panel rather than
+        // closing the player behind it.
+        const expand = pick('.np-lyrics-expand')
+        if (expand) press(expand)
+        await sleep(600)
+        const stage = pick('.np-lyrics-stage')
+        out.stageOpened = Boolean(stage) && !pick('.np-lyrics-panel')
+        const stageLines = stage ? [...stage.querySelectorAll('.np-lyric-line')] : []
+        out.stageLines = stageLines.length
+        out.stageCurrent = stageLines.filter((line) => line.classList.contains('current')).length
+        if (stage) {
+          stage.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+          )
+        }
+        await sleep(600)
+        out.stageClosed = !pick('.np-lyrics-stage') && Boolean(pick('.np-lyrics-panel'))
+
         pressEscape()
         await sleep(400)
         out.escapeHidLyrics = await lyricsHidden(2000)
@@ -4203,6 +4227,12 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       'scrolling the lyrics pauses the follow until you jump back to the current line',
       `paused ${visuals.lyricPaused} / resumed ${visuals.lyricResumed}`
     )
+    record(
+      visuals.stageOpened && visuals.stageLines === visuals.lyricRows && visuals.stageCurrent === 1,
+      'expanding the lyrics hands the same lines to a full-window stage',
+      `${visuals.stageLines} lines (panel had ${visuals.lyricRows}), ${visuals.stageCurrent} current`
+    )
+    record(visuals.stageClosed, 'Escape leaves the lyrics stage and returns to the panel')
     record(
       visuals.escapeHidLyrics && visuals.escapeKeptWindowAfterLyrics,
       'Escape shuts the lyrics panel without shutting the player window'

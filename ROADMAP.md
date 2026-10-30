@@ -632,6 +632,8 @@ port inherits the metadata core instead of reimplementing it. M12 set the same p
 - [x] `track_lyrics` table (track, source, language, synced, LRC, offset, fetched at)
 - [x] Embedded lyrics: `USLT`/`SYLT`, Vorbis `LYRICS`, `©lyr`, plus a `TXXX` fallback for files ffmpeg wrote
 - [x] `.lrc` sidecar, synced scroll and an offset control; no network
+- [x] Reading view: line-by-line fill as the line is sung, manual scroll pauses the follow, and the panel expands into a
+      full-window stage (blurred cover behind, same fetch, same offset)
 
 **Phase 3 — single-track auto-tag and artwork**
 - [x] iTunes + MusicBrainz lookup, duration-aware scoring, review dialog, apply through the writer
