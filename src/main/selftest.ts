@@ -9,6 +9,7 @@ import { app, BrowserWindow, clipboard, dialog, net } from 'electron'
 import { probeExecutable } from '@engine/sidecar/locate'
 import { IPC_EVENTS } from '@shared/ipc'
 import { mergeLibrarySearch } from '@shared/search'
+import type { TagLookupQuery } from '@shared/types'
 import { buildMediaUrl } from '@shared/media-url'
 import { buildStreamUrl } from '@shared/stream-url'
 import { youtubeWatchUrl } from '@shared/youtube'
@@ -4865,6 +4866,196 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       fieldMenu.editorClosed && fieldMenu.sheetClosed,
       'the tag editor and its details sheet close cleanly after the field menu was used',
       `editor ${fieldMenu.editorClosed}, sheet ${fieldMenu.sheetClosed}`
+    )
+
+    // ---- 13c. the tag finder proposes, the editor still decides ----------
+    // The network is replaced here, not exercised: what this checks is the seam
+    // the user sees. A match fills the form and never the file, a filled field
+    // starts unticked, and Escape closes the finder before the editor.
+    let autoTagQuery: TagLookupQuery | null = null
+    const originalLookup = container.tagLookup.lookup
+    container.tagLookup.lookup = async (query) => {
+      autoTagQuery = query
+      return {
+        query,
+        candidates: [
+          {
+            provider: 'itunes',
+            providerId: 'selftest-1',
+            title: 'Selftest Tone (Remastered)',
+            artist: 'The Real Selftest',
+            albumArtist: 'The Real Selftest',
+            album: 'Correct Album',
+            year: 1999,
+            genre: 'Test',
+            trackNo: 4,
+            trackTotal: 9,
+            discNo: 1,
+            discTotal: 1,
+            durationMs: 3000,
+            artworkUrl: null,
+            score: 0.88,
+            confidence: 'strong'
+          }
+        ],
+        providers: [
+          { provider: 'itunes', ok: true, message: null, count: 1 },
+          { provider: 'musicbrainz', ok: true, message: null, count: 0 }
+        ]
+      }
+    }
+    const autoTag = await evaluate<{
+      opened: boolean
+      matches: number
+      matchText: string
+      artistUnticked: boolean
+      albumUnticked: boolean
+      genreTicked: boolean
+      panelAfterApply: boolean
+      artistAfter: string
+      albumAfter: string
+      albumArtistAfter: string
+      genreAfter: string
+      yearAfter: string
+      trackAfter: string
+      escapeClosedPanel: boolean
+      escapeKeptEditor: boolean
+      editorClosed: boolean
+      sheetClosed: boolean
+    }>(
+      window,
+      `(async () => {
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const pick = (selector) => document.querySelector(selector)
+         const pickAll = (selector) => [...document.querySelectorAll(selector)]
+         const text = (element) => (element ? (element.textContent || '').trim() : '')
+         const press = (element) => {
+           if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         }
+         const out = {
+           opened: false, matches: 0, matchText: '',
+           artistUnticked: false, albumUnticked: false, genreTicked: false,
+           panelAfterApply: false, artistAfter: '', albumAfter: '',
+           albumArtistAfter: '', genreAfter: '', yearAfter: '', trackAfter: '',
+           escapeClosedPanel: false, escapeKeptEditor: false,
+           editorClosed: false, sheetClosed: false
+         }
+         const fieldInput = (label) => {
+           const field = pickAll('.tag-grid .field').find(
+             (el) => text(el.querySelector('span')) === label
+           )
+           return field ? field.querySelector('input') : null
+         }
+         const autoRow = (name) =>
+           pickAll('.auto-tag-field').find(
+             (el) => text(el.querySelector('.auto-tag-field-name')) === name
+           )
+         const ticked = (name) => {
+           const row = autoRow(name)
+           const box = row ? row.querySelector('input[type=checkbox]') : null
+           return Boolean(box && box.checked)
+         }
+
+         const row = pickAll('.track-row').find(
+           (el) => text(el.querySelector('.row-title-text')) === 'Selftest Tone'
+         )
+         if (row) {
+           row.dispatchEvent(
+             new MouseEvent('contextmenu', { bubbles: true, clientX: 240, clientY: 240 })
+           )
+         }
+         await sleep(300)
+         press(
+           pickAll('.context-menu .context-item').find((el) => text(el) === 'Edit tags…')
+         )
+         await sleep(600)
+
+         press(pick('.tag-find'))
+         await sleep(500)
+         out.opened = Boolean(pick('.auto-tag'))
+         out.matches = pickAll('.auto-tag-match').length
+         out.matchText = pickAll('.auto-tag-match strong').map(text).join(' | ')
+         out.artistUnticked = !ticked('Artist')
+         out.albumUnticked = !ticked('Album')
+         out.genreTicked = ticked('Genre')
+
+         // Replacing a filled field is the decision the default withholds, so
+         // it has to be made on purpose before Apply does anything.
+         const artistRow = autoRow('Artist')
+         const artistBox = artistRow ? artistRow.querySelector('input[type=checkbox]') : null
+         if (artistBox) artistBox.click()
+         await sleep(200)
+         press(pick('.auto-tag-foot .primary'))
+         await sleep(500)
+         out.panelAfterApply = !pick('.auto-tag')
+         out.artistAfter = fieldInput('Artist') ? fieldInput('Artist').value : ''
+         out.albumAfter = fieldInput('Album') ? fieldInput('Album').value : ''
+         out.albumArtistAfter = fieldInput('Album artist') ? fieldInput('Album artist').value : ''
+         out.genreAfter = fieldInput('Genre') ? fieldInput('Genre').value : ''
+         out.yearAfter = fieldInput('Year') ? fieldInput('Year').value : ''
+         const trackNo = pick('input[aria-label="Track number"]')
+         out.trackAfter = trackNo ? trackNo.value : ''
+
+         // The finder is a layer inside the editor, so Escape unwinds one layer
+         // at a time rather than closing the whole dialog.
+         press(pick('.tag-find'))
+         await sleep(400)
+         const dialog = pick('.tag-dialog')
+         if (dialog) {
+           dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+         }
+         await sleep(400)
+         out.escapeClosedPanel = !pick('.auto-tag')
+         out.escapeKeptEditor = Boolean(pick('.tag-dialog'))
+         const stillDialog = pick('.tag-dialog')
+         if (stillDialog) {
+           stillDialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+         }
+         await sleep(400)
+         out.editorClosed = !pick('.tag-dialog')
+         press(pick('.details-close'))
+         await sleep(400)
+         out.sheetClosed = !pick('.details-backdrop')
+         return out
+       })()`
+    )
+    container.tagLookup.lookup = originalLookup
+    // The stub runs inside the renderer's IPC round trip, so the assignment is
+    // invisible to the compiler's flow analysis; the cast is only for that.
+    const capturedQuery = autoTagQuery as TagLookupQuery | null
+    record(
+      autoTag.opened && autoTag.matches === 1 && autoTag.matchText.includes('Selftest Tone'),
+      'Find tags lists the matches the provider returned',
+      `${autoTag.matches}: ${autoTag.matchText}`
+    )
+    record(
+      autoTag.artistUnticked && autoTag.albumUnticked && autoTag.genreTicked,
+      'a field the file already fills starts unticked, a blank one starts ticked',
+      `artist ${autoTag.artistUnticked}, album ${autoTag.albumUnticked}, genre ${autoTag.genreTicked}`
+    )
+    record(
+      autoTag.panelAfterApply &&
+        autoTag.artistAfter === 'The Real Selftest' &&
+        autoTag.albumArtistAfter === 'Selftest' &&
+        autoTag.albumAfter === 'Selftest Album' &&
+        autoTag.genreAfter === 'Test' &&
+        autoTag.yearAfter === '1999' &&
+        autoTag.trackAfter === '4',
+      'applying a match fills the blank fields and leaves a filled album alone',
+      `artist ${autoTag.artistAfter}, album ${autoTag.albumAfter}, albumArtist ${autoTag.albumArtistAfter}, genre ${autoTag.genreAfter}, year ${autoTag.yearAfter}, track ${autoTag.trackAfter}, panel ${autoTag.panelAfterApply}`
+    )
+    record(
+      autoTag.escapeClosedPanel && autoTag.escapeKeptEditor && autoTag.editorClosed && autoTag.sheetClosed,
+      'Escape closes the tag finder before the editor, then the editor and its sheet',
+      `panel ${autoTag.escapeClosedPanel}, editor ${autoTag.escapeKeptEditor}/${autoTag.editorClosed}, sheet ${autoTag.sheetClosed}`
+    )
+    record(
+      capturedQuery !== null &&
+        capturedQuery.title === 'Selftest Tone' &&
+        capturedQuery.artist === 'Selftest' &&
+        capturedQuery.durationMs === 3000,
+      'the finder searches with the row title, artist and length',
+      JSON.stringify(capturedQuery)
     )
 
     // ---- 14. the library keeps up with the disk by itself ----------------

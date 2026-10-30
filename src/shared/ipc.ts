@@ -42,6 +42,7 @@ import type {
   SaveToLibraryRequest,
   ScanProgress,
   StreamPlay,
+  TagLookupResult,
   Track,
   TrackLyrics,
   TrackPage,
@@ -81,6 +82,7 @@ export const IPC = {
   libraryListArtists: 'library:list-artists',
   libraryStats: 'library:stats',
   libraryUpdateTags: 'library:update-tags',
+  libraryAutoTag: 'library:auto-tag',
   libraryLyrics: 'library:lyrics',
   libraryLyricsOffset: 'library:lyrics-offset',
   libraryRemoveFolder: 'library:remove-folder',
@@ -303,6 +305,14 @@ export interface PlayerApi {
    * updated row or rejects with a message that says why nothing changed.
    */
   updateTrackTags(trackId: number, fields: TrackTagFields): Promise<Track>
+  /**
+   * Asks iTunes and MusicBrainz what this file is, scored against its own tags.
+   *
+   * The answer is a proposal, never a write: the review dialog decides which
+   * fields to take, and those go through `updateTrackTags` like a manual edit.
+   * Both providers are best effort, so a partial or empty answer is normal.
+   */
+  findTrackTags(trackId: number): Promise<TagLookupResult>
   /**
    * The lyrics already on disk for a local track, or null when it has none.
    *

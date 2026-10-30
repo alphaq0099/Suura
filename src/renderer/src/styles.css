@@ -5748,6 +5748,26 @@ button.online-jump:hover {
   font-size: calc(11px * var(--text-scale));
 }
 
+.tag-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The one header action that changes the form rather than closing it. */
+.tag-find {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: calc(12px * var(--text-scale));
+  color: var(--text-dim);
+}
+
+.tag-find:hover:not(:disabled) {
+  color: var(--text);
+}
+
 .tag-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5823,6 +5843,174 @@ button.online-jump:hover {
   gap: 8px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
+}
+
+/* ---------- tag finder ---------- */
+
+/* A proposal above the form, not a second dialog: what is ticked here lands in
+   the editor's draft, and the editor's Save is still what writes the file. */
+.auto-tag {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgb(var(--accent-rgb) / 35%);
+  border-radius: var(--radius);
+  background: rgb(var(--accent-rgb) / 6%);
+}
+
+.auto-tag-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.auto-tag-head h3 {
+  margin: 0 0 2px;
+  font-size: calc(13.5px * var(--text-scale));
+}
+
+.auto-tag-head .subtitle {
+  margin: 0;
+}
+
+.auto-tag-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--text-dim);
+  font-size: calc(12px * var(--text-scale));
+}
+
+.auto-tag-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  max-height: 210px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.auto-tag-match {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 9px;
+  text-align: left;
+  background: var(--bg-input);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+}
+
+.auto-tag-match:hover {
+  border-color: var(--border);
+}
+
+.auto-tag-match.selected {
+  border-color: var(--accent);
+  background: rgb(var(--accent-rgb) / 10%);
+}
+
+.auto-tag-match-text {
+  display: grid;
+  min-width: 0;
+}
+
+.auto-tag-match-text strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(12.5px * var(--text-scale));
+  font-weight: 600;
+}
+
+.auto-tag-match-text .subtitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(11px * var(--text-scale));
+}
+
+.auto-tag-score {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+}
+
+.auto-tag-badge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: calc(10px * var(--text-scale));
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.auto-tag-badge.strong {
+  color: var(--ok);
+  background: rgb(var(--ok-rgb) / 14%);
+}
+
+.auto-tag-badge.likely {
+  color: var(--text);
+  background: rgb(var(--accent-rgb) / 16%);
+}
+
+.auto-tag-badge.weak {
+  color: var(--text-faint);
+  background: rgb(255 255 255 / 6%);
+}
+
+.auto-tag-fields {
+  display: grid;
+  gap: 2px;
+}
+
+.auto-tag-field {
+  display: grid;
+  grid-template-columns: auto 88px minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  font-size: calc(11.5px * var(--text-scale));
+}
+
+.auto-tag-field:hover {
+  background: var(--bg-hover);
+}
+
+.auto-tag-field.empty {
+  opacity: 0.55;
+}
+
+.auto-tag-field-name {
+  color: var(--text-faint);
+}
+
+.auto-tag-field-value,
+.auto-tag-field-current {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auto-tag-field-current {
+  color: var(--text-faint);
+}
+
+.auto-tag-note {
+  margin: 0;
+}
+
+.auto-tag-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 @media (max-width: 520px) {

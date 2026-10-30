@@ -903,6 +903,20 @@ export function registerIpcHandlers(container: AppContainer): void {
     return library.updateTags(id, fields)
   })
 
+  // The finder reads the row, not the file, and only proposes. It is allowed
+  // while the track plays: nothing is written until the editor saves.
+  ipcMain.handle(IPC.libraryAutoTag, async (_event, trackId: unknown) => {
+    const id = toTrackId(trackId)
+    const track = library.trackById(id)
+    if (!track?.filePath) throw new Error('Only files in your library can be looked up.')
+    return container.tagLookup.lookup({
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      durationMs: track.durationMs
+    })
+  })
+
   // Reading is safe while the track plays: it opens the file for a moment and
   // writes nothing. The timing correction is a database row, never a tag.
   ipcMain.handle(IPC.libraryLyrics, (_event, trackId: unknown) =>

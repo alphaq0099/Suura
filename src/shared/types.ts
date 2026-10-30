@@ -199,6 +199,69 @@ export interface TrackTagFields {
  */
 export type LyricsSource = 'embedded' | 'sidecar' | 'lrclib' | 'generated'
 
+/**
+ * A metadata service the tag finder can ask.
+ *
+ * Both are public and need no key, which is why they are the first two: the
+ * finder has to work on a fresh install with nothing to configure.
+ */
+export type TagProvider = 'itunes' | 'musicbrainz'
+
+/** What the finder searches with: the row's own values. */
+export interface TagLookupQuery {
+  title: string
+  artist: string | null
+  album: string | null
+  durationMs: number | null
+}
+
+/**
+ * One possible match, already scored against the query.
+ *
+ * `score` and `confidence` are computed in the main process from the same pure
+ * rules the smoke tests pin down, so the review dialog shows a number the app
+ * can explain rather than a provider's own idea of relevance.
+ */
+export interface TagCandidate {
+  provider: TagProvider
+  /** The provider's own id, kept so a source can be named later. */
+  providerId: string
+  title: string
+  artist: string
+  albumArtist: string | null
+  album: string | null
+  year: number | null
+  genre: string | null
+  trackNo: number | null
+  trackTotal: number | null
+  discNo: number | null
+  discTotal: number | null
+  durationMs: number | null
+  /** A cover the provider can supply, or null when it has none. */
+  artworkUrl: string | null
+  /** 0..1; higher is a closer match. */
+  score: number
+  confidence: 'strong' | 'likely' | 'weak'
+}
+
+/** How one provider did, so a partial answer can say which half was missing. */
+export interface TagProviderReport {
+  provider: TagProvider
+  ok: boolean
+  /** Why it failed, when it did. */
+  message: string | null
+  /** How many raw candidates it contributed before ranking. */
+  count: number
+}
+
+export interface TagLookupResult {
+  query: TagLookupQuery
+  /** Best first, at most a handful. */
+  candidates: TagCandidate[]
+  providers: TagProviderReport[]
+}
+
+
 /** The lyrics the player found for one local track. */
 export interface TrackLyrics {
   trackId: number

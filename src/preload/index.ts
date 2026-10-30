@@ -15,6 +15,7 @@ import type {
   ListTracksQuery,
   PlaybackSnapshot,
   ResolvedSource,
+  TagLookupResult,
   Track,
   TrackLyrics,
   TrackTagFields
@@ -78,6 +79,9 @@ const api: PlayerApi = {
 
   updateTrackTags: (trackId: number, fields: TrackTagFields) =>
     ipcRenderer.invoke(IPC.libraryUpdateTags, trackId, fields) as Promise<Track>,
+
+  findTrackTags: (trackId: number) =>
+    ipcRenderer.invoke(IPC.libraryAutoTag, trackId) as Promise<TagLookupResult>,
 
   getTrackLyrics: (trackId: number) =>
     ipcRenderer.invoke(IPC.libraryLyrics, trackId) as Promise<TrackLyrics | null>,

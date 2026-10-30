@@ -634,7 +634,7 @@ port inherits the metadata core instead of reimplementing it. M12 set the same p
 - [x] `.lrc` sidecar, synced scroll and an offset control; no network
 
 **Phase 3 — single-track auto-tag and artwork**
-- [ ] iTunes + MusicBrainz lookup, duration-aware scoring, review dialog, apply through the writer
+- [x] iTunes + MusicBrainz lookup, duration-aware scoring, review dialog, apply through the writer
 - [ ] Artwork picker: embedded / `cover.jpg` / video still / provider cover, with a square-crop preview
 
 **Phase 4 — lyrics finder**

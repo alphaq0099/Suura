@@ -36,6 +36,7 @@ import { cleanupAbandonedDownloads, DownloadService } from '../download-service'
 import { StreamCache } from '../stream-cache'
 import { createOnlineService, type OnlineService } from '../online-service'
 import { ReplayGainService } from '../replay-gain-service'
+import { createTagLookup, type TagLookup } from '@core/library/tag-lookup'
 import { createYoutubeService, type YoutubeService } from '../youtube-service'
 
 /**
@@ -83,6 +84,8 @@ export interface AppContainer {
   tagWriter: TagWriter
   /** Embedded and `.lrc` lyrics, plus the user's timing correction. */
   lyrics: LyricsService
+  /** iTunes and MusicBrainz lookups for the tag finder. */
+  tagLookup: TagLookup
   dispose(): void
 }
 
@@ -217,6 +220,11 @@ export function createContainer(): AppContainer {
 
   const lyrics = new LyricsService(repo, new LyricsRepository(database.db), log.child('lyrics'))
 
+  // Keyless public services, asked in parallel when a file's tags are wrong.
+  // The client owns its own timeouts and never throws: a provider being down is
+  // a sentence in the review dialog, not a failed request.
+  const tagLookup = createTagLookup({ log: log.child('tag-lookup') })
+
   // A crash or a force-quit never runs the download's `finally`, so sweep the
   // temp folders before anything can start writing a new one.
   cleanupAbandonedDownloads(paths.downloads, log.child('downloads'))
@@ -334,6 +342,7 @@ export function createContainer(): AppContainer {
     replayGain,
     tagWriter,
     lyrics,
+    tagLookup,
     dispose: () => {
       unwatchSettings()
       unwatchTheme()

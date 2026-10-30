@@ -148,6 +148,13 @@ artist, album, year, genre, track and disc numbers (with their totals) and lyric
 removes that tag. Every text field also has a right-click menu — Cut, Copy, Paste, Select all and Clear — so a mangled
 artist name can be replaced from the clipboard without touching the keyboard.
 
+**Find tags** in the editor asks iTunes and MusicBrainz what the file is. Both are keyless, and each is asked
+independently, so one being unavailable still leaves the other's matches. Results are scored against the file's own
+title, artist and length — length carries real weight because it is the one field a YouTube rip cannot mangle — and the
+best few appear with a strong, likely or possible badge. A field the file already fills in starts unticked; ticking it
+replaces what is there on purpose. Nothing is written when you apply a match: it fills the form, and **Save** is still
+the one moment the file changes.
+
 The file itself is rewritten, not just the library row. The new version is written to a temporary file in the same
 folder, read back to check it, and only then swapped in; the previous version is kept in `backups/tags` under the app
 data folder. MP3, FLAC, M4A/M4B, Ogg and Opus are writable today, and WAV, AIFF, AAC, WMA, APE, WavPack and Musepack are

@@ -4,7 +4,8 @@ import type { Track, TrackLyrics, TrackTagFields } from '@shared/types'
 import { TAG_POSITION_MAX, TAG_YEAR_MAX, TAG_YEAR_MIN } from '@shared/tags'
 import { api, messageOf } from '../api'
 import { ArtworkImage } from './ArtworkImage'
-import { CloseIcon, SpinnerIcon } from './Icons'
+import { AutoTagPanel, type AutoTagValues } from './AutoTagPanel'
+import { CloseIcon, SearchIcon, SpinnerIcon } from './Icons'
 
 export interface TagEditorProps {
   track: Track
@@ -157,6 +158,7 @@ export function TagEditor(props: TagEditorProps) {
   const [removeLyrics, setRemoveLyrics] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [findOpen, setFindOpen] = useState(false)
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const titleRef = useRef<HTMLInputElement | null>(null)
   // Once the user has typed in the box, a slow read must not overwrite it.
@@ -215,6 +217,38 @@ export function TagEditor(props: TagEditorProps) {
     setDraft((current) => ({ ...current, [key]: value }))
   }
 
+  // What the finder compares against: the form as it stands, so a title the
+  // user just corrected is what the search is built from.
+  const currentValues: AutoTagValues = {
+    title: draft.title,
+    artist: draft.artist,
+    albumArtist: draft.albumArtist,
+    album: draft.album,
+    genre: draft.genre,
+    year: draft.year,
+    trackNo: draft.trackNo,
+    trackTotal: draft.trackTotal,
+    discNo: draft.discNo,
+    discTotal: draft.discTotal
+  }
+
+  /**
+   * A match fills the draft; it does not write the file. The patch is still
+   * computed against the row, so only fields that ended up different are sent,
+   * and saving remains the one moment the file changes.
+   */
+  const applyFoundTags = (fields: TrackTagFields): void => {
+    setDraft((current) => {
+      const next = { ...current }
+      for (const [name, value] of Object.entries(fields)) {
+        if (!(name in next)) continue
+        next[name as keyof Draft] = value === null ? '' : String(value)
+      }
+      return next
+    })
+    setFindOpen(false)
+  }
+
   const save = async (): Promise<void> => {
     if (!canSave) return
     setSaving(true)
@@ -249,6 +283,11 @@ export function TagEditor(props: TagEditorProps) {
           // editor only.
           if (event.key === 'Escape') {
             event.stopPropagation()
+            // The finder is a layer inside this dialog, so it closes first.
+            if (findOpen) {
+              setFindOpen(false)
+              return
+            }
             if (!saving) onClose()
             return
           }
@@ -266,22 +305,43 @@ export function TagEditor(props: TagEditorProps) {
               {track.filePath?.split(/[\\/]/).pop() ?? 'Local file'}
             </p>
           </div>
-          <button
-            type="button"
-            className="icon-button subtle"
-            title="Close (Esc)"
-            aria-label="Close tag editor"
-            disabled={saving}
-            onClick={onClose}
-          >
-            <CloseIcon size={16} />
-          </button>
+          <div className="tag-head-actions">
+            <button
+              type="button"
+              className="tag-find"
+              disabled={saving || findOpen}
+              title="Ask iTunes and MusicBrainz what this file is"
+              onClick={() => setFindOpen(true)}
+            >
+              <SearchIcon size={14} />
+              <span>Find tags</span>
+            </button>
+            <button
+              type="button"
+              className="icon-button subtle"
+              title="Close (Esc)"
+              aria-label="Close tag editor"
+              disabled={saving}
+              onClick={onClose}
+            >
+              <CloseIcon size={16} />
+            </button>
+          </div>
         </header>
 
         {error ? (
           <p className="banner error" role="alert">
             {error}
           </p>
+        ) : null}
+
+        {findOpen ? (
+          <AutoTagPanel
+            track={track}
+            current={currentValues}
+            onApply={applyFoundTags}
+            onClose={() => setFindOpen(false)}
+          />
         ) : null}
 
         <div className="tag-grid">

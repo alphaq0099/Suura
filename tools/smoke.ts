@@ -38,7 +38,17 @@ import { DEFAULT_PREFERENCE_PATCH } from '@shared/settings-defaults'
 import { isLocalLibraryFilter, recentlyAddedCutoff, streamFallbackFor } from '@shared/library'
 import { PLAY_COUNT_THRESHOLD_MS, PlaySession, countsAsPlay } from '@shared/play-count'
 import { mergeAddedShelf, mergePlayedShelf } from '@shared/played-shelf'
-import type { AlbumSummary, Track } from '@shared/types'
+import {
+  candidatesFromItunes,
+  candidatesFromMusicBrainz,
+  durationScore,
+  normalizeMatchText,
+  rankCandidates,
+  scoreCandidate,
+  textSimilarity,
+  titleVariants
+} from '@shared/auto-tag'
+import type { AlbumSummary, TagCandidate, TagLookupQuery, Track } from '@shared/types'
 import { serializeDetails, silentLogger } from '@core/logging/logger'
 import {
   DIAGNOSTICS_SUMMARY_LIMIT,
@@ -91,6 +101,7 @@ import { OnlinePlaylistRepository } from '@core/library/online-playlist-reposito
 import { StreamPlayRepository } from '@core/library/stream-play-repository'
 import { PlayStateRepository } from '@core/library/play-state-repository'
 import { PlaybackService } from '@core/library/playback-service'
+import { createTagLookup, itunesUrl, musicBrainzQuery } from '@core/library/tag-lookup'
 import { isPathInside, localContentKey, normalizePath } from '@core/library/content-key'
 import { scanLibraryFolders } from '@core/library/scanner'
 import { youtubeOriginOf, youtubeOriginOfNative, extractMetadata, loadMetadataParser } from '@core/library/metadata'
@@ -4760,6 +4771,307 @@ async function main(): Promise<void> {
     )
   } finally {
     await rm(tagRoot, { recursive: true, force: true }).catch(() => undefined)
+  }
+
+  // --- auto-tag ------------------------------------------------------------
+  // "Which of these two matches is better" is the whole feature, so the scoring
+  // is pinned down here rather than left to whatever a provider answered today.
+  // The parsers and the client come after: they decide what a match is and what
+  // happens when one of the two services is down.
+  {
+    checkEqual(
+      'auto-tag: bracketed noise, case and accents fold away',
+      normalizeMatchText('Beyoncé - Halo (Official Video) [HD]'),
+      'beyonce halo'
+    )
+    checkEqual('auto-tag: an ampersand reads as and', normalizeMatchText('Simon & Garfunkel'), 'simon and garfunkel')
+
+    checkEqual('auto-tag: an identical name is a perfect match', textSimilarity('Kesariya', 'Kesariya'), 1)
+    check(
+      'auto-tag: a typo still scores high',
+      textSimilarity('Kesariya', 'Kesariyaa') > 0.85,
+      String(textSimilarity('Kesariya', 'Kesariyaa'))
+    )
+    check(
+      'auto-tag: two unrelated names score low',
+      textSimilarity('Kesariya', 'Bohemian Rhapsody') < 0.3,
+      String(textSimilarity('Kesariya', 'Bohemian Rhapsody'))
+    )
+    checkEqual('auto-tag: an empty name matches nothing', textSimilarity('', 'Kesariya'), 0)
+
+    const messy: TagLookupQuery = {
+      title: 'Arijit Singh - Kesariya (Official Video)',
+      artist: 'Arijit Singh',
+      album: null,
+      durationMs: null
+    }
+    check(
+      'auto-tag: the artist prefix and the dash tail are both tried',
+      titleVariants(messy).some((variant) => normalizeMatchText(variant) === 'kesariya'),
+      JSON.stringify(titleVariants(messy))
+    )
+
+    checkEqual('auto-tag: two seconds of drift is the same recording', durationScore(268_000, 270_000), 1)
+    checkEqual('auto-tag: five seconds of drift is close', durationScore(268_000, 273_000), 0.8)
+    checkEqual('auto-tag: ten seconds of drift is a maybe', durationScore(268_000, 278_000), 0.5)
+    checkEqual('auto-tag: half a minute is a different recording', durationScore(268_000, 298_000), 0)
+    checkEqual('auto-tag: a missing length is not scored at all', durationScore(268_000, null), null)
+
+    const base: TagCandidate = {
+      provider: 'itunes',
+      providerId: '1',
+      title: 'Kesariya',
+      artist: 'Arijit Singh',
+      albumArtist: 'Arijit Singh',
+      album: 'Brahmastra',
+      year: 2022,
+      genre: null,
+      trackNo: 3,
+      trackTotal: 12,
+      discNo: 1,
+      discTotal: 1,
+      durationMs: 268_000,
+      artworkUrl: null,
+      score: 0,
+      confidence: 'weak'
+    }
+    const exactQuery: TagLookupQuery = {
+      title: 'Kesariya',
+      artist: 'Arijit Singh',
+      album: null,
+      durationMs: 268_000
+    }
+    checkEqual('auto-tag: an exact match scores 1', scoreCandidate(exactQuery, base), 1)
+    check(
+      'auto-tag: a wrong artist lowers the score',
+      scoreCandidate({ ...exactQuery, artist: 'Someone Else' }, base) < 0.8,
+      String(scoreCandidate({ ...exactQuery, artist: 'Someone Else' }, base))
+    )
+    // A row with no artist must not be punished for the missing signal: the
+    // available ones are renormalised rather than the absent one scored zero.
+    checkEqual(
+      'auto-tag: a missing artist is dropped, not scored zero',
+      scoreCandidate({ ...exactQuery, artist: null }, base),
+      1
+    )
+
+    const ranked = rankCandidates(
+      exactQuery,
+      [
+        base,
+        { ...base, provider: 'musicbrainz', providerId: 'mb-1' },
+        { ...base, providerId: '2', title: 'Something Else Entirely', artist: 'Nobody', albumArtist: null, album: null },
+        { ...base, providerId: '3', title: 'Kesariya (Reprise)' },
+        { ...base, providerId: '4', title: 'Kesariya Reprise', album: 'Brahmastra Deluxe' }
+      ],
+      2
+    )
+    checkEqual('auto-tag: ranking keeps the best few', ranked.length, 2)
+    checkEqual('auto-tag: the same answer from both providers appears once', ranked[0]?.provider, 'itunes')
+    check(
+      'auto-tag: a weak match is filtered out',
+      ranked.every((candidate) => candidate.title !== 'Something Else Entirely')
+    )
+    check(
+      'auto-tag: every kept match carries its confidence',
+      ranked.every((candidate) => ['strong', 'likely', 'weak'].includes(candidate.confidence))
+    )
+
+    // --- provider payloads -------------------------------------------------
+    const itunesPayload = {
+      resultCount: 1,
+      results: [
+        {
+          trackId: 1440833098,
+          trackName: 'Kesariya',
+          artistName: 'Arijit Singh',
+          collectionArtistName: 'Various Artists',
+          collectionName: 'Brahmastra',
+          releaseDate: '2022-09-09T07:00:00Z',
+          primaryGenreName: 'Bollywood',
+          trackNumber: 3,
+          trackCount: 12,
+          discNumber: 1,
+          discCount: 2,
+          trackTimeMillis: 268_000,
+          artworkUrl100: 'https://is1-ssl.mzstatic.com/image/thumb/abc/100x100bb.jpg'
+        },
+        { trackName: 'No artist, so not a candidate' }
+      ]
+    }
+    const fromItunes = candidatesFromItunes(itunesPayload)
+    checkEqual('auto-tag: iTunes yields the usable rows only', fromItunes.length, 1)
+    const itunesHit = fromItunes[0]
+    checkEqual('auto-tag: iTunes title and artist are read', `${itunesHit?.title}|${itunesHit?.artist}`, 'Kesariya|Arijit Singh')
+    checkEqual('auto-tag: iTunes keeps the collection artist', itunesHit?.albumArtist, 'Various Artists')
+    checkEqual('auto-tag: iTunes release date becomes a year', itunesHit?.year, 2022)
+    checkEqual(
+      'auto-tag: iTunes positions are read whole',
+      `${itunesHit?.trackNo}/${itunesHit?.trackTotal} ${itunesHit?.discNo}/${itunesHit?.discTotal}`,
+      '3/12 1/2'
+    )
+    checkEqual('auto-tag: iTunes length is read', itunesHit?.durationMs, 268_000)
+    check(
+      'auto-tag: the 100px iTunes cover is asked for at 600px',
+      itunesHit?.artworkUrl === 'https://is1-ssl.mzstatic.com/image/thumb/abc/600x600bb.jpg',
+      itunesHit?.artworkUrl ?? 'null'
+    )
+
+    const mbPayload = {
+      recordings: [
+        {
+          id: 'rec-1',
+          title: 'Kesariya',
+          length: 268_000,
+          'artist-credit': [
+            { name: 'Arijit Singh', joinphrase: ' & ' },
+            { name: 'Pritam' }
+          ],
+          releases: [
+            {
+              id: 'rel-1',
+              title: 'Brahmastra',
+              date: '2022-09-09',
+              'track-count': 12,
+              media: [
+                {
+                  position: 1,
+                  'track-count': 12,
+                  track: [{ number: '3', title: 'Kesariya' }]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+    const fromMb = candidatesFromMusicBrainz(mbPayload)
+    checkEqual('auto-tag: MusicBrainz yields one recording', fromMb.length, 1)
+    const mbHit = fromMb[0]
+    checkEqual('auto-tag: a MusicBrainz credit is joined', mbHit?.artist, 'Arijit Singh & Pritam')
+    checkEqual('auto-tag: MusicBrainz release facts are read', `${mbHit?.album}|${mbHit?.year}`, 'Brahmastra|2022')
+    checkEqual(
+      'auto-tag: MusicBrainz track numbers are read',
+      `${mbHit?.trackNo}/${mbHit?.trackTotal} ${mbHit?.discNo}/${mbHit?.discTotal}`,
+      '3/12 1/1'
+    )
+    checkEqual(
+      'auto-tag: MusicBrainz points at the Cover Art Archive',
+      mbHit?.artworkUrl,
+      'https://coverartarchive.org/release/rel-1/front-500'
+    )
+
+    // --- request building --------------------------------------------------
+    const searchUrl = new URL(itunesUrl({ title: 'Kesariya (Official Video)', artist: 'Arijit Singh', album: null, durationMs: null }))
+    checkEqual('auto-tag: the iTunes search drops bracketed noise', searchUrl.searchParams.get('term'), 'Kesariya Arijit Singh')
+    checkEqual('auto-tag: the iTunes search asks for songs only', searchUrl.searchParams.get('entity'), 'song')
+    checkEqual(
+      'auto-tag: MusicBrainz gets a quoted Lucene query',
+      musicBrainzQuery({ title: 'Say "Hi" [Live]', artist: 'A:B', album: null, durationMs: null }),
+      'recording:"Say \\"Hi\\"" AND artist:"A:B"'
+    )
+
+    // --- the client, with the network replaced -----------------------------
+    // One provider down must still leave the other's matches: a review dialog
+    // with half an answer is useful, an error page is not.
+    const calls: string[] = []
+    const userAgents: string[] = []
+    const itunesOnlyFetch = (async (input: unknown, init?: { headers?: Record<string, string> }) => {
+      const url = String(input)
+      calls.push(url)
+      if (url.startsWith('https://musicbrainz.org')) {
+        return new Response('busy', { status: 503 })
+      }
+      if (init?.headers?.['User-Agent']) userAgents.push(init.headers['User-Agent'])
+      return new Response(JSON.stringify(itunesPayload), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    }) as unknown as typeof fetch
+
+    const partial = await createTagLookup({ log: silentLogger, fetch: itunesOnlyFetch }).lookup(exactQuery)
+    check(
+      'auto-tag: one provider being down still returns the other',
+      partial.candidates.length === 1 && partial.candidates[0]?.provider === 'itunes',
+      JSON.stringify(partial.candidates.map((candidate) => candidate.provider))
+    )
+    checkEqual(
+      'auto-tag: a failed provider is reported, not thrown',
+      partial.providers.find((provider) => provider.provider === 'musicbrainz')?.ok,
+      false
+    )
+    checkEqual(
+      'auto-tag: the failure reads as a sentence',
+      partial.providers.find((provider) => provider.provider === 'musicbrainz')?.message,
+      'MusicBrainz could not be reached.'
+    )
+
+    const bothFetch = (async (input: unknown, init?: { headers?: Record<string, string> }) => {
+      const url = String(input)
+      if (url.startsWith('https://musicbrainz.org')) {
+        userAgents.push(init?.headers?.['User-Agent'] ?? '')
+        // The same song as iTunes answered, so the two providers have to
+        // collapse into one row rather than show the same match twice.
+        const twin = {
+          recordings: [
+            {
+              id: 'rec-1',
+              title: 'Kesariya',
+              length: 268_000,
+              'artist-credit': [{ name: 'Arijit Singh' }],
+              releases: [
+                {
+                  id: 'rel-1',
+                  title: 'Brahmastra',
+                  date: '2022-09-09',
+                  'track-count': 12,
+                  media: [
+                    {
+                      position: 1,
+                      'track-count': 12,
+                      track: [{ number: '3' }]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        return new Response(JSON.stringify(twin), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      }
+      return new Response(JSON.stringify(itunesPayload), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    }) as unknown as typeof fetch
+
+    const both = await createTagLookup({ log: silentLogger, fetch: bothFetch }).lookup(exactQuery)
+    checkEqual('auto-tag: both providers answering still dedupes', both.candidates.length, 1)
+    checkEqual(
+      'auto-tag: every provider is reported',
+      both.providers.map((provider) => `${provider.provider}:${provider.ok}`).join(','),
+      'itunes:true,musicbrainz:true'
+    )
+    check(
+      'auto-tag: MusicBrainz is told who is calling',
+      userAgents.some((agent) => agent.startsWith('Suura/')),
+      userAgents.join(' | ')
+    )
+
+    // A row with no title cannot be looked up: there is nothing to search with,
+    // and asking anyway would spend two requests to get noise back.
+    calls.length = 0
+    const blank = await createTagLookup({ log: silentLogger, fetch: itunesOnlyFetch }).lookup({
+      title: '   ',
+      artist: 'Arijit Singh',
+      album: null,
+      durationMs: null
+    })
+    checkEqual('auto-tag: a blank title makes no request', calls.length, 0)
+    checkEqual('auto-tag: a blank title comes back empty', blank.candidates.length, 0)
   }
 
   // --- lyrics --------------------------------------------------------------
