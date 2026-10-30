@@ -10,6 +10,7 @@ import {
 import type {
   AllTracksQuery,
   AppSettings,
+  ArtworkChoice,
   DeepPartial,
   ListAlbumsQuery,
   ListTracksQuery,
@@ -77,8 +78,14 @@ const api: PlayerApi = {
 
   getStats: () => ipcRenderer.invoke(IPC.libraryStats),
 
-  updateTrackTags: (trackId: number, fields: TrackTagFields) =>
-    ipcRenderer.invoke(IPC.libraryUpdateTags, trackId, fields) as Promise<Track>,
+  updateTrackTags: (trackId: number, fields: TrackTagFields, artworkKey?: string | null) =>
+    ipcRenderer.invoke(IPC.libraryUpdateTags, trackId, fields, artworkKey) as Promise<Track>,
+
+  getArtworkChoices: (trackId: number) =>
+    ipcRenderer.invoke(IPC.libraryArtworkChoices, trackId) as Promise<ArtworkChoice[]>,
+
+  findArtworkCovers: (trackId: number) =>
+    ipcRenderer.invoke(IPC.libraryArtworkCovers, trackId) as Promise<ArtworkChoice[]>,
 
   findTrackTags: (trackId: number) =>
     ipcRenderer.invoke(IPC.libraryAutoTag, trackId) as Promise<TagLookupResult>,

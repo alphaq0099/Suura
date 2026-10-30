@@ -11,6 +11,7 @@ import type {
   AllTracksQuery,
   AppPaths,
   AppSettings,
+  ArtworkChoice,
   ArtistSummary,
   CacheEntryDetails,
   CacheStats,
@@ -88,6 +89,8 @@ export const IPC = {
   libraryRemoveFolder: 'library:remove-folder',
   libraryRevealTrack: 'library:reveal-track',
   libraryArtwork: 'library:artwork',
+  libraryArtworkChoices: 'library:artwork-choices',
+  libraryArtworkCovers: 'library:artwork-covers',
   playlistsList: 'playlists:list',
   playlistsCreate: 'playlists:create',
   playlistsRename: 'playlists:rename',
@@ -303,8 +306,28 @@ export interface PlayerApi {
    * The file is rewritten atomically and a copy is kept under `backups/tags`,
    * so this is not a "maybe it worked" operation: it either resolves with the
    * updated row or rejects with a message that says why nothing changed.
+   *
+   * `artworkKey` is one of the cache keys `getArtworkChoices` handed out: the
+   * bytes behind it are read here and embedded, so what was previewed is what
+   * lands in the file. `null` removes the cover, and leaving it out keeps the
+   * picture the file already has.
    */
-  updateTrackTags(trackId: number, fields: TrackTagFields): Promise<Track>
+  updateTrackTags(
+    trackId: number,
+    fields: TrackTagFields,
+    artworkKey?: string | null
+  ): Promise<Track>
+  /**
+   * Covers this file could use, from its own tags, its folder, its video and
+   * any provider. Each is already cached, so the picker can show it at once.
+   */
+  getArtworkChoices(trackId: number): Promise<ArtworkChoice[]>
+  /**
+   * Asks the providers for a cover, the way **Find tags** asks for tags. The
+   * results are cached too, so choosing one and saving sends a key rather than
+   * a second download.
+   */
+  findArtworkCovers(trackId: number): Promise<ArtworkChoice[]>
   /**
    * Asks iTunes and MusicBrainz what this file is, scored against its own tags.
    *

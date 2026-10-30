@@ -4,8 +4,9 @@ import type { Track, TrackLyrics, TrackTagFields } from '@shared/types'
 import { TAG_POSITION_MAX, TAG_YEAR_MAX, TAG_YEAR_MIN } from '@shared/tags'
 import { api, messageOf } from '../api'
 import { ArtworkImage } from './ArtworkImage'
+import { ArtworkPicker } from './ArtworkPicker'
 import { AutoTagPanel, type AutoTagValues } from './AutoTagPanel'
-import { CloseIcon, SearchIcon, SpinnerIcon } from './Icons'
+import { CloseIcon, DiscIcon, SearchIcon, SpinnerIcon } from './Icons'
 
 export interface TagEditorProps {
   track: Track
@@ -159,6 +160,12 @@ export function TagEditor(props: TagEditorProps) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [findOpen, setFindOpen] = useState(false)
+  /**
+   * The cover the user chose: a cache key, `null` to remove it, or `undefined`
+   * while the file's own picture is untouched. Save sends it as it stands.
+   */
+  const [artwork, setArtwork] = useState<string | null | undefined>(undefined)
+  const [artworkOpen, setArtworkOpen] = useState(false)
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const titleRef = useRef<HTMLInputElement | null>(null)
   // Once the user has typed in the box, a slow read must not overwrite it.
@@ -205,7 +212,7 @@ export function TagEditor(props: TagEditorProps) {
     }
   }, [track, draft, removeLyrics, loadedLyrics])
 
-  const dirty = Object.keys(patch).length > 0
+  const dirty = Object.keys(patch).length > 0 || artwork !== undefined
   const canSave = dirty && !problem && !saving
 
   // A `.lrc` beside the file is what the player shows, so the box is a preview
@@ -254,7 +261,7 @@ export function TagEditor(props: TagEditorProps) {
     setSaving(true)
     setError(null)
     try {
-      const updated = await api.updateTrackTags(track.id, patch)
+      const updated = await api.updateTrackTags(track.id, patch, artwork)
       onSaved(updated)
       onClose()
     } catch (cause) {
@@ -283,7 +290,11 @@ export function TagEditor(props: TagEditorProps) {
           // editor only.
           if (event.key === 'Escape') {
             event.stopPropagation()
-            // The finder is a layer inside this dialog, so it closes first.
+            // Each layer inside this dialog closes before the editor itself.
+            if (artworkOpen) {
+              setArtworkOpen(false)
+              return
+            }
             if (findOpen) {
               setFindOpen(false)
               return
@@ -298,7 +309,13 @@ export function TagEditor(props: TagEditorProps) {
         }}
       >
         <header className="tag-head">
-          <ArtworkImage track={track} size={48} iconSize={18} className="tag-art" />
+          <ArtworkImage
+            track={artwork === null ? null : track}
+            artworkKey={typeof artwork === 'string' ? artwork : undefined}
+            size={48}
+            iconSize={18}
+            className="tag-art"
+          />
           <div className="tag-titles">
             <h2 id="tag-editor-title">Edit tags</h2>
             <p className="subtitle" title={track.filePath ?? undefined}>
@@ -309,7 +326,17 @@ export function TagEditor(props: TagEditorProps) {
             <button
               type="button"
               className="tag-find"
-              disabled={saving || findOpen}
+              disabled={saving || artworkOpen}
+              title="Choose a different cover"
+              onClick={() => setArtworkOpen(true)}
+            >
+              <DiscIcon size={14} />
+              <span>Cover</span>
+            </button>
+            <button
+              type="button"
+              className="tag-find"
+              disabled={saving || findOpen || artworkOpen}
               title="Ask iTunes and MusicBrainz what this file is"
               onClick={() => setFindOpen(true)}
             >
@@ -341,6 +368,18 @@ export function TagEditor(props: TagEditorProps) {
             current={currentValues}
             onApply={applyFoundTags}
             onClose={() => setFindOpen(false)}
+          />
+        ) : null}
+
+        {artworkOpen ? (
+          <ArtworkPicker
+            track={track}
+            selected={artwork}
+            onChoose={(key) => {
+              setArtwork(key)
+              setArtworkOpen(false)
+            }}
+            onClose={() => setArtworkOpen(false)}
           />
         ) : null}
 

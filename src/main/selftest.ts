@@ -9,7 +9,7 @@ import { app, BrowserWindow, clipboard, dialog, net } from 'electron'
 import { probeExecutable } from '@engine/sidecar/locate'
 import { IPC_EVENTS } from '@shared/ipc'
 import { mergeLibrarySearch } from '@shared/search'
-import type { TagLookupQuery } from '@shared/types'
+import type { ArtworkChoice, TagLookupQuery } from '@shared/types'
 import { buildMediaUrl } from '@shared/media-url'
 import { buildStreamUrl } from '@shared/stream-url'
 import { youtubeWatchUrl } from '@shared/youtube'
@@ -112,6 +112,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     if (!ffmpeg.found || !ffmpeg.path) {
       return finish(failures, 'cannot continue without ffmpeg')
     }
+    // Captured once: property narrowing does not survive into a callback.
+    const ffmpegExe = ffmpeg.path
 
     // ---- 3. index real files through the renderer's IPC path -----------
     // Two files on purpose: one with an embedded cover and one without, so the
@@ -4970,7 +4972,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          )
          await sleep(600)
 
-         press(pick('.tag-find'))
+         const findTagsButton = () =>
+           pickAll('.tag-head-actions .tag-find').find((el) => text(el) === 'Find tags')
+         press(findTagsButton())
          await sleep(500)
          out.opened = Boolean(pick('.auto-tag'))
          out.matches = pickAll('.auto-tag-match').length
@@ -4998,7 +5002,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
 
          // The finder is a layer inside the editor, so Escape unwinds one layer
          // at a time rather than closing the whole dialog.
-         press(pick('.tag-find'))
+         press(findTagsButton())
          await sleep(400)
          const dialog = pick('.tag-dialog')
          if (dialog) {
@@ -5056,6 +5060,165 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         capturedQuery.durationMs === 3000,
       'the finder searches with the row title, artist and length',
       JSON.stringify(capturedQuery)
+    )
+
+    // ---- 13d. the cover picker offers pictures, the editor still writes --
+    // The providers and the cache are replaced here, so this is about the seam
+    // the user sees: local covers first, provider covers on request, a chosen
+    // cover previewed in the editor, and Escape unwinding one layer at a time.
+    const coverFor = async (name: string, color: string): Promise<string> => {
+      const target = join(fixtureDir, name)
+      await execFileAsync(
+        ffmpegExe,
+        ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', `color=c=${color}:s=96x64`, '-frames:v', '1', target],
+        { timeout: 60_000 }
+      )
+      return (await container.artwork.cacheRemote(await readFile(target), 'image/png')) ?? ''
+    }
+    const localCoverKey = (await container.artwork.cacheRemote(await readFile(coverPath), 'image/png')) ?? ''
+    const folderCoverKey = await coverFor('selftest-cover-b.png', '#22aa55')
+    const providerCoverKey = await coverFor('selftest-cover-c.png', '#ff8800')
+    record(
+      Boolean(localCoverKey && folderCoverKey && providerCoverKey),
+      'cover picker: the selftest covers were cached',
+      `${localCoverKey} | ${folderCoverKey} | ${providerCoverKey}`
+    )
+
+    const localChoices: ArtworkChoice[] = [
+      { key: localCoverKey, kind: 'embedded', label: 'In the file', current: true },
+      { key: folderCoverKey, kind: 'folder', label: 'cover.png', current: false }
+    ]
+    const onlineChoices: ArtworkChoice[] = [
+      { key: providerCoverKey, kind: 'provider', label: 'iTunes', current: false }
+    ]
+    const originalChoicesLocal = container.artworkChoices.local
+    const originalChoicesOnline = container.artworkChoices.online
+    container.artworkChoices.local = async () => localChoices
+    container.artworkChoices.online = async () => onlineChoices
+
+    let coverPicker: {
+      pickerOpen: boolean
+      localCount: number
+      currentMarked: boolean
+      applyDisabledAtStart: boolean
+      onlineCount: number
+      applyEnabledAfterPick: boolean
+      pickerClosedAfterUse: boolean
+      headerShowsChosen: boolean
+      escapeClosedPicker: boolean
+      escapeKeptEditor: boolean
+      editorClosed: boolean
+      sheetClosed: boolean
+    }
+    try {
+      coverPicker = await evaluate(
+        window,
+        `(async () => {
+           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+           const pick = (selector) => document.querySelector(selector)
+           const pickAll = (selector) => [...document.querySelectorAll(selector)]
+           const text = (element) => (element ? (element.textContent || '').trim() : '')
+           const press = (element) => {
+             if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+           }
+           const out = {
+             pickerOpen: false, localCount: 0, currentMarked: false,
+             applyDisabledAtStart: false, onlineCount: 0,
+             applyEnabledAfterPick: false, pickerClosedAfterUse: false,
+             headerShowsChosen: false, escapeClosedPicker: false,
+             escapeKeptEditor: false, editorClosed: false, sheetClosed: false
+           }
+           const coverButton = () =>
+             pickAll('.tag-head-actions .tag-find').find((el) => text(el) === 'Cover')
+
+           const row = pickAll('.track-row').find(
+             (el) => text(el.querySelector('.row-title-text')) === 'Selftest Tone'
+           )
+           if (row) {
+             row.dispatchEvent(
+               new MouseEvent('contextmenu', { bubbles: true, clientX: 240, clientY: 240 })
+             )
+           }
+           await sleep(300)
+           press(
+             pickAll('.context-menu .context-item').find((el) => text(el) === 'Edit tags…')
+           )
+           await sleep(600)
+
+           press(coverButton())
+           await sleep(500)
+           out.pickerOpen = Boolean(pick('.artwork-picker'))
+           out.localCount = pickAll('.artwork-choice').length
+           out.currentMarked = pickAll('.artwork-choice .subtitle').some(
+             (el) => text(el) === 'In use'
+           )
+           const apply = () => pick('.artwork-picker .auto-tag-foot .primary')
+           out.applyDisabledAtStart = Boolean(apply() && apply().disabled)
+
+           press(pick('.artwork-picker .tag-find'))
+           await sleep(500)
+           out.onlineCount = pickAll('.artwork-choice').length
+
+           const second = pickAll('.artwork-choice')[1]
+           press(second)
+           await sleep(200)
+           out.applyEnabledAfterPick = Boolean(apply() && !apply().disabled)
+           press(apply())
+           await sleep(400)
+           out.pickerClosedAfterUse = !pick('.artwork-picker')
+           const headerArt = pick('.tag-art')
+           out.headerShowsChosen = Boolean(
+             headerArt && (headerArt.getAttribute('src') || '').includes(${JSON.stringify(folderCoverKey)})
+           )
+
+           // Reopen and unwind with Escape: the picker goes first, the editor stays.
+           press(coverButton())
+           await sleep(400)
+           const dialog = pick('.tag-dialog')
+           if (dialog) {
+             dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+           }
+           await sleep(300)
+           out.escapeClosedPicker = !pick('.artwork-picker')
+           out.escapeKeptEditor = Boolean(pick('.tag-dialog'))
+           const stillDialog = pick('.tag-dialog')
+           if (stillDialog) {
+             stillDialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+           }
+           await sleep(300)
+           out.editorClosed = !pick('.tag-dialog')
+           press(pick('.details-close'))
+           await sleep(300)
+           out.sheetClosed = !pick('.details-backdrop')
+           return out
+         })()`
+      )
+    } finally {
+      container.artworkChoices.local = originalChoicesLocal
+      container.artworkChoices.online = originalChoicesOnline
+    }
+
+    record(
+      coverPicker.pickerOpen && coverPicker.localCount === 2 && coverPicker.onlineCount === 3,
+      'the cover picker lists local covers, then provider covers when asked',
+      `open ${coverPicker.pickerOpen}, local ${coverPicker.localCount}, online ${coverPicker.onlineCount}`
+    )
+    record(
+      coverPicker.currentMarked &&
+        coverPicker.applyDisabledAtStart &&
+        coverPicker.applyEnabledAfterPick &&
+        coverPicker.pickerClosedAfterUse &&
+        coverPicker.headerShowsChosen,
+      'choosing a cover previews it in the editor without writing the file',
+      `current ${coverPicker.currentMarked}, disabled ${coverPicker.applyDisabledAtStart}, enabled ${coverPicker.applyEnabledAfterPick}, closed ${coverPicker.pickerClosedAfterUse}, header ${coverPicker.headerShowsChosen}`
+    )
+    record(
+      coverPicker.escapeClosedPicker &&
+        coverPicker.escapeKeptEditor &&
+        coverPicker.editorClosed &&
+        coverPicker.sheetClosed,
+      'Escape closes the cover picker before the editor, then the editor and its sheet',
+      `picker ${coverPicker.escapeClosedPicker}, editor ${coverPicker.escapeKeptEditor}/${coverPicker.editorClosed}, sheet ${coverPicker.sheetClosed}`
     )
 
     // ---- 14. the library keeps up with the disk by itself ----------------

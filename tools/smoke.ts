@@ -8,7 +8,7 @@
  */
 import { execFile } from 'node:child_process'
 import { copyFileSync, existsSync, readdirSync, statSync } from 'node:fs'
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rename, rm, unlink, utimes, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rename, rm, stat, unlink, utimes, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
@@ -115,7 +115,7 @@ import {
   type TagFields,
   type TagWriteResult
 } from '@core/library/tag-writer'
-import { artworkKeyFor, extractArtwork, extensionForMime } from '@core/library/artwork'
+import { artworkKeyFor, extractArtwork, extensionForMime, mimeForExtension } from '@core/library/artwork'
 import { decodeLyricsFile } from '@core/library/lyrics'
 import { LyricsRepository } from '@core/library/lyrics-repository'
 import { LyricsService } from '@core/library/lyrics-service'
@@ -185,7 +185,7 @@ import { parseRangeHeader } from '@shared/range'
 import { isImportedPlaylistTrackId, onlineEntryToTrack, onlinePlaylistItemToTrack } from '@shared/online'
 import { canPrefetchSearchMatch, mergeLibrarySearch, type SearchPrefetchGate } from '@shared/search'
 import { sanitizeFilePart, savePathParts } from '@shared/files'
-import { sanitizeTagFields } from '@shared/tags'
+import { sanitizeArtworkKey, sanitizeTagFields } from '@shared/tags'
 import {
   LYRICS_OFFSET_MAX,
   activeLyricIndex,
@@ -4616,6 +4616,51 @@ async function main(): Promise<void> {
     check('tags: a fresh temp file is left for its writer', existsSync(join(sweepDir, freshName)))
     check('tags: temp files are recognisable by name', isTagTempFile(freshName) && !isTagTempFile('track.mp3'))
 
+    // --- cover art writing -------------------------------------------------
+    // Embedding a picture is the second write path in this milestone, and the
+    // containers disagree about how to hold one. MP3 needs a real APIC frame;
+    // FLAC and M4A take an attached-picture stream through ffmpeg. Ogg/Opus
+    // cannot carry one at all with this ffmpeg build, so that must be refused
+    // before the text edit beside it silently lands.
+    const tagCoverPath = join(tagRoot, 'cover.png')
+    await execFileAsync(
+      ffmpegPath,
+      ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=#ff5533:s=96x96', '-frames:v', '1', tagCoverPath],
+      { timeout: 60_000 }
+    )
+    const coverBytes = await readFile(tagCoverPath)
+    const cover = { data: new Uint8Array(coverBytes), mime: 'image/png' }
+
+    for (const name of ['mp3', 'flac', 'm4a'] as const) {
+      const target = join(tagRoot, `track.${name}`)
+      const before = (await stat(target)).size
+      const result = await tagWriter.write(target, { artwork: cover })
+      check(`tags: ${name} accepts a cover on its own`, result.artworkWritten)
+      check(`tags: ${name} grew by more than the cover's overhead`, (await stat(target)).size > before)
+      const written = await extractArtwork(target)
+      check(`tags: ${name} reads the cover back`, Boolean(written && written.data.length > 0))
+      checkEqual(`tags: ${name} kept the cover's type`, written?.mime, 'image/png')
+
+      await tagWriter.write(target, { artwork: null })
+      checkEqual(`tags: ${name} can remove the cover`, await extractArtwork(target), null)
+      // The text tags written earlier must not have been collateral damage.
+      const kept = await extractMetadata(target)
+      checkEqual(`tags: ${name} keeps its title when the cover changes`, kept.title, edited.title)
+    }
+
+    for (const name of ['ogg', 'opus'] as const) {
+      const target = join(tagRoot, `track.${name}`)
+      let refusal: unknown = null
+      await tagWriter.write(target, { artwork: cover }).catch((error) => {
+        refusal = error
+      })
+      checkEqual(
+        `tags: ${name} refuses a cover rather than half-writing it`,
+        refusal instanceof TagWriteError ? refusal.code : 'no-error',
+        'unsupported'
+      )
+    }
+
     // --- the edit as a whole ---------------------------------------------
     // The writer is only half of it: the row has to be rebuilt from the file
     // afterwards, and a position or origin the editor did not touch must
@@ -4699,6 +4744,22 @@ async function main(): Promise<void> {
         'Edited Title'
       )
 
+      // A cover-only save is still a save: the writer embeds the bytes, and the
+      // row remembers the cache key so the UI serves the chosen picture rather
+      // than re-extracting the file.
+      const chosenKey = 'b'.repeat(40) + '.png'
+      const withCover = await tagLibrary.updateTags(editedId, {}, { image: cover, key: chosenKey })
+      checkEqual('tags: an artwork-only save is accepted', withCover.artworkKey, chosenKey)
+      checkEqual(
+        'tags: the chosen cache key is remembered on the row',
+        serviceRepo.artworkState(editedId)?.artworkKey,
+        chosenKey
+      )
+      check('tags: the cover is in the file after an artwork-only save', Boolean(await extractArtwork(editedPath)))
+      const withoutCover = await tagLibrary.updateTags(editedId, {}, { image: null, key: '' })
+      checkEqual('tags: removing the cover records "no cover" on the row', withoutCover.artworkKey, null)
+      checkEqual('tags: removing the cover removes it from the file', await extractArtwork(editedPath), null)
+
       let remoteEdit: unknown = null
       const remoteId = serviceRepo.insert(
         {
@@ -4769,6 +4830,34 @@ async function main(): Promise<void> {
       JSON.stringify(sanitizeTagFields({ year: null })),
       JSON.stringify({ year: null })
     )
+
+    // Artwork keys become file names, so the shape is enforced rather than
+    // trusted: anything that is not a content hash plus a known extension is
+    // refused before it can reach the cache directory.
+    const validKey = 'a'.repeat(40) + '.jpg'
+    checkEqual('artwork: a well-formed key passes', sanitizeArtworkKey(validKey), validKey)
+    checkEqual('artwork: an empty key means "no cover"', sanitizeArtworkKey('   '), null)
+    checkEqual('artwork: an absent key stays absent', sanitizeArtworkKey(undefined), null)
+    const rejectsKey = (input: unknown): boolean => {
+      try {
+        sanitizeArtworkKey(input)
+        return false
+      } catch {
+        return true
+      }
+    }
+    check('artwork: a path traversal is refused', rejectsKey('../../secret.jpg'))
+    check('artwork: a wrong extension is refused', rejectsKey('a'.repeat(40) + '.exe'))
+    check('artwork: a short hash is refused', rejectsKey('abc.jpg'))
+    check('artwork: a non-string key is refused', rejectsKey(7))
+    checkEqual(
+      'artwork: an artwork-only edit is allowed when asked for',
+      JSON.stringify(sanitizeTagFields({}, { allowEmpty: true })),
+      JSON.stringify({})
+    )
+    checkEqual('artwork: PNG extension reads back as image/png', mimeForExtension('.png'), 'image/png')
+    checkEqual('artwork: JPEG extension reads back as image/jpeg', mimeForExtension('.jpg'), 'image/jpeg')
+    checkEqual('artwork: an unknown extension falls back to JPEG', mimeForExtension('.xyz'), 'image/jpeg')
   } finally {
     await rm(tagRoot, { recursive: true, force: true }).catch(() => undefined)
   }

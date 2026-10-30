@@ -29,6 +29,15 @@ export function extensionForMime(mime: string): string | null {
   return EXTENSION_BY_MIME[mime.trim().toLowerCase()] ?? null
 }
 
+/** The type to store for a cached file, from its extension. */
+export function mimeForExtension(extension: string): string {
+  const wanted = extension.trim().toLowerCase()
+  for (const [mime, ext] of Object.entries(EXTENSION_BY_MIME)) {
+    if (ext === wanted) return mime === 'image/jpg' ? 'image/jpeg' : mime
+  }
+  return 'image/jpeg'
+}
+
 /**
  * A cache file name: the content hash plus an extension.
  *

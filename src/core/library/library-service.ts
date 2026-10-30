@@ -17,7 +17,7 @@ import { countsAsPlay } from '@shared/play-count'
 import { isPathInside, localContentKey, normalizePath } from './content-key'
 import { extractMetadata } from './metadata'
 import { scanLibraryFolders } from './scanner'
-import type { TagFields, TagWriter } from './tag-writer'
+import type { TagArtwork, TagFields, TagWriter } from './tag-writer'
 import type { TrackRepository, TrackWriteInput } from './track-repository'
 import type { SettingsService } from '../settings/settings-service'
 import type { Logger } from '../logging/logger'
@@ -30,6 +30,19 @@ export interface LibraryServiceEvents {
    * play-count-dependent views can refresh without reloading every table.
    */
   onPlayHistoryChanged?: () => void
+}
+
+/**
+ * A cover change that came with a tag save.
+ *
+ * `image` is what the writer embeds (or `null` to remove it), and `key` is the
+ * cache key to remember on the row afterwards — `''` for "no cover", so the
+ * artwork service does not look the file up again and re-extract the picture
+ * that was just removed.
+ */
+export interface TagArtworkWrite {
+  image: TagArtwork | null
+  key: string
 }
 
 /**
@@ -289,7 +302,11 @@ export class LibraryService {
    * if it had worked. `content_key` is the path, so the row keeps its identity
    * (and its playlists) across the rewrite.
    */
-  async updateTags(id: number, input: TrackTagFields): Promise<Track> {
+  async updateTags(
+    id: number,
+    input: TrackTagFields,
+    artwork?: TagArtworkWrite
+  ): Promise<Track> {
     const track = this.repo.getById(id)
     if (!track) throw new Error('That track is no longer in the library.')
     if (track.sourceKind !== 'local' || !track.filePath) {
@@ -299,6 +316,8 @@ export class LibraryService {
     if (this.activeScan) throw new Error('Wait for the library scan to finish, then try again.')
 
     const fields: TagFields = { ...input }
+    // `undefined` keeps the picture; `null` removes it; an image replaces it.
+    if (artwork) fields.artwork = artwork.image
     // A position is one frame (`3/12`), so changing either half sends both. The
     // row already knows the half the editor did not touch.
     if ('trackNo' in fields || 'trackTotal' in fields) {
@@ -329,6 +348,9 @@ export class LibraryService {
       filePath: track.filePath
     }
     this.repo.update(id, next, Date.now())
+    // Record the cover that was just written (or its removal) so the artwork
+    // service serves the chosen picture instead of re-extracting the file.
+    if (artwork) this.repo.setArtworkKey(id, artwork.key)
     this.log.info('tags written', { trackId: id, filePath: track.filePath, fields: Object.keys(fields) })
     this.emitChanged()
 

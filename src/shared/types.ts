@@ -190,6 +190,25 @@ export interface TrackTagFields {
   lyrics?: string | null
 }
 
+/** Where a cover the picker can offer came from. */
+export type ArtworkSourceKind = 'embedded' | 'folder' | 'video' | 'provider'
+
+/**
+ * One cover the artwork picker can show.
+ *
+ * `key` is an artwork-cache key, not a URL or a path: the picker displays it
+ * through `player-art://`, and saving sends the same key back, so the bytes
+ * written into the file are exactly the ones that were previewed.
+ */
+export interface ArtworkChoice {
+  key: string
+  kind: ArtworkSourceKind
+  /** A short human label: the file name, "Video thumbnail", the provider. */
+  label: string
+  /** True when this is the picture the file already has. */
+  current: boolean
+}
+
 /**
  * Where a set of lyrics came from.
  *

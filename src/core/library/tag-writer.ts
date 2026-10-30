@@ -1,9 +1,10 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { chmod, copyFile, mkdir, readdir, rename, rm, stat, unlink } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, readdir, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
 import NodeID3 from 'node-id3'
 import { extensionOf } from '@shared/mime'
+import { extensionForMime, extractArtwork } from './artwork'
 import { loadMetadataParser, youtubeOriginOf } from './metadata'
 import { rawLyricsOf } from './lyrics'
 
@@ -88,9 +89,24 @@ export interface TagFields {
   year?: number | null
   genre?: string | null
   lyrics?: string | null
+  /**
+   * The cover to embed, or `null` to remove it. Absent leaves the picture alone.
+   *
+   * The bytes are the already-cached copy the picker showed, so what is written
+   * is exactly what the user chose rather than a second, differently cropped
+   * download.
+   */
+  artwork?: TagArtwork | null
 }
 
-export type TagFieldName = keyof TagFields
+/** An image to embed: the bytes plus the type the container will store. */
+export interface TagArtwork {
+  data: Uint8Array
+  mime: string
+}
+
+/** The text fields, which are the ones a partial patch can name. */
+export type TagFieldName = Exclude<keyof TagFields, 'artwork'>
 
 export const TAG_FIELD_NAMES: readonly TagFieldName[] = [
   'title',
@@ -130,6 +146,8 @@ export interface TagWriteResult {
   strategy: TagWriteStrategy
   /** Field names that were actually written. */
   fields: TagFieldName[]
+  /** True when the cover was replaced or removed by this write. */
+  artworkWritten: boolean
   /** The copy taken before the replace, or null when the backup failed. */
   backupPath: string | null
   bytesBefore: number
@@ -162,15 +180,26 @@ export class TagWriter {
 
     const changes = normalizeFields(fields)
     const names = Object.keys(changes) as TagFieldName[]
-    if (names.length === 0) {
+    const artwork = 'artwork' in fields ? (fields.artwork ?? null) : undefined
+    if (names.length === 0 && artwork === undefined) {
       throw new TagWriteError('write-failed', 'No tag fields were given.')
+    }
+    // Ogg/Opus keep their comments on the audio stream, and this ffmpeg build
+    // cannot attach a picture there. Refusing before the copy is made means the
+    // text edit the user also asked for does not land while the cover silently
+    // does not.
+    if (artwork !== undefined && strategy === 'ffmpeg-stream') {
+      throw new TagWriteError(
+        'unsupported',
+        'Cover art cannot be written to Ogg or Opus files yet. The other tags can still be saved.'
+      )
     }
 
     const key = filePath.toLowerCase()
     const previous = writeChains.get(key) ?? Promise.resolve()
     const run = previous.then(
-      () => this.writeNow(filePath, strategy, changes, names, now),
-      () => this.writeNow(filePath, strategy, changes, names, now)
+      () => this.writeNow(filePath, strategy, changes, names, artwork, now),
+      () => this.writeNow(filePath, strategy, changes, names, artwork, now)
     )
     const queued = run.catch(() => undefined)
     writeChains.set(key, queued)
@@ -188,6 +217,7 @@ export class TagWriter {
     strategy: TagWriteStrategy,
     changes: NormalizedFields,
     names: TagFieldName[],
+    artwork: TagArtwork | null | undefined,
     now: number
   ): Promise<TagWriteResult> {
     let before: Awaited<ReturnType<typeof stat>>
@@ -201,6 +231,7 @@ export class TagWriter {
     }
 
     const temp = join(dirname(filePath), `${TAG_TEMP_PREFIX}${randomUUID()}${extname(filePath)}`)
+    let imageTemp: string | null = null
     let backupPath: string | null = null
 
     try {
@@ -211,21 +242,32 @@ export class TagWriter {
         // read-only file, instead of a confusing failure inside the writer.
         await copyFile(filePath, temp)
         await chmod(temp, 0o666).catch(() => undefined)
-        writeId3(temp, changes)
+        writeId3(temp, changes, artwork)
       } else {
+        if (artwork) {
+          // ffmpeg takes the picture as a second input, and the extension has
+          // to match the bytes or it guesses the wrong demuxer.
+          imageTemp = join(
+            dirname(filePath),
+            `${TAG_TEMP_PREFIX}${randomUUID()}${extensionForMime(artwork.mime) ?? '.jpg'}`
+          )
+          await writeFile(imageTemp, artwork.data)
+        }
         await runFfmpeg(
           await this.options.resolveFfmpeg(),
-          ffmpegArgs(filePath, temp, strategy, changes)
+          ffmpegArgs(filePath, temp, strategy, changes, artwork, imageTemp)
         )
       }
 
-      await verifyTagWrite(temp, changes)
+      await verifyTagWrite(temp, changes, artwork)
 
       backupPath = await this.backup(filePath, now)
       await replaceFile(temp, filePath)
     } catch (error) {
       await rm(temp, { force: true }).catch(() => undefined)
       throw asTagWriteError(error)
+    } finally {
+      if (imageTemp) await rm(imageTemp, { force: true }).catch(() => undefined)
     }
 
     const after = await stat(filePath).catch(() => null)
@@ -235,6 +277,7 @@ export class TagWriter {
       filePath,
       strategy,
       fields: names,
+      artworkWritten: artwork !== undefined,
       backupPath,
       bytesBefore: before.size,
       bytesAfter: after?.size ?? before.size
@@ -381,10 +424,29 @@ function migrateVideoComment(raw: Record<string, unknown>): void {
  * *old* synced lyrics next to the new unsynced ones. Editing the raw frames is
  * also what `update()` does internally, so this is not a private API.
  */
-function writeId3(filePath: string, changes: NormalizedFields): void {
+function writeId3(
+  filePath: string,
+  changes: NormalizedFields,
+  artwork: TagArtwork | null | undefined
+): void {
   const current = NodeID3.read(filePath)
   const raw: Record<string, unknown> = { ...(current.raw ?? {}) }
   migrateVideoComment(raw)
+
+  if (artwork !== undefined) {
+    if (artwork === null) {
+      // Delete the frame rather than writing an empty one: an `APIC` with no
+      // bytes still counts as a picture to some readers.
+      delete raw.APIC
+    } else {
+      raw.APIC = {
+        type: 3,
+        mime: artwork.mime,
+        description: '',
+        imageBuffer: Buffer.from(artwork.data)
+      }
+    }
+  }
 
   for (const [name, value] of Object.entries(changes) as Array<[TagFieldName, string | null]>) {
     if (name === 'trackNo' || name === 'trackTotal') {
@@ -447,26 +509,38 @@ function ffmpegArgs(
   input: string,
   output: string,
   strategy: TagWriteStrategy,
-  changes: NormalizedFields
+  changes: NormalizedFields,
+  artwork: TagArtwork | null | undefined,
+  imagePath: string | null
 ): string[] {
   // Ogg/Opus comments belong to the audio stream; every other container keeps
   // them in the global dictionary.
   const flag = strategy === 'ffmpeg-stream' ? '-metadata:s:a:0' : '-metadata'
-  const args = [
-    '-nostdin',
-    '-hide_banner',
-    '-loglevel',
-    'error',
-    '-y',
-    '-i',
-    input,
+  const args = ['-nostdin', '-hide_banner', '-loglevel', 'error', '-y', '-i', input]
+
+  if (artwork !== undefined) {
+    // Changing the cover means rebuilding the stream map: keep every audio
+    // stream, drop the old picture, and attach the new one. With `null` the
+    // picture streams are simply not mapped, which is how it is removed.
+    if (imagePath) args.push('-i', imagePath)
+    args.push('-map', '0:a')
+    if (imagePath) args.push('-map', '1:v')
+    args.push('-c', 'copy')
+    if (imagePath) {
+      args.push(
+        '-disposition:v:0',
+        'attached_pic',
+        '-metadata:s:v:0',
+        'title=Album cover',
+        '-metadata:s:v:0',
+        'comment=Cover (front)'
+      )
+    }
+  } else {
     // Every stream is copied, which is what keeps cover art attached. `-c copy`
     // means the audio bytes are untouched.
-    '-map',
-    '0',
-    '-c',
-    'copy'
-  ]
+    args.push('-map', '0', '-c', 'copy')
+  }
 
   const push = (key: string, value: string | null): void => {
     args.push(flag, `${key}=${value ?? ''}`)
@@ -557,13 +631,29 @@ function runFfmpeg(ffmpegPath: string, args: string[]): Promise<void> {
  * make a faithful write look different. Everything else is compared through the
  * same `common` view the library stores.
  */
-async function verifyTagWrite(filePath: string, changes: NormalizedFields): Promise<void> {
+async function verifyTagWrite(
+  filePath: string,
+  changes: NormalizedFields,
+  artwork: TagArtwork | null | undefined
+): Promise<void> {
   const parseFile = await loadMetadataParser()
   let parsed: Awaited<ReturnType<typeof parseFile>>
   try {
     parsed = await parseFile(filePath, { duration: false, skipCovers: true })
   } catch (error) {
     throw new TagWriteError('verify-failed', 'The rewritten file could not be read back.', error)
+  }
+
+  if (artwork !== undefined) {
+    // Presence is the honest check. ffmpeg may re-encode an attached picture
+    // for a container, so comparing bytes would fail a write that worked.
+    const written = await extractArtwork(filePath).catch(() => null)
+    if (artwork === null && written !== null) {
+      throw new TagWriteError('verify-failed', 'The cover art was still in the file after removing it.')
+    }
+    if (artwork !== null && written === null) {
+      throw new TagWriteError('verify-failed', 'The cover art was not readable after writing it.')
+    }
   }
 
   const actual = fieldValuesOf(parsed.common)

@@ -1,5 +1,5 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, net, shell } from 'electron'
-import { writeFile } from 'node:fs/promises'
+import { writeFile, readFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 import {
   ACCENTS,
@@ -19,7 +19,7 @@ import { isLocalLibraryFilter, streamFallbackFor } from '@shared/library'
 import { isImportedPlaylistTrackId } from '@shared/online'
 import { countsAsPlay } from '@shared/play-count'
 import { clampPlaylistIndexWidth } from '@shared/playlists'
-import { sanitizeTagFields } from '@shared/tags'
+import { sanitizeArtworkKey, sanitizeTagFields } from '@shared/tags'
 import { sanitizeLyricsOffset } from '@shared/lyrics'
 import type {
   AccentName,
@@ -69,6 +69,8 @@ import {
   stageRestore
 } from '@core/db/backups'
 import { normalizePath } from '@core/library/content-key'
+import { mimeForExtension } from '@core/library/artwork'
+import type { TagArtworkWrite } from '@core/library/library-service'
 import { libraryCsv } from '@core/library/library-csv'
 import { sanitizeTaskbarState } from '@shared/taskbar'
 import { applyTaskbarControls } from './taskbar'
@@ -892,16 +894,51 @@ export function registerIpcHandlers(container: AppContainer): void {
 
   ipcMain.handle(IPC.libraryStats, () => library.stats())
 
-  ipcMain.handle(IPC.libraryUpdateTags, async (_event, trackId: unknown, input: unknown) => {
-    const id = toTrackId(trackId)
-    const fields = sanitizeTagFields(input)
-    if (playingTrackId === id) {
-      throw new Error(
-        'Stop this track, or play something else, before editing its tags: the file is open for playback.'
-      )
+  ipcMain.handle(
+    IPC.libraryUpdateTags,
+    async (_event, trackId: unknown, input: unknown, artworkKey: unknown) => {
+      const id = toTrackId(trackId)
+      // Absent means "leave the picture alone"; null means "remove it". The two
+      // are different writes, so they cannot both collapse to `undefined`.
+      const wantsArtwork = artworkKey !== undefined
+      const key = wantsArtwork ? sanitizeArtworkKey(artworkKey) : undefined
+      const fields = sanitizeTagFields(input, { allowEmpty: wantsArtwork })
+      if (playingTrackId === id) {
+        throw new Error(
+          'Stop this track, or play something else, before editing its tags: the file is open for playback.'
+        )
+      }
+
+      let artwork: TagArtworkWrite | undefined
+      if (wantsArtwork) {
+        if (key === null) {
+          artwork = { image: null, key: '' }
+        } else if (key) {
+          // Read the cached bytes the picker showed, so the written cover is
+          // exactly the previewed one rather than a second download.
+          const cached = container.artwork.pathFor(key)
+          if (!cached) throw new Error('That cover is no longer available. Choose it again.')
+          const data = await readFile(cached)
+          artwork = {
+            image: { data, mime: mimeForExtension(extname(cached)) },
+            key
+          }
+        }
+      }
+
+      return library.updateTags(id, fields, artwork)
     }
-    return library.updateTags(id, fields)
-  })
+  )
+
+  // The cheap answer: what is already on this machine. The picker calls this
+  // when it opens, and asks for provider covers only if the user asks.
+  ipcMain.handle(IPC.libraryArtworkChoices, (_event, trackId: unknown) =>
+    container.artworkChoices.local(toTrackId(trackId))
+  )
+
+  ipcMain.handle(IPC.libraryArtworkCovers, (_event, trackId: unknown) =>
+    container.artworkChoices.online(toTrackId(trackId))
+  )
 
   // The finder reads the row, not the file, and only proposes. It is allowed
   // while the track plays: nothing is written until the editor saves.

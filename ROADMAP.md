@@ -635,7 +635,7 @@ port inherits the metadata core instead of reimplementing it. M12 set the same p
 
 **Phase 3 — single-track auto-tag and artwork**
 - [x] iTunes + MusicBrainz lookup, duration-aware scoring, review dialog, apply through the writer
-- [ ] Artwork picker: embedded / `cover.jpg` / video still / provider cover, with a square-crop preview
+- [x] Artwork picker: embedded / `cover.jpg` / video still / provider cover, with a square-crop preview
 
 **Phase 4 — lyrics finder**
 - [ ] LRCLIB fetch, match, cache, source label, offset; optional "write into the file"

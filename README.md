@@ -155,6 +155,12 @@ best few appear with a strong, likely or possible badge. A field the file alread
 replaces what is there on purpose. Nothing is written when you apply a match: it fills the form, and **Save** is still
 the one moment the file changes.
 
+**Cover** in the editor opens a picker for the artwork. It shows the picture already in the file, a `cover.jpg` (or
+`folder`/`front`/`album`/`albumart`) beside it, and the still from the video the track was downloaded from — all
+square-cropped, so the preview is what the player will show. **Search online** adds covers from the same two providers.
+Choosing one only changes the preview; **Save tags** embeds it, and **Remove the cover** takes it out. MP3, FLAC and
+M4A/M4B can hold a cover today; Ogg and Opus cannot, so the picker refuses a cover there while the text tags still save.
+
 The file itself is rewritten, not just the library row. The new version is written to a temporary file in the same
 folder, read back to check it, and only then swapped in; the previous version is kept in `backups/tags` under the app
 data folder. MP3, FLAC, M4A/M4B, Ogg and Opus are writable today, and WAV, AIFF, AAC, WMA, APE, WavPack and Musepack are

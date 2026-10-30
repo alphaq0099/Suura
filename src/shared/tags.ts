@@ -28,11 +28,39 @@ export const TAG_POSITION_MAX = 999
 export const TAG_YEAR_MIN = 1000
 export const TAG_YEAR_MAX = 3000
 
+/**
+ * The shape of an artwork cache key.
+ *
+ * Keys are hashes the artwork service generated, and they are used as file
+ * names, so nothing else may get through: a key is 40 hex characters and a
+ * known image extension, exactly.
+ */
+export const ARTWORK_KEY_PATTERN = /^[0-9a-f]{40}\.(jpg|png|webp|gif|bmp)$/
+
+export function sanitizeArtworkKey(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+  if (typeof value !== 'string') throw new Error('Invalid artwork key.')
+  const key = value.trim()
+  if (key.length === 0) return null
+  if (!ARTWORK_KEY_PATTERN.test(key)) throw new Error('Invalid artwork key.')
+  return key
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-export function sanitizeTagFields(value: unknown): TrackTagFields {
+export interface SanitizeTagOptions {
+  /**
+   * Allow a patch with no text fields at all.
+   *
+   * The artwork picker can change only the cover, and that is still a write the
+   * user asked for. Every other caller keeps the stricter rule.
+   */
+  allowEmpty?: boolean
+}
+
+export function sanitizeTagFields(value: unknown, options: SanitizeTagOptions = {}): TrackTagFields {
   if (!isPlainObject(value)) throw new Error('Malformed tag fields.')
   const fields: TrackTagFields = {}
   let count = 0
@@ -91,6 +119,6 @@ export function sanitizeTagFields(value: unknown): TrackTagFields {
     count += 1
   }
 
-  if (count === 0) throw new Error('No tag fields were given.')
+  if (count === 0 && !options.allowEmpty) throw new Error('No tag fields were given.')
   return fields
 }

@@ -37,6 +37,7 @@ import { StreamCache } from '../stream-cache'
 import { createOnlineService, type OnlineService } from '../online-service'
 import { ReplayGainService } from '../replay-gain-service'
 import { createTagLookup, type TagLookup } from '@core/library/tag-lookup'
+import { createArtworkChoices, type ArtworkChoicesService } from '../artwork-choices'
 import { createYoutubeService, type YoutubeService } from '../youtube-service'
 
 /**
@@ -86,6 +87,8 @@ export interface AppContainer {
   lyrics: LyricsService
   /** iTunes and MusicBrainz lookups for the tag finder. */
   tagLookup: TagLookup
+  /** The covers the artwork picker offers, local and provider-supplied. */
+  artworkChoices: ArtworkChoicesService
   dispose(): void
 }
 
@@ -224,6 +227,12 @@ export function createContainer(): AppContainer {
   // The client owns its own timeouts and never throws: a provider being down is
   // a sentence in the review dialog, not a failed request.
   const tagLookup = createTagLookup({ log: log.child('tag-lookup') })
+  const artworkChoices = createArtworkChoices({
+    repo,
+    artwork,
+    tagLookup,
+    log: log.child('artwork-choices')
+  })
 
   // A crash or a force-quit never runs the download's `finally`, so sweep the
   // temp folders before anything can start writing a new one.
@@ -343,6 +352,7 @@ export function createContainer(): AppContainer {
     tagWriter,
     lyrics,
     tagLookup,
+    artworkChoices,
     dispose: () => {
       unwatchSettings()
       unwatchTheme()
