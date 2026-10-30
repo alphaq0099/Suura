@@ -3739,7 +3739,7 @@ input[type='radio'] {
   inset: 12px 16px 12px auto;
   display: flex;
   flex-direction: column;
-  width: min(340px, calc(100% - 32px));
+  width: min(380px, calc(100% - 32px));
   pointer-events: auto;
   background: rgb(var(--np-panel-rgb) / 84%);
   backdrop-filter: blur(22px) saturate(120%);
@@ -3900,7 +3900,7 @@ input[type='radio'] {
    not push the timing controls off the bottom of the panel. */
 .np-lyrics-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
   padding: 14px 16px 12px 18px;
@@ -3909,23 +3909,29 @@ input[type='radio'] {
 
 .np-lyrics-head h2 {
   margin: 0;
-  font-size: calc(12px * var(--text-scale));
+  font-size: calc(11.5px * var(--text-scale));
   font-weight: 600;
-  letter-spacing: 0.8px;
+  letter-spacing: 1.1px;
   text-transform: uppercase;
-  color: var(--text-dim);
+  color: var(--text-faint);
 }
 
 .np-lyrics-meta {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: calc(11.5px * var(--text-scale));
-  color: var(--text-faint);
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgb(var(--np-overlay-rgb) / 5%);
+  font-size: calc(11px * var(--text-scale));
+  line-height: 1.35;
+  color: var(--text-dim);
   white-space: nowrap;
 }
 
 .np-lyrics-body {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -3942,9 +3948,21 @@ input[type='radio'] {
   overflow-y: auto;
   overscroll-behavior: contain;
   margin: 0;
-  padding: 14px 10px;
+  padding: 18px 10px 24px;
   list-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
   scrollbar-gutter: stable;
+  scroll-padding-block: 44px;
+  /* Lines dissolve into the header and footer instead of being sliced by the
+     scroll edge. The padding keeps the first and last line clear of the fade. */
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 16px,
+    #000 calc(100% - 20px),
+    transparent 100%
+  );
 }
 
 .np-lyrics-list > li {
@@ -3957,30 +3975,38 @@ input[type='radio'] {
 .np-lyric-line {
   display: block;
   width: 100%;
-  padding: 5px 10px;
+  padding: 7px 12px;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: 8px;
   background: none;
   font: inherit;
-  font-size: calc(14px * var(--text-scale));
-  line-height: 1.45;
+  font-size: calc(14.5px * var(--text-scale));
+  line-height: 1.5;
   text-align: left;
   color: var(--text-dim);
   cursor: pointer;
   transition:
-    color 140ms ease,
-    background 140ms ease;
+    color 160ms ease,
+    background-color 160ms ease;
 }
 
-.np-lyric-line:hover {
-  background: rgb(var(--np-overlay-rgb) / 7%);
+.np-lyric-line:not(.current):hover {
+  background: rgb(var(--np-overlay-rgb) / 6%);
   color: var(--text);
 }
 
+/* The highlight is a fill, not a slab: it grows across the line as the line is
+   sung, so the eye can tell a long line from a short one. `--line-progress` is
+   set inline by the panel, in the same idiom as the seek bar. */
 .np-lyric-line.current {
-  background: rgb(var(--accent-rgb) / 14%);
   color: var(--text);
   font-weight: 600;
+  background: linear-gradient(
+    90deg,
+    rgb(var(--accent-rgb) / 26%) 0 var(--line-progress, 0%),
+    rgb(var(--accent-rgb) / 8%) var(--line-progress, 0%) 100%
+  );
+  box-shadow: inset 2px 0 0 rgb(var(--accent-rgb) / 90%);
 }
 
 .np-lyric-line:focus-visible {
@@ -3996,12 +4022,40 @@ input[type='radio'] {
   overflow-y: auto;
   overscroll-behavior: contain;
   margin: 0;
-  padding: 16px 18px;
-  font-size: calc(14px * var(--text-scale));
-  line-height: 1.55;
+  padding: 20px 20px 26px;
+  font-size: calc(15px * var(--text-scale));
+  line-height: 1.65;
   color: var(--text-dim);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+
+/* The panel is a card, not the page, so the bar is inset from the card edge and
+   never shows the app background through its border. */
+.np-lyrics-list::-webkit-scrollbar,
+.np-lyrics-plain::-webkit-scrollbar {
+  width: 10px;
+}
+
+.np-lyrics-list::-webkit-scrollbar-track,
+.np-lyrics-plain::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.np-lyrics-list::-webkit-scrollbar-thumb,
+.np-lyrics-plain::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 999px;
+}
+
+.np-lyrics-list::-webkit-scrollbar-thumb:hover,
+.np-lyrics-plain::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+  background-clip: padding-box;
 }
 
 .np-lyrics-empty,
@@ -4012,16 +4066,64 @@ input[type='radio'] {
   justify-content: center;
   gap: 9px;
   margin: 0;
-  padding: 22px 20px;
+  padding: 24px 22px;
   font-size: calc(13px * var(--text-scale));
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--text-faint);
   text-align: center;
+}
+
+/* Nothing found is a state worth reading, not a one-line error: the note sits
+   above the sentence and the sentence gets a measure. */
+.np-lyrics-none {
+  flex-direction: column;
+  gap: 12px;
+  max-width: 34ch;
+  margin-inline: auto;
+}
+
+.np-lyrics-none svg {
+  opacity: 0.6;
 }
 
 .np-lyrics-error {
   color: var(--danger-text);
   overflow-wrap: anywhere;
+}
+
+/* Shown only while the follow is paused, so reading back a verse is possible
+   without losing the way home. */
+.np-lyrics-resume {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgb(var(--np-panel-rgb) / 92%);
+  box-shadow: var(--np-panel-shadow);
+  backdrop-filter: blur(10px);
+  font: inherit;
+  font-size: calc(11.5px * var(--text-scale));
+  color: var(--text-dim);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 140ms ease,
+    border-color 140ms ease;
+}
+
+.np-lyrics-resume:hover {
+  border-color: rgb(var(--accent-rgb) / 60%);
+  color: var(--text);
+}
+
+.np-lyrics-resume svg {
+  opacity: 0.8;
 }
 
 .np-lyrics-foot {
@@ -4033,9 +4135,9 @@ input[type='radio'] {
 }
 
 .np-lyrics-foot button {
-  padding: 5px 9px;
+  padding: 5px 10px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 999px;
   background: transparent;
   font: inherit;
   font-size: calc(12px * var(--text-scale));
@@ -4066,6 +4168,8 @@ input[type='radio'] {
 
 .np-lyrics-reset {
   margin-left: auto;
+  border-color: transparent;
+  color: var(--text-faint);
 }
 
 /* No border and no background of its own: the scrim behind this band already

@@ -3680,12 +3680,15 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       lyricMeta: string
       lyricCurrent: number
       lyricSeeked: boolean
+      lyricFill: boolean
+      lyricPaused: boolean
+      lyricResumed: boolean
       escapeHidLyrics: boolean
       escapeKeptWindowAfterLyrics: boolean
     }>(
       window,
       `(async () => {
-         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, volumeBeforeWheel: -1, volumeAfterWheel: -1, volumeWheelTop: -1, volumeWheelBottom: -1, wheelCancelled: false, barVolumeBefore: -1, barVolumeMuted: -1, barMutePressed: '', barVolumeRestored: -1, barPopHidden: false, barPopVertical: false, barPopWithin: false, barPopShownByFocus: false, barKeyBefore: -1, barKeyAfter: -1, barKeyProgress: '', barKeyRestored: -1, panelClosedByOutsidePress: false, panelStayedOpenOnInsidePress: false, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false, panelCloseState: '', lyricsOpened: false, queueClosedByLyrics: false, lyricRows: 0, lyricMeta: '', lyricCurrent: 0, lyricSeeked: false, escapeHidLyrics: false, escapeKeptWindowAfterLyrics: false }
+         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, volumeBeforeWheel: -1, volumeAfterWheel: -1, volumeWheelTop: -1, volumeWheelBottom: -1, wheelCancelled: false, barVolumeBefore: -1, barVolumeMuted: -1, barMutePressed: '', barVolumeRestored: -1, barPopHidden: false, barPopVertical: false, barPopWithin: false, barPopShownByFocus: false, barKeyBefore: -1, barKeyAfter: -1, barKeyProgress: '', barKeyRestored: -1, panelClosedByOutsidePress: false, panelStayedOpenOnInsidePress: false, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false, panelCloseState: '', lyricsOpened: false, queueClosedByLyrics: false, lyricRows: 0, lyricMeta: '', lyricCurrent: 0, lyricSeeked: false, lyricFill: false, lyricPaused: false, lyricResumed: false, escapeHidLyrics: false, escapeKeptWindowAfterLyrics: false }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (selector) => document.querySelector(selector)
          const press = (element) => { if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
@@ -4023,6 +4026,18 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         if (lyricLines()[1]) press(lyricLines()[1])
         await sleep(500)
         out.lyricSeeked = lyricLines().findIndex((line) => line.classList.contains('current')) === 1
+        // The highlight is a fill that grows with the line, and a manual scroll
+        // stops the panel from pulling itself back while the verse is read.
+        const currentLine = pick('.np-lyric-line.current')
+        out.lyricFill =
+          Boolean(currentLine) && Boolean(currentLine.style.getPropertyValue('--line-progress'))
+        const lyricList = pick('.np-lyrics-list')
+        if (lyricList) lyricList.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 120 }))
+        await sleep(250)
+        out.lyricPaused = Boolean(pick('.np-lyrics-resume'))
+        press(pick('.np-lyrics-resume'))
+        await sleep(250)
+        out.lyricResumed = !pick('.np-lyrics-resume')
         pressEscape()
         await sleep(400)
         out.escapeHidLyrics = await lyricsHidden(2000)
@@ -4179,6 +4194,15 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       `${visuals.lyricCurrent} marked`
     )
     record(visuals.lyricSeeked, 'clicking a lyric line seeks to it and moves the highlight')
+    record(
+      visuals.lyricFill,
+      'the line being sung fills as it plays, so a long line reads as long'
+    )
+    record(
+      visuals.lyricPaused && visuals.lyricResumed,
+      'scrolling the lyrics pauses the follow until you jump back to the current line',
+      `paused ${visuals.lyricPaused} / resumed ${visuals.lyricResumed}`
+    )
     record(
       visuals.escapeHidLyrics && visuals.escapeKeptWindowAfterLyrics,
       'Escape shuts the lyrics panel without shutting the player window'

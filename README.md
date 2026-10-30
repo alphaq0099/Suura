@@ -180,9 +180,10 @@ the track. When both exist the `.lrc` wins, because it is the copy you can edit 
 UTF-16 sidecars are both read, with or without a byte-order mark.
 
 Timed lyrics follow the song: the current line is highlighted and scrolled into view, and clicking a line seeks there.
-**−0.5 s** and **+0.5 s** correct a lyric that runs early or late, and **Reset** removes the correction. The offset is
-saved per track and source in the library database, never written into the file. A `[offset:]` tag inside the `.lrc` is
-honoured on top of it.
+The highlight fills across the line as it is sung, so a line that lasts longer looks longer. Scrolling the panel by hand
+pauses the follow for a few seconds; **Jump to the current line** brings it straight back. **−0.5 s** and **+0.5 s**
+correct a lyric that runs early or late, and **Reset** removes the correction. The offset is saved per track and source
+in the library database, never written into the file. A `[offset:]` tag inside the `.lrc` is honoured on top of it.
 
 This is read-only. Nothing here touches the network or rewrites a file, and a stream has no file to read, so it shows no
 lyrics.

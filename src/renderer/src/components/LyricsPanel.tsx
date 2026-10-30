@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { Track, TrackLyrics } from '@shared/types'
 import {
   LYRICS_OFFSET_MAX,
@@ -9,7 +9,7 @@ import {
   type LyricLine
 } from '@shared/lyrics'
 import { api, messageOf } from '../api'
-import { SpinnerIcon } from './Icons'
+import { ChevronDownIcon, MusicIcon, SpinnerIcon } from './Icons'
 
 export interface LyricsPanelProps {
   track: Track | null
@@ -41,6 +41,9 @@ function emptyMessage(track: Track | null): string {
   return 'No lyrics in this file. Add them from Edit tags, or put a .lrc file with the same name next to it.'
 }
 
+/** How long a manual scroll keeps the panel from pulling itself back. */
+const FOLLOW_PAUSE_MS = 5000
+
 /**
  * The lyrics a local file already has, shown next to the player.
  *
@@ -56,16 +59,30 @@ export function LyricsPanel(props: LyricsPanelProps) {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [following, setFollowing] = useState(true)
   const listRef = useRef<HTMLOListElement | null>(null)
   const activeRef = useRef<HTMLLIElement | null>(null)
   const requestRef = useRef(0)
+  const resumeRef = useRef<number | null>(null)
+  const reducedMotionRef = useRef(false)
 
   // A different track has different lyrics; clearing here also stops the old
   // ones flashing during the slide-in when the panel is reopened.
   useEffect(() => {
     setLyrics(null)
     setError(null)
+    setFollowing(true)
   }, [trackId])
+
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const update = (): void => {
+      reducedMotionRef.current = query.matches
+    }
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
 
   useEffect(() => {
     if (!open || trackId === null) return
@@ -92,16 +109,52 @@ export function LyricsPanel(props: LyricsPanelProps) {
   const offsetMs = (lyrics?.offsetMs ?? 0) + parsed.fileOffsetMs
   const active = activeLyricIndex(lines, positionMs, offsetMs)
 
+  // A line stays highlighted until the next one starts, so it can show how far
+  // through it the song is. The file has no word timings, and pretending
+  // otherwise with an invented curve would be a lie; a line-level fill is the
+  // honest version of the same idea.
+  const lineProgress = useMemo(() => {
+    const line = active >= 0 ? lines[active] : undefined
+    if (!line) return 0
+    const start = line.timeMs + offsetMs
+    const next = lines[active + 1]
+    const end = next ? next.timeMs + offsetMs : Math.max(durationMs, start + 1)
+    const span = Math.max(1, end - start)
+    return Math.min(1, Math.max(0, (positionMs - start) / span))
+  }, [active, lines, offsetMs, positionMs, durationMs])
+
   // Follow the song, but scroll only the list: `scrollIntoView` would also move
   // the page behind the player.
-  useEffect(() => {
-    if (!open || active < 0) return
+  const centerActive = useCallback((): void => {
     const list = listRef.current
     const row = activeRef.current
     if (!list || !row) return
     const top = row.offsetTop - list.clientHeight / 2 + row.offsetHeight / 2
-    list.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
-  }, [open, active])
+    list.scrollTo({ top: Math.max(0, top), behavior: reducedMotionRef.current ? 'auto' : 'smooth' })
+  }, [])
+
+  useEffect(() => {
+    if (!open || active < 0 || !following) return
+    centerActive()
+  }, [open, active, following, centerActive])
+
+  // Reading back a verse the song has left behind is a normal thing to want, so
+  // a manual scroll stops the follow for a moment instead of fighting the user.
+  const pauseFollow = useCallback((): void => {
+    setFollowing(false)
+    if (resumeRef.current !== null) window.clearTimeout(resumeRef.current)
+    resumeRef.current = window.setTimeout(() => {
+      resumeRef.current = null
+      setFollowing(true)
+    }, FOLLOW_PAUSE_MS)
+  }, [])
+
+  useEffect(
+    () => () => {
+      if (resumeRef.current !== null) window.clearTimeout(resumeRef.current)
+    },
+    []
+  )
 
   const shift = (delta: number): void => {
     if (!track || !lyrics || saving) return
@@ -160,17 +213,32 @@ export function LyricsPanel(props: LyricsPanelProps) {
             {error}
           </p>
         ) : !lyrics ? (
-          <p className="np-lyrics-empty">{emptyMessage(track)}</p>
+          <p className="np-lyrics-empty np-lyrics-none">
+            <MusicIcon size={22} />
+            <span>{emptyMessage(track)}</span>
+          </p>
         ) : lines.length === 0 ? (
           <p className="np-lyrics-plain">{lyrics.text}</p>
         ) : (
-          <ol className="np-lyrics-list" ref={listRef} title="Click a line to play from there">
+          <ol
+            className="np-lyrics-list"
+            ref={listRef}
+            title="Click a line to play from there"
+            onWheel={pauseFollow}
+          >
             {lines.map((line, index) => (
               <li key={`${line.timeMs}-${index}`} ref={index === active ? activeRef : undefined}>
                 <button
                   type="button"
                   className={index === active ? 'np-lyric-line current' : 'np-lyric-line'}
                   aria-current={index === active ? 'true' : undefined}
+                  style={
+                    index === active
+                      ? ({
+                          '--line-progress': `${(lineProgress * 100).toFixed(1)}%`
+                        } as CSSProperties)
+                      : undefined
+                  }
                   onClick={() => seekTo(line)}
                 >
                   {line.text.length > 0 ? line.text : '♪'}
@@ -179,6 +247,18 @@ export function LyricsPanel(props: LyricsPanelProps) {
             ))}
           </ol>
         )}
+
+        {!following && active >= 0 ? (
+          <button
+            type="button"
+            className="np-lyrics-resume"
+            onClick={() => setFollowing(true)}
+            title="Scroll back to the line being sung"
+          >
+            <ChevronDownIcon size={14} />
+            <span>Jump to the current line</span>
+          </button>
+        ) : null}
       </div>
 
       {lyrics && lines.length > 0 ? (
