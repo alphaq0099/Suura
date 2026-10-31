@@ -89,6 +89,8 @@ export class PoTokenProvider {
   private lastError: string | null = null
   private stderrTail = ''
   private stopping = false
+  /** Set until the first YouTube request of the session spends the auto-start. */
+  private autoStartArmed = true
 
   constructor(
     private readonly deps: {
@@ -210,8 +212,29 @@ export class PoTokenProvider {
     }
   }
 
-  /** Called at startup and when the relevant settings change. */
-  maybeAutoStart(): void {
+  /**
+   * Re-arms the one-shot auto-start.
+   *
+   * Changing the provider switch, URL or command must not launch a process by
+   * itself: the next YouTube request is the moment the user actually needs it.
+   * Re-arming here means that request can still start the new configuration,
+   * and that disabling and re-enabling the feature works without a restart.
+   */
+  armAutoStart(): void {
+    this.autoStartArmed = true
+  }
+
+  /**
+   * The first real YouTube request of a session may start the provider.
+   *
+   * Launching it at startup cost ~160 MB and a cold start of up to a minute,
+   * and most sessions never play a stream. One request is enough to arm it for
+   * the rest of the session; a manual stop is respected, and changing the
+   * relevant settings arms it again.
+   */
+  noteYouTubeRequest(): void {
+    if (!this.autoStartArmed) return
+    this.autoStartArmed = false
     const engine = this.deps.engine()
     if (!engine.poTokenEnabled || !engine.poTokenAutoStart) return
     if (!engine.poTokenProviderCommand?.trim()) return

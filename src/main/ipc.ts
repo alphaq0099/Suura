@@ -82,7 +82,6 @@ import {
   QUALITY_TIERS,
   RETENTION_MODES
 } from '@shared/settings-defaults'
-import { getEngineStatus } from '@engine/sidecar/engine-status'
 import {
   isCookieFallbackMode,
   isSupportedCookieBrowser,
@@ -1228,9 +1227,9 @@ export function registerIpcHandlers(container: AppContainer): void {
     library.reportPlayback(toTrackId(trackId), played, finished)
   })
 
-  ipcMain.handle(IPC.engineStatus, async () => {
+  ipcMain.handle(IPC.engineStatus, async (_event, force: unknown) => {
     const [status, poToken] = await Promise.all([
-      getEngineStatus(settings.get().engine),
+      container.engineStatus.get(settings.get().engine, { force: force === true }),
       container.poToken.status()
     ])
     log.debug('engine status probed', { ready: status.ready, poToken: poToken.serverReachable })

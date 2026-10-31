@@ -26,6 +26,10 @@ const SCALE = process.argv.includes('--scale')
 const PERF = process.argv.includes('--perf')
 const HEADLESS = SELFTEST || SCALE || PERF
 const HEADLESS_KIND = SELFTEST ? 'selftest' : SCALE ? 'scale' : 'perf'
+// The automated runs drive the UI while it sits behind another window, so they
+// need timers and animation frames to keep running. The real app lets Chromium
+// throttle a hidden window normally; playback keeps its own timers alive.
+const WINDOW_OPTIONS = { backgroundThrottling: !(SELFTEST || SCALE) }
 let headlessDataDir: string | null = null
 
 // The headless runs use throwaway settings, so an automatic `yt-dlp -U` would
@@ -121,7 +125,7 @@ function start(): void {
       // the headless CI run agree about what "fast enough" means.
       const coreFailures = scale ? checkScaleBudgets(scale) : 0
       const windowStartedAt = Date.now()
-      const window = createMainWindow(appContainer.log.child('window'))
+      const window = createMainWindow(appContainer.log.child('window'), WINDOW_OPTIONS)
 
       if (!HEADLESS) {
         tray = installTray({ window, log: appContainer.log.child('tray') })
@@ -167,7 +171,7 @@ function start(): void {
       app.on('activate', () => {
         const [existing] = BrowserWindow.getAllWindows()
         if (existing) focusWindow(existing)
-        else createMainWindow(appContainer.log.child('window'))
+        else createMainWindow(appContainer.log.child('window'), WINDOW_OPTIONS)
       })
     })
     .catch((error: unknown) => {

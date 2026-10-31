@@ -25,6 +25,7 @@ import { InnerTubeMetadataClient } from '@engine/innertube'
 import { LocalFileResolver } from '@engine/local-file-resolver'
 import { ResolverRegistry } from '@engine/resolver'
 import { PoTokenProvider } from '@engine/sidecar/po-token'
+import { EngineStatusCache } from '@engine/sidecar/engine-status'
 import { probeExecutable } from '@engine/sidecar/locate'
 import { YtDlpClient } from '@engine/sidecar/yt-dlp'
 import { YouTubeResolver } from '@engine/youtube-resolver'
@@ -79,6 +80,8 @@ export interface AppContainer {
   streamPlays: StreamPlayRepository
   /** Starts/stops an external PO Token provider when the user asks. */
   poToken: PoTokenProvider
+  /** Saved yt-dlp/ffmpeg probe, so Settings opens without waiting. */
+  engineStatus: EngineStatusCache
   /** Measures ReplayGain for local files in the background. */
   replayGain: ReplayGainService
   /** The only writer that modifies a user's files; exposed for later phases. */
@@ -151,12 +154,21 @@ export function createContainer(): AppContainer {
     engine: () => settings.get().engine,
     log: log.child('yt-dlp')
   })
+  // The probe is saved between runs: opening Settings should not wait for two
+  // child processes every time the app starts.
+  const engineStatus = new EngineStatusCache({
+    file: join(paths.userData, 'engine-status.json'),
+    log: log.child('engine-status')
+  })
   scheduleEngineAutoUpdate({ settings, ytDlp, log: log.child('yt-dlp-update') })
   const youtube = createYoutubeService(
     new YouTubeResolver({
       info: ytDlp,
       log: log.child('youtube'),
-      quality: () => settings.get().retention.qualityTier
+      quality: () => settings.get().retention.qualityTier,
+      // The provider is expensive and most launches never stream, so it starts
+      // on the first real YouTube request rather than at app start.
+      onYouTubeRequest: () => poToken.noteYouTubeRequest()
     })
   )
   resolvers.register(youtube.resolver)
@@ -309,15 +321,22 @@ export function createContainer(): AppContainer {
   })
 
   // Turning the feature off must not leave a process the app started running.
-  // Turning it on with auto-start set can start the provider without a restart.
+  // Any change to the provider's own settings re-arms the one-shot auto-start:
+  // nothing launches just because Settings was touched, but the next YouTube
+  // request can start the new configuration without a restart.
+  let poTokenConfig = settings.get().engine
   const unwatchPoToken = settings.onChange((next) => {
-    if (!next.engine.poTokenEnabled) {
-      poToken.stopIfManaged()
-      return
-    }
-    if (next.engine.poTokenAutoStart) poToken.maybeAutoStart()
+    const previous = poTokenConfig
+    poTokenConfig = next.engine
+    const relevantChange =
+      previous.poTokenEnabled !== next.engine.poTokenEnabled ||
+      previous.poTokenAutoStart !== next.engine.poTokenAutoStart ||
+      previous.poTokenProviderCommand !== next.engine.poTokenProviderCommand ||
+      previous.poTokenProviderUrl !== next.engine.poTokenProviderUrl
+    if (!relevantChange) return
+    if (!next.engine.poTokenEnabled) poToken.stopIfManaged()
+    poToken.armAutoStart()
   })
-  poToken.maybeAutoStart()
 
   const replayGain = new ReplayGainService({
     settings,
@@ -348,6 +367,7 @@ export function createContainer(): AppContainer {
     onlinePlaylists,
     streamPlays,
     poToken,
+    engineStatus,
     replayGain,
     tagWriter,
     lyrics,

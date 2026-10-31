@@ -238,7 +238,7 @@ const api: PlayerApi = {
   reportPlayback: (trackId: number, playedMs: number, completed: boolean) =>
     ipcRenderer.invoke(IPC.mediaReportPlay, trackId, playedMs, completed) as Promise<void>,
 
-  getEngineStatus: () => ipcRenderer.invoke(IPC.engineStatus),
+  getEngineStatus: (force?: boolean) => ipcRenderer.invoke(IPC.engineStatus, force === true),
 
   getPoTokenStatus: () => ipcRenderer.invoke(IPC.poTokenStatus),
 

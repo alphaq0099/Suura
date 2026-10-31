@@ -79,6 +79,12 @@ export class YouTubeResolver implements MediaResolver {
       log: Logger
       quality: () => QualityTier
       now?: () => number
+      /**
+       * Called the first time this session actually asks YouTube for media.
+       * The container uses it to start the PO Token provider lazily, so an
+       * app launch that never streams pays nothing for it.
+       */
+      onYouTubeRequest?: () => void
     }
   ) {
     this.proxy = new RemoteStreamProxy(async (videoId) => {
@@ -179,6 +185,11 @@ export class YouTubeResolver implements MediaResolver {
 
     const pending = this.inFlight.get(videoId)
     if (pending) return pending
+
+    // A cache miss means a real sidecar run, and that is the moment the PO
+    // Token provider becomes useful. Calling it after the cache check keeps a
+    // prefetch from warming it on behalf of a track that never plays.
+    this.deps.onYouTubeRequest?.()
 
     const work = this.deps.info
       .fetchInfo(videoId, this.deps.quality())

@@ -50,7 +50,7 @@ import {
   textSimilarity,
   titleVariants
 } from '@shared/auto-tag'
-import type { AlbumSummary, TagCandidate, TagLookupQuery, Track } from '@shared/types'
+import type { AlbumSummary, EngineStatus, TagCandidate, TagLookupQuery, Track } from '@shared/types'
 import { serializeDetails, silentLogger } from '@core/logging/logger'
 import {
   DIAGNOSTICS_SUMMARY_LIMIT,
@@ -123,7 +123,7 @@ import { LyricsRepository } from '@core/library/lyrics-repository'
 import { LyricsService } from '@core/library/lyrics-service'
 import { LocalFileResolver } from '@engine/local-file-resolver'
 import { parseEbur128Summary } from '@engine/replay-gain'
-import { getEngineStatus } from '@engine/sidecar/engine-status'
+import { EngineStatusCache, getEngineStatus } from '@engine/sidecar/engine-status'
 import { RequestScheduler } from '@engine/sidecar/request-scheduler'
 import {
   parseChannelInfo,
@@ -305,6 +305,67 @@ async function main(): Promise<void> {
       engine.ytDlp.version ? ` (${engine.ytDlp.version})` : ''
     }\n`
   )
+
+  // The saved probe is what makes the first Settings open instant after a
+  // restart. The probe is injected so this never spawns a binary.
+  const cacheRoot = await mkdtemp(join(tmpdir(), 'player-engine-cache-'))
+  const cacheFile = join(cacheRoot, 'engine-status.json')
+  const fakeStatus = (version: string): EngineStatus => ({
+    ytDlp: {
+      name: 'yt-dlp',
+      found: true,
+      path: join(cacheRoot, 'yt-dlp.exe'),
+      version,
+      source: 'path',
+      error: null
+    },
+    ffmpeg: {
+      name: 'ffmpeg',
+      found: true,
+      path: join(cacheRoot, 'ffmpeg.exe'),
+      version: 'fake-ffmpeg',
+      source: 'path',
+      error: null
+    },
+    ready: true
+  })
+  const cacheEngine = { ...DEFAULT_SETTINGS.engine }
+  let cacheProbes = 0
+  const statusCache = new EngineStatusCache({
+    file: cacheFile,
+    log: silentLogger,
+    probe: async () => {
+      cacheProbes += 1
+      return fakeStatus(`probe-${cacheProbes}`)
+    }
+  })
+  const firstProbe = await statusCache.get(cacheEngine)
+  const secondProbe = await statusCache.get(cacheEngine)
+  checkEqual('engine cache: the first read runs the probe', cacheProbes, 1)
+  checkEqual('engine cache: the next read is served from memory', cacheProbes, 1)
+  checkEqual('engine cache: the probe result is returned', firstProbe.ytDlp.version, 'probe-1')
+  checkEqual('engine cache: the cached result is returned', secondProbe.ytDlp.version, 'probe-1')
+
+  let restartProbes = 0
+  const afterRestart = new EngineStatusCache({
+    file: cacheFile,
+    log: silentLogger,
+    probe: async () => {
+      restartProbes += 1
+      return fakeStatus('after-restart')
+    }
+  })
+  const restored = await afterRestart.get(cacheEngine)
+  checkEqual('engine cache: a restart reads the saved probe', restartProbes, 0)
+  checkEqual('engine cache: the saved version survives a restart', restored.ytDlp.version, 'probe-1')
+
+  const forced = await statusCache.get(cacheEngine, { force: true })
+  checkEqual('engine cache: Refresh runs a new probe', cacheProbes, 2)
+  checkEqual('engine cache: Refresh returns the new result', forced.ytDlp.version, 'probe-2')
+
+  await statusCache.get({ ...cacheEngine, binDir: cacheRoot })
+  checkEqual('engine cache: a changed engine folder is probed again', cacheProbes, 3)
+  await rm(cacheRoot, { recursive: true, force: true })
 
   const ffmpegPath = engine.ffmpeg.path
   if (!ffmpegPath) {
@@ -3118,6 +3179,40 @@ async function main(): Promise<void> {
       )
     } finally {
       provider.dispose()
+    }
+
+    // Startup no longer spawns the provider: the first YouTube request does,
+    // and only once. The command here writes a marker and exits, so the check
+    // is about the spawn and nothing else.
+    const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+    const latchRoot = await mkdtemp(join(tmpdir(), 'player-po-latch-'))
+    const latchMarker = join(latchRoot, 'started.txt')
+    const latchEngine = {
+      ...DEFAULT_SETTINGS.engine,
+      poTokenEnabled: true,
+      poTokenAutoStart: false,
+      poTokenProviderCommand: `"${process.execPath}" -e "require('node:fs').writeFileSync(process.argv[1], 'started')" "${latchMarker}"`
+    }
+    const latch = new PoTokenProvider({ engine: () => latchEngine, log: silentLogger })
+    try {
+      latch.noteYouTubeRequest()
+      await wait(300)
+      check(
+        'provider: a YouTube request leaves auto-start off alone',
+        !existsSync(latchMarker)
+      )
+      latchEngine.poTokenAutoStart = true
+      latch.armAutoStart()
+      latch.noteYouTubeRequest()
+      let spawned = false
+      for (let attempt = 0; attempt < 40 && !spawned; attempt += 1) {
+        await wait(50)
+        spawned = existsSync(latchMarker)
+      }
+      check('provider: the first YouTube request starts an auto-start provider', spawned)
+    } finally {
+      latch.dispose()
+      await rm(latchRoot, { recursive: true, force: true })
     }
 
     // A cold start takes far longer than a warm one: the provider loads

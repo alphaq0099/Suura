@@ -9,7 +9,19 @@ import type { Logger } from '@core/logging/logger'
  * renderer sandboxed. The preload bridge is the only way the UI can reach the
  * main process, and it only pulls `electron` plus the shared channel constants.
  */
-export function createMainWindow(log: Logger): BrowserWindow {
+export interface MainWindowOptions {
+  /**
+   * Keep timers and animation frames running while the window is hidden.
+   *
+   * Only the self-test and scale runs need this: they drive the UI while it is
+   * behind another window, and a throttled renderer would make those checks
+   * time out. The real app lets Chromium throttle normally, which is what keeps
+   * a minimised player from costing a core.
+   */
+  backgroundThrottling?: boolean
+}
+
+export function createMainWindow(log: Logger, options: MainWindowOptions = {}): BrowserWindow {
   const window = new BrowserWindow({
     width: 1200,
     height: 780,
@@ -30,12 +42,7 @@ export function createMainWindow(log: Logger): BrowserWindow {
       // Playback is always click-initiated today, but this keeps a future
       // "resume on launch" or tray-triggered play from being blocked.
       autoplayPolicy: 'no-user-gesture-required',
-      // A player is looked at while it is not the front window: the position
-      // readout, the synced lyrics and the queue all have to keep up when the
-      // window sits behind a browser or is minimised. Chromium otherwise
-      // throttles timers and animation frames in a hidden page, which froze
-      // those updates until the window was clicked again.
-      backgroundThrottling: false
+      backgroundThrottling: options.backgroundThrottling ?? true
     }
   })
 

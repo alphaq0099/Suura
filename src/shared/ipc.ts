@@ -569,7 +569,14 @@ export interface PlayerApi {
   readClipboardText(): Promise<string>
   writeClipboardText(text: string): Promise<void>
   reportPlayback(trackId: number, playedMs: number, completed: boolean): Promise<void>
-  getEngineStatus(): Promise<EngineStatus>
+  /**
+   * The engine's binary probe, plus the live PO Token provider status.
+   *
+   * The binaries are cached between runs, so this normally answers instantly.
+   * Pass `force` for the Settings Refresh button, which must ask the real
+   * executables again.
+   */
+  getEngineStatus(force?: boolean): Promise<EngineStatus>
   /** The provider switch, URL and whether its `/ping` endpoint answers. */
   getPoTokenStatus(): Promise<PoTokenStatus>
   /** Starts the configured provider command and waits until it answers. */

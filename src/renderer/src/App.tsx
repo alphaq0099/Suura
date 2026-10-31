@@ -464,10 +464,10 @@ export function App() {
     return () => api.off(token)
   }, [reload])
 
-  const refreshEngine = useCallback(async (): Promise<void> => {
+  const refreshEngine = useCallback(async (force = false): Promise<void> => {
     setEngineLoading(true)
     try {
-      setEngineStatus(await api.getEngineStatus())
+      setEngineStatus(await api.getEngineStatus(force))
     } catch (cause) {
       setActionError(messageOf(cause))
     } finally {
@@ -499,8 +499,8 @@ export function App() {
     }
   }, [])
 
-  // Probing spawns two child processes, so it only happens when the settings view
-  // is actually open.
+  // The first open reads the saved probe; the Refresh button is the only path
+  // that insists on spawning the binaries again.
   useEffect(() => {
     if (view !== 'settings') return
     if (engineStatus || engineLoading) return
@@ -1191,7 +1191,7 @@ export function App() {
           onRemoveFolder={(folder) => void removeFolder(folder)}
           onPickEngineDir={() => void pickEngineDir()}
           onPickDownloadFolder={() => void pickDownloadFolder()}
-          onRefreshEngine={() => void refreshEngine()}
+          onRefreshEngine={() => void refreshEngine(true)}
           onStartPoToken={startPoToken}
           onStopPoToken={stopPoToken}
           onOpenPath={(target) => void openPath(target)}
