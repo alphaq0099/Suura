@@ -94,7 +94,16 @@ export class LyricsService {
     return this.read(trackId)
   }
 
-  /** Forgets the fetched copy and shows what the file itself has. */
+  /**
+   * Forgets the fetched copy and shows what the file itself has.
+   *
+   * Forgetting is the point, not a side effect: the panel shows one source at
+   * a time and labels it, so a hidden fetched row that could resurface would
+   * make that label a guess. The button that leads here is only offered as a
+   * switch-back while the file has something of its own to switch to; with no
+   * file lyrics it reads as the discard it is. Getting the words back is one
+   * press of the finder.
+   */
   async useFile(trackId: number): Promise<TrackLyrics | null> {
     this.localTrack(trackId)
     this.store.clearFetched(trackId)

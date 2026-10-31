@@ -3760,9 +3760,13 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       fetchedLines: number
       fetchedActions: boolean
       fetchedLink: boolean
+      fetchedUseFileLabel: string
+      fetchedUseFileEnabled: boolean
       fileMeta: string
       fileLines: number
       fileActions: boolean
+      forgetLabel: string
+      forgotMeta: string
       stageOpened: boolean
       stageLines: number
       stageCurrent: number
@@ -3772,7 +3776,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     }>(
       window,
       `(async () => {
-         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, volumeBeforeWheel: -1, volumeAfterWheel: -1, volumeWheelTop: -1, volumeWheelBottom: -1, wheelCancelled: false, barVolumeBefore: -1, barVolumeMuted: -1, barMutePressed: '', barVolumeRestored: -1, barPopHidden: false, barPopVertical: false, barPopWithin: false, barPopShownByFocus: false, barKeyBefore: -1, barKeyAfter: -1, barKeyProgress: '', barKeyRestored: -1, panelClosedByOutsidePress: false, panelStayedOpenOnInsidePress: false, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false, panelCloseState: '', lyricsOpened: false, queueClosedByLyrics: false, lyricRows: 0, lyricMeta: '', lyricCurrent: 0, lyricSeeked: false, lyricFill: false, lyricPaused: false, lyricResumed: false, finderOpened: false, finderMatches: 0, finderMatchText: '', finderGeniusLabel: false, fetchedMeta: '', fetchedLines: 0, fetchedActions: false, fetchedLink: false, fileMeta: '', fileLines: 0, fileActions: false, stageOpened: false, stageLines: 0, stageCurrent: 0, stageClosed: false, escapeHidLyrics: false, escapeKeptWindowAfterLyrics: false }
+         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, volumeBeforeWheel: -1, volumeAfterWheel: -1, volumeWheelTop: -1, volumeWheelBottom: -1, wheelCancelled: false, barVolumeBefore: -1, barVolumeMuted: -1, barMutePressed: '', barVolumeRestored: -1, barPopHidden: false, barPopVertical: false, barPopWithin: false, barPopShownByFocus: false, barKeyBefore: -1, barKeyAfter: -1, barKeyProgress: '', barKeyRestored: -1, panelClosedByOutsidePress: false, panelStayedOpenOnInsidePress: false, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false, panelCloseState: '', lyricsOpened: false, queueClosedByLyrics: false, lyricRows: 0, lyricMeta: '', lyricCurrent: 0, lyricSeeked: false, lyricFill: false, lyricPaused: false, lyricResumed: false, finderOpened: false, finderMatches: 0, finderMatchText: '', finderGeniusLabel: false, fetchedMeta: '', fetchedLines: 0, fetchedActions: false, fetchedLink: false, fetchedUseFileLabel: '', fetchedUseFileEnabled: false, fileMeta: '', fileLines: 0, fileActions: false, forgetLabel: '', forgotMeta: '', stageOpened: false, stageLines: 0, stageCurrent: 0, stageClosed: false, escapeHidLyrics: false, escapeKeptWindowAfterLyrics: false }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (selector) => document.querySelector(selector)
          const press = (element) => { if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
@@ -4147,6 +4151,24 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         out.fetchedLines = lyricLines().length
         out.fetchedActions = Boolean(pick('.np-lyrics-actions'))
         out.fetchedLink = Boolean(pick('.np-lyrics-actions-link'))
+        // The file does have lyrics, so the row under the fetch is a way back
+        // and the button is allowed to promise exactly that. The label before
+        // the file's answer arrives is the same text on purpose, so this waits
+        // for the button to become enabled — that is what proves the file was
+        // actually asked and answered non-empty, rather than the check passing
+        // on the pending state.
+        for (
+          let attempt = 0;
+          attempt < 40 &&
+          (!pick('.np-lyrics-use-file') || pick('.np-lyrics-use-file').disabled);
+          attempt += 1
+        ) {
+          await sleep(100)
+        }
+        out.fetchedUseFileLabel = ((pick('.np-lyrics-use-file') || {}).textContent || '').trim()
+        out.fetchedUseFileEnabled = pick('.np-lyrics-use-file')
+          ? !pick('.np-lyrics-use-file').disabled
+          : false
         press(pick('.np-lyrics-use-file'))
         for (let attempt = 0; attempt < 40 && pick('.np-lyrics-actions'); attempt += 1) await sleep(100)
         out.fileMeta = (pick('.np-lyrics-meta') || {}).textContent || ''
@@ -4171,6 +4193,61 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         }
         await sleep(600)
         out.stageClosed = !pick('.np-lyrics-stage') && Boolean(pick('.np-lyrics-panel'))
+
+        // The other half of that promise, on the fixture with no lyrics of its
+        // own: there is nothing to switch back to, so the same click can only
+        // be a discard and must not call itself a switch. The queue and the
+        // lyrics panel share one corner and are mutually exclusive, so the
+        // track is changed first and the panel is then reopened — everything
+        // below has to run against an open panel, which is the only place the
+        // read effect and the button's label come from.
+        press(pick('.np-queue'))
+        await sleep(400)
+        const silentRow = rows().find((row) => !row.classList.contains('current'))
+        if (silentRow) silentRow.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await sleep(400)
+        // The silent fixture is two seconds long; it has to stay on this track
+        // while the finder is used, rather than advancing back to the tone.
+        pause()
+        pressAt(pick('.np-stage'))
+        await sleep(400)
+        press(pick('.np-lyrics-button'))
+        for (let attempt = 0; attempt < 40 && !pick('.np-lyrics-panel.open'); attempt += 1) {
+          await sleep(100)
+        }
+        // A file with nothing in it reads as no lyrics at all.
+        for (
+          let attempt = 0;
+          attempt < 40 && (pick('.np-lyrics-meta') || {}).textContent !== 'None found';
+          attempt += 1
+        ) {
+          await sleep(100)
+        }
+        press(pick('.np-lyrics-find'))
+        for (let attempt = 0; attempt < 40 && !pick('.lyrics-finder'); attempt += 1) await sleep(100)
+        for (let attempt = 0; attempt < 40 && !pick('.lyrics-match'); attempt += 1) await sleep(100)
+        const silentMatches = [...document.querySelectorAll('.lyrics-match')]
+        const silentMatch = silentMatches.find((match) => (match.textContent || '').includes('Genius'))
+        if (silentMatch) press(silentMatch)
+        await sleep(150)
+        const silentUse = pick('.lyrics-finder-foot .primary')
+        if (silentUse) press(silentUse)
+        for (let attempt = 0; attempt < 40 && pick('.lyrics-finder'); attempt += 1) await sleep(100)
+        for (let attempt = 0; attempt < 40 && !pick('.np-lyrics-actions'); attempt += 1) await sleep(100)
+        // The answer about the file arrives over IPC, so the label settles a
+        // moment after the row appears.
+        for (
+          let attempt = 0;
+          attempt < 40 &&
+          (pick('.np-lyrics-use-file') || {}).textContent?.trim() !== 'Forget these lyrics';
+          attempt += 1
+        ) {
+          await sleep(100)
+        }
+        out.forgetLabel = ((pick('.np-lyrics-use-file') || {}).textContent || '').trim()
+        press(pick('.np-lyrics-use-file'))
+        for (let attempt = 0; attempt < 40 && pick('.np-lyrics-actions'); attempt += 1) await sleep(100)
+        out.forgotMeta = ((pick('.np-lyrics-meta') || {}).textContent || '').trim()
 
         pressEscape()
         await sleep(400)
@@ -4355,7 +4432,17 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       'going back to the file restores its own lyrics and drops the fetched actions',
       `${visuals.fileLines} lines, "${visuals.fileMeta}", actions ${visuals.fileActions}`
     )
+    record(
+      visuals.fetchedUseFileEnabled && visuals.fetchedUseFileLabel === 'Use file lyrics',
+      'over a file that has lyrics, the switch-back button may call itself that',
+      `"${visuals.fetchedUseFileLabel}", enabled ${visuals.fetchedUseFileEnabled}`
+    )
     container.lyrics.find = originalLyricsFind
+    record(
+      visuals.forgetLabel === 'Forget these lyrics' && visuals.forgotMeta === 'None found',
+      'over a file with no lyrics the same button is a discard and says so',
+      `"${visuals.forgetLabel}", "${visuals.forgotMeta}"`
+    )
     record(
       visuals.stageOpened && visuals.stageLines === visuals.lyricRows && visuals.stageCurrent === 1,
       'expanding the lyrics hands the same lines to a full-window stage',

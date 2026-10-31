@@ -51,6 +51,12 @@ function sourceLabel(lyrics: TrackLyrics): string {
  * or Genius). Writing it into the file is a separate button, so a search can
  * never silently modify a file.
  *
+ * A fetched copy shadows the file's own lyrics, so the row under it offers a
+ * way back — labelled by what is actually underneath. Over a file that has
+ * lyrics it is "Use file lyrics"; over a file that has none the same click can
+ * only drop the fetch, and the button says "Forget these lyrics" instead of
+ * promising a copy that does not exist.
+ *
  * The panel owns the data for both views. The full-window stage is a portal
  * rendered from here, so expanding is not a second fetch and the timing
  * correction is the same number in both places.
@@ -66,7 +72,12 @@ export function LyricsPanel(props: LyricsPanelProps) {
   const [finderOpen, setFinderOpen] = useState(false)
   const [action, setAction] = useState<'use-file' | 'write' | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  // What the file itself holds, asked only while a fetched copy is on screen.
+  // It decides whether the switch-back button is a way back or a discard.
+  const [fileLyrics, setFileLyrics] = useState<TrackLyrics | null>(null)
+  const [fileChecked, setFileChecked] = useState(false)
   const requestRef = useRef(0)
+  const fileRequestRef = useRef(0)
   const expandRef = useRef<HTMLButtonElement | null>(null)
   const wasExpanded = useRef(false)
 
@@ -77,6 +88,8 @@ export function LyricsPanel(props: LyricsPanelProps) {
     setError(null)
     setFinderOpen(false)
     setActionError(null)
+    setFileLyrics(null)
+    setFileChecked(false)
   }, [trackId])
 
   // The finder belongs to the open panel. Closing the panel should not leave a
@@ -102,6 +115,42 @@ export function LyricsPanel(props: LyricsPanelProps) {
         if (requestRef.current === request) setLoading(false)
       })
   }, [open, trackId])
+
+  // Only a fetched row has the two file actions; the file's own lyrics have
+  // nothing to switch back to. This is the same test the actions row uses,
+  // named for the effect below that depends on it.
+  const fetchedShown =
+    lyrics?.source === 'lrclib' || lyrics?.source === 'genius' ? lyrics : null
+
+  // The switch-back button promises to go back to the file, so it has to know
+  // what the file actually has. Over a file with no lyrics of its own there is
+  // nothing to go back to, and the same click is a discard — which is worth
+  // offering (a match can be a bad pick) but must not be labelled a switch.
+  // A read failure counts as "nothing to go back to": the discard is the
+  // promise that still holds either way.
+  useEffect(() => {
+    if (!open || trackId === null || !fetchedShown) {
+      setFileLyrics(null)
+      setFileChecked(false)
+      return
+    }
+    const request = ++fileRequestRef.current
+    setFileChecked(false)
+    api
+      .getFileLyrics(trackId)
+      .then((found) => {
+        if (fileRequestRef.current === request) {
+          setFileLyrics(found)
+          setFileChecked(true)
+        }
+      })
+      .catch(() => {
+        if (fileRequestRef.current === request) {
+          setFileLyrics(null)
+          setFileChecked(true)
+        }
+      })
+  }, [open, trackId, fetchedShown])
 
   const parsed = useMemo(() => parseLyrics(lyrics?.text ?? ''), [lyrics])
   const lines = parsed.lines
@@ -193,7 +242,7 @@ export function LyricsPanel(props: LyricsPanelProps) {
 
   // Only a fetched row has the two file actions; the file's own lyrics have
   // nothing to switch back to.
-  const fetched = lyrics?.source === 'lrclib' || lyrics?.source === 'genius' ? lyrics : null
+  const fetched = fetchedShown
 
   if (expanded) {
     return createPortal(
@@ -282,10 +331,16 @@ export function LyricsPanel(props: LyricsPanelProps) {
             type="button"
             className="np-lyrics-use-file"
             onClick={() => void runFileAction('use-file')}
-            disabled={action !== null}
-            title="Forget the fetched lyrics and show what the file has"
+            disabled={action !== null || !fileChecked}
+            title={
+              !fileChecked
+                ? 'Checking what the file has…'
+                : fileLyrics
+                  ? 'Forget the fetched lyrics and show what the file has'
+                  : 'This file has no lyrics of its own, so this only drops the fetched copy'
+            }
           >
-            Use file lyrics
+            {action === 'use-file' ? 'Forgetting…' : fileChecked && !fileLyrics ? 'Forget these lyrics' : 'Use file lyrics'}
           </button>
           <button
             type="button"
