@@ -482,6 +482,16 @@ export const MIGRATIONS: readonly Migration[] = [
         );
       `)
     }
+  },
+  {
+    version: 16,
+    name: 'lyric origin',
+    up: (db) => {
+      // A fetched lyric has a page the service asks to be linked back to, and
+      // that address has to survive a restart with the text. A file's own rows
+      // leave it null: their origin is the path beside the track.
+      db.exec(`ALTER TABLE track_lyrics ADD COLUMN origin TEXT;`)
+    }
   }
 ]
 

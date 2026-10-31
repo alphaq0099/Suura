@@ -4199,6 +4199,7 @@ input[type='radio'] {
 .np-lyrics-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 7px 10px;
   border-top: 1px solid var(--border);
@@ -4209,6 +4210,21 @@ input[type='radio'] {
   font-size: calc(11px * var(--text-scale));
   color: var(--text-faint);
   white-space: nowrap;
+}
+
+/* Genius asks for a link back to the page the words came from. It sits with the
+   source label rather than the buttons: it is attribution, not an action on the
+   track. */
+.np-lyrics-actions-link {
+  font-size: calc(11px * var(--text-scale));
+  color: var(--text-faint);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+
+.np-lyrics-actions-link:hover {
+  color: var(--text);
 }
 
 .np-lyrics-action-error {
@@ -4296,6 +4312,13 @@ input[type='radio'] {
 
 .lyrics-finder-foot {
   margin-top: auto;
+}
+
+/* One line per service that did not answer, so a partial result says which
+   half is missing instead of pretending the silence was an empty search. */
+.lyrics-finder-provider {
+  margin: -2px 0 0;
+  color: var(--text-dim);
 }
 
 /* ---------- full-window lyrics ---------- */

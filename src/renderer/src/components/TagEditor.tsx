@@ -184,7 +184,7 @@ export function TagEditor(props: TagEditorProps) {
     let live = true
     setLyricsLoading(true)
     api
-      .getTrackLyrics(track.id)
+      .getFileLyrics(track.id)
       .then((found) => {
         if (!live) return
         setLoadedLyrics(found)

@@ -37,12 +37,8 @@ export class LyricsService {
 
   /** The lyrics to show for a track, or null when it has none. */
   async read(trackId: number): Promise<TrackLyrics | null> {
-    const track = this.repo.getById(trackId)
-    if (!track || track.sourceKind !== 'local' || !track.filePath) return null
-
-    const embedded = await this.readEmbedded(track.filePath)
-    const sidecar = await sidecarLyricsOf(track.filePath)
-    this.store.replaceLocal(trackId, { embedded, sidecar })
+    const track = await this.refreshLocal(trackId)
+    if (!track) return null
 
     // The fetched row, when there is one, is not refreshed by the lines above:
     // it is the user's choice, and a changed file must not silently replace it.
@@ -51,6 +47,21 @@ export class LyricsService {
     const lyrics = this.toTrackLyrics(track, foundOf(stored), stored)
     this.log.debug('lyrics read', { trackId, source: lyrics.source, synced: lyrics.synced })
     return lyrics
+  }
+
+  /**
+   * The file's own lyrics, ignoring a fetched copy.
+   *
+   * The tag editor is about what is in the file: seeding its draft from a
+   * provider's words would make an ordinary save write them into the tag, which
+   * is the finder's explicit "Write into file" step, not an edit's side effect.
+   */
+  async readFile(trackId: number): Promise<TrackLyrics | null> {
+    const track = await this.refreshLocal(trackId)
+    if (!track) return null
+    const stored = this.store.get(trackId, 'sidecar') ?? this.store.get(trackId, 'embedded')
+    if (!stored) return null
+    return this.toTrackLyrics(track, foundOf(stored), stored)
   }
 
   /** Asks LRCLIB for lyrics that match this file. Nothing is stored. */
@@ -68,10 +79,11 @@ export class LyricsService {
   /** Remembers the match the user chose, then shows it. */
   async use(trackId: number, candidate: LyricsCandidate): Promise<TrackLyrics | null> {
     this.localTrack(trackId)
-    this.store.saveFetched(trackId, {
+    this.store.saveFetched(trackId, candidate.provider, {
       language: null,
       synced: candidate.synced,
-      text: candidate.text
+      text: candidate.text,
+      origin: candidate.url
     })
     this.log.debug('lyrics chosen', {
       trackId,
@@ -101,7 +113,7 @@ export class LyricsService {
     const { filePath } = this.localTrack(trackId)
     if (!this.tagWriter) throw new Error('Tag editing is not available in this build.')
 
-    const fetched = this.store.get(trackId, 'lrclib')
+    const fetched = this.store.fetched(trackId)
     if (!fetched) throw new Error('There are no fetched lyrics to write into this file.')
 
     const sidecar = await sidecarLyricsOf(filePath)
@@ -161,6 +173,15 @@ export class LyricsService {
     return { track, filePath: track.filePath }
   }
 
+  private async refreshLocal(trackId: number): Promise<Track | null> {
+    const track = this.repo.getById(trackId)
+    if (!track || track.sourceKind !== 'local' || !track.filePath) return null
+    const embedded = await this.readEmbedded(track.filePath)
+    const sidecar = await sidecarLyricsOf(track.filePath)
+    this.store.replaceLocal(trackId, { embedded, sidecar })
+    return track
+  }
+
   private toTrackLyrics(track: Track, found: LyricsRecord, stored: StoredLyrics | null): TrackLyrics {
     return {
       trackId: track.id,
@@ -169,7 +190,10 @@ export class LyricsService {
       synced: found.synced,
       text: found.text,
       offsetMs: stored?.offsetMs ?? 0,
-      origin: found.source === 'sidecar' && track.filePath ? sidecarNameOf(track.filePath) : null,
+      origin:
+        found.source === 'sidecar' && track.filePath
+          ? sidecarNameOf(track.filePath)
+          : (stored?.origin ?? null),
       fetchedAt: stored?.fetchedAt ?? Date.now()
     }
   }

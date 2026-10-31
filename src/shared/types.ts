@@ -221,10 +221,13 @@ export interface ArtworkChoice {
  * Where a set of lyrics came from.
  *
  * `embedded` is a tag inside the file, `sidecar` is a `.lrc` next to it. The
- * other two are reserved for the finder and the optional transcription, so a
- * fetched lyric can be labelled and kept apart from the file's own.
+ * fetched sources are labelled with the service that answered, so a lyric can
+ * be kept apart from the file's own. `generated` is reserved for transcription.
  */
-export type LyricsSource = 'embedded' | 'sidecar' | 'lrclib' | 'generated'
+export type LyricsSource = 'embedded' | 'sidecar' | 'lrclib' | 'genius' | 'generated'
+
+/** The services the finder can ask. */
+export type LyricsProvider = 'lrclib' | 'genius'
 
 /**
  * A metadata service the tag finder can ask.
@@ -305,7 +308,7 @@ export interface LyricsLookupQuery {
  * chosen lyrics different from the previewed ones.
  */
 export interface LyricsCandidate {
-  provider: 'lrclib'
+  provider: LyricsProvider
   /** The provider's own id, kept so a source can be named later. */
   providerId: string
   title: string
@@ -318,18 +321,32 @@ export interface LyricsCandidate {
   text: string
   /** True when the provider says the track has no vocals. */
   instrumental: boolean
+  /** The provider's page for these lyrics, when it has one to link back to. */
+  url: string | null
   /** 0..1; higher is a closer match. */
   score: number
   confidence: 'strong' | 'likely' | 'weak'
 }
 
+/** How one lyrics provider did, so a partial answer can name the missing half. */
+export interface LyricsProviderReport {
+  provider: LyricsProvider
+  ok: boolean
+  /** Why it failed, when it did. */
+  message: string | null
+  /** How many matches it contributed before the merge. */
+  count: number
+}
+
 export interface LyricsLookupResult {
   query: LyricsLookupQuery
-  /** Best first, at most a handful. */
+  /** Best first, at most a handful, merged from every provider that answered. */
   candidates: LyricsCandidate[]
+  /** One entry per provider asked, in the order they were asked. */
+  providers: LyricsProviderReport[]
   /**
-   * Why the lookup failed, when it did. A provider answering "nothing found" is
-   * not a failure and leaves this null.
+   * Why the lookup failed, when every provider did. One provider answering
+   * "nothing found" is not a failure and leaves this null.
    */
   message: string | null
 }
@@ -346,7 +363,10 @@ export interface TrackLyrics {
   text: string
   /** The user's own shift in ms; positive means the lines appear later. */
   offsetMs: number
-  /** The sidecar's file name, or null for lyrics from tags or a provider. */
+  /**
+   * The sidecar's file name, or the provider's page URL for a fetched lyric, or
+   * null for lyrics read from the file's tags.
+   */
   origin: string | null
   fetchedAt: number
 }

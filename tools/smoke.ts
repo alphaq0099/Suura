@@ -50,7 +50,7 @@ import {
   textSimilarity,
   titleVariants
 } from '@shared/auto-tag'
-import type { AlbumSummary, EngineStatus, TagCandidate, TagLookupQuery, Track } from '@shared/types'
+import type { AlbumSummary, EngineStatus, LyricsCandidate, TagCandidate, TagLookupQuery, Track } from '@shared/types'
 import { serializeDetails, silentLogger } from '@core/logging/logger'
 import {
   DIAGNOSTICS_SUMMARY_LIMIT,
@@ -105,11 +105,14 @@ import { PlayStateRepository } from '@core/library/play-state-repository'
 import { PlaybackService } from '@core/library/playback-service'
 import { createTagLookup, itunesUrl, musicBrainzQuery } from '@core/library/tag-lookup'
 import {
+  createLyricsFinder,
   createLyricsLookup,
   lrclibGetUrl,
   lrclibSearchUrl,
-  type LyricsLookup
+  type LyricsLookup,
+  type LyricsProvider
 } from '@core/library/lyrics-lookup'
+import { createGeniusProvider } from '@core/library/lyrics-genius'
 import { isPathInside, localContentKey, normalizePath } from '@core/library/content-key'
 import { scanLibraryFolders } from '@core/library/scanner'
 import { youtubeOriginOf, youtubeOriginOfNative, extractMetadata, loadMetadataParser } from '@core/library/metadata'
@@ -205,6 +208,7 @@ import {
   sanitizeLyricsCandidate,
   sanitizeLyricsOffset
 } from '@shared/lyrics'
+import { geniusHits, geniusSearchUrl, isGeniusUrl, lyricsFromGeniusHtml } from '@shared/genius'
 import { AsyncTtlCache } from '../src/main/async-cache'
 import { cleanupAbandonedDownloads, DownloadService } from '../src/main/download-service'
 import { ReplayGainService } from '../src/main/replay-gain-service'
@@ -5566,6 +5570,291 @@ async function main(): Promise<void> {
       failedLookup.message,
       'LRCLIB could not be reached.'
     )
+
+    // ---- Genius, the plain-text source ------------------------------------
+    // Their pages are HTML, so the parser is pinned down against a trimmed copy
+    // of a real one: several lyric containers, a contributor header that is
+    // not lyrics, and the entities the words are wrapped in. This is the part
+    // that breaks silently when their markup changes.
+    checkEqual(
+      'genius: br is the line break and containers are joined',
+      lyricsFromGeniusHtml(
+        '<div data-lyrics-container="true">[Intro]<br/>first line<br/><br/>second line</div>'
+      ),
+      '[Intro]\nfirst line\n\nsecond line'
+    )
+    const messyPage = [
+      '<div data-lyrics-container="true">',
+      '<div data-exclude-from-selection="true"><span>531 Contributors</span><button>Translations</button></div>',
+      '[Intro]<br/>Is this the real life? It&#x27;s just fantasy<br/>',
+      '<a href="/12/Song/lyrics"><span>caught in a landslide</span></a><br/><br/>',
+      'You might also like',
+      '</div>',
+      '<div data-exclude-from-selection="true">ads that are not lyrics</div>',
+      '<div data-lyrics-container="true">no escape from reality</div>'
+    ].join('')
+    const messy = lyricsFromGeniusHtml(messyPage) ?? ''
+    check('genius: the header block is not lyrics', !messy.includes('Contributors'))
+    check('genius: an excluded block is not lyrics', !messy.includes('ads that are not lyrics'))
+    check('genius: boilerplate is dropped', !messy.includes('You might also like'))
+    check('genius: entities are decoded', messy.includes("It's just fantasy"))
+    check('genius: annotation links keep their text', messy.includes('caught in a landslide'))
+    checkEqual(
+      'genius: a page with no lyric containers has no lyrics',
+      lyricsFromGeniusHtml('<div class="SongPage__LyricsWrapper">nothing here</div>'),
+      null
+    )
+
+    const searchQuery = { title: 'Song (Official Video)', artist: 'Artist', album: null, durationMs: null }
+    const searchUrl = new URL(geniusSearchUrl(searchQuery))
+    checkEqual('genius: the search drops bracketed noise', searchUrl.searchParams.get('q'), 'Song Artist')
+    checkEqual('genius: the search asks for three pages at most', searchUrl.searchParams.get('per_page'), '3')
+    check('genius: only https pages are ever opened', isGeniusUrl('https://genius.com/Artist-song-lyrics'))
+    check('genius: another host is not opened', !isGeniusUrl('https://evil.example/Artist-song-lyrics'))
+    check('genius: another scheme is not opened', !isGeniusUrl('http://genius.com/Artist-song-lyrics'))
+
+    const geniusSearchPayload = {
+      response: {
+        sections: [
+          {
+            type: 'top_hit',
+            hits: [
+              {
+                type: 'song',
+                result: {
+                  id: 1,
+                  title: 'Song',
+                  artist_names: 'Artist',
+                  url: 'https://genius.com/Artist-song-lyrics'
+                }
+              }
+            ]
+          },
+          {
+            type: 'song',
+            hits: [
+              {
+                type: 'song',
+                result: {
+                  id: 1,
+                  title: 'Song',
+                  artist_names: 'Artist',
+                  url: 'https://genius.com/Artist-song-lyrics'
+                }
+              },
+              {
+                type: 'song',
+                result: {
+                  id: 2,
+                  title: 'Song (Live)',
+                  artist_names: 'Artist',
+                  url: 'https://genius.com/Artist-song-live-lyrics'
+                }
+              },
+              {
+                type: 'song',
+                result: {
+                  id: 3,
+                  title: 'Song',
+                  artist_names: 'Artist',
+                  url: 'https://evil.example/not-genius',
+                  instrumental: false
+                }
+              },
+              {
+                type: 'song',
+                result: {
+                  id: 4,
+                  title: 'Song',
+                  artist_names: 'Artist',
+                  url: 'https://genius.com/Artist-song-lyrics',
+                  instrumental: true
+                }
+              },
+              { type: 'lyric', hits: [] }
+            ]
+          },
+          { type: 'video', hits: [] }
+        ]
+      }
+    }
+    const hits = geniusHits(geniusSearchPayload)
+    checkEqual(
+      'genius: hits are collected once, off site, and off instrumentals',
+      hits.map((hit) => hit.providerId).join('|'),
+      '1|2'
+    )
+    checkEqual('genius: a hit keeps its page for the link back', hits[0]?.url, 'https://genius.com/Artist-song-lyrics')
+
+    const geniusRequests: string[] = []
+    const geniusFetch = async (input: string | URL | Request): Promise<Response> => {
+      const url = String(input)
+      geniusRequests.push(url)
+      if (url.includes('/api/search/multi')) {
+        return new Response(JSON.stringify(geniusSearchPayload), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      }
+      return new Response('<div data-lyrics-container="true">line one<br/>line two</div>', { status: 200 })
+    }
+    const genius = createGeniusProvider({
+      log: silentLogger,
+      fetch: geniusFetch as typeof fetch,
+      timeoutMs: 2_000
+    })
+    const geniusAnswer = await genius.lookup(searchQuery)
+    checkEqual('genius: the provider answered', geniusAnswer.ok, true)
+    checkEqual('genius: one request per shortlisted page, plus the search', geniusRequests.length, 3)
+    checkEqual(
+      'genius: the words arrive as plain text with the page',
+      [geniusAnswer.candidates[0]?.synced, geniusAnswer.candidates[0]?.text, geniusAnswer.candidates[0]?.url].join('|'),
+      'false|line one\nline two|https://genius.com/Artist-song-lyrics'
+    )
+
+    const geniusPageOnly = createGeniusProvider({
+      log: silentLogger,
+      fetch: (async (input: string | URL | Request) =>
+        String(input).includes('/api/search/multi')
+          ? new Response(JSON.stringify(geniusSearchPayload), { status: 200 })
+          : new Response('<div class="SongPage__LyricsWrapper">no lyrics here</div>', {
+              status: 200
+            })) as typeof fetch,
+      timeoutMs: 2_000
+    })
+    const geniusPageAnswer = await geniusPageOnly.lookup(searchQuery)
+    check(
+      'genius: a page that no longer carries lyrics is not a failure',
+      geniusPageAnswer.ok && geniusPageAnswer.candidates.length === 0
+    )
+
+    const geniusDown = createGeniusProvider({
+      log: silentLogger,
+      fetch: (async () => new Response(null, { status: 503 })) as typeof fetch,
+      timeoutMs: 2_000
+    })
+    const geniusDownAnswer = await geniusDown.lookup(searchQuery)
+    checkEqual(
+      'genius: a 5xx reads as "temporarily unavailable"',
+      geniusDownAnswer.message,
+      'Genius is temporarily unavailable.'
+    )
+
+    const geniusRateLimited = createGeniusProvider({
+      log: silentLogger,
+      fetch: (async () => new Response(null, { status: 429 })) as typeof fetch,
+      timeoutMs: 2_000
+    })
+    checkEqual(
+      'genius: a 429 reads as rate limiting',
+      (await geniusRateLimited.lookup(searchQuery)).message,
+      'Genius is rate-limiting requests. Try again in a moment.'
+    )
+
+    // ---- the merge over both services --------------------------------------
+    const geniusMatch = {
+      provider: 'genius' as const,
+      providerId: 'genius-1',
+      title: 'Song',
+      artist: 'Artist',
+      album: null,
+      durationMs: null,
+      synced: false,
+      text: 'plain words',
+      instrumental: false,
+      url: 'https://genius.com/Artist-song-lyrics',
+      score: 0,
+      confidence: 'weak' as const
+    }
+    const answerFor = (
+      name: LyricsProvider['name'],
+      candidates: typeof geniusMatch[] | LyricsCandidate[],
+      answer: Partial<{ ok: boolean; message: string | null }> = {}
+    ): LyricsProvider => ({
+      name,
+      lookup: async () => ({
+        candidates: candidates as LyricsCandidate[],
+        ok: answer.ok ?? true,
+        message: answer.message ?? null
+      })
+    })
+    const downLrclib = answerFor('lrclib', [], { ok: false, message: 'LRCLIB is temporarily unavailable.' })
+    const merge = createLyricsFinder({ log: silentLogger, providers: [downLrclib, answerFor('genius', [geniusMatch])] })
+    const merged = await merge.lookup(query)
+    checkEqual('lyrics merge: one provider down still shows the other', merged.candidates.length, 1)
+    checkEqual('lyrics merge: one provider answering leaves the message clear', merged.message, null)
+    checkEqual(
+      'lyrics merge: each provider gets a report',
+      merged.providers.map((report) => `${report.provider}:${report.ok}:${report.count}`).join('|'),
+      'lrclib:false:0|genius:true:1'
+    )
+
+    const bothDown = createLyricsFinder({
+      log: silentLogger,
+      providers: [downLrclib, answerFor('genius', [], { ok: false, message: 'Genius could not be reached.' })]
+    })
+    const bothDownAnswer = await bothDown.lookup(query)
+    checkEqual(
+      'lyrics merge: every provider down is one sentence',
+      bothDownAnswer.message,
+      'No lyrics service could be reached.'
+    )
+    checkEqual('lyrics merge: nothing is proposed when nobody answered', bothDownAnswer.candidates.length, 0)
+
+    const throwing = createLyricsFinder({
+      log: silentLogger,
+      providers: [
+        {
+          name: 'genius',
+          lookup: async () => {
+            throw new Error('boom')
+          }
+        }
+      ]
+    })
+    const throwingAnswer = await throwing.lookup(query)
+    check(
+      'lyrics merge: a provider that throws is reported, not fatal',
+      throwingAnswer.message === 'No lyrics service could be reached.'
+    )
+
+    // A timed LRC and the same song's plain text from Genius are different
+    // releases of one recording: the sync makes the first the better match.
+    const crossProvider = rankLyricsCandidates(query, [
+      { ...geniusMatch, providerId: 'genius-2' },
+      {
+        ...geniusMatch,
+        provider: 'lrclib' as const,
+        providerId: 'lrclib-2',
+        durationMs: 212_000,
+        synced: true,
+        url: null,
+        text: '[00:01.00]synced words'
+      }
+    ])
+    checkEqual('lyrics merge: the synced copy wins a tie across providers', crossProvider[0]?.provider, 'lrclib')
+    checkEqual('lyrics merge: the plain copy is still offered', crossProvider[1]?.provider, 'genius')
+    checkEqual(
+      'lyrics merge: the same page is not offered twice',
+      rankLyricsCandidates(query, [geniusMatch, { ...geniusMatch }]).length,
+      1
+    )
+
+    const bridgedGenius = sanitizeLyricsCandidate({ ...geniusMatch, score: 0.9, confidence: 'likely' })
+    checkEqual(
+      'lyrics finder: a genius match keeps its page for the link back',
+      bridgedGenius.url,
+      'https://genius.com/Artist-song-lyrics'
+    )
+    check(
+      'lyrics finder: a page from anywhere else is refused',
+      rejectsCandidate({ ...geniusMatch, url: 'https://evil.example/Artist-song-lyrics' })
+    )
+    check('lyrics finder: a genius match with no page is refused', rejectsCandidate({ ...geniusMatch, url: null }))
+    check(
+      'lyrics finder: a plain-text match is never timed',
+      bridgedGenius.synced === false && parseLyrics(bridgedGenius.text).lines.length === 0
+    )
   }
 
   const lyricsRoot = await mkdtemp(join(tmpdir(), 'player-lyrics-'))
@@ -5601,10 +5890,12 @@ async function main(): Promise<void> {
                 synced: true,
                 text: fetchedText,
                 instrumental: false,
+                url: null,
                 score: 0.95,
                 confidence: 'strong'
               }
             ],
+            providers: [{ provider: 'lrclib', ok: true, message: null, count: 1 }],
             message: null
           }
         }
@@ -5807,6 +6098,76 @@ async function main(): Promise<void> {
         streamLookup = error instanceof Error ? error.message : String(error)
       })
       check('lyrics: a stream cannot be looked up', streamLookup.includes('Only files'))
+
+      // ---- Genius through the service ---------------------------------------
+      // Same storage rules, one more shape of text and a page to link back to.
+      // Genius is plain text, so it can be written into a file with no sidecar.
+      const geniusText = 'Is this the real life? Is this just fantasy?\nNo escape from reality'
+      const geniusChoice = sanitizeLyricsCandidate({
+        provider: 'genius',
+        providerId: '1063',
+        title: 'Lyrics',
+        artist: 'Smoke',
+        album: null,
+        durationMs: null,
+        synced: false,
+        text: geniusText,
+        instrumental: false,
+        url: 'https://genius.com/Smoke-lyrics-1063',
+        score: 0.9,
+        confidence: 'likely'
+      })
+      const geniusFile = await makeLyricsFixture('genius.flac', ['-c:a', 'flac'])
+      const geniusId = insertTrack('smoke-lyrics-genius', geniusFile)
+      const geniusShown = await lyricsService.use(geniusId, geniusChoice)
+      checkEqual(
+        'lyrics: a genius match is stored with its page and labelled',
+        [geniusShown?.source, geniusShown?.synced, geniusShown?.origin, geniusShown?.text].join('|'),
+        `genius|false|https://genius.com/Smoke-lyrics-1063|${geniusText}`
+      )
+      checkEqual(
+        'lyrics: a genius match has no timed lines',
+        parseLyrics(geniusShown?.text ?? '').lines.length,
+        0
+      )
+      const fileSide = await lyricsService.readFile(geniusId)
+      checkEqual(
+        'lyrics: the file view ignores a genius match, as the tag editor needs',
+        fileSide,
+        null
+      )
+      const geniusWritten = await lyricsService.writeToFile(geniusId)
+      checkEqual(
+        'lyrics: a genius match is written as the file’s own lyrics',
+        [geniusWritten?.source, geniusWritten?.text].join('|'),
+        `embedded|${geniusText}`
+      )
+
+      // Choosing from one service drops the other's row, so the panel never
+      // shows a hidden second fetch the user could not get back to.
+      const twinFixture = await makeLyricsFixture('twin.flac', ['-c:a', 'flac'])
+      const twinId = insertTrack('smoke-lyrics-twin', twinFixture)
+      const twinStore = new LyricsRepository(lyricsDb.db)
+      twinStore.saveFetched(twinId, 'lrclib', {
+        language: null,
+        synced: true,
+        text: fetchedText
+      })
+      twinStore.saveFetched(twinId, 'genius', {
+        language: null,
+        synced: false,
+        text: geniusText,
+        origin: 'https://genius.com/Smoke-lyrics-1063'
+      })
+      checkEqual(
+        'lyrics: only one fetched row is kept at a time',
+        [
+          twinStore.get(twinId, 'lrclib') === null,
+          twinStore.get(twinId, 'genius') !== null,
+          twinStore.fetched(twinId)?.source
+        ].join('|'),
+        'true|true|genius'
+      )
     } finally {
       lyricsDb.close()
     }

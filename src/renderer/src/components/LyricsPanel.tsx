@@ -32,6 +32,8 @@ function sourceLabel(lyrics: TrackLyrics): string {
       return 'File tags'
     case 'lrclib':
       return 'LRCLIB'
+    case 'genius':
+      return 'Genius'
     case 'generated':
       return 'Generated'
   }
@@ -45,8 +47,9 @@ function sourceLabel(lyrics: TrackLyrics): string {
  * and the header says which source is on screen so the user is not guessing.
  *
  * Finding lyrics is a proposal until the user chooses a match; that choice is
- * stored next to the track and labelled LRCLIB. Writing it into the file is a
- * separate button, so a search can never silently modify a file.
+ * stored next to the track and labelled with the service that answered (LRCLIB
+ * or Genius). Writing it into the file is a separate button, so a search can
+ * never silently modify a file.
  *
  * The panel owns the data for both views. The full-window stage is a portal
  * rendered from here, so expanding is not a second fetch and the timing
@@ -188,6 +191,10 @@ export function LyricsPanel(props: LyricsPanelProps) {
         ? `${sourceLabel(lyrics)} · ${lines.length > 0 ? 'Synced' : 'Plain'}`
         : 'None found'
 
+  // Only a fetched row has the two file actions; the file's own lyrics have
+  // nothing to switch back to.
+  const fetched = lyrics?.source === 'lrclib' || lyrics?.source === 'genius' ? lyrics : null
+
   if (expanded) {
     return createPortal(
       <LyricsStage
@@ -221,8 +228,8 @@ export function LyricsPanel(props: LyricsPanelProps) {
               className="icon-button subtle np-lyrics-find"
               onClick={() => setFinderOpen(true)}
               disabled={loading || saving || finderOpen}
-              title="Find lyrics on LRCLIB"
-              aria-label="Find lyrics on LRCLIB"
+              title="Find lyrics on LRCLIB or Genius"
+              aria-label="Find lyrics on LRCLIB or Genius"
             >
               <SearchIcon size={15} />
             </button>
@@ -255,9 +262,22 @@ export function LyricsPanel(props: LyricsPanelProps) {
         )}
       </div>
 
-      {!finderOpen && lyrics?.source === 'lrclib' ? (
+      {!finderOpen && fetched ? (
         <div className="np-lyrics-actions">
-          <span className="np-lyrics-actions-source">From LRCLIB</span>
+          <span className="np-lyrics-actions-source">
+            From {fetched.source === 'genius' ? 'Genius' : 'LRCLIB'}
+          </span>
+          {fetched.source === 'genius' && fetched.origin ? (
+            <a
+              className="np-lyrics-actions-link"
+              href={fetched.origin}
+              target="_blank"
+              rel="noreferrer"
+              title="Open these lyrics on Genius"
+            >
+              Open on Genius
+            </a>
+          ) : null}
           <button
             type="button"
             className="np-lyrics-use-file"

@@ -16,8 +16,9 @@
  */
 
 import { confidenceOf, durationScore, normalizeMatchText, textSimilarity, titleVariants } from './auto-tag'
+import { isGeniusUrl } from './genius'
 import { TAG_TEXT_LIMITS } from './tags'
-import type { LyricsCandidate, LyricsLookupQuery } from './types'
+import type { LyricsCandidate, LyricsLookupQuery, LyricsProvider } from './types'
 
 export interface LyricLine {
   /** Start of the line in the file's own timeline. */
@@ -210,6 +211,7 @@ export function candidateFromLrclib(value: unknown): LyricsCandidate | null {
     synced: isSyncedLyrics(text),
     text,
     instrumental: false,
+    url: null,
     score: 0,
     confidence: 'weak'
   }
@@ -283,6 +285,7 @@ export function rankLyricsCandidates(
   const out: LyricsCandidate[] = []
   for (const candidate of scored) {
     const key = [
+      candidate.provider,
       candidate.providerId,
       normalizeMatchText(candidate.title),
       normalizeMatchText(candidate.artist),
@@ -307,7 +310,8 @@ export function rankLyricsCandidates(
 export function sanitizeLyricsCandidate(value: unknown): LyricsCandidate {
   const record = asRecord(value)
   if (!record) throw new Error('Malformed lyrics match.')
-  if (record.provider !== 'lrclib') throw new Error('Unknown lyrics provider.')
+  const provider = record.provider
+  if (provider !== 'lrclib' && provider !== 'genius') throw new Error('Unknown lyrics provider.')
 
   const providerId = asString(record.providerId)
   if (!providerId || providerId.length > 200) throw new Error('The lyrics match has no id.')
@@ -345,8 +349,20 @@ export function sanitizeLyricsCandidate(value: unknown): LyricsCandidate {
       ? record.confidence
       : 'weak'
 
+  // A provider page is only useful if it is really that provider's page: the
+  // link is opened in the browser, so an arbitrary URL from the renderer is
+  // not something to pass along.
+  let url: string | null = null
+  if (provider === 'genius') {
+    const rawUrl = asString(record.url)
+    if (!rawUrl || rawUrl.length > 500 || !isGeniusUrl(rawUrl)) {
+      throw new Error('The lyrics match has no Genius page.')
+    }
+    url = rawUrl
+  }
+
   return {
-    provider: 'lrclib',
+    provider: provider as LyricsProvider,
     providerId,
     title,
     artist,
@@ -355,6 +371,7 @@ export function sanitizeLyricsCandidate(value: unknown): LyricsCandidate {
     synced: isSyncedLyrics(text),
     text,
     instrumental: false,
+    url,
     score,
     confidence
   }

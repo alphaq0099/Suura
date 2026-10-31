@@ -964,6 +964,10 @@ export function registerIpcHandlers(container: AppContainer): void {
     container.lyrics.read(toTrackId(trackId))
   )
 
+  ipcMain.handle(IPC.libraryFileLyrics, (_event, trackId: unknown) =>
+    container.lyrics.readFile(toTrackId(trackId))
+  )
+
   ipcMain.handle(IPC.libraryLyricsOffset, (_event, trackId: unknown, offset: unknown) =>
     container.lyrics.setOffset(toTrackId(trackId), sanitizeLyricsOffset(offset))
   )

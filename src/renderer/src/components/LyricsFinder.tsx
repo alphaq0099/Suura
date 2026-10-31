@@ -10,6 +10,11 @@ const CONFIDENCE_LABEL: Record<LyricsCandidate['confidence'], string> = {
   weak: 'Possible match'
 }
 
+const PROVIDER_LABEL: Record<LyricsCandidate['provider'], string> = {
+  lrclib: 'LRCLIB',
+  genius: 'Genius'
+}
+
 export interface LyricsFinderProps {
   track: Track
   /** Stores the chosen match; the panel closes the finder when it resolves. */
@@ -60,6 +65,7 @@ export function LyricsFinder(props: LyricsFinderProps) {
 
   const candidates = result?.candidates ?? []
   const candidate = candidates[selected] ?? null
+  const failedProviders = result?.providers.filter((report) => !report.ok) ?? []
 
   const choose = async (): Promise<void> => {
     if (!candidate || busy) return
@@ -81,7 +87,7 @@ export function LyricsFinder(props: LyricsFinderProps) {
           <h3>Find lyrics</h3>
           <p className="subtitle">
             {loading
-              ? 'Asking LRCLIB…'
+              ? 'Asking LRCLIB and Genius…'
               : candidates.length === 0
                 ? 'No match came back.'
                 : `${candidates.length} ${candidates.length === 1 ? 'match' : 'matches'}, best first.`}
@@ -111,7 +117,7 @@ export function LyricsFinder(props: LyricsFinderProps) {
       ) : (
         <ul className="auto-tag-list lyrics-finder-list" role="radiogroup" aria-label="Lyrics matches">
           {candidates.map((match, index) => (
-            <li key={`${match.providerId}:${index}`}>
+            <li key={`${match.provider}:${match.providerId}:${index}`}>
               <button
                 type="button"
                 role="radio"
@@ -132,7 +138,8 @@ export function LyricsFinder(props: LyricsFinderProps) {
                     {CONFIDENCE_LABEL[match.confidence]}
                   </span>
                   <span className="subtitle">
-                    {match.synced ? 'Synced' : 'Plain'} · {Math.round(match.score * 100)}%
+                    {PROVIDER_LABEL[match.provider]} · {match.synced ? 'Synced' : 'Plain'} ·{' '}
+                    {Math.round(match.score * 100)}%
                   </span>
                 </span>
               </button>
@@ -142,6 +149,11 @@ export function LyricsFinder(props: LyricsFinderProps) {
       )}
 
       {error && candidates.length > 0 ? <p className="field-note">{error}</p> : null}
+      {failedProviders.map((report) => (
+        <p className="field-note lyrics-finder-provider" key={report.provider} role="status">
+          {report.message ?? `${PROVIDER_LABEL[report.provider]} did not answer.`}
+        </p>
+      ))}
       {actionError ? (
         <p className="banner error" role="alert">
           {actionError}
@@ -149,8 +161,8 @@ export function LyricsFinder(props: LyricsFinderProps) {
       ) : null}
 
       <p className="field-note auto-tag-note">
-        Lyrics come from LRCLIB, a public lyrics database. Choosing one keeps it with this track; writing it
-        into the file is a separate step.
+        Lyrics come from LRCLIB, which supplies timed lines, and Genius, which supplies plain text. Choosing
+        one keeps it with this track; writing it into the file is a separate step.
       </p>
 
       <footer className="auto-tag-foot lyrics-finder-foot">

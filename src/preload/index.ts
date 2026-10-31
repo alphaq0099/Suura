@@ -95,6 +95,9 @@ const api: PlayerApi = {
   getTrackLyrics: (trackId: number) =>
     ipcRenderer.invoke(IPC.libraryLyrics, trackId) as Promise<TrackLyrics | null>,
 
+  getFileLyrics: (trackId: number) =>
+    ipcRenderer.invoke(IPC.libraryFileLyrics, trackId) as Promise<TrackLyrics | null>,
+
   setTrackLyricsOffset: (trackId: number, offsetMs: number) =>
     ipcRenderer.invoke(IPC.libraryLyricsOffset, trackId, offsetMs) as Promise<TrackLyrics | null>,
 

@@ -3638,23 +3638,42 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     // about changes it made itself — going through the UI is both the honest test
     // and the only one that would catch a control that is not wired up.
     //
-    // LRCLIB is replaced for the same reason: the ranking rules are pinned down
-    // in `npm run smoke`, so what the renderer half has to prove is the seam —
-    // a match is proposed, choosing it relabels the panel, and going back to the
-    // file restores the file's own lyrics.
-    const finderCandidate = {
-      provider: 'lrclib' as const,
-      providerId: 'selftest-lyrics',
-      title: 'Selftest Tone',
-      artist: 'Selftest',
-      album: 'Selftest Album',
-      durationMs: 3000,
-      synced: true,
-      text: '[00:00.40]found first\n[00:01.40]found second',
-      instrumental: false,
-      score: 0.93,
-      confidence: 'strong' as const
-    }
+    // Both services are replaced for the same reason: the ranking rules are
+    // pinned down in `npm run smoke`, so what the renderer half has to prove is
+    // the seam — a match is proposed, choosing it relabels the panel, and going
+    // back to the file restores the file's own lyrics. The stub answers with
+    // one match from each service so the label and the attribution link are
+    // both exercised.
+    const finderCandidates = [
+      {
+        provider: 'lrclib' as const,
+        providerId: 'selftest-lyrics',
+        title: 'Selftest Tone',
+        artist: 'Selftest',
+        album: 'Selftest Album',
+        durationMs: 3000,
+        synced: true,
+        text: '[00:00.40]found first\n[00:01.40]found second',
+        instrumental: false,
+        url: null,
+        score: 0.93,
+        confidence: 'strong' as const
+      },
+      {
+        provider: 'genius' as const,
+        providerId: 'selftest-genius',
+        title: 'Selftest Tone',
+        artist: 'The Real Selftest',
+        album: null,
+        durationMs: null,
+        synced: false,
+        text: 'first line of the plain words\nsecond line of the plain words',
+        instrumental: false,
+        url: 'https://genius.com/Selftest-tone-selftest-lyrics',
+        score: 0.91,
+        confidence: 'strong' as const
+      }
+    ]
     const originalLyricsFind = container.lyrics.find
     container.lyrics.find = async (trackId) => {
       const track = container.repo.getById(trackId)
@@ -3665,7 +3684,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
           album: track?.album ?? null,
           durationMs: track?.durationMs ?? null
         },
-        candidates: [finderCandidate],
+        candidates: finderCandidates,
+        providers: [
+          { provider: 'lrclib', ok: true, message: null, count: 1 },
+          { provider: 'genius', ok: true, message: null, count: 1 }
+        ],
         message: null
       }
     }
@@ -3732,9 +3755,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       finderOpened: boolean
       finderMatches: number
       finderMatchText: string
+      finderGeniusLabel: boolean
       fetchedMeta: string
       fetchedLines: number
       fetchedActions: boolean
+      fetchedLink: boolean
       fileMeta: string
       fileLines: number
       fileActions: boolean
@@ -3747,7 +3772,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     }>(
       window,
       `(async () => {
-         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, volumeBeforeWheel: -1, volumeAfterWheel: -1, volumeWheelTop: -1, volumeWheelBottom: -1, wheelCancelled: false, barVolumeBefore: -1, barVolumeMuted: -1, barMutePressed: '', barVolumeRestored: -1, barPopHidden: false, barPopVertical: false, barPopWithin: false, barPopShownByFocus: false, barKeyBefore: -1, barKeyAfter: -1, barKeyProgress: '', barKeyRestored: -1, panelClosedByOutsidePress: false, panelStayedOpenOnInsidePress: false, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false, panelCloseState: '', lyricsOpened: false, queueClosedByLyrics: false, lyricRows: 0, lyricMeta: '', lyricCurrent: 0, lyricSeeked: false, lyricFill: false, lyricPaused: false, lyricResumed: false, finderOpened: false, finderMatches: 0, finderMatchText: '', fetchedMeta: '', fetchedLines: 0, fetchedActions: false, fileMeta: '', fileLines: 0, fileActions: false, stageOpened: false, stageLines: 0, stageCurrent: 0, stageClosed: false, escapeHidLyrics: false, escapeKeptWindowAfterLyrics: false }
+         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, volumeBeforeWheel: -1, volumeAfterWheel: -1, volumeWheelTop: -1, volumeWheelBottom: -1, wheelCancelled: false, barVolumeBefore: -1, barVolumeMuted: -1, barMutePressed: '', barVolumeRestored: -1, barPopHidden: false, barPopVertical: false, barPopWithin: false, barPopShownByFocus: false, barKeyBefore: -1, barKeyAfter: -1, barKeyProgress: '', barKeyRestored: -1, panelClosedByOutsidePress: false, panelStayedOpenOnInsidePress: false, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false, panelCloseState: '', lyricsOpened: false, queueClosedByLyrics: false, lyricRows: 0, lyricMeta: '', lyricCurrent: 0, lyricSeeked: false, lyricFill: false, lyricPaused: false, lyricResumed: false, finderOpened: false, finderMatches: 0, finderMatchText: '', finderGeniusLabel: false, fetchedMeta: '', fetchedLines: 0, fetchedActions: false, fetchedLink: false, fileMeta: '', fileLines: 0, fileActions: false, stageOpened: false, stageLines: 0, stageCurrent: 0, stageClosed: false, escapeHidLyrics: false, escapeKeptWindowAfterLyrics: false }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (selector) => document.querySelector(selector)
          const press = (element) => { if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
@@ -4098,15 +4123,22 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         await sleep(250)
         out.lyricResumed = !pick('.np-lyrics-resume')
 
-        // The finder proposes, the panel decides. Opening it asks the service
-        // (stubbed in the main process), choosing a match stores it and labels
-        // the panel LRCLIB, and "Use file lyrics" puts the file's own copy back.
+        // The finder proposes, the panel decides. Opening it asks the services
+        // (stubbed in the main process), and the list names both of them. The
+        // plain-text match is the second one, so choosing it proves a fetched
+        // lyric carries its source label and its page, and that "Use file
+        // lyrics" puts the file's own copy back.
         press(pick('.np-lyrics-find'))
         for (let attempt = 0; attempt < 40 && !pick('.lyrics-finder'); attempt += 1) await sleep(100)
         out.finderOpened = Boolean(pick('.lyrics-finder'))
         for (let attempt = 0; attempt < 40 && !pick('.lyrics-match'); attempt += 1) await sleep(100)
-        out.finderMatches = document.querySelectorAll('.lyrics-match').length
-        out.finderMatchText = (pick('.lyrics-match') || {}).textContent || ''
+        const finderMatches = [...document.querySelectorAll('.lyrics-match')]
+        out.finderMatches = finderMatches.length
+        out.finderMatchText = (finderMatches[0] || {}).textContent || ''
+        out.finderGeniusLabel = finderMatches.some((match) => (match.textContent || '').includes('Genius'))
+        const geniusMatch = finderMatches.find((match) => (match.textContent || '').includes('Genius'))
+        if (geniusMatch) press(geniusMatch)
+        await sleep(150)
         const useLyrics = pick('.lyrics-finder-foot .primary')
         if (useLyrics) press(useLyrics)
         for (let attempt = 0; attempt < 40 && pick('.lyrics-finder'); attempt += 1) await sleep(100)
@@ -4114,6 +4146,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         out.fetchedMeta = (pick('.np-lyrics-meta') || {}).textContent || ''
         out.fetchedLines = lyricLines().length
         out.fetchedActions = Boolean(pick('.np-lyrics-actions'))
+        out.fetchedLink = Boolean(pick('.np-lyrics-actions-link'))
         press(pick('.np-lyrics-use-file'))
         for (let attempt = 0; attempt < 40 && pick('.np-lyrics-actions'); attempt += 1) await sleep(100)
         out.fileMeta = (pick('.np-lyrics-meta') || {}).textContent || ''
@@ -4305,16 +4338,17 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       `paused ${visuals.lyricPaused} / resumed ${visuals.lyricResumed}`
     )
     record(
-      visuals.finderOpened && visuals.finderMatches === 1 && visuals.finderMatchText.includes('Synced'),
-      'the lyrics header opens a finder that shows the match it was given',
+      visuals.finderOpened && visuals.finderMatches === 2 && visuals.finderGeniusLabel,
+      'the lyrics header opens a finder that names every service that answered',
       `${visuals.finderMatches} matches, "${visuals.finderMatchText}"`
     )
     record(
       visuals.fetchedActions &&
-        visuals.fetchedLines === 2 &&
-        visuals.fetchedMeta.includes('LRCLIB'),
-      'choosing a match labels the lyrics LRCLIB and offers the file actions',
-      `${visuals.fetchedLines} lines, "${visuals.fetchedMeta}"`
+        visuals.fetchedLink &&
+        visuals.fetchedLines === 0 &&
+        visuals.fetchedMeta.includes('Genius'),
+      'choosing a Genius match labels it, keeps its page and offers the file actions',
+      `${visuals.fetchedLines} lines, "${visuals.fetchedMeta}", link ${visuals.fetchedLink}`
     )
     record(
       !visuals.fileActions && visuals.fileLines === 2 && visuals.fileMeta.includes('File tags'),

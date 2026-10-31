@@ -87,6 +87,7 @@ export const IPC = {
   libraryUpdateTags: 'library:update-tags',
   libraryAutoTag: 'library:auto-tag',
   libraryLyrics: 'library:lyrics',
+  libraryFileLyrics: 'library:file-lyrics',
   libraryLyricsOffset: 'library:lyrics-offset',
   libraryLyricsFind: 'library:lyrics-find',
   libraryLyricsUse: 'library:lyrics-use',
@@ -350,6 +351,13 @@ export interface PlayerApi {
    * audio. Nothing here touches the network.
    */
   getTrackLyrics(trackId: number): Promise<TrackLyrics | null>
+  /**
+   * The lyrics the file itself carries, ignoring a fetched copy.
+   *
+   * The tag editor reads this: its draft must be what the file says, or an
+   * ordinary save would write the finder's words into the tag by accident.
+   */
+  getFileLyrics(trackId: number): Promise<TrackLyrics | null>
   /**
    * Remembers how far the lyrics should be shifted for this track.
    *

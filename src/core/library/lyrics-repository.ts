@@ -5,7 +5,8 @@ import type { SqlDatabase } from '../db/driver'
 export type LocalLyricsSource = Extract<LyricsSource, 'embedded' | 'sidecar'>
 
 /** Everything the table can hold today: the file's own lyrics, plus a fetch. */
-export type StoredLyricsSource = LocalLyricsSource | 'lrclib'
+export type FetchedLyricsSource = Extract<LyricsSource, 'lrclib' | 'genius'>
+export type StoredLyricsSource = LocalLyricsSource | FetchedLyricsSource
 
 export interface StoredLyrics {
   trackId: number
@@ -13,6 +14,8 @@ export interface StoredLyrics {
   language: string | null
   synced: boolean
   text: string
+  /** A fetched lyric's page, or null for a row read from the file. */
+  origin: string | null
   offsetMs: number
   fetchedAt: number
 }
@@ -23,15 +26,17 @@ interface LyricsRow {
   language: string | null
   synced: number
   text: string
+  origin: string | null
   offset_ms: number
   fetched_at: number
 }
 
-const COLUMNS = `track_id, source, language, synced, text, offset_ms, fetched_at`
+const COLUMNS = `track_id, source, language, synced, text, origin, offset_ms, fetched_at`
 
 function toSource(value: string): StoredLyricsSource {
   if (value === 'sidecar') return 'sidecar'
   if (value === 'lrclib') return 'lrclib'
+  if (value === 'genius') return 'genius'
   return 'embedded'
 }
 
@@ -42,6 +47,7 @@ function mapRow(row: LyricsRow): StoredLyrics {
     language: row.language,
     synced: row.synced === 1,
     text: row.text,
+    origin: row.origin,
     offsetMs: row.offset_ms,
     fetchedAt: row.fetched_at
   }
@@ -73,18 +79,25 @@ export class LyricsRepository {
    *
    * A fetched lyric wins because choosing one is an explicit act: the user
    * asked for that match, and it must not be hidden by a sidecar that was
-   * already there. Without one, a `.lrc` wins over an embedded tag: it is the
-   * copy a user can edit without rewriting the audio, and it is what a lyric
-   * downloader writes. The order is one list so a later source only has to be
-   * inserted in the right place.
+   * already there. Only one fetch is kept at a time, so the order between the
+   * two services is only a fallback for a row an older build left behind.
+   * Without one, a `.lrc` wins over an embedded tag: it is the copy a user can
+   * edit without rewriting the audio, and it is what a lyric downloader writes.
+   * The order is one list so a later source only has to be inserted in the
+   * right place.
    */
   preferred(trackId: number): StoredLyrics | null {
-    const order: StoredLyricsSource[] = ['lrclib', 'sidecar', 'embedded']
+    const order: StoredLyricsSource[] = ['lrclib', 'genius', 'sidecar', 'embedded']
     for (const source of order) {
       const row = this.get(trackId, source)
       if (row) return row
     }
     return null
+  }
+
+  /** The one fetched row, whichever service supplied it. */
+  fetched(trackId: number): StoredLyrics | null {
+    return this.get(trackId, 'lrclib') ?? this.get(trackId, 'genius')
   }
 
   /**
@@ -113,17 +126,33 @@ export class LyricsRepository {
    * Remembers the lyrics the user chose from the finder.
    *
    * This is the one row the file does not own, so it is written only when a
-   * match is chosen and removed when the user goes back to the file. Its
-   * offset is left alone by the upsert, exactly as a local source's is: the
-   * correction belongs to the user, not to the text that arrived today.
+   * match is chosen and removed when the user goes back to the file. Choosing
+   * from one service replaces the other's row: the panel shows one fetched
+   * lyric, not a hidden second copy that would surface if the first were
+   * removed. Its offset is left alone by the upsert, exactly as a local
+   * source's is: the correction belongs to the user, not to the text that
+   * arrived today.
    */
-  saveFetched(trackId: number, input: StoredLyricsInput, now = Date.now()): void {
-    this.write(trackId, 'lrclib', input, now)
+  saveFetched(
+    trackId: number,
+    source: FetchedLyricsSource,
+    input: StoredLyricsInput,
+    now = Date.now()
+  ): void {
+    this.db.transaction(() => {
+      const other: FetchedLyricsSource = source === 'lrclib' ? 'genius' : 'lrclib'
+      this.db
+        .prepare(`DELETE FROM track_lyrics WHERE track_id = ? AND source = ?`)
+        .run(trackId, other)
+      this.write(trackId, source, input, now)
+    })
   }
 
   /** Forgets the chosen fetch, so the file's own lyrics are shown again. */
   clearFetched(trackId: number): void {
-    this.db.prepare(`DELETE FROM track_lyrics WHERE track_id = ? AND source = 'lrclib'`).run(trackId)
+    this.db
+      .prepare(`DELETE FROM track_lyrics WHERE track_id = ? AND source IN ('lrclib', 'genius')`)
+      .run(trackId)
   }
 
   /** Test and maintenance helper: forgets every cached lyric. */
@@ -143,15 +172,16 @@ export class LyricsRepository {
     }
     this.db
       .prepare(
-        `INSERT INTO track_lyrics (track_id, source, language, synced, text, offset_ms, fetched_at)
-         VALUES (?, ?, ?, ?, ?, 0, ?)
+        `INSERT INTO track_lyrics (track_id, source, language, synced, text, origin, offset_ms, fetched_at)
+         VALUES (?, ?, ?, ?, ?, ?, 0, ?)
          ON CONFLICT(track_id, source) DO UPDATE SET
            language   = excluded.language,
            synced     = excluded.synced,
            text       = excluded.text,
+           origin     = excluded.origin,
            fetched_at = excluded.fetched_at`
       )
-      .run(trackId, source, input.language, input.synced, input.text, now)
+      .run(trackId, source, input.language, input.synced, input.text, input.origin ?? null, now)
   }
 }
 
@@ -159,4 +189,6 @@ export interface StoredLyricsInput {
   language: string | null
   synced: boolean
   text: string
+  /** A fetched lyric's page, when the service has one to link back to. */
+  origin?: string | null
 }

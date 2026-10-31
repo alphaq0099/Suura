@@ -38,7 +38,8 @@ import { StreamCache } from '../stream-cache'
 import { createOnlineService, type OnlineService } from '../online-service'
 import { ReplayGainService } from '../replay-gain-service'
 import { createTagLookup, type TagLookup } from '@core/library/tag-lookup'
-import { createLyricsLookup } from '@core/library/lyrics-lookup'
+import { createLyricsFinder, createLyricsLookup } from '@core/library/lyrics-lookup'
+import { createGeniusProvider } from '@core/library/lyrics-genius'
 import { createArtworkChoices, type ArtworkChoicesService } from '../artwork-choices'
 import { createYoutubeService, type YoutubeService } from '../youtube-service'
 
@@ -239,7 +240,14 @@ export function createContainer(): AppContainer {
     new LyricsRepository(database.db),
     log.child('lyrics'),
     tagWriter,
-    createLyricsLookup({ log: log.child('lyrics-lookup') })
+    // LRCLIB first for timed LRC, Genius beside it for the words it lacks.
+    createLyricsFinder({
+      log: log.child('lyrics-lookup'),
+      providers: [
+        createLyricsLookup({ log: log.child('lyrics-lookup') }),
+        createGeniusProvider({ log: log.child('lyrics-lookup') })
+      ]
+    })
   )
 
   // Keyless public services, asked in parallel when a file's tags are wrong.
