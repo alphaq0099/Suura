@@ -75,6 +75,14 @@ export type ArtworkSize = 'small' | 'medium' | 'large' | 'xlarge'
 export type TextSize = 'small' | 'medium' | 'large' | 'xlarge'
 
 /**
+ * How lyric lines sit in the panel and on the full-window stage.
+ *
+ * `center` reads like a lyric sheet and is the default; `left` is the easier
+ * scan when a song has long, wrapping lines or the user is reading closely.
+ */
+export type LyricsAlign = 'left' | 'center'
+
+/**
  * Which sidebar glyph family the app uses. `modern` is the default set: rounder,
  * more distinct silhouettes. `classic` keeps the original outline set.
  */
@@ -895,6 +903,8 @@ export interface VisualSettings {
   playlistArtworkSize: ArtworkSize
   /** Global text scale, applied through `--text-scale`. */
   textSize: TextSize
+  /** How lyric lines are aligned in the panel and the full-window stage. */
+  lyricsAlign: LyricsAlign
   /** Sidebar glyph family. */
   iconSet: IconSet
   /** Seconds each Home hero cover stays before the next crossfade. */

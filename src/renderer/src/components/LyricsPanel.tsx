@@ -8,7 +8,7 @@ import {
   type LyricLine
 } from '@shared/lyrics'
 import { api, messageOf } from '../api'
-import { ExpandIcon } from './Icons'
+import { DoubleChevronLeftIcon } from './Icons'
 import { LyricsBody, LyricsOffsetControls } from './LyricsLines'
 import { LyricsStage } from './LyricsStage'
 
@@ -152,17 +152,13 @@ export function LyricsPanel(props: LyricsPanelProps) {
       <LyricsStage
         track={track}
         artworkKey={artworkKey}
-        meta={meta}
         loading={loading}
         error={error}
         lyrics={lyrics}
         lines={lines}
         active={active}
         lineProgress={lineProgress}
-        offsetMs={offsetMs}
-        saving={saving}
         onSeek={seekTo}
-        onShift={shift}
         onClose={() => setExpanded(false)}
       />,
       document.body
@@ -177,26 +173,9 @@ export function LyricsPanel(props: LyricsPanelProps) {
     >
       <header className="np-lyrics-head">
         <h2>Lyrics</h2>
-        <div className="np-lyrics-head-actions">
-          <span className="np-lyrics-meta" title={lyrics?.origin ?? undefined}>
-            {meta}
-          </span>
-          {lines.length > 0 ? (
-            <button
-              ref={expandRef}
-              type="button"
-              className="icon-button np-lyrics-expand"
-              onClick={() => {
-                wasExpanded.current = true
-                setExpanded(true)
-              }}
-              title="Open the lyrics full-window"
-              aria-label="Open the lyrics full-window"
-            >
-              <ExpandIcon size={15} />
-            </button>
-          ) : null}
-        </div>
+        <span className="np-lyrics-meta" title={lyrics?.origin ?? undefined}>
+          {meta}
+        </span>
       </header>
 
       <div className="np-lyrics-body">
@@ -215,7 +194,22 @@ export function LyricsPanel(props: LyricsPanelProps) {
 
       {lyrics && lines.length > 0 ? (
         <footer className="np-lyrics-foot">
-          <LyricsOffsetControls offsetMs={offsetMs} saving={saving} onShift={shift} />
+          <button
+            ref={expandRef}
+            type="button"
+            className="icon-button np-lyrics-expand"
+            onClick={() => {
+              wasExpanded.current = true
+              setExpanded(true)
+            }}
+            title="Open the lyrics full-window"
+            aria-label="Open the lyrics full-window"
+          >
+            <DoubleChevronLeftIcon size={16} />
+          </button>
+          <div className="np-lyrics-offset-group">
+            <LyricsOffsetControls offsetMs={offsetMs} saving={saving} onShift={shift} />
+          </div>
         </footer>
       ) : null}
     </aside>

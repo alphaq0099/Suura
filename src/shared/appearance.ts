@@ -5,6 +5,7 @@ import type {
   DeepPartial,
   Density,
   IconSet,
+  LyricsAlign,
   MotionPreference,
   SurfaceStyle,
   TextSize,
@@ -36,6 +37,7 @@ export const HERO_SLIDE_SECONDS_MIN = 3
 export const HERO_SLIDE_SECONDS_MAX = 60
 
 export const TEXT_SIZES: readonly TextSize[] = ['small', 'medium', 'large', 'xlarge']
+export const LYRICS_ALIGNS: readonly LyricsAlign[] = ['left', 'center']
 export const ICON_SETS: readonly IconSet[] = ['modern', 'classic']
 
 export interface ThemeChoice {
@@ -97,6 +99,11 @@ export const ICON_SET_CHOICES: readonly AppearanceChoice<IconSet>[] = [
   { value: 'classic', label: 'Classic', hint: 'The original outline set' }
 ]
 
+export const LYRICS_ALIGN_CHOICES: readonly AppearanceChoice<LyricsAlign>[] = [
+  { value: 'center', label: 'Center', hint: 'Centred like a lyric sheet' },
+  { value: 'left', label: 'Left', hint: 'Easier to scan long lines' }
+]
+
 /**
  * Row heights are shared because the virtualizer computes the visible window by
  * dividing the scroll offset by this number. The stylesheet reads the same
@@ -132,6 +139,9 @@ export const DEFAULT_APPEARANCE = {
     artworkSize: 'medium',
     playlistArtworkSize: 'medium',
     textSize: 'medium',
+    // A lyric sheet reads best centred; long, wrapping lines can be switched to
+    // the left without changing anything else.
+    lyricsAlign: 'center',
     iconSet: 'modern',
     // Slow enough to read the page: the backdrop is atmosphere, not a carousel.
     heroSlideSeconds: 12,
@@ -142,4 +152,13 @@ export const DEFAULT_APPEARANCE = {
   }
 } satisfies DeepPartial<AppSettings>
 
-export type { AccentName, Density, IconSet, MotionPreference, SurfaceStyle, TextSize, ThemeMode }
+export type {
+  AccentName,
+  Density,
+  IconSet,
+  LyricsAlign,
+  MotionPreference,
+  SurfaceStyle,
+  TextSize,
+  ThemeMode
+}

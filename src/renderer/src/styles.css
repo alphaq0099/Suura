@@ -3930,16 +3930,15 @@ input[type='radio'] {
   white-space: nowrap;
 }
 
-.np-lyrics-head-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
+/* The expand affordance lives in the footer, at the left, where it reads as
+   "pull the sheet out of this panel" rather than as another header action. */
 .np-lyrics-expand {
   flex: none;
   color: var(--text-dim);
+}
+
+.np-lyrics-expand:hover:not(:disabled) {
+  color: var(--text);
 }
 
 .np-lyrics-body {
@@ -3996,6 +3995,7 @@ input[type='radio'] {
    current one is the only bright text: the rest stay readable but recede, which
    is what makes the highlight legible at a glance from across the room. */
 .np-lyric-line {
+  position: relative;
   display: block;
   width: 100%;
   padding: 7px 12px;
@@ -4004,10 +4004,12 @@ input[type='radio'] {
   background: none;
   font: inherit;
   font-size: calc(14.5px * var(--text-scale));
+  font-weight: 600;
   line-height: 1.5;
-  text-align: left;
+  text-align: center;
   color: var(--text-dim);
   cursor: pointer;
+  overflow: hidden;
   transition:
     color 160ms ease,
     background-color 160ms ease;
@@ -4019,16 +4021,37 @@ input[type='radio'] {
 }
 
 /* The highlight is a fill, not a slab: it grows across the line as the line is
-   sung, so the eye can tell a long line from a short one. `--line-progress` is
-   set inline by the panel, in the same idiom as the seek bar. */
+   sung, so the eye can tell a long line from a short one. The fill is a
+   transform on its own layer, so the browser interpolates between the roughly
+   four position updates a second instead of repainting a gradient stop. */
+.np-lyric-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgb(var(--accent-rgb) / 24%);
+  transform-origin: left center;
+  transition: transform 260ms linear;
+  pointer-events: none;
+}
+
+.np-lyric-text {
+  position: relative;
+}
+
 .np-lyric-line.current {
   color: var(--text);
-  font-weight: 600;
-  background: linear-gradient(
-    90deg,
-    rgb(var(--accent-rgb) / 26%) 0 var(--line-progress, 0%),
-    rgb(var(--accent-rgb) / 8%) var(--line-progress, 0%) 100%
-  );
+  font-weight: 700;
+  background: rgb(var(--accent-rgb) / 8%);
+}
+
+/* A lyric sheet reads centred by default; the left edge is available for long,
+   wrapping lines. The accent bar only makes sense on the left edge, so it comes
+   and goes with the alignment. */
+:root[data-lyrics-align='left'] .np-lyric-line {
+  text-align: left;
+}
+
+:root[data-lyrics-align='left'] .np-lyric-line.current {
   box-shadow: inset 2px 0 0 rgb(var(--accent-rgb) / 90%);
 }
 
@@ -4048,11 +4071,16 @@ input[type='radio'] {
   padding: 20px 20px 26px;
   font-size: calc(15px * var(--text-scale));
   line-height: 1.65;
+  text-align: center;
   color: var(--text-dim);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   scrollbar-width: thin;
   scrollbar-color: var(--scroll-thumb) transparent;
+}
+
+:root[data-lyrics-align='left'] .np-lyrics-plain {
+  text-align: left;
 }
 
 /* The panel is a card, not the page, so the bar is inset from the card edge and
@@ -4152,12 +4180,21 @@ input[type='radio'] {
 .np-lyrics-foot {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 8px 10px;
   border-top: 1px solid var(--border);
 }
 
-.np-lyrics-foot button {
+/* The timing controls sit together on the right; the expand button keeps the
+   left corner so the two kinds of action never trade places. */
+.np-lyrics-offset-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.np-lyrics-foot button:not(.icon-button) {
   padding: 5px 10px;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -4171,12 +4208,12 @@ input[type='radio'] {
     border-color 140ms ease;
 }
 
-.np-lyrics-foot button:hover:not(:disabled) {
+.np-lyrics-foot button:not(.icon-button):hover:not(:disabled) {
   border-color: rgb(var(--accent-rgb) / 60%);
   color: var(--text);
 }
 
-.np-lyrics-foot button:disabled {
+.np-lyrics-foot button:not(.icon-button):disabled {
   opacity: 0.45;
   cursor: default;
 }
@@ -4190,7 +4227,6 @@ input[type='radio'] {
 }
 
 .np-lyrics-reset {
-  margin-left: auto;
   border-color: transparent;
   color: var(--text-faint);
 }
@@ -4209,13 +4245,15 @@ input[type='radio'] {
   overflow: hidden;
   background: var(--bg);
   outline: none;
-  animation: lyrics-stage-in 220ms ease both;
+  animation: lyrics-stage-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+/* Expanding from the panel: the sheet grows into the window rather than
+   appearing on top of it. */
 @keyframes lyrics-stage-in {
   from {
     opacity: 0;
-    transform: scale(0.995);
+    transform: scale(0.955);
   }
   to {
     opacity: 1;
@@ -4223,8 +4261,25 @@ input[type='radio'] {
   }
 }
 
+.np-lyrics-stage.closing {
+  pointer-events: none;
+  animation: lyrics-stage-out 180ms ease-in both;
+}
+
+@keyframes lyrics-stage-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.975);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .np-lyrics-stage {
+  .np-lyrics-stage,
+  .np-lyrics-stage.closing {
     animation: none;
   }
 }
@@ -4238,6 +4293,25 @@ input[type='radio'] {
   transform: scale(1.2);
   opacity: 0.55;
   pointer-events: none;
+  /* The cover arrives after the sheet: the words come first, the colour settles
+     behind them, which is what makes the transition read as a fade-in rather
+     than a flash of artwork. */
+  animation: lyrics-stage-art-in 460ms ease both;
+}
+
+@keyframes lyrics-stage-art-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .np-lyrics-stage-art {
+    animation: none;
+  }
 }
 
 .np-lyrics-stage-art-fallback {
@@ -4301,25 +4375,13 @@ input[type='radio'] {
   white-space: nowrap;
 }
 
-.np-lyrics-stage-actions {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 10px;
-}
-
-.np-lyrics-stage-source {
-  padding: 4px 10px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: rgb(var(--np-overlay-rgb) / 6%);
-  font-size: calc(11px * var(--text-scale));
-  color: var(--text-dim);
-  white-space: nowrap;
-}
-
 .np-lyrics-stage-close {
+  flex: none;
   color: var(--text-dim);
+}
+
+.np-lyrics-stage-close:hover:not(:disabled) {
+  color: var(--text);
 }
 
 .np-lyrics-stage-body {
@@ -4385,11 +4447,14 @@ input[type='radio'] {
 
 .np-lyrics-stage .np-lyric-line.current {
   opacity: 1;
-  background: linear-gradient(
-    90deg,
-    rgb(var(--accent-rgb) / 18%) 0 var(--line-progress, 0%),
-    rgb(var(--accent-rgb) / 6%) var(--line-progress, 0%) 100%
-  );
+  background: rgb(var(--accent-rgb) / 7%);
+}
+
+.np-lyrics-stage .np-lyric-fill {
+  background: rgb(var(--accent-rgb) / 18%);
+}
+
+:root[data-lyrics-align='left'] .np-lyrics-stage .np-lyric-line.current {
   box-shadow: inset 3px 0 0 rgb(var(--accent-rgb) / 90%);
 }
 
@@ -4408,27 +4473,6 @@ input[type='radio'] {
   bottom: 16px;
   padding: 8px 14px;
   font-size: calc(12.5px * var(--text-scale));
-}
-
-.np-lyrics-stage-foot {
-  position: relative;
-  z-index: 1;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 10px 28px 20px;
-  border-top: none;
-}
-
-.np-lyrics-stage-offset {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.np-lyrics-stage-hint {
-  margin: 0;
-  font-size: calc(11.5px * var(--text-scale));
-  color: var(--text-faint);
 }
 
 /* No border and no background of its own: the scrim behind this band already

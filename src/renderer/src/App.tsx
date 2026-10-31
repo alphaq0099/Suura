@@ -179,6 +179,7 @@ export function App() {
     root.dataset.surface = settings.visuals.surface
     root.dataset.motion = settings.visuals.motion
     root.dataset.textSize = settings.visuals.textSize
+    root.dataset.lyricsAlign = settings.visuals.lyricsAlign
     // The settings live in the main process and arrive one IPC round-trip after
     // the first paint. Caching the resolved palette here lets main.tsx paint the
     // right background immediately next launch instead of flashing dark.
@@ -192,7 +193,8 @@ export function App() {
           density: settings.visuals.density,
           surface: settings.visuals.surface,
           motion: settings.visuals.motion,
-          textSize: settings.visuals.textSize
+          textSize: settings.visuals.textSize,
+          lyricsAlign: settings.visuals.lyricsAlign
         })
       )
     } catch {
@@ -204,7 +206,8 @@ export function App() {
     settings?.visuals.density,
     settings?.visuals.surface,
     settings?.visuals.motion,
-    settings?.visuals.textSize
+    settings?.visuals.textSize,
+    settings?.visuals.lyricsAlign
   ])
 
   const library = useLibrary()

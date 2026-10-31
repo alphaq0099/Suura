@@ -7,6 +7,7 @@ import {
   HERO_SLIDE_SECONDS_MAX,
   HERO_SLIDE_SECONDS_MIN,
   ICON_SETS,
+  LYRICS_ALIGNS,
   MOTION_PREFERENCES,
   SURFACES,
   TEXT_SIZES,
@@ -39,6 +40,7 @@ import type {
   DownloadFormat,
   EngineSettings,
   IconSet,
+  LyricsAlign,
   InteractionSettings,
   StartupSettings,
   StartupView,
@@ -296,6 +298,9 @@ export function sanitizeSettingsPatch(input: unknown): DeepPartial<AppSettings> 
     }
     if (typeof source.textSize === 'string' && TEXT_SIZES.includes(source.textSize as TextSize)) {
       visuals.textSize = source.textSize as TextSize
+    }
+    if (typeof source.lyricsAlign === 'string' && LYRICS_ALIGNS.includes(source.lyricsAlign as LyricsAlign)) {
+      visuals.lyricsAlign = source.lyricsAlign as LyricsAlign
     }
     if (typeof source.iconSet === 'string' && ICON_SETS.includes(source.iconSet as IconSet)) {
       visuals.iconSet = source.iconSet as IconSet

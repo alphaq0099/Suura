@@ -1,7 +1,14 @@
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { mkdirSync } from 'node:fs'
-import { ARTWORK_SIZES, HERO_SLIDE_SECONDS_MAX, HERO_SLIDE_SECONDS_MIN, ICON_SETS, TEXT_SIZES } from '@shared/appearance'
+import {
+  ARTWORK_SIZES,
+  HERO_SLIDE_SECONDS_MAX,
+  HERO_SLIDE_SECONDS_MIN,
+  ICON_SETS,
+  LYRICS_ALIGNS,
+  TEXT_SIZES
+} from '@shared/appearance'
 import { normalizeAudioSettings } from '@shared/audio'
 import {
   DEFAULT_SETTINGS,
@@ -16,6 +23,7 @@ import {
   type DeepPartial,
   type DownloadFormat,
   type IconSet,
+  type LyricsAlign,
   type QualityTier,
   type RetentionMode,
   type RetentionSettings,
@@ -185,6 +193,9 @@ export class SettingsService {
         textSize: TEXT_SIZES.includes(storedVisuals.textSize as TextSize)
           ? (storedVisuals.textSize as TextSize)
           : DEFAULT_SETTINGS.visuals.textSize,
+        lyricsAlign: LYRICS_ALIGNS.includes(storedVisuals.lyricsAlign as LyricsAlign)
+          ? (storedVisuals.lyricsAlign as LyricsAlign)
+          : DEFAULT_SETTINGS.visuals.lyricsAlign,
         iconSet: ICON_SETS.includes(storedVisuals.iconSet as IconSet)
           ? (storedVisuals.iconSet as IconSet)
           : DEFAULT_SETTINGS.visuals.iconSet,

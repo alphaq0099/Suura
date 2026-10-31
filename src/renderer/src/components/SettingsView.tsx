@@ -7,6 +7,7 @@ import {
   HERO_SLIDE_SECONDS_MAX,
   HERO_SLIDE_SECONDS_MIN,
   ICON_SET_CHOICES,
+  LYRICS_ALIGN_CHOICES,
   MOTION_CHOICES,
   SURFACE_CHOICES,
   TEXT_SIZE_CHOICES,
@@ -30,6 +31,7 @@ import type {
   ExecutableStatus,
   IconSet,
   LibraryClickAction,
+  LyricsAlign,
   MotionPreference,
   PoTokenStatus,
   QualityTier,
@@ -1011,6 +1013,24 @@ export function SettingsView(props: SettingsViewProps) {
                         aria-pressed={settings.visuals.iconSet === choice.value}
                         title={choice.hint}
                         onClick={() => onUpdate({ visuals: { iconSet: choice.value as IconSet } })}
+                      >
+                        {choice.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="field">
+                  <span>Lyric alignment</span>
+                  <div className="segmented" role="group" aria-label="Lyric alignment">
+                    {LYRICS_ALIGN_CHOICES.map((choice) => (
+                      <button
+                        key={choice.value}
+                        type="button"
+                        className={settings.visuals.lyricsAlign === choice.value ? 'active' : undefined}
+                        data-lyrics-align-choice={choice.value}
+                        aria-pressed={settings.visuals.lyricsAlign === choice.value}
+                        title={choice.hint}
+                        onClick={() => onUpdate({ visuals: { lyricsAlign: choice.value as LyricsAlign } })}
                       >
                         {choice.label}
                       </button>

@@ -4,11 +4,19 @@ import {
   ACCENTS,
   APPEARANCE_CACHE_KEY,
   DENSITIES,
+  LYRICS_ALIGNS,
   MOTION_PREFERENCES,
   SURFACES,
   TEXT_SIZES
 } from '@shared/appearance'
-import type { AccentName, Density, MotionPreference, SurfaceStyle, TextSize } from '@shared/types'
+import type {
+  AccentName,
+  Density,
+  LyricsAlign,
+  MotionPreference,
+  SurfaceStyle,
+  TextSize
+} from '@shared/types'
 import '@fontsource-variable/inter'
 import { App } from './App'
 import './styles.css'
@@ -43,6 +51,9 @@ try {
     }
     if (typeof cached.textSize === 'string' && TEXT_SIZES.includes(cached.textSize as TextSize)) {
       root.dataset.textSize = cached.textSize
+    }
+    if (typeof cached.lyricsAlign === 'string' && LYRICS_ALIGNS.includes(cached.lyricsAlign as LyricsAlign)) {
+      root.dataset.lyricsAlign = cached.lyricsAlign
     }
   }
 } catch {

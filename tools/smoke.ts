@@ -19,6 +19,8 @@ import {
   DENSITY_CHOICES,
   DENSITY_ROW_HEIGHT,
   DEFAULT_APPEARANCE,
+  LYRICS_ALIGN_CHOICES,
+  LYRICS_ALIGNS,
   MOTION_CHOICES,
   SURFACE_CHOICES,
   THEME_CHOICES
@@ -3273,6 +3275,15 @@ async function main(): Promise<void> {
       'appearance: the default includes artwork and player choices',
       DEFAULT_APPEARANCE.visuals?.playerArtwork === true && DEFAULT_APPEARANCE.visuals?.playerAmbience === true
     )
+    checkEqual('appearance: lyrics are centred by default', DEFAULT_SETTINGS.visuals.lyricsAlign, 'center')
+    check(
+      'appearance: both lyric alignments are offered with a label',
+      LYRICS_ALIGNS.length === 2 &&
+        LYRICS_ALIGN_CHOICES.length === LYRICS_ALIGNS.length &&
+        LYRICS_ALIGN_CHOICES.every(
+          (choice) => LYRICS_ALIGNS.includes(choice.value) && choice.label.length > 0
+        )
+    )
 
     const appearanceSettings = mergeSettings(DEFAULT_SETTINGS, {
       theme: 'light',
@@ -3284,6 +3295,7 @@ async function main(): Promise<void> {
         artworkShape: 'circle',
         artworkFit: 'contain',
         artworkSize: 'xlarge',
+        lyricsAlign: 'left',
         playerArtwork: false,
         playerAmbience: false
       }
@@ -3294,10 +3306,12 @@ async function main(): Promise<void> {
     checkEqual('appearance: a surface patch deep-merges', appearanceSettings.visuals.surface, 'accented')
     checkEqual('appearance: a motion patch deep-merges', appearanceSettings.visuals.motion, 'reduced')
     checkEqual('appearance: an artwork patch deep-merges', appearanceSettings.visuals.artworkShape, 'circle')
+    checkEqual('appearance: a lyric-alignment patch deep-merges', appearanceSettings.visuals.lyricsAlign, 'left')
     checkEqual('appearance: a player-artwork patch deep-merges', appearanceSettings.visuals.playerArtwork, false)
     const resetAppearance = mergeSettings(appearanceSettings, DEFAULT_APPEARANCE)
     checkEqual('appearance: reset restores the default theme', resetAppearance.theme, 'dark')
     checkEqual('appearance: reset restores the default accent', resetAppearance.visuals.accent, 'blue')
+    checkEqual('appearance: reset restores centred lyrics', resetAppearance.visuals.lyricsAlign, 'center')
 
     // Equaliser and ReplayGain math. These are the values the Web Audio graph
     // uses, so a wrong dB conversion is a wrong-sounding player, not a cosmetic

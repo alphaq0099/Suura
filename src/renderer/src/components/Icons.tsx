@@ -19,7 +19,7 @@ const STROKE = {
 export function PlayIcon({ size = 18 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M8 5.14v13.72a1 1 0 0 0 1.54.84l10.3-6.86a1 1 0 0 0 0-1.68L9.54 4.3A1 1 0 0 0 8 5.14z" />
+      <path d="M7.4 4.7v14.6a1.15 1.15 0 0 0 1.76.97l11.1-7.3a1.15 1.15 0 0 0 0-1.94L9.16 3.73A1.15 1.15 0 0 0 7.4 4.7z" />
     </svg>
   )
 }
@@ -27,8 +27,8 @@ export function PlayIcon({ size = 18 }: IconProps) {
 export function PauseIcon({ size = 18 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <rect x="6.5" y="5" width="4" height="14" rx="1.2" />
-      <rect x="13.5" y="5" width="4" height="14" rx="1.2" />
+      <rect x="5.6" y="4.4" width="5" height="15.2" rx="1.4" />
+      <rect x="13.4" y="4.4" width="5" height="15.2" rx="1.4" />
     </svg>
   )
 }
@@ -327,6 +327,19 @@ export function ExpandIcon({ size = 16 }: IconProps) {
   )
 }
 
+/**
+ * Two chevrons pointing left: "give this the whole window" from a panel that
+ * already sits on the right edge. One chevron reads as "back"; two read as
+ * "expand", which is what the footer button does.
+ */
+export function DoubleChevronLeftIcon({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <path d="m11.5 6-6 6 6 6M18.5 6l-6 6 6 6" />
+    </svg>
+  )
+}
+
 /** A list on a page, with a note: a playlist rather than the queue. */
 export function PlaylistIcon({ size = 16 }: IconProps) {
   return (
@@ -497,15 +510,13 @@ export function ListMusicIcon({ size = 18 }: IconProps) {
   )
 }
 
-/** A page of text with a music note: the lyrics panel. */
+/** A microphone: the lyrics panel, not a page and not the queue. */
 export function LyricsIcon({ size = 18 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
-      <path d="M5 4.5h9.5L19 9v10.5H5z" />
-      <path d="M14.5 4.5V9H19" />
-      <path d="M8 12.5h6M8 15.5h4" />
-      <circle cx="16.4" cy="16.4" r="1.7" />
-      <path d="M18.1 16.4v-3.6" />
+      <rect x="9" y="2.8" width="6" height="10.4" rx="3" />
+      <path d="M5.6 11a6.4 6.4 0 0 0 12.8 0" />
+      <path d="M12 17.4V21M9 21h6" />
     </svg>
   )
 }

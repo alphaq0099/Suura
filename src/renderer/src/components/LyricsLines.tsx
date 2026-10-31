@@ -1,4 +1,3 @@
-import type { CSSProperties } from 'react'
 import type { Track, TrackLyrics } from '@shared/types'
 import {
   LYRICS_OFFSET_MAX,
@@ -53,16 +52,19 @@ export function LyricsLines(props: LyricsLinesProps) {
               type="button"
               className={index === active ? 'np-lyric-line current' : 'np-lyric-line'}
               aria-current={index === active ? 'true' : undefined}
-              style={
-                index === active
-                  ? ({
-                      '--line-progress': `${(lineProgress * 100).toFixed(1)}%`
-                    } as CSSProperties)
-                  : undefined
-              }
               onClick={() => onSeek(line)}
             >
-              {line.text.length > 0 ? line.text : '♪'}
+              {/* The fill is its own layer so the browser can interpolate a
+                  transform instead of repainting a gradient stop four times a
+                  second. `scaleX` also keeps the accent edge crisp at any width. */}
+              {index === active ? (
+                <span
+                  className="np-lyric-fill"
+                  aria-hidden="true"
+                  style={{ transform: `scaleX(${lineProgress.toFixed(4)})` }}
+                />
+              ) : null}
+              <span className="np-lyric-text">{line.text.length > 0 ? line.text : '♪'}</span>
             </button>
           </li>
         ))}

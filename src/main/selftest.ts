@@ -2084,6 +2084,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       xlargeBodyPx: number
       iconSetReachedRoot: boolean
       classicSidebarIconSet: string
+      lyricsAlignReachedRoot: boolean
       albumHidden: boolean
       albumColumnDisplay: string
       baseAlbumSetting: string
@@ -2112,6 +2113,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       resetMotion: string
       resetTextSize: string
       resetIconSet: string
+      resetLyricsAlign: string
       resetAlbumColumn: string
       resetChannelColumn: string
       heroSlidePresent: boolean
@@ -2130,6 +2132,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            motionReachedRoot: false, reducedTransitionMs: -1,
            textSizeReachedRoot: false, xlargeBodyPx: -1,
            iconSetReachedRoot: false, classicSidebarIconSet: '',
+           lyricsAlignReachedRoot: false,
            albumHidden: false, albumColumnDisplay: '',
            baseAlbumSetting: '', baseAlbumDisplay: '', trackListClientWidth: -1,
            artistWidth: -1, albumWidth: -1, timeWidth: -1, titleWidth: -1,
@@ -2138,7 +2141,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            channelHidden: false, channelColumnDisplay: '', onlineArtistDisplay: '',
            onlineNoOverflow: false, onlineTimeFits: false,
            resetTheme: '', resetAccent: '', resetDensity: '', resetSurface: '', resetMotion: '',
-           resetTextSize: '', resetIconSet: '', resetAlbumColumn: '', resetChannelColumn: '',
+           resetTextSize: '', resetIconSet: '', resetLyricsAlign: '',
+           resetAlbumColumn: '', resetChannelColumn: '',
            heroSlidePresent: false, heroSlideSaved: -1, resetHeroSlide: '',
            mediumBodyPx: -1, comfortableRowHeight: -1
          }
@@ -2211,6 +2215,10 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          await sleep(450)
          out.iconSetReachedRoot = document.querySelector('.app')?.dataset.iconSet === 'classic'
          out.classicSidebarIconSet = document.querySelector('.sidebar')?.dataset.iconSet || ''
+
+         press(choice('data-lyrics-align-choice', 'left'))
+         await sleep(450)
+         out.lyricsAlignReachedRoot = root.dataset.lyricsAlign === 'left'
 
          const rect = (element) => (element ? element.getBoundingClientRect() : null)
 
@@ -2326,6 +2334,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.resetMotion = root.dataset.motion || ''
          out.resetTextSize = root.dataset.textSize || ''
          out.resetIconSet = document.querySelector('.app')?.dataset.iconSet || ''
+         out.resetLyricsAlign = root.dataset.lyricsAlign || ''
          out.resetAlbumColumn = document.querySelector('.app')?.dataset.albumColumn || ''
          out.resetChannelColumn = document.querySelector('.app')?.dataset.channelColumn || ''
          out.resetHeroSlide = document.querySelector('[data-hero-slide-slider]')?.value || ''
@@ -2415,6 +2424,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     record(
       appearance.onlineArtistDisplay !== 'none',
       'appearance: YouTube Links keep the optional Artist column beside Channel',
+      appearance
+    )
+    record(
+      appearance.lyricsAlignReachedRoot && appearance.resetLyricsAlign === 'center',
+      'appearance: lyric alignment reaches the app and Reset restores centred',
       appearance
     )
     record(
@@ -4033,8 +4047,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         // The highlight is a fill that grows with the line, and a manual scroll
         // stops the panel from pulling itself back while the verse is read.
         const currentLine = pick('.np-lyric-line.current')
-        out.lyricFill =
-          Boolean(currentLine) && Boolean(currentLine.style.getPropertyValue('--line-progress'))
+        const currentFill = currentLine ? currentLine.querySelector('.np-lyric-fill') : null
+        out.lyricFill = Boolean(currentFill) && (currentFill.style.transform || '').includes('scaleX')
         const lyricList = pick('.np-lyrics-list')
         if (lyricList) lyricList.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 120 }))
         await sleep(250)
