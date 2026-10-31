@@ -3637,6 +3637,38 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     // elements rather than the IPC channel, because `useSettings` only learns
     // about changes it made itself — going through the UI is both the honest test
     // and the only one that would catch a control that is not wired up.
+    //
+    // LRCLIB is replaced for the same reason: the ranking rules are pinned down
+    // in `npm run smoke`, so what the renderer half has to prove is the seam —
+    // a match is proposed, choosing it relabels the panel, and going back to the
+    // file restores the file's own lyrics.
+    const finderCandidate = {
+      provider: 'lrclib' as const,
+      providerId: 'selftest-lyrics',
+      title: 'Selftest Tone',
+      artist: 'Selftest',
+      album: 'Selftest Album',
+      durationMs: 3000,
+      synced: true,
+      text: '[00:00.40]found first\n[00:01.40]found second',
+      instrumental: false,
+      score: 0.93,
+      confidence: 'strong' as const
+    }
+    const originalLyricsFind = container.lyrics.find
+    container.lyrics.find = async (trackId) => {
+      const track = container.repo.getById(trackId)
+      return {
+        query: {
+          title: track?.title ?? '',
+          artist: track?.artist ?? null,
+          album: track?.album ?? null,
+          durationMs: track?.durationMs ?? null
+        },
+        candidates: [finderCandidate],
+        message: null
+      }
+    }
     const visuals = await evaluate<{
       shapeReachesThumbnails: boolean
       fitIsProportional: boolean
@@ -3697,6 +3729,15 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       lyricFill: boolean
       lyricPaused: boolean
       lyricResumed: boolean
+      finderOpened: boolean
+      finderMatches: number
+      finderMatchText: string
+      fetchedMeta: string
+      fetchedLines: number
+      fetchedActions: boolean
+      fileMeta: string
+      fileLines: number
+      fileActions: boolean
       stageOpened: boolean
       stageLines: number
       stageCurrent: number
@@ -3706,7 +3747,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     }>(
       window,
       `(async () => {
-         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, volumeBeforeWheel: -1, volumeAfterWheel: -1, volumeWheelTop: -1, volumeWheelBottom: -1, wheelCancelled: false, barVolumeBefore: -1, barVolumeMuted: -1, barMutePressed: '', barVolumeRestored: -1, barPopHidden: false, barPopVertical: false, barPopWithin: false, barPopShownByFocus: false, barKeyBefore: -1, barKeyAfter: -1, barKeyProgress: '', barKeyRestored: -1, panelClosedByOutsidePress: false, panelStayedOpenOnInsidePress: false, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false, panelCloseState: '', lyricsOpened: false, queueClosedByLyrics: false, lyricRows: 0, lyricMeta: '', lyricCurrent: 0, lyricSeeked: false, lyricFill: false, lyricPaused: false, lyricResumed: false, stageOpened: false, stageLines: 0, stageCurrent: 0, stageClosed: false, escapeHidLyrics: false, escapeKeptWindowAfterLyrics: false }
+         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, volumeBeforeWheel: -1, volumeAfterWheel: -1, volumeWheelTop: -1, volumeWheelBottom: -1, wheelCancelled: false, barVolumeBefore: -1, barVolumeMuted: -1, barMutePressed: '', barVolumeRestored: -1, barPopHidden: false, barPopVertical: false, barPopWithin: false, barPopShownByFocus: false, barKeyBefore: -1, barKeyAfter: -1, barKeyProgress: '', barKeyRestored: -1, panelClosedByOutsidePress: false, panelStayedOpenOnInsidePress: false, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false, panelCloseState: '', lyricsOpened: false, queueClosedByLyrics: false, lyricRows: 0, lyricMeta: '', lyricCurrent: 0, lyricSeeked: false, lyricFill: false, lyricPaused: false, lyricResumed: false, finderOpened: false, finderMatches: 0, finderMatchText: '', fetchedMeta: '', fetchedLines: 0, fetchedActions: false, fileMeta: '', fileLines: 0, fileActions: false, stageOpened: false, stageLines: 0, stageCurrent: 0, stageClosed: false, escapeHidLyrics: false, escapeKeptWindowAfterLyrics: false }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (selector) => document.querySelector(selector)
          const press = (element) => { if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
@@ -4057,6 +4098,28 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         await sleep(250)
         out.lyricResumed = !pick('.np-lyrics-resume')
 
+        // The finder proposes, the panel decides. Opening it asks the service
+        // (stubbed in the main process), choosing a match stores it and labels
+        // the panel LRCLIB, and "Use file lyrics" puts the file's own copy back.
+        press(pick('.np-lyrics-find'))
+        for (let attempt = 0; attempt < 40 && !pick('.lyrics-finder'); attempt += 1) await sleep(100)
+        out.finderOpened = Boolean(pick('.lyrics-finder'))
+        for (let attempt = 0; attempt < 40 && !pick('.lyrics-match'); attempt += 1) await sleep(100)
+        out.finderMatches = document.querySelectorAll('.lyrics-match').length
+        out.finderMatchText = (pick('.lyrics-match') || {}).textContent || ''
+        const useLyrics = pick('.lyrics-finder-foot .primary')
+        if (useLyrics) press(useLyrics)
+        for (let attempt = 0; attempt < 40 && pick('.lyrics-finder'); attempt += 1) await sleep(100)
+        for (let attempt = 0; attempt < 40 && !pick('.np-lyrics-actions'); attempt += 1) await sleep(100)
+        out.fetchedMeta = (pick('.np-lyrics-meta') || {}).textContent || ''
+        out.fetchedLines = lyricLines().length
+        out.fetchedActions = Boolean(pick('.np-lyrics-actions'))
+        press(pick('.np-lyrics-use-file'))
+        for (let attempt = 0; attempt < 40 && pick('.np-lyrics-actions'); attempt += 1) await sleep(100)
+        out.fileMeta = (pick('.np-lyrics-meta') || {}).textContent || ''
+        out.fileLines = lyricLines().length
+        out.fileActions = Boolean(pick('.np-lyrics-actions'))
+
         // The stage is a portal out of the panel: expanding hands the same lines
         // to a full-window view, and Escape comes back to the panel rather than
         // closing the player behind it.
@@ -4241,6 +4304,24 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       'scrolling the lyrics pauses the follow until you jump back to the current line',
       `paused ${visuals.lyricPaused} / resumed ${visuals.lyricResumed}`
     )
+    record(
+      visuals.finderOpened && visuals.finderMatches === 1 && visuals.finderMatchText.includes('Synced'),
+      'the lyrics header opens a finder that shows the match it was given',
+      `${visuals.finderMatches} matches, "${visuals.finderMatchText}"`
+    )
+    record(
+      visuals.fetchedActions &&
+        visuals.fetchedLines === 2 &&
+        visuals.fetchedMeta.includes('LRCLIB'),
+      'choosing a match labels the lyrics LRCLIB and offers the file actions',
+      `${visuals.fetchedLines} lines, "${visuals.fetchedMeta}"`
+    )
+    record(
+      !visuals.fileActions && visuals.fileLines === 2 && visuals.fileMeta.includes('File tags'),
+      'going back to the file restores its own lyrics and drops the fetched actions',
+      `${visuals.fileLines} lines, "${visuals.fileMeta}", actions ${visuals.fileActions}`
+    )
+    container.lyrics.find = originalLyricsFind
     record(
       visuals.stageOpened && visuals.stageLines === visuals.lyricRows && visuals.stageCurrent === 1,
       'expanding the lyrics hands the same lines to a full-window stage',

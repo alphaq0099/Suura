@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { Track, TrackLyrics } from '@shared/types'
+import type { LyricsCandidate, Track, TrackLyrics } from '@shared/types'
 import {
   LYRICS_OFFSET_MAX,
   activeLyricIndex,
@@ -8,7 +8,8 @@ import {
   type LyricLine
 } from '@shared/lyrics'
 import { api, messageOf } from '../api'
-import { DoubleChevronLeftIcon } from './Icons'
+import { DoubleChevronLeftIcon, SearchIcon } from './Icons'
+import { LyricsFinder } from './LyricsFinder'
 import { LyricsBody, LyricsOffsetControls } from './LyricsLines'
 import { LyricsStage } from './LyricsStage'
 
@@ -37,12 +38,15 @@ function sourceLabel(lyrics: TrackLyrics): string {
 }
 
 /**
- * The lyrics a local file already has, shown next to the player.
+ * The lyrics a local file has, plus the finder for when it has none.
  *
- * Read-only on purpose: the panel follows the song, can jump to a line, and
- * remembers a timing correction. It never writes to the file. A `.lrc` is
- * preferred over an embedded tag by the main process, and the header says which
- * one is on screen so the user is not guessing.
+ * The panel follows the song, can jump to a line, and remembers a timing
+ * correction. A `.lrc` is preferred over an embedded tag by the main process,
+ * and the header says which source is on screen so the user is not guessing.
+ *
+ * Finding lyrics is a proposal until the user chooses a match; that choice is
+ * stored next to the track and labelled LRCLIB. Writing it into the file is a
+ * separate button, so a search can never silently modify a file.
  *
  * The panel owns the data for both views. The full-window stage is a portal
  * rendered from here, so expanding is not a second fetch and the timing
@@ -56,6 +60,9 @@ export function LyricsPanel(props: LyricsPanelProps) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
+  const [finderOpen, setFinderOpen] = useState(false)
+  const [action, setAction] = useState<'use-file' | 'write' | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const requestRef = useRef(0)
   const expandRef = useRef<HTMLButtonElement | null>(null)
   const wasExpanded = useRef(false)
@@ -65,7 +72,15 @@ export function LyricsPanel(props: LyricsPanelProps) {
   useEffect(() => {
     setLyrics(null)
     setError(null)
+    setFinderOpen(false)
+    setActionError(null)
   }, [trackId])
+
+  // The finder belongs to the open panel. Closing the panel should not leave a
+  // hidden search waiting behind it for the next time it slides in.
+  useEffect(() => {
+    if (!open) setFinderOpen(false)
+  }, [open])
 
   useEffect(() => {
     if (!open || trackId === null) return
@@ -134,6 +149,32 @@ export function LyricsPanel(props: LyricsPanelProps) {
       .finally(() => setSaving(false))
   }
 
+  const chooseLyrics = async (candidate: LyricsCandidate): Promise<void> => {
+    if (!track) return
+    const updated = await api.useTrackLyrics(track.id, candidate)
+    setLyrics(updated)
+    setError(null)
+    setActionError(null)
+    setFinderOpen(false)
+  }
+
+  const runFileAction = async (kind: 'use-file' | 'write'): Promise<void> => {
+    if (!track || action) return
+    setAction(kind)
+    setActionError(null)
+    try {
+      const updated =
+        kind === 'use-file'
+          ? await api.useFileLyrics(track.id)
+          : await api.writeTrackLyricsToFile(track.id)
+      setLyrics(updated)
+    } catch (cause) {
+      setActionError(messageOf(cause))
+    } finally {
+      setAction(null)
+    }
+  }
+
   const seekTo = (line: LyricLine): void => {
     const target = Math.max(0, line.timeMs + offsetMs)
     onSeek(durationMs > 0 ? Math.min(target, durationMs) : target)
@@ -173,26 +214,78 @@ export function LyricsPanel(props: LyricsPanelProps) {
     >
       <header className="np-lyrics-head">
         <h2>Lyrics</h2>
-        <span className="np-lyrics-meta" title={lyrics?.origin ?? undefined}>
-          {meta}
-        </span>
+        <div className="np-lyrics-head-actions">
+          {track?.sourceKind === 'local' ? (
+            <button
+              type="button"
+              className="icon-button subtle np-lyrics-find"
+              onClick={() => setFinderOpen(true)}
+              disabled={loading || saving || finderOpen}
+              title="Find lyrics on LRCLIB"
+              aria-label="Find lyrics on LRCLIB"
+            >
+              <SearchIcon size={15} />
+            </button>
+          ) : null}
+          <span className="np-lyrics-meta" title={lyrics?.origin ?? undefined}>
+            {meta}
+          </span>
+        </div>
       </header>
 
       <div className="np-lyrics-body">
-        <LyricsBody
-          track={track}
-          loading={loading}
-          error={error}
-          lyrics={lyrics}
-          lines={lines}
-          active={active}
-          lineProgress={lineProgress}
-          onSeek={seekTo}
-          resetKey={trackId}
-        />
+        {finderOpen && track ? (
+          <LyricsFinder
+            track={track}
+            onUse={chooseLyrics}
+            onClose={() => setFinderOpen(false)}
+          />
+        ) : (
+          <LyricsBody
+            track={track}
+            loading={loading}
+            error={error}
+            lyrics={lyrics}
+            lines={lines}
+            active={active}
+            lineProgress={lineProgress}
+            onSeek={seekTo}
+            resetKey={trackId}
+          />
+        )}
       </div>
 
-      {lyrics && lines.length > 0 ? (
+      {!finderOpen && lyrics?.source === 'lrclib' ? (
+        <div className="np-lyrics-actions">
+          <span className="np-lyrics-actions-source">From LRCLIB</span>
+          <button
+            type="button"
+            className="np-lyrics-use-file"
+            onClick={() => void runFileAction('use-file')}
+            disabled={action !== null}
+            title="Forget the fetched lyrics and show what the file has"
+          >
+            Use file lyrics
+          </button>
+          <button
+            type="button"
+            className="np-lyrics-write-file"
+            onClick={() => void runFileAction('write')}
+            disabled={action !== null}
+            title="Write these lyrics into the file's tags"
+          >
+            {action === 'write' ? 'Writing…' : 'Write into file'}
+          </button>
+        </div>
+      ) : null}
+
+      {!finderOpen && actionError ? (
+        <p className="banner error np-lyrics-action-error" role="alert">
+          {actionError}
+        </p>
+      ) : null}
+
+      {!finderOpen && lyrics && lines.length > 0 ? (
         <footer className="np-lyrics-foot">
           <button
             ref={expandRef}

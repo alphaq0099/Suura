@@ -21,7 +21,7 @@ import { isImportedPlaylistTrackId } from '@shared/online'
 import { countsAsPlay } from '@shared/play-count'
 import { clampPlaylistIndexWidth } from '@shared/playlists'
 import { sanitizeArtworkKey, sanitizeTagFields } from '@shared/tags'
-import { sanitizeLyricsOffset } from '@shared/lyrics'
+import { sanitizeLyricsCandidate, sanitizeLyricsOffset } from '@shared/lyrics'
 import type {
   AccentName,
   AlbumSortField,
@@ -967,6 +967,32 @@ export function registerIpcHandlers(container: AppContainer): void {
   ipcMain.handle(IPC.libraryLyricsOffset, (_event, trackId: unknown, offset: unknown) =>
     container.lyrics.setOffset(toTrackId(trackId), sanitizeLyricsOffset(offset))
   )
+
+  // The finder reads the row and asks a provider; nothing is stored until the
+  // user chooses a match, so it is allowed while the track plays.
+  ipcMain.handle(IPC.libraryLyricsFind, (_event, trackId: unknown) =>
+    container.lyrics.find(toTrackId(trackId))
+  )
+
+  ipcMain.handle(IPC.libraryLyricsUse, (_event, trackId: unknown, candidate: unknown) =>
+    container.lyrics.use(toTrackId(trackId), sanitizeLyricsCandidate(candidate))
+  )
+
+  ipcMain.handle(IPC.libraryLyricsUseFile, (_event, trackId: unknown) =>
+    container.lyrics.useFile(toTrackId(trackId))
+  )
+
+  // Writing into the file has the same guard as any other tag write: Windows
+  // will not replace a file that is open for playback.
+  ipcMain.handle(IPC.libraryLyricsWrite, async (_event, trackId: unknown) => {
+    const id = toTrackId(trackId)
+    if (playingTrackId === id) {
+      throw new Error(
+        'Stop this track, or play something else, before writing its lyrics: the file is open for playback.'
+      )
+    }
+    return container.lyrics.writeToFile(id)
+  })
 
   ipcMain.handle(IPC.libraryRemoveFolder, (_event, folder: unknown) => {
     if (typeof folder !== 'string' || folder.trim().length === 0) {

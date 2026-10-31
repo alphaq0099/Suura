@@ -288,6 +288,51 @@ export interface TagLookupResult {
   providers: TagProviderReport[]
 }
 
+/** What the lyrics finder searches with: the row's own values. */
+export interface LyricsLookupQuery {
+  title: string
+  artist: string | null
+  album: string | null
+  durationMs: number | null
+}
+
+/**
+ * One lyrics match, already scored against the query.
+ *
+ * The text travels with the match rather than being fetched a second time when
+ * the user chooses it: the review list and the stored copy then come from the
+ * same response, and a provider that changes between the two cannot make the
+ * chosen lyrics different from the previewed ones.
+ */
+export interface LyricsCandidate {
+  provider: 'lrclib'
+  /** The provider's own id, kept so a source can be named later. */
+  providerId: string
+  title: string
+  artist: string
+  album: string | null
+  durationMs: number | null
+  /** True when `text` is LRC with timestamps the player can follow. */
+  synced: boolean
+  /** The lyrics exactly as the provider sent them, synced or plain. */
+  text: string
+  /** True when the provider says the track has no vocals. */
+  instrumental: boolean
+  /** 0..1; higher is a closer match. */
+  score: number
+  confidence: 'strong' | 'likely' | 'weak'
+}
+
+export interface LyricsLookupResult {
+  query: LyricsLookupQuery
+  /** Best first, at most a handful. */
+  candidates: LyricsCandidate[]
+  /**
+   * Why the lookup failed, when it did. A provider answering "nothing found" is
+   * not a failure and leaves this null.
+   */
+  message: string | null
+}
 
 /** The lyrics the player found for one local track. */
 export interface TrackLyrics {
@@ -301,7 +346,7 @@ export interface TrackLyrics {
   text: string
   /** The user's own shift in ms; positive means the lines appear later. */
   offsetMs: number
-  /** The sidecar's file name, or null for lyrics read from the file's tags. */
+  /** The sidecar's file name, or null for lyrics from tags or a provider. */
   origin: string | null
   fetchedAt: number
 }

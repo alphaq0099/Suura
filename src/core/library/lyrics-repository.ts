@@ -1,12 +1,15 @@
 import type { LyricsSource } from '@shared/types'
 import type { SqlDatabase } from '../db/driver'
 
-/** The two sources that live on disk. Fetched and generated lyrics are later. */
+/** The two sources that live on disk. */
 export type LocalLyricsSource = Extract<LyricsSource, 'embedded' | 'sidecar'>
+
+/** Everything the table can hold today: the file's own lyrics, plus a fetch. */
+export type StoredLyricsSource = LocalLyricsSource | 'lrclib'
 
 export interface StoredLyrics {
   trackId: number
-  source: LocalLyricsSource
+  source: StoredLyricsSource
   language: string | null
   synced: boolean
   text: string
@@ -26,8 +29,10 @@ interface LyricsRow {
 
 const COLUMNS = `track_id, source, language, synced, text, offset_ms, fetched_at`
 
-function toSource(value: string): LocalLyricsSource {
-  return value === 'sidecar' ? 'sidecar' : 'embedded'
+function toSource(value: string): StoredLyricsSource {
+  if (value === 'sidecar') return 'sidecar'
+  if (value === 'lrclib') return 'lrclib'
+  return 'embedded'
 }
 
 function mapRow(row: LyricsRow): StoredLyrics {
@@ -47,8 +52,8 @@ function mapRow(row: LyricsRow): StoredLyrics {
  *
  * The file remains the truth for `embedded` and `sidecar`, so those rows are
  * refreshed every time the lyrics are read. What the table adds is the user's
- * timing correction, which belongs to no file, and a home for the network
- * sources that arrive in a later phase.
+ * timing correction, which belongs to no file, and the one fetched copy the
+ * user chose from the finder.
  *
  * The foreign key means deleting a track drops its lyrics with it, exactly as
  * playlist entries already behave.
@@ -56,7 +61,7 @@ function mapRow(row: LyricsRow): StoredLyrics {
 export class LyricsRepository {
   constructor(private readonly db: SqlDatabase) {}
 
-  get(trackId: number, source: LocalLyricsSource): StoredLyrics | null {
+  get(trackId: number, source: StoredLyricsSource): StoredLyrics | null {
     const row = this.db
       .prepare(`SELECT ${COLUMNS} FROM track_lyrics WHERE track_id = ? AND source = ?`)
       .get<LyricsRow>(trackId, source)
@@ -66,12 +71,15 @@ export class LyricsRepository {
   /**
    * The source the player shows when several exist.
    *
-   * A `.lrc` wins over an embedded tag: it is the copy a user can edit without
-   * rewriting the audio, and it is what a lyric downloader writes. The order is
-   * one list so a later source only has to be inserted in the right place.
+   * A fetched lyric wins because choosing one is an explicit act: the user
+   * asked for that match, and it must not be hidden by a sidecar that was
+   * already there. Without one, a `.lrc` wins over an embedded tag: it is the
+   * copy a user can edit without rewriting the audio, and it is what a lyric
+   * downloader writes. The order is one list so a later source only has to be
+   * inserted in the right place.
    */
   preferred(trackId: number): StoredLyrics | null {
-    const order: LocalLyricsSource[] = ['sidecar', 'embedded']
+    const order: StoredLyricsSource[] = ['lrclib', 'sidecar', 'embedded']
     for (const source of order) {
       const row = this.get(trackId, source)
       if (row) return row
@@ -95,10 +103,27 @@ export class LyricsRepository {
     })
   }
 
-  setOffset(trackId: number, source: LocalLyricsSource, offsetMs: number): void {
+  setOffset(trackId: number, source: StoredLyricsSource, offsetMs: number): void {
     this.db
       .prepare(`UPDATE track_lyrics SET offset_ms = ? WHERE track_id = ? AND source = ?`)
       .run(offsetMs, trackId, source)
+  }
+
+  /**
+   * Remembers the lyrics the user chose from the finder.
+   *
+   * This is the one row the file does not own, so it is written only when a
+   * match is chosen and removed when the user goes back to the file. Its
+   * offset is left alone by the upsert, exactly as a local source's is: the
+   * correction belongs to the user, not to the text that arrived today.
+   */
+  saveFetched(trackId: number, input: StoredLyricsInput, now = Date.now()): void {
+    this.write(trackId, 'lrclib', input, now)
+  }
+
+  /** Forgets the chosen fetch, so the file's own lyrics are shown again. */
+  clearFetched(trackId: number): void {
+    this.db.prepare(`DELETE FROM track_lyrics WHERE track_id = ? AND source = 'lrclib'`).run(trackId)
   }
 
   /** Test and maintenance helper: forgets every cached lyric. */
@@ -108,7 +133,7 @@ export class LyricsRepository {
 
   private write(
     trackId: number,
-    source: LocalLyricsSource,
+    source: StoredLyricsSource,
     input: StoredLyricsInput | null,
     now: number
   ): void {

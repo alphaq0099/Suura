@@ -38,6 +38,7 @@ import { StreamCache } from '../stream-cache'
 import { createOnlineService, type OnlineService } from '../online-service'
 import { ReplayGainService } from '../replay-gain-service'
 import { createTagLookup, type TagLookup } from '@core/library/tag-lookup'
+import { createLyricsLookup } from '@core/library/lyrics-lookup'
 import { createArtworkChoices, type ArtworkChoicesService } from '../artwork-choices'
 import { createYoutubeService, type YoutubeService } from '../youtube-service'
 
@@ -233,7 +234,13 @@ export function createContainer(): AppContainer {
     tagWriter
   )
 
-  const lyrics = new LyricsService(repo, new LyricsRepository(database.db), log.child('lyrics'))
+  const lyrics = new LyricsService(
+    repo,
+    new LyricsRepository(database.db),
+    log.child('lyrics'),
+    tagWriter,
+    createLyricsLookup({ log: log.child('lyrics-lookup') })
+  )
 
   // Keyless public services, asked in parallel when a file's tags are wrong.
   // The client owns its own timeouts and never throws: a provider being down is

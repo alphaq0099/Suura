@@ -9,7 +9,15 @@
  * three fractional digits, `:` or `.` before them), several timestamps on one
  * line, and the `[offset:]` tag. Metadata tags (`[ar:]`, `[ti:]`, …) are not
  * lyrics and are skipped.
+ *
+ * The finder's payload parsing and scoring live here too. They are the same
+ * kind of decision as the parser: pure rules that `npm run smoke` can pin down,
+ * rather than a network test that can only say what the service answered today.
  */
+
+import { confidenceOf, durationScore, normalizeMatchText, textSimilarity, titleVariants } from './auto-tag'
+import { TAG_TEXT_LIMITS } from './tags'
+import type { LyricsCandidate, LyricsLookupQuery } from './types'
 
 export interface LyricLine {
   /** Start of the line in the file's own timeline. */
@@ -135,4 +143,219 @@ export function sanitizeLyricsOffset(value: unknown): number {
     throw new Error(`The lyrics offset must be a whole number of milliseconds within ±${LYRICS_OFFSET_MAX}.`)
   }
   return value
+}
+
+// ---- the finder ------------------------------------------------------------
+
+/** Below this, a result is noise rather than a wrong guess worth showing. */
+const LYRICS_MIN_SCORE = 0.4
+
+/** How many matches the finder is given to choose from. */
+export const LYRICS_CANDIDATE_LIMIT = 5
+
+/** The same three signals the tag finder uses, for the same reasons. */
+const LYRICS_WEIGHTS = {
+  title: 0.55,
+  artist: 0.25,
+  duration: 0.2
+} as const
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
+}
+
+function asNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+/** LRCLIB stores a length in seconds; the rest of the app uses milliseconds. */
+function secondsToMs(value: unknown): number | null {
+  const seconds = asNumber(value)
+  if (seconds === null || seconds <= 0) return null
+  return Math.round(seconds * 1000)
+}
+
+/**
+ * One row from LRCLIB's `/api/get` object or `/api/search` array.
+ *
+ * An instrumental has no lyrics to show, so it is not a candidate. When both
+ * forms exist, the synced one wins: it is the same words with timing the player
+ * can follow, and a plain copy would only be a second choice for the same song.
+ */
+export function candidateFromLrclib(value: unknown): LyricsCandidate | null {
+  const record = asRecord(value)
+  if (!record || record.instrumental === true) return null
+
+  const title = asString(record.trackName)
+  if (!title || title.length > 500) return null
+
+  const text = asString(record.syncedLyrics) ?? asString(record.plainLyrics)
+  if (!text || text.length > TAG_TEXT_LIMITS.lyrics) return null
+
+  const id = asNumber(record.id)
+  const artist = asString(record.artistName) ?? ''
+  return {
+    provider: 'lrclib',
+    providerId: id !== null ? String(Math.trunc(id)) : `${artist}\u0000${title}`,
+    title,
+    artist,
+    album: asString(record.albumName),
+    durationMs: secondsToMs(record.duration),
+    synced: isSyncedLyrics(text),
+    text,
+    instrumental: false,
+    score: 0,
+    confidence: 'weak'
+  }
+}
+
+/**
+ * The payload shapes the two endpoints return: one object for `/api/get`, an
+ * array for `/api/search`. A payload that is neither simply contributes nothing.
+ */
+export function candidatesFromLrclib(payload: unknown): LyricsCandidate[] {
+  const rows = Array.isArray(payload) ? payload : [payload]
+  return rows
+    .map(candidateFromLrclib)
+    .filter((candidate): candidate is LyricsCandidate => candidate !== null)
+}
+
+/** The weighted match, with missing signals removed rather than scored zero. */
+export function scoreLyricsCandidate(query: LyricsLookupQuery, candidate: LyricsCandidate): number {
+  const variants = titleVariants(query)
+  const title =
+    variants.length > 0
+      ? Math.max(...variants.map((variant) => textSimilarity(variant, candidate.title)))
+      : 0
+
+  const artist =
+    query.artist && query.artist.trim().length > 0
+      ? textSimilarity(query.artist, candidate.artist)
+      : null
+  const duration = durationScore(query.durationMs, candidate.durationMs)
+
+  let total = title * LYRICS_WEIGHTS.title
+  let weight = LYRICS_WEIGHTS.title
+  if (artist !== null) {
+    total += artist * LYRICS_WEIGHTS.artist
+    weight += LYRICS_WEIGHTS.artist
+  }
+  if (duration !== null) {
+    total += duration * LYRICS_WEIGHTS.duration
+    weight += LYRICS_WEIGHTS.duration
+  }
+
+  return weight > 0 ? Math.max(0, Math.min(1, total / weight)) : 0
+}
+
+/**
+ * Scores, drops the noise, merges duplicates and keeps the best few.
+ *
+ * Two copies of the same recording can come back from different releases, and
+ * the provider id is the only stable answer to "is this the same row". When two
+ * matches score the same, the synced one is more useful, so it comes first.
+ */
+export function rankLyricsCandidates(
+  query: LyricsLookupQuery,
+  candidates: readonly LyricsCandidate[],
+  limit = LYRICS_CANDIDATE_LIMIT
+): LyricsCandidate[] {
+  const scored = candidates
+    .map((candidate) => {
+      const score = scoreLyricsCandidate(query, candidate)
+      return { ...candidate, score, confidence: confidenceOf(score) }
+    })
+    .filter((candidate) => candidate.score >= LYRICS_MIN_SCORE)
+
+  scored.sort((left, right) => {
+    if (right.score !== left.score) return right.score - left.score
+    if (left.synced !== right.synced) return left.synced ? -1 : 1
+    return 0
+  })
+
+  const seen = new Set<string>()
+  const out: LyricsCandidate[] = []
+  for (const candidate of scored) {
+    const key = [
+      candidate.providerId,
+      normalizeMatchText(candidate.title),
+      normalizeMatchText(candidate.artist),
+      normalizeMatchText(candidate.album)
+    ].join('|')
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(candidate)
+    if (out.length >= limit) break
+  }
+  return out
+}
+
+/**
+ * Bounds a match arriving back from the renderer.
+ *
+ * The candidate is a proposal the main process produced, but it crosses the
+ * bridge, so its text is checked before it is stored or written into a file.
+ * `synced` is recomputed from the text rather than trusted: the panel follows
+ * timestamps, and a flag that disagrees with them would only mislead it.
+ */
+export function sanitizeLyricsCandidate(value: unknown): LyricsCandidate {
+  const record = asRecord(value)
+  if (!record) throw new Error('Malformed lyrics match.')
+  if (record.provider !== 'lrclib') throw new Error('Unknown lyrics provider.')
+
+  const providerId = asString(record.providerId)
+  if (!providerId || providerId.length > 200) throw new Error('The lyrics match has no id.')
+
+  const title = asString(record.title)
+  if (!title) throw new Error('The lyrics match has no title.')
+  if (title.length > 500) throw new Error('The lyrics match title is too long.')
+
+  const artist = asString(record.artist) ?? ''
+  if (artist.length > 500) throw new Error('The lyrics match artist is too long.')
+
+  const album = asString(record.album)
+  if (album && album.length > 500) throw new Error('The lyrics match album is too long.')
+
+  let durationMs: number | null = null
+  if (record.durationMs !== null && record.durationMs !== undefined) {
+    const raw = record.durationMs
+    if (typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0 || raw > 86_400_000) {
+      throw new Error('The lyrics match has an invalid length.')
+    }
+    durationMs = Math.round(raw)
+  }
+
+  const rawText = asString(record.text)
+  if (!rawText) throw new Error('The lyrics match has no lyrics.')
+  if (rawText.length > TAG_TEXT_LIMITS.lyrics) {
+    throw new Error(`The lyrics are too long (${TAG_TEXT_LIMITS.lyrics} characters at most).`)
+  }
+  const text = rawText.replace(/\r\n?/g, '\n')
+
+  const rawScore = asNumber(record.score)
+  const score = rawScore === null ? 0 : Math.max(0, Math.min(1, rawScore))
+  const confidence =
+    record.confidence === 'strong' || record.confidence === 'likely' || record.confidence === 'weak'
+      ? record.confidence
+      : 'weak'
+
+  return {
+    provider: 'lrclib',
+    providerId,
+    title,
+    artist,
+    album,
+    durationMs,
+    synced: isSyncedLyrics(text),
+    text,
+    instrumental: false,
+    score,
+    confidence
+  }
 }

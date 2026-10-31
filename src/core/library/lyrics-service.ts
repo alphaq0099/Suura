@@ -1,27 +1,38 @@
 import { basename, extname } from 'node:path'
-import type { Track, TrackLyrics } from '@shared/types'
+import type { LyricsCandidate, LyricsLookupResult, Track, TrackLyrics } from '@shared/types'
 import type { Logger } from '../logging/logger'
 import { embeddedLyricsOf, sidecarLyricsOf, type FoundLyrics } from './lyrics'
-import type { LyricsRepository, StoredLyrics } from './lyrics-repository'
+import type { LyricsLookup } from './lyrics-lookup'
+import type { LyricsRepository, StoredLyrics, StoredLyricsSource } from './lyrics-repository'
 import { loadMetadataParser } from './metadata'
+import type { TagWriter } from './tag-writer'
 import type { TrackRepository } from './track-repository'
 
+/** The shape both a read and a stored row share. */
+interface LyricsRecord {
+  text: string
+  language: string | null
+  synced: boolean
+  source: StoredLyricsSource
+}
+
 /**
- * Lyrics that are already on disk, read on demand.
+ * The lyrics a local file has, plus the one fetched copy the user chose.
  *
- * Nothing here talks to the network: a file's own tag and a `.lrc` beside it are
- * the whole answer. The database keeps the timing correction and a copy of what
- * was found, so a later phase can add fetched lyrics next to them.
- *
- * The local sources are re-read on every call rather than served from the cache.
- * A tag edit or a sidecar dropped next to the file must be visible immediately,
- * and parsing one local file is cheaper than deciding whether a cache is stale.
+ * Reading is local and cheap: a tag inside the file and a `.lrc` beside it are
+ * re-read on every call rather than served from a cache, so a tag edit or a
+ * dropped sidecar is visible immediately. The finder is the only part that
+ * talks to the network, and it only proposes; nothing is stored until the user
+ * chooses a match. Writing that match into the file is a separate, explicit
+ * step through the same `TagWriter` the manual editor uses.
  */
 export class LyricsService {
   constructor(
     private readonly repo: TrackRepository,
     private readonly store: LyricsRepository,
-    private readonly log: Logger
+    private readonly log: Logger,
+    private readonly tagWriter: TagWriter | null = null,
+    private readonly lookup: LyricsLookup | null = null
   ) {}
 
   /** The lyrics to show for a track, or null when it has none. */
@@ -33,12 +44,77 @@ export class LyricsService {
     const sidecar = await sidecarLyricsOf(track.filePath)
     this.store.replaceLocal(trackId, { embedded, sidecar })
 
-    const chosen = sidecar ?? embedded
-    if (!chosen) return null
-    const stored = this.store.get(trackId, chosen.source)
-    const lyrics = this.toTrackLyrics(track, chosen, stored)
+    // The fetched row, when there is one, is not refreshed by the lines above:
+    // it is the user's choice, and a changed file must not silently replace it.
+    const stored = this.store.preferred(trackId)
+    if (!stored) return null
+    const lyrics = this.toTrackLyrics(track, foundOf(stored), stored)
     this.log.debug('lyrics read', { trackId, source: lyrics.source, synced: lyrics.synced })
     return lyrics
+  }
+
+  /** Asks LRCLIB for lyrics that match this file. Nothing is stored. */
+  async find(trackId: number): Promise<LyricsLookupResult> {
+    const { track } = this.localTrack(trackId)
+    if (!this.lookup) throw new Error('Lyrics lookup is not available in this build.')
+    return this.lookup.lookup({
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      durationMs: track.durationMs
+    })
+  }
+
+  /** Remembers the match the user chose, then shows it. */
+  async use(trackId: number, candidate: LyricsCandidate): Promise<TrackLyrics | null> {
+    this.localTrack(trackId)
+    this.store.saveFetched(trackId, {
+      language: null,
+      synced: candidate.synced,
+      text: candidate.text
+    })
+    this.log.debug('lyrics chosen', {
+      trackId,
+      provider: candidate.provider,
+      providerId: candidate.providerId,
+      synced: candidate.synced
+    })
+    return this.read(trackId)
+  }
+
+  /** Forgets the fetched copy and shows what the file itself has. */
+  async useFile(trackId: number): Promise<TrackLyrics | null> {
+    this.localTrack(trackId)
+    this.store.clearFetched(trackId)
+    this.log.debug('lyrics switched back to the file', { trackId })
+    return this.read(trackId)
+  }
+
+  /**
+   * Writes the chosen fetch into the file's own tag.
+   *
+   * The fetched row is removed afterwards, so the file becomes the source and
+   * the panel's label changes with it. A `.lrc` beside the file is refused:
+   * that copy wins over the tag, so writing would look like nothing happened.
+   */
+  async writeToFile(trackId: number): Promise<TrackLyrics | null> {
+    const { filePath } = this.localTrack(trackId)
+    if (!this.tagWriter) throw new Error('Tag editing is not available in this build.')
+
+    const fetched = this.store.get(trackId, 'lrclib')
+    if (!fetched) throw new Error('There are no fetched lyrics to write into this file.')
+
+    const sidecar = await sidecarLyricsOf(filePath)
+    if (sidecar) {
+      throw new Error(
+        'A .lrc file beside this track is what the player shows. Edit or remove it instead.'
+      )
+    }
+
+    await this.tagWriter.write(filePath, { lyrics: fetched.text })
+    this.store.clearFetched(trackId)
+    this.log.debug('lyrics written into the file', { trackId })
+    return this.read(trackId)
   }
 
   /**
@@ -72,7 +148,20 @@ export class LyricsService {
     }
   }
 
-  private toTrackLyrics(track: Track, found: FoundLyrics, stored: StoredLyrics | null): TrackLyrics {
+  /**
+   * Resolves a row that can have a file at all. Reads stay quiet for streams
+   * (they simply have no lyrics); every action that would store or write
+   * something is a mistake on a stream and says so.
+   */
+  private localTrack(trackId: number): { track: Track; filePath: string } {
+    const track = this.repo.getById(trackId)
+    if (!track || track.sourceKind !== 'local' || !track.filePath) {
+      throw new Error('Only files in your library can have lyrics looked up or written.')
+    }
+    return { track, filePath: track.filePath }
+  }
+
+  private toTrackLyrics(track: Track, found: LyricsRecord, stored: StoredLyrics | null): TrackLyrics {
     return {
       trackId: track.id,
       source: found.source,
@@ -87,7 +176,7 @@ export class LyricsService {
 }
 
 /** A stored row as the reader's own shape, so both paths share the mapper. */
-function foundOf(stored: StoredLyrics): FoundLyrics {
+function foundOf(stored: StoredLyrics): LyricsRecord {
   return {
     text: stored.text,
     language: stored.language,

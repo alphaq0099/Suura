@@ -13,7 +13,7 @@ function emptyMessage(track: Track | null): string {
   if (track.sourceKind !== 'local') {
     return 'This is a stream, so there is no file to read lyrics from.'
   }
-  return 'No lyrics in this file. Add them from Edit tags, or put a .lrc file with the same name next to it.'
+  return 'No lyrics in this file yet. Use Find lyrics to search LRCLIB, add them from Edit tags, or put a .lrc file with the same name next to it.'
 }
 
 export interface LyricsLinesProps {

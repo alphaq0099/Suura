@@ -14,6 +14,8 @@ import type {
   DeepPartial,
   ListAlbumsQuery,
   ListTracksQuery,
+  LyricsCandidate,
+  LyricsLookupResult,
   PlaybackSnapshot,
   ResolvedSource,
   TagLookupResult,
@@ -95,6 +97,18 @@ const api: PlayerApi = {
 
   setTrackLyricsOffset: (trackId: number, offsetMs: number) =>
     ipcRenderer.invoke(IPC.libraryLyricsOffset, trackId, offsetMs) as Promise<TrackLyrics | null>,
+
+  findTrackLyrics: (trackId: number) =>
+    ipcRenderer.invoke(IPC.libraryLyricsFind, trackId) as Promise<LyricsLookupResult>,
+
+  useTrackLyrics: (trackId: number, candidate: LyricsCandidate) =>
+    ipcRenderer.invoke(IPC.libraryLyricsUse, trackId, candidate) as Promise<TrackLyrics | null>,
+
+  useFileLyrics: (trackId: number) =>
+    ipcRenderer.invoke(IPC.libraryLyricsUseFile, trackId) as Promise<TrackLyrics | null>,
+
+  writeTrackLyricsToFile: (trackId: number) =>
+    ipcRenderer.invoke(IPC.libraryLyricsWrite, trackId) as Promise<TrackLyrics | null>,
 
   removeLibraryFolder: (folder: string) =>
     ipcRenderer.invoke(IPC.libraryRemoveFolder, folder) as Promise<AppSettings>,

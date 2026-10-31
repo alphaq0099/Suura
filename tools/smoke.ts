@@ -104,6 +104,12 @@ import { StreamPlayRepository } from '@core/library/stream-play-repository'
 import { PlayStateRepository } from '@core/library/play-state-repository'
 import { PlaybackService } from '@core/library/playback-service'
 import { createTagLookup, itunesUrl, musicBrainzQuery } from '@core/library/tag-lookup'
+import {
+  createLyricsLookup,
+  lrclibGetUrl,
+  lrclibSearchUrl,
+  type LyricsLookup
+} from '@core/library/lyrics-lookup'
 import { isPathInside, localContentKey, normalizePath } from '@core/library/content-key'
 import { scanLibraryFolders } from '@core/library/scanner'
 import { youtubeOriginOf, youtubeOriginOfNative, extractMetadata, loadMetadataParser } from '@core/library/metadata'
@@ -189,10 +195,14 @@ import { canPrefetchSearchMatch, mergeLibrarySearch, type SearchPrefetchGate } f
 import { sanitizeFilePart, savePathParts } from '@shared/files'
 import { sanitizeArtworkKey, sanitizeTagFields } from '@shared/tags'
 import {
+  LYRICS_CANDIDATE_LIMIT,
   LYRICS_OFFSET_MAX,
   activeLyricIndex,
+  candidatesFromLrclib,
   formatLyricsOffset,
   parseLyrics,
+  rankLyricsCandidates,
+  sanitizeLyricsCandidate,
   sanitizeLyricsOffset
 } from '@shared/lyrics'
 import { AsyncTtlCache } from '../src/main/async-cache'
@@ -5341,6 +5351,223 @@ async function main(): Promise<void> {
     )
   }
 
+  // The finder is a network feature, but the rules that decide what to show are
+  // pure. They are pinned down here before any file or service is involved: a
+  // payload shape, a score, and a bridge check are the whole contract.
+  {
+    const query = { title: 'Song', artist: 'Artist', album: 'Album', durationMs: 212_000 }
+    const exactPayload = {
+      id: 42,
+      trackName: 'Song',
+      artistName: 'Artist',
+      albumName: 'Album',
+      duration: 212.4,
+      instrumental: false,
+      plainLyrics: 'plain words',
+      syncedLyrics: '[00:01.00]synced words'
+    }
+    const exactCandidate = candidatesFromLrclib(exactPayload)[0]
+    checkEqual(
+      'lyrics finder: an exact match is parsed',
+      [
+        exactCandidate?.providerId,
+        exactCandidate?.title,
+        exactCandidate?.artist,
+        exactCandidate?.album,
+        exactCandidate?.durationMs,
+        exactCandidate?.synced,
+        exactCandidate?.text
+      ].join('|'),
+      '42|Song|Artist|Album|212400|true|[00:01.00]synced words'
+    )
+
+    const searchCandidates = candidatesFromLrclib([
+      {
+        id: 1,
+        trackName: 'Song',
+        artistName: 'Artist',
+        duration: 212,
+        plainLyrics: 'plain words',
+        syncedLyrics: null
+      },
+      {
+        id: 2,
+        trackName: 'Song',
+        artistName: 'Artist',
+        duration: 212,
+        plainLyrics: null,
+        syncedLyrics: '[00:01.00]timed words'
+      },
+      {
+        id: 3,
+        trackName: 'Instrumental',
+        artistName: 'Artist',
+        duration: 212,
+        instrumental: true,
+        plainLyrics: 'not lyrics'
+      },
+      { id: 4, trackName: 'No lyrics', artistName: 'Artist', duration: 212 }
+    ])
+    checkEqual(
+      'lyrics finder: search rows are parsed and empty or instrumental rows skipped',
+      searchCandidates.length,
+      2
+    )
+    checkEqual('lyrics finder: a plain row is not marked synced', searchCandidates[0]?.synced, false)
+    checkEqual('lyrics finder: a timed row is marked synced', searchCandidates[1]?.synced, true)
+
+    const ranked = rankLyricsCandidates(query, searchCandidates)
+    checkEqual('lyrics finder: a tie prefers the synced copy', ranked[0]?.providerId, '2')
+
+    const unrelated = candidatesFromLrclib([
+      {
+        id: 10,
+        trackName: 'Completely Different',
+        artistName: 'Nobody',
+        duration: 212,
+        plainLyrics: 'x'
+      }
+    ])
+    checkEqual(
+      'lyrics finder: an unrelated title is dropped',
+      rankLyricsCandidates(query, unrelated).length,
+      0
+    )
+
+    const many = Array.from({ length: 8 }, (_, index) => ({
+      id: 100 + index,
+      trackName: 'Song',
+      artistName: 'Artist',
+      duration: 212,
+      plainLyrics: `words ${index}`
+    }))
+    checkEqual(
+      'lyrics finder: at most five matches are shown',
+      rankLyricsCandidates(query, candidatesFromLrclib(many)).length,
+      LYRICS_CANDIDATE_LIMIT
+    )
+
+    const bridged = sanitizeLyricsCandidate(ranked[0])
+    checkEqual(
+      'lyrics finder: a candidate survives the bridge',
+      [bridged.provider, bridged.providerId, bridged.synced].join('|'),
+      'lrclib|2|true'
+    )
+    checkEqual(
+      'lyrics finder: CRLF is normalized before storing',
+      sanitizeLyricsCandidate({ ...ranked[0], text: '[00:01.00]a\r\n[00:02.00]b' }).text,
+      '[00:01.00]a\n[00:02.00]b'
+    )
+    const rejectsCandidate = (value: unknown): boolean => {
+      try {
+        sanitizeLyricsCandidate(value)
+        return false
+      } catch {
+        return true
+      }
+    }
+    check(
+      'lyrics finder: an unknown provider is refused',
+      rejectsCandidate({ ...ranked[0], provider: 'somewhere' })
+    )
+    check(
+      'lyrics finder: empty lyrics are refused',
+      rejectsCandidate({ ...ranked[0], text: '   ' })
+    )
+    check(
+      'lyrics finder: over-long lyrics are refused',
+      rejectsCandidate({ ...ranked[0], text: 'x'.repeat(100_001) })
+    )
+    check(
+      'lyrics finder: a negative length is refused',
+      rejectsCandidate({ ...ranked[0], durationMs: -1 })
+    )
+
+    const getUrl = new URL(lrclibGetUrl(query))
+    checkEqual(
+      'lyrics finder: the exact URL carries the length in seconds',
+      getUrl.searchParams.get('duration'),
+      '212'
+    )
+    checkEqual(
+      'lyrics finder: the exact URL strips bracketed noise',
+      new URL(lrclibGetUrl({ ...query, title: 'Song (Official Video)' })).searchParams.get(
+        'track_name'
+      ),
+      'Song'
+    )
+    checkEqual(
+      'lyrics finder: the search URL keeps the artist',
+      new URL(lrclibSearchUrl(query)).searchParams.get('artist_name'),
+      'Artist'
+    )
+
+    const requests: string[] = []
+    const fakeFetch = async (input: string | URL | Request): Promise<Response> => {
+      const url = String(input)
+      requests.push(url)
+      if (url.includes('/api/get')) return new Response(null, { status: 404 })
+      return new Response(
+        JSON.stringify([
+          {
+            id: 7,
+            trackName: 'Song',
+            artistName: 'Artist',
+            duration: 212,
+            syncedLyrics: '[00:01.00]found'
+          }
+        ]),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      )
+    }
+    const lookup = createLyricsLookup({
+      log: silentLogger,
+      fetch: fakeFetch as typeof fetch,
+      timeoutMs: 2_000
+    })
+    const lookupResult = await lookup.lookup(query)
+    checkEqual('lyrics finder: an exact miss falls back to search', requests.length, 2)
+    checkEqual('lyrics finder: the fallback match is returned', lookupResult.candidates[0]?.providerId, '7')
+    checkEqual('lyrics finder: an empty answer is not a failure', lookupResult.message, null)
+
+    const exactRequests: string[] = []
+    const exactFetch = async (input: string | URL | Request): Promise<Response> => {
+      exactRequests.push(String(input))
+      return new Response(
+        JSON.stringify({
+          id: 8,
+          trackName: 'Song',
+          artistName: 'Artist',
+          duration: 212,
+          syncedLyrics: '[00:01.00]exact'
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      )
+    }
+    const exactLookup = createLyricsLookup({
+      log: silentLogger,
+      fetch: exactFetch as typeof fetch,
+      timeoutMs: 2_000
+    })
+    const exactResult = await exactLookup.lookup(query)
+    checkEqual('lyrics finder: an exact hit makes one request', exactRequests.length, 1)
+    checkEqual('lyrics finder: the exact hit is returned', exactResult.candidates[0]?.providerId, '8')
+
+    const failingLookup = createLyricsLookup({
+      log: silentLogger,
+      fetch: (async () => {
+        throw new TypeError('offline')
+      }) as typeof fetch,
+      timeoutMs: 2_000
+    })
+    const failedLookup = await failingLookup.lookup(query)
+    checkEqual(
+      'lyrics finder: an unreachable service is a sentence, not a throw',
+      failedLookup.message,
+      'LRCLIB could not be reached.'
+    )
+  }
+
   const lyricsRoot = await mkdtemp(join(tmpdir(), 'player-lyrics-'))
   try {
     const lyricsPaths = resolveAppPaths(join(lyricsRoot, 'userData'))
@@ -5348,11 +5575,47 @@ async function main(): Promise<void> {
     const lyricsDb = openLibraryDatabase(lyricsPaths.database, silentLogger)
     try {
       const lyricsRepo = new TrackRepository(lyricsDb.db)
-      const lyricsService = new LyricsService(lyricsRepo, new LyricsRepository(lyricsDb.db), silentLogger)
       const writer = new TagWriter({
         backupDir: join(lyricsRoot, 'backups'),
         resolveFfmpeg: async () => ffmpegPath
       })
+
+      // The network is replaced, not exercised. The service's own work is what
+      // is under test here: which row wins, what is stored, and what a write
+      // does to the file.
+      const fetchedText = '[00:00.10]fetched first\n[00:00.90]fetched second'
+      const findQueries: Array<Parameters<LyricsLookup['lookup']>[0]> = []
+      const fakeLookup: LyricsLookup = {
+        lookup: async (query) => {
+          findQueries.push(query)
+          return {
+            query,
+            candidates: [
+              {
+                provider: 'lrclib',
+                providerId: 'smoke-lrclib',
+                title: 'Lyrics',
+                artist: 'Smoke',
+                album: null,
+                durationMs: 1200,
+                synced: true,
+                text: fetchedText,
+                instrumental: false,
+                score: 0.95,
+                confidence: 'strong'
+              }
+            ],
+            message: null
+          }
+        }
+      }
+      const lyricsService = new LyricsService(
+        lyricsRepo,
+        new LyricsRepository(lyricsDb.db),
+        silentLogger,
+        writer,
+        fakeLookup
+      )
 
       const makeLyricsFixture = async (fileName: string, codec: string[]): Promise<string> => {
         const target = join(lyricsRoot, fileName)
@@ -5450,6 +5713,40 @@ async function main(): Promise<void> {
       checkEqual('lyrics: an offset is remembered', lyricsService.setOffset(sidecarId, 1500)?.offsetMs, 1500)
       checkEqual('lyrics: reading the file again keeps the offset', (await lyricsService.read(sidecarId))?.offsetMs, 1500)
 
+      // The finder asks with the row's values, and a chosen match is stored as
+      // its own source. It wins over the sidecar because choosing it was an
+      // explicit act, and it can be dropped again with one call.
+      const found = await lyricsService.find(sidecarId)
+      const asked = findQueries[0]
+      checkEqual(
+        'lyrics: the finder asks with the row values',
+        [asked?.title, asked?.artist, asked?.durationMs].join('|'),
+        'Lyrics||1200'
+      )
+      checkEqual('lyrics: the finder returns the injected match', found.candidates[0]?.providerId, 'smoke-lrclib')
+      const fetched = found.candidates[0]
+      if (!fetched) throw new Error('the injected lyrics match disappeared')
+      const chosen = await lyricsService.use(sidecarId, fetched)
+      checkEqual(
+        'lyrics: a chosen match is stored and labelled',
+        [chosen?.source, chosen?.text, chosen?.synced].join('|'),
+        `lrclib|${fetchedText}|true`
+      )
+      checkEqual('lyrics: fetched lyrics win over a sidecar', (await lyricsService.read(sidecarId))?.source, 'lrclib')
+      checkEqual('lyrics: the offset works on fetched lyrics', lyricsService.setOffset(sidecarId, 500)?.offsetMs, 500)
+      let writeRefusal = ''
+      await lyricsService.writeToFile(sidecarId).catch((error) => {
+        writeRefusal = error instanceof Error ? error.message : String(error)
+      })
+      check('lyrics: writing is refused while a .lrc wins', writeRefusal.includes('.lrc'))
+      const backToFile = await lyricsService.useFile(sidecarId)
+      checkEqual(
+        'lyrics: use file lyrics drops the fetched copy',
+        [backToFile?.source, backToFile?.text].join('|'),
+        'sidecar|[00:02.00]sidecar version'
+      )
+      checkEqual('lyrics: the fetched row is gone', (await lyricsService.read(sidecarId))?.source, 'sidecar')
+
       await writeFile(join(lyricsRoot, 'sidecar.lrc'), '[00:02.00]edited sidecar', 'utf8')
       const editedSidecar = await lyricsService.read(sidecarId)
       checkEqual(
@@ -5470,8 +5767,46 @@ async function main(): Promise<void> {
       checkEqual('lyrics: a file with no lyrics returns null', await lyricsService.read(bareId), null)
       checkEqual('lyrics: an offset with no lyrics is refused', lyricsService.setOffset(bareId, 500), null)
 
+      // A fetched lyric is not a file lyric until the user writes it. Doing so
+      // makes the tag the source, and the fetched row is removed so the label
+      // and the next read agree with the file.
+      const writeFixture = await makeLyricsFixture('write.flac', ['-c:a', 'flac'])
+      const writeId = insertTrack('smoke-lyrics-write', writeFixture)
+      const forWriting = (await lyricsService.find(writeId)).candidates[0]
+      if (!forWriting) throw new Error('the injected lyrics match disappeared')
+      await lyricsService.use(writeId, forWriting)
+      checkEqual(
+        'lyrics: a fetched lyric is shown before it is written',
+        (await lyricsService.read(writeId))?.source,
+        'lrclib'
+      )
+      const written = await lyricsService.writeToFile(writeId)
+      checkEqual(
+        'lyrics: writing into the file makes the tag the source',
+        [written?.source, written?.text].join('|'),
+        `embedded|${fetchedText}`
+      )
+      checkEqual(
+        'lyrics: reading after the write keeps the file lyrics',
+        (await lyricsService.read(writeId))?.source,
+        'embedded'
+      )
+      let noFetchRefusal = ''
+      await lyricsService.writeToFile(writeId).catch((error) => {
+        noFetchRefusal = error instanceof Error ? error.message : String(error)
+      })
+      check('lyrics: writing again without a fetch is refused', noFetchRefusal.includes('no fetched'))
+
+      await lyricsService.use(bareId, forWriting)
+      checkEqual('lyrics: use file lyrics can mean no lyrics', await lyricsService.useFile(bareId), null)
+
       const remoteLyricsId = insertTrack('smoke-lyrics-remote', null, 'youtube')
       checkEqual('lyrics: a stream has no file lyrics', await lyricsService.read(remoteLyricsId), null)
+      let streamLookup = ''
+      await lyricsService.find(remoteLyricsId).catch((error) => {
+        streamLookup = error instanceof Error ? error.message : String(error)
+      })
+      check('lyrics: a stream cannot be looked up', streamLookup.includes('Only files'))
     } finally {
       lyricsDb.close()
     }

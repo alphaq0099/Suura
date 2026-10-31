@@ -3941,6 +3941,22 @@ input[type='radio'] {
   color: var(--text);
 }
 
+.np-lyrics-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.np-lyrics-find {
+  flex: none;
+  color: var(--text-dim);
+}
+
+.np-lyrics-find:hover:not(:disabled) {
+  color: var(--text);
+}
+
 .np-lyrics-body {
   position: relative;
   flex: 1;
@@ -4177,6 +4193,31 @@ input[type='radio'] {
   opacity: 0.8;
 }
 
+/* The fetched source has two actions of its own: go back to the file, or make
+   the fetch the file's own tag. They sit above the timing controls so neither
+   changes the footer's shape. */
+.np-lyrics-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-top: 1px solid var(--border);
+}
+
+.np-lyrics-actions-source {
+  margin-right: auto;
+  font-size: calc(11px * var(--text-scale));
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.np-lyrics-action-error {
+  margin: 0;
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+}
+
 .np-lyrics-foot {
   display: flex;
   align-items: center;
@@ -4194,7 +4235,8 @@ input[type='radio'] {
   margin-left: auto;
 }
 
-.np-lyrics-foot button:not(.icon-button) {
+.np-lyrics-foot button:not(.icon-button),
+.np-lyrics-actions button {
   padding: 5px 10px;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -4208,12 +4250,14 @@ input[type='radio'] {
     border-color 140ms ease;
 }
 
-.np-lyrics-foot button:not(.icon-button):hover:not(:disabled) {
+.np-lyrics-foot button:not(.icon-button):hover:not(:disabled),
+.np-lyrics-actions button:hover:not(:disabled) {
   border-color: rgb(var(--accent-rgb) / 60%);
   color: var(--text);
 }
 
-.np-lyrics-foot button:not(.icon-button):disabled {
+.np-lyrics-foot button:not(.icon-button):disabled,
+.np-lyrics-actions button:disabled {
   opacity: 0.45;
   cursor: default;
 }
@@ -4229,6 +4273,29 @@ input[type='radio'] {
 .np-lyrics-reset {
   border-color: transparent;
   color: var(--text-faint);
+}
+
+/* The finder fills the body, because the panel is already a sheet. It reuses
+   the tag finder's list, badges and footer so the two review surfaces read the
+   same way; only the frame around them is different. */
+.lyrics-finder {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 14px 12px;
+  overflow-y: auto;
+}
+
+.lyrics-finder .auto-tag-list {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
+.lyrics-finder-foot {
+  margin-top: auto;
 }
 
 /* ---------- full-window lyrics ---------- */

@@ -26,6 +26,8 @@ import type {
   LibrarySearchResult,
   ListAlbumsQuery,
   ListTracksQuery,
+  LyricsCandidate,
+  LyricsLookupResult,
   OnlinePlaylist,
   RelocateReport,
   OnlinePlaylistDetail,
@@ -86,6 +88,10 @@ export const IPC = {
   libraryAutoTag: 'library:auto-tag',
   libraryLyrics: 'library:lyrics',
   libraryLyricsOffset: 'library:lyrics-offset',
+  libraryLyricsFind: 'library:lyrics-find',
+  libraryLyricsUse: 'library:lyrics-use',
+  libraryLyricsUseFile: 'library:lyrics-use-file',
+  libraryLyricsWrite: 'library:lyrics-write',
   libraryRemoveFolder: 'library:remove-folder',
   libraryRevealTrack: 'library:reveal-track',
   libraryArtwork: 'library:artwork',
@@ -351,6 +357,29 @@ export interface PlayerApi {
    * stored in the database rather than written into the file.
    */
   setTrackLyricsOffset(trackId: number, offsetMs: number): Promise<TrackLyrics | null>
+  /**
+   * Asks LRCLIB what lyrics match this file.
+   *
+   * A proposal only: nothing is stored until a match is chosen. The result can
+   * be empty (no match) or carry a message (the service was unreachable).
+   */
+  findTrackLyrics(trackId: number): Promise<LyricsLookupResult>
+  /**
+   * Remembers the chosen match as this track's lyrics, labelled `lrclib`.
+   *
+   * It wins over a `.lrc` or an embedded tag until the user goes back to the
+   * file, because choosing it was an explicit act.
+   */
+  useTrackLyrics(trackId: number, candidate: LyricsCandidate): Promise<TrackLyrics | null>
+  /** Forgets the fetched copy and shows the file's own lyrics again. */
+  useFileLyrics(trackId: number): Promise<TrackLyrics | null>
+  /**
+   * Writes the chosen fetch into the file's tag and removes the fetched copy.
+   *
+   * Refused while the track is playing, and refused when a `.lrc` beside the
+   * file would keep winning over the tag that was just written.
+   */
+  writeTrackLyricsToFile(trackId: number): Promise<TrackLyrics | null>
   removeLibraryFolder(folder: string): Promise<AppSettings>
   revealTrack(trackId: number): Promise<void>
   /**

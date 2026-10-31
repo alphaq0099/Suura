@@ -640,7 +640,7 @@ port inherits the metadata core instead of reimplementing it. M12 set the same p
 - [x] Artwork picker: embedded / `cover.jpg` / video still / provider cover, with a square-crop preview
 
 **Phase 4 — lyrics finder**
-- [ ] LRCLIB fetch, match, cache, source label, offset; optional "write into the file"
+- [x] LRCLIB fetch, match, cache, source label, offset; optional "write into the file"
 
 **Phase 5 — batch**
 - [ ] Selection queue, review, undo, per-provider rate limits, "fetch missing lyrics"
