@@ -168,8 +168,13 @@ export class LyricsService {
    * The fetched row is removed afterwards, so the file becomes the source and
    * the panel's label changes with it. A `.lrc` beside the file is refused:
    * that copy wins over the tag, so writing would look like nothing happened.
+   *
+   * The backup path comes back so a batch can undo the write: the single-track
+   * panel discards it, but the batch keeps it until the user is done.
    */
-  async writeToFile(target: LyricsTarget): Promise<TrackLyrics | null> {
+  async writeFetchedToFile(
+    target: LyricsTarget
+  ): Promise<{ lyrics: TrackLyrics | null; backupPath: string | null }> {
     const { filePath, trackId } = this.localTrack(target)
     if (!this.tagWriter) throw new Error('Tag editing is not available in this build.')
 
@@ -183,9 +188,45 @@ export class LyricsService {
       )
     }
 
-    await this.tagWriter.write(filePath, { lyrics: fetched.text })
+    const result = await this.tagWriter.write(filePath, { lyrics: fetched.text })
     this.store.clearFetched(trackId)
     this.log.debug('lyrics written into the file', { trackId })
+    return { lyrics: await this.read(trackId), backupPath: result.backupPath }
+  }
+
+  /** Writes the chosen fetch into the file's tag, and returns what is shown now. */
+  async writeToFile(target: LyricsTarget): Promise<TrackLyrics | null> {
+    return (await this.writeFetchedToFile(target)).lyrics
+  }
+
+  /**
+   * Drops the fetched copy only if it is still the text the caller stored.
+   *
+   * A batch undo must not erase a lyric the user re-fetched after the batch ran.
+   * Comparing the text is enough: it is what was written, and a provider that
+   * returned the same words for the same song is the same choice.
+   */
+  async forgetFetchedIfUnchanged(target: LyricsTarget, expectedText: string): Promise<boolean> {
+    const { trackId } = this.localTrack(target)
+    const fetched = this.store.fetched(trackId)
+    if (!fetched) return false
+    if (fetched.text !== expectedText) return false
+    this.store.removeSource(trackId, fetched.source)
+    this.log.debug('batch lyrics forgotten', { trackId, source: fetched.source })
+    return true
+  }
+
+  /**
+   * Puts a file back exactly as it was before a batch wrote lyrics into it.
+   *
+   * Reading afterwards refreshes the file's own rows, so the panel shows the
+   * restored tag or sidecar rather than the words that were just removed.
+   */
+  async restoreFromBackup(target: LyricsTarget, backupPath: string): Promise<TrackLyrics | null> {
+    const { filePath, trackId } = this.localTrack(target)
+    if (!this.tagWriter) throw new Error('Tag editing is not available in this build.')
+    await this.tagWriter.restore(filePath, backupPath)
+    this.log.debug('lyrics restored from a tag backup', { trackId, backupPath })
     return this.read(trackId)
   }
 

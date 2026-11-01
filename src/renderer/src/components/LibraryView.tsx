@@ -21,6 +21,7 @@ import { RowMenu } from './RowMenu'
 import { TrackContextMenu } from './TrackContextMenu'
 import { TrackDetails } from './TrackDetails'
 import { TrackList } from './TrackList'
+import { LyricsBatchDialog } from './LyricsBatchDialog'
 import {
   CheckIcon,
   CloseIcon,
@@ -28,6 +29,7 @@ import {
   InfoIcon,
   LinkIcon,
   MusicIcon,
+  LyricsIcon,
   PlayIcon,
   PlaylistIcon,
   QueueIcon,
@@ -159,6 +161,8 @@ export function LibraryView(props: LibraryViewProps) {
   const [detailsEditing, setDetailsEditing] = useState(false)
   const [bulkBusy, setBulkBusy] = useState(false)
   const [bulkError, setBulkError] = useState<string | null>(null)
+  // The local tracks the batch dialog is scanning, or null when it is closed.
+  const [lyricsBatchIds, setLyricsBatchIds] = useState<number[] | null>(null)
   const fieldMenu = useFieldContextMenu(searchInputRef)
 
   const { saved, states, save: saveToLibrary, refreshSaved } = downloads
@@ -406,6 +410,16 @@ export function LibraryView(props: LibraryViewProps) {
               <span>Add to playlist</span>
             </button>
           )}
+          {!showingStreams ? (
+            <button
+              type="button"
+              onClick={() => setLyricsBatchIds([...selectedIds])}
+              title="Look for lyrics for every selected file that has none"
+            >
+              <LyricsIcon size={14} />
+              <span>Fetch missing lyrics</span>
+            </button>
+          ) : null}
           {!showingStreams ? (
             <button
               type="button"
@@ -667,6 +681,13 @@ export function LibraryView(props: LibraryViewProps) {
             setDetailsTrack(null)
             setDetailsEditing(false)
           }}
+        />
+      ) : null}
+
+      {lyricsBatchIds ? (
+        <LyricsBatchDialog
+          trackIds={lyricsBatchIds}
+          onClose={() => setLyricsBatchIds(null)}
         />
       ) : null}
     </section>

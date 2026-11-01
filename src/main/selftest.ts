@@ -5155,7 +5155,187 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       'the Search field offers Paste and Clear from its context menu'
     )
 
-    // ---- 13b. the tag editor's text fields have a working right-click -----
+    // ---- 13c. batch lyrics from the library selection ----------------------
+    // The scan, the ranking and the undo rules are pinned down in
+    // `npm run smoke`. What only the real window can prove is the seam: the
+    // selection bar offers the batch, the dialog shows what came back with the
+    // safe default, and pressing Store and then Undo actually moves the row.
+    // The finder is stubbed for the same reason the panel's was: no request
+    // leaves the app, and the text is known in advance.
+    const batchSilent = container.library
+      .list()
+      .tracks.find((track) => track.title === 'Selftest Silent')
+    const batchTone = container.library.list().tracks.find((track) => track.title === 'Selftest Tone')
+    if (!batchSilent || !batchTone) throw new Error('selftest: the batch fixtures are missing')
+    // A lyric left behind by an earlier section would make the scan skip this
+    // row, and the probe would then be testing the skip path instead.
+    await container.lyrics.useFile(batchSilent.id)
+    const batchText = '[00:00.40]batch first\n[00:01.40]batch second'
+    const originalBatchFind = container.lyrics.find
+    container.lyrics.find = async (target) => {
+      const track =
+        typeof target === 'number'
+          ? container.repo.getById(target)
+          : {
+              title: target.title ?? '',
+              artist: target.artist,
+              album: target.album,
+              durationMs: target.durationMs
+            }
+      return {
+        query: {
+          title: track?.title ?? '',
+          artist: track?.artist ?? null,
+          album: track?.album ?? null,
+          durationMs: track?.durationMs ?? null
+        },
+        candidates: [
+          {
+            provider: 'lrclib',
+            providerId: `selftest-batch-${batchSilent.id}`,
+            title: track?.title ?? '',
+            artist: track?.artist ?? 'Selftest',
+            album: track?.album ?? null,
+            durationMs: track?.durationMs ?? null,
+            synced: true,
+            text: batchText,
+            instrumental: false,
+            url: null,
+            score: 0.94,
+            confidence: 'strong'
+          }
+        ],
+        providers: [{ provider: 'lrclib', ok: true, message: null, count: 1 }],
+        message: null
+      }
+    }
+    const batchProbe = await evaluate<{
+      buttonLabel: string
+      opened: boolean
+      title: string
+      matchTitle: string
+      matches: number
+      ticked: number
+      writeChecked: boolean
+      applyLabel: string
+      skipped: string
+      stored: string
+      storedText: string
+      undone: string
+      afterUndo: boolean
+      closed: boolean
+    }>(
+      window,
+      `(async () => {
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const pick = (selector) => document.querySelector(selector)
+         const pickAll = (selector) => [...document.querySelectorAll(selector)]
+         const text = (element) => (element ? (element.textContent || '').trim() : '')
+         const press = (element) => {
+           if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         }
+         const until = async (predicate, timeoutMs) => {
+           const deadline = Date.now() + timeoutMs
+           for (;;) {
+             if (predicate()) return true
+             if (Date.now() > deadline) return false
+             await sleep(50)
+           }
+         }
+         const rowFor = (title) =>
+           pickAll('.track-row').find((row) => text(row.querySelector('.row-title-text')) === title)
+         const out = {
+           buttonLabel: '', opened: false, title: '', matchTitle: '', matches: 0,
+           ticked: 0, writeChecked: true, applyLabel: '', skipped: '', stored: '',
+           storedText: '', undone: '', afterUndo: false, closed: false
+         }
+
+         // Two rows: one with lyrics (skipped by the scan) and one without.
+         const silent = rowFor('Selftest Silent')
+         if (silent) silent.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
+         await sleep(250)
+         const tone = rowFor('Selftest Tone')
+         if (tone) tone.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
+         await sleep(300)
+
+         const fetchButton = pickAll('.selection-bar button').find(
+           (el) => text(el) === 'Fetch missing lyrics'
+         )
+         out.buttonLabel = text(fetchButton)
+         press(fetchButton)
+         await sleep(300)
+         out.opened = Boolean(pick('.lyrics-batch-dialog'))
+         out.title = text(pick('#lyrics-batch-title'))
+         await until(() => pick('.lyrics-batch-match') || pick('.lyrics-batch-result'), 20000)
+
+         out.matches = pickAll('.lyrics-batch-match').length
+         out.matchTitle = text(pick('.lyrics-batch-match .auto-tag-match-text strong'))
+         out.ticked = pickAll('.lyrics-batch-match input[type="checkbox"]').filter(
+           (input) => input.checked
+         ).length
+         const writeBox = pick('.lyrics-batch-write input')
+         out.writeChecked = writeBox ? writeBox.checked : true
+         out.applyLabel = text(pick('.details-foot button.primary'))
+         out.skipped = text(pick('.lyrics-batch-skipped summary'))
+
+         press(pick('.details-foot button.primary'))
+         await until(() => pick('.lyrics-batch-result'), 20000)
+         out.stored = text(pick('.lyrics-batch-result p'))
+         out.storedText = ((await window.player.getTrackLyrics(${batchSilent.id})) || {}).text || ''
+
+         press(pickAll('.details-foot button').find((el) => text(el) === 'Undo'))
+         await until(() => pickAll('.lyrics-batch-result').length > 1, 20000)
+         out.undone = text(pickAll('.lyrics-batch-result p')[1])
+         out.afterUndo = (await window.player.getTrackLyrics(${batchSilent.id})) === null
+
+         press(pickAll('.details-foot button').find((el) => text(el) === 'Done'))
+         await sleep(350)
+         out.closed = !pick('.lyrics-batch-dialog')
+         // Later sections assume a library with nothing selected: the '#' column
+         // and the playlist actions both key off the selection.
+         press(pick('.selection-bar .selection-clear'))
+         await sleep(300)
+         return out
+       })()`
+    )
+    container.lyrics.find = originalBatchFind
+    record(
+      batchProbe.buttonLabel === 'Fetch missing lyrics' &&
+        batchProbe.opened &&
+        batchProbe.title === 'Fetch missing lyrics',
+      'the library selection bar opens the batch lyrics dialog',
+      `"${batchProbe.buttonLabel}" -> "${batchProbe.title}"`
+    )
+    record(
+      batchProbe.matches === 1 &&
+        batchProbe.matchTitle === 'Selftest Silent' &&
+        batchProbe.ticked === 1 &&
+        batchProbe.applyLabel === 'Store 1',
+      'the review shows the match for the row without lyrics and ticks it by default',
+      `${batchProbe.matches} matches, "${batchProbe.matchTitle}", ${batchProbe.ticked} ticked, "${batchProbe.applyLabel}"`
+    )
+    record(
+      batchProbe.writeChecked === false,
+      'writing into files is off by default, so the batch stores a reversible copy first'
+    )
+    record(
+      batchProbe.skipped.startsWith('Not fetching 1'),
+      'a selected row that already has lyrics is listed as not fetched',
+      `"${batchProbe.skipped}"`
+    )
+    record(
+      batchProbe.stored.startsWith('1 stored') && batchProbe.storedText === batchText,
+      'Store keeps the accepted lyrics for the library row',
+      `"${batchProbe.stored}", ${batchProbe.storedText.length} characters`
+    )
+    record(
+      batchProbe.undone.startsWith('Undone: 1 removed') && batchProbe.afterUndo,
+      'Undo removes the stored copy again, leaving the row without lyrics',
+      `"${batchProbe.undone}"`
+    )
+    record(batchProbe.closed, 'Done closes the batch dialog and leaves the library selection bar')
+
+    // ---- 13d. the tag editor's text fields have a working right-click -----
     // Electron draws no menu for an input on its own, and the tag editor is
     // exactly where a mangled artist name gets fixed by hand, so cut, copy and
     // paste have to work there. The menu is drawn once for the whole app, so
@@ -5290,7 +5470,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       `editor ${fieldMenu.editorClosed}, sheet ${fieldMenu.sheetClosed}`
     )
 
-    // ---- 13c. the tag finder proposes, the editor still decides ----------
+    // ---- 13e. the tag finder proposes, the editor still decides ----------
     // The network is replaced here, not exercised: what this checks is the seam
     // the user sees. A match fills the form and never the file, a filled field
     // starts unticked, and Escape closes the finder before the editor.
@@ -5491,7 +5671,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       JSON.stringify(capturedQuery)
     )
 
-    // ---- 13d. the cover picker offers pictures, the editor still writes --
+    // ---- 13f. the cover picker offers pictures, the editor still writes --
     // The providers and the cache are replaced here, so this is about the seam
     // the user sees: local covers first, provider covers on request, a chosen
     // cover previewed in the editor, and Escape unwinding one layer at a time.

@@ -6,6 +6,7 @@ import type {
   LyricsProvider as LyricsProviderName
 } from '@shared/types'
 import type { Logger } from '@core/logging/logger'
+import { RequestScheduler } from '@core/scheduling/request-scheduler'
 
 /**
  * The services the finder asks, and the merge in front of them.
@@ -50,7 +51,26 @@ export interface LyricsLookupOptions {
   /** Injected by the smoke test and the self-test so no request leaves the app. */
   fetch?: typeof fetch
   timeoutMs?: number
+  /**
+   * Replaces the provider's own pacing. The smoke test injects a pass-through
+   * so a batch of lookups does not wait out the real gaps; production leaves it
+   * unset and gets the scheduler below.
+   */
+  schedule?: LyricsSchedule
 }
+
+/**
+ * Runs one whole lookup inside the provider's budget.
+ *
+ * The unit is the lookup, not the HTTP call: LRCLIB's exact-then-search pair is
+ * one conversation with the service, and Genius's search plus its three pages
+ * is another. Pacing the whole thing keeps a batch from stacking conversations
+ * while letting the calls inside one lookup run together.
+ */
+export type LyricsSchedule = <T>(work: () => Promise<T>) => Promise<T>
+
+/** How many lookups LRCLIB may run at once, and the gap between starts. */
+const LRCLIB_PACING = { maxConcurrent: 2, minGapMs: 200, jitterMs: 100 } as const
 
 /** A status a provider answered with, so the sentence can name the reason. */
 export class LyricsHttpError extends Error {
@@ -132,6 +152,9 @@ interface Answer {
 export function createLyricsLookup(options: LyricsLookupOptions): LyricsProvider {
   const request = options.fetch ?? fetch
   const timeoutMs = options.timeoutMs ?? LOOKUP_TIMEOUT_MS
+  const scheduler = new RequestScheduler(LRCLIB_PACING)
+  const schedule: LyricsSchedule =
+    options.schedule ?? (<T>(work: () => Promise<T>) => scheduler.schedule(work))
 
   const getJson = async (url: string): Promise<Answer> => {
     const response = await request(url, {
@@ -153,24 +176,28 @@ export function createLyricsLookup(options: LyricsLookupOptions): LyricsProvider
       }
 
       try {
-        const exact = await getJson(lrclibGetUrl(query))
-        if (exact.ok) {
-          const candidates = rankLyricsCandidates(query, candidatesFromLrclib(exact.body))
-          if (candidates.length > 0) {
-            options.log.debug('lrclib exact match', { count: candidates.length })
-            return { candidates, ok: true, message: null }
+        return await schedule(async () => {
+          const exact = await getJson(lrclibGetUrl(query))
+          if (exact.ok) {
+            const candidates = rankLyricsCandidates(query, candidatesFromLrclib(exact.body))
+            if (candidates.length > 0) {
+              options.log.debug('lrclib exact match', { count: candidates.length })
+              return { candidates, ok: true, message: null }
+            }
           }
-        }
 
-        const search = await getJson(lrclibSearchUrl(query))
-        if (!search.ok) {
-          // 4xx other than 429 means "no such track", which is a valid answer.
-          if (search.status >= 500 || search.status === 429) throw new LyricsHttpError(search.status)
-          return { candidates: [], ok: true, message: null }
-        }
-        const candidates = rankLyricsCandidates(query, candidatesFromLrclib(search.body))
-        options.log.debug('lrclib search answered', { count: candidates.length })
-        return { candidates, ok: true, message: null }
+          const search = await getJson(lrclibSearchUrl(query))
+          if (!search.ok) {
+            // 4xx other than 429 means "no such track", which is a valid answer.
+            if (search.status >= 500 || search.status === 429) {
+              throw new LyricsHttpError(search.status)
+            }
+            return { candidates: [], ok: true, message: null }
+          }
+          const candidates = rankLyricsCandidates(query, candidatesFromLrclib(search.body))
+          options.log.debug('lrclib search answered', { count: candidates.length })
+          return { candidates, ok: true, message: null }
+        })
       } catch (error) {
         options.log.debug('lrclib lookup failed', { error })
         return { candidates: [], ok: false, message: describeLyricsFailure('lrclib', error) }

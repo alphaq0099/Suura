@@ -42,6 +42,7 @@ import { createLyricsFinder, createLyricsLookup } from '@core/library/lyrics-loo
 import { createGeniusProvider } from '@core/library/lyrics-genius'
 import { createArtworkChoices, type ArtworkChoicesService } from '../artwork-choices'
 import { createYoutubeService, type YoutubeService } from '../youtube-service'
+import { LyricsBatchService } from '../lyrics-batch-service'
 
 /**
  * Owns every long-lived service and their wiring.
@@ -90,6 +91,8 @@ export interface AppContainer {
   tagWriter: TagWriter
   /** Embedded and `.lrc` lyrics, plus the user's timing correction. */
   lyrics: LyricsService
+  /** Scans a selection for missing lyrics and applies the accepted ones. */
+  lyricsBatch: LyricsBatchService
   /** iTunes and MusicBrainz lookups for the tag finder. */
   tagLookup: TagLookup
   /** The covers the artwork picker offers, local and provider-supplied. */
@@ -253,6 +256,15 @@ export function createContainer(): AppContainer {
     new StreamLyricsRepository(database.db)
   )
 
+  // The batch is about files, so a stream never enters it. The scan keeps the
+  // words here until the review dialog returns the items the user accepted.
+  const lyricsBatch = new LyricsBatchService({
+    repo,
+    lyrics,
+    log: log.child('lyrics-batch'),
+    onProgress: (progress) => broadcast(IPC_EVENTS.lyricsBatchProgress, progress)
+  })
+
   // Keyless public services, asked in parallel when a file's tags are wrong.
   // The client owns its own timeouts and never throws: a provider being down is
   // a sentence in the review dialog, not a failed request.
@@ -389,6 +401,7 @@ export function createContainer(): AppContainer {
     replayGain,
     tagWriter,
     lyrics,
+    lyricsBatch,
     tagLookup,
     artworkChoices,
     dispose: () => {

@@ -14,6 +14,9 @@ import type {
   DeepPartial,
   ListAlbumsQuery,
   ListTracksQuery,
+  LyricsBatchApplyResult,
+  LyricsBatchSnapshot,
+  LyricsBatchUndoResult,
   LyricsCandidate,
   LyricsLookupResult,
   LyricsTarget,
@@ -113,6 +116,21 @@ const api: PlayerApi = {
 
   writeTrackLyricsToFile: (target: LyricsTarget) =>
     ipcRenderer.invoke(IPC.libraryLyricsWrite, target) as Promise<TrackLyrics | null>,
+
+  startLyricsBatch: (trackIds: number[]) =>
+    ipcRenderer.invoke(IPC.libraryLyricsBatchStart, trackIds) as Promise<{ jobId: string }>,
+
+  getLyricsBatch: (jobId: string) =>
+    ipcRenderer.invoke(IPC.libraryLyricsBatchGet, jobId) as Promise<LyricsBatchSnapshot | null>,
+
+  cancelLyricsBatch: (jobId: string) =>
+    ipcRenderer.invoke(IPC.libraryLyricsBatchCancel, jobId) as Promise<void>,
+
+  applyLyricsBatch: (jobId: string, itemIds: string[], writeToFile: boolean) =>
+    ipcRenderer.invoke(IPC.libraryLyricsBatchApply, jobId, itemIds, writeToFile) as Promise<LyricsBatchApplyResult>,
+
+  undoLyricsBatch: (jobId: string) =>
+    ipcRenderer.invoke(IPC.libraryLyricsBatchUndo, jobId) as Promise<LyricsBatchUndoResult>,
 
   removeLibraryFolder: (folder: string) =>
     ipcRenderer.invoke(IPC.libraryRemoveFolder, folder) as Promise<AppSettings>,

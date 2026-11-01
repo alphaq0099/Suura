@@ -26,6 +26,10 @@ import type {
   LibrarySearchResult,
   ListAlbumsQuery,
   ListTracksQuery,
+  LyricsBatchApplyResult,
+  LyricsBatchProgress,
+  LyricsBatchSnapshot,
+  LyricsBatchUndoResult,
   LyricsCandidate,
   LyricsLookupResult,
   LyricsTarget,
@@ -94,6 +98,11 @@ export const IPC = {
   libraryLyricsUse: 'library:lyrics-use',
   libraryLyricsUseFile: 'library:lyrics-use-file',
   libraryLyricsWrite: 'library:lyrics-write',
+  libraryLyricsBatchStart: 'library:lyrics-batch-start',
+  libraryLyricsBatchGet: 'library:lyrics-batch-get',
+  libraryLyricsBatchCancel: 'library:lyrics-batch-cancel',
+  libraryLyricsBatchApply: 'library:lyrics-batch-apply',
+  libraryLyricsBatchUndo: 'library:lyrics-batch-undo',
   libraryRemoveFolder: 'library:remove-folder',
   libraryRevealTrack: 'library:reveal-track',
   libraryArtwork: 'library:artwork',
@@ -172,7 +181,8 @@ export const IPC_EVENTS = {
   downloadChanged: 'event:download-changed',
   playHistoryChanged: 'event:play-history-changed',
   playerCommand: 'event:player-command',
-  replayGainProgress: 'event:replay-gain-progress'
+  replayGainProgress: 'event:replay-gain-progress',
+  lyricsBatchProgress: 'event:lyrics-batch-progress'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -215,6 +225,8 @@ export interface PlayerEvents {
   playerCommand: PlayerCommand
   /** A loudness scan started, advanced or finished. */
   replayGainProgress: ReplayGainStatus
+  /** A batch lyrics scan advanced, or finished and is ready to review. */
+  lyricsBatchProgress: LyricsBatchProgress
 }
 
 export type PlayerEventName = keyof PlayerEvents
@@ -227,7 +239,8 @@ export const EVENT_CHANNELS: Record<PlayerEventName, IpcEventChannel> = {
   downloadChanged: IPC_EVENTS.downloadChanged,
   playHistoryChanged: IPC_EVENTS.playHistoryChanged,
   playerCommand: IPC_EVENTS.playerCommand,
-  replayGainProgress: IPC_EVENTS.replayGainProgress
+  replayGainProgress: IPC_EVENTS.replayGainProgress,
+  lyricsBatchProgress: IPC_EVENTS.lyricsBatchProgress
 }
 
 /**
@@ -392,6 +405,31 @@ export interface PlayerApi {
    * track has no file and is refused outright.
    */
   writeTrackLyricsToFile(target: LyricsTarget): Promise<TrackLyrics | null>
+  /**
+   * Starts a batch scan over local tracks.
+   *
+   * Returns at once with a job id; progress arrives on `lyricsBatchProgress`,
+   * and `getLyricsBatch` returns the finished snapshot. The words stay in the
+   * main process until `applyLyricsBatch` names the items to keep.
+   */
+  startLyricsBatch(trackIds: number[]): Promise<{ jobId: string }>
+  /** The finished scan, or null while it is still running. */
+  getLyricsBatch(jobId: string): Promise<LyricsBatchSnapshot | null>
+  /** Stops a scan before it reaches the next track. */
+  cancelLyricsBatch(jobId: string): Promise<void>
+  /**
+   * Stores the accepted matches, optionally writing each one into its file.
+   *
+   * Storing is reversible; a file write is undone from the backup the writer
+   * keeps. Items whose text has since changed are left alone by `undoLyricsBatch`.
+   */
+  applyLyricsBatch(
+    jobId: string,
+    itemIds: string[],
+    writeToFile: boolean
+  ): Promise<LyricsBatchApplyResult>
+  /** Reverses everything this job applied, as far as it is still unchanged. */
+  undoLyricsBatch(jobId: string): Promise<LyricsBatchUndoResult>
   removeLibraryFolder(folder: string): Promise<AppSettings>
   revealTrack(trackId: number): Promise<void>
   /**

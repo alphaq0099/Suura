@@ -124,6 +124,35 @@ function toTrackId(value: unknown): number {
   return toId(value, 'track')
 }
 
+/**
+ * A batch selection is files only.
+ *
+ * A stream's negative id is dropped rather than refused: the batch is offered
+ * from a local-only button, and a mixed selection should fetch what it can
+ * instead of failing the whole request on a row it could never write.
+ */
+function toBatchTrackIds(value: unknown): number[] {
+  if (!Array.isArray(value)) throw new Error('Malformed track selection.')
+  const ids: number[] = []
+  for (const entry of value) {
+    if (typeof entry === 'number' && Number.isInteger(entry) && entry > 0) ids.push(entry)
+  }
+  if (ids.length === 0) throw new Error('Choose at least one track to fetch lyrics for.')
+  return ids
+}
+
+function toBatchItemIds(value: unknown): string[] {
+  if (!Array.isArray(value)) throw new Error('Malformed lyrics selection.')
+  return value.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+}
+
+function toBatchJobId(value: unknown): string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 100) {
+    throw new Error('Malformed lyrics batch.')
+  }
+  return value
+}
+
 /** Reads one nullable string field of a stream's metadata. */
 function optionalText(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null
@@ -1044,6 +1073,37 @@ export function registerIpcHandlers(container: AppContainer): void {
     }
     return container.lyrics.writeToFile(lyricsTarget)
   })
+
+  // The batch runs in two passes so the slow half can show progress and be
+  // cancelled: `start` scans and returns a job id, `apply` stores what the user
+  // accepted. The playing check is the same one the single write uses, passed
+  // per call because the live id belongs to this scope.
+  ipcMain.handle(IPC.libraryLyricsBatchStart, (_event, trackIds: unknown) =>
+    container.lyricsBatch.start(toBatchTrackIds(trackIds))
+  )
+
+  ipcMain.handle(IPC.libraryLyricsBatchGet, (_event, jobId: unknown) =>
+    container.lyricsBatch.get(toBatchJobId(jobId))
+  )
+
+  ipcMain.handle(IPC.libraryLyricsBatchCancel, (_event, jobId: unknown) => {
+    container.lyricsBatch.cancel(toBatchJobId(jobId))
+  })
+
+  ipcMain.handle(
+    IPC.libraryLyricsBatchApply,
+    (_event, jobId: unknown, itemIds: unknown, writeToFile: unknown) =>
+      container.lyricsBatch.apply(
+        toBatchJobId(jobId),
+        toBatchItemIds(itemIds),
+        writeToFile === true,
+        (trackId) => playingTrackId !== trackId
+      )
+  )
+
+  ipcMain.handle(IPC.libraryLyricsBatchUndo, (_event, jobId: unknown) =>
+    container.lyricsBatch.undo(toBatchJobId(jobId))
+  )
 
   ipcMain.handle(IPC.libraryRemoveFolder, (_event, folder: unknown) => {
     if (typeof folder !== 'string' || folder.trim().length === 0) {

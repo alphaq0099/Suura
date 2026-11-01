@@ -172,6 +172,18 @@ export class LyricsRepository {
       .run(trackId)
   }
 
+  /**
+   * Removes one source's row.
+   *
+   * Used by a batch undo, which has to drop exactly the fetched copy it wrote
+   * rather than whichever fetch happens to be there now.
+   */
+  removeSource(trackId: number, source: StoredLyricsSource): void {
+    this.db
+      .prepare(`DELETE FROM track_lyrics WHERE track_id = ? AND source = ?`)
+      .run(trackId, source)
+  }
+
   /** Test and maintenance helper: forgets every cached lyric. */
   clear(): number {
     return this.db.prepare('DELETE FROM track_lyrics').run().changes

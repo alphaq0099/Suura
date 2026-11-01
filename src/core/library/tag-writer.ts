@@ -285,12 +285,60 @@ export class TagWriter {
   }
 
   /**
+   * Puts a file back exactly as it was before a tag write.
+   *
+   * Batch undo uses this. The backup is a byte-for-byte copy of the original, so
+   * it takes the same three steps a write does: copy to a temp in the same
+   * folder, parse it once to prove the library can still read it, then rename it
+   * over the target. The same per-file chain applies, so an undo cannot cross a
+   * write that is still running.
+   */
+  async restore(filePath: string, backupPath: string): Promise<void> {
+    const key = filePath.toLowerCase()
+    const previous = writeChains.get(key) ?? Promise.resolve()
+    const run = previous.then(
+      () => this.restoreNow(filePath, backupPath),
+      () => this.restoreNow(filePath, backupPath)
+    )
+    const queued = run.catch(() => undefined)
+    writeChains.set(key, queued)
+    try {
+      await run
+    } finally {
+      if (writeChains.get(key) === queued) writeChains.delete(key)
+    }
+  }
+
+  private async restoreNow(filePath: string, backupPath: string): Promise<void> {
+    let backup: Awaited<ReturnType<typeof stat>>
+    try {
+      backup = await stat(backupPath)
+    } catch (error) {
+      throw new TagWriteError('missing', 'The backup for this track is no longer on disk.', error)
+    }
+    if (!backup.isFile()) throw new TagWriteError('missing', 'That backup is not a file.')
+
+    const temp = join(dirname(filePath), `${TAG_TEMP_PREFIX}${randomUUID()}${extname(filePath)}`)
+    try {
+      await copyFile(backupPath, temp)
+      await chmod(temp, 0o666).catch(() => undefined)
+      // An empty change list still parses the file, which is the check that
+      // matters: a corrupt backup must not be renamed over a good track.
+      await verifyTagWrite(temp, {}, undefined)
+      await replaceFile(temp, filePath)
+    } catch (error) {
+      await rm(temp, { force: true }).catch(() => undefined)
+      throw asTagWriteError(error)
+    }
+    void this.pruneBackups()
+  }
+
+  /**
    * A copy next to the other backups, named so that sorting by name sorts by
    * time. Best effort: a failed backup must not block the write the user asked
    * for, but it is reported as null so the caller can say so.
    */
-  private async backup(filePath: string, now: number): Promise<string | null> {
-    try {
+  private async backup(filePath: string, now: number): Promise<string | null> {    try {
       await mkdir(this.options.backupDir, { recursive: true })
       const stamp = new Date(now).toISOString().replace(/[:.]/g, '-')
       const target = join(this.options.backupDir, `${stamp}-${basename(filePath)}`)

@@ -406,6 +406,99 @@ export interface TrackLyrics {
   fetchedAt: number
 }
 
+// ---- batch lyrics ---------------------------------------------------------
+
+/**
+ * One match a batch found, without the words.
+ *
+ * The text stays in the main process until the user accepts it: a selection of
+ * a thousand tracks would otherwise push a thousand lyrics bodies through IPC
+ * just to render a list of titles. The summary is everything the review row
+ * shows and everything the user needs to judge the match.
+ */
+export interface LyricsBatchMatch {
+  provider: LyricsProvider
+  providerId: string
+  title: string
+  artist: string
+  album: string | null
+  durationMs: number | null
+  synced: boolean
+  instrumental: boolean
+  url: string | null
+  score: number
+  confidence: 'strong' | 'likely' | 'weak'
+}
+
+/** What a batch found, or why it found nothing, for one selected track. */
+export interface LyricsBatchItem {
+  /** Stable within one scan: `track:<id>`. */
+  id: string
+  trackId: number
+  title: string
+  artist: string | null
+  album: string | null
+  durationMs: number | null
+  /**
+   * `match` has a candidate; `no-match` is a working lookup with nothing close;
+   * `skipped` already had lyrics or was not a file; `failed` is an error worth
+   * showing.
+   */
+  status: 'match' | 'no-match' | 'skipped' | 'failed'
+  message: string | null
+  match: LyricsBatchMatch | null
+}
+
+/** Live progress while a batch scans; `review` means the snapshot is ready. */
+export interface LyricsBatchProgress {
+  jobId: string
+  phase: 'scanning' | 'review'
+  scanned: number
+  total: number
+  /** The track being looked up, for the status line. */
+  currentTitle: string | null
+}
+
+/** Everything a finished scan found, for the review dialog. */
+export interface LyricsBatchSnapshot {
+  jobId: string
+  items: LyricsBatchItem[]
+  /**
+   * How each provider did across the whole scan. `ok` is false when it failed
+   * at least once; `count` is the number of matches it contributed.
+   */
+  providers: LyricsProviderReport[]
+  /** Set only when every lookup failed for the same reason. */
+  message: string | null
+}
+
+/** One track a batch could not apply, and why. */
+export interface LyricsBatchFailure {
+  trackId: number
+  title: string
+  message: string
+}
+
+export interface LyricsBatchApplyResult {
+  jobId: string
+  /** Rows stored for the panel to show. */
+  stored: number
+  /** Rows also written into the file's own tag. */
+  written: number
+  failed: LyricsBatchFailure[]
+}
+
+export interface LyricsBatchUndoResult {
+  jobId: string
+  /** Stored rows dropped because they still held the batch's words. */
+  removed: number
+  /** Files put back from the backup taken before the batch wrote them. */
+  restored: number
+  /** Items left alone because the words had changed or no backup existed. */
+  skipped: number
+  failed: LyricsBatchFailure[]
+}
+
 export interface LibraryStats {
   tracks: number
   artists: number

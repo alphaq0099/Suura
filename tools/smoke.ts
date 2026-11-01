@@ -50,7 +50,7 @@ import {
   textSimilarity,
   titleVariants
 } from '@shared/auto-tag'
-import type { AlbumSummary, EngineStatus, LyricsCandidate, StreamLyricsTarget, TagCandidate, TagLookupQuery, Track } from '@shared/types'
+import type { AlbumSummary, EngineStatus, LyricsBatchSnapshot, LyricsCandidate, StreamLyricsTarget, TagCandidate, TagLookupQuery, Track } from '@shared/types'
 import { serializeDetails, silentLogger } from '@core/logging/logger'
 import {
   DIAGNOSTICS_SUMMARY_LIMIT,
@@ -212,6 +212,7 @@ import { geniusHits, geniusSearchUrl, isGeniusUrl, lyricsFromGeniusHtml } from '
 import { AsyncTtlCache } from '../src/main/async-cache'
 import { cleanupAbandonedDownloads, DownloadService } from '../src/main/download-service'
 import { ReplayGainService } from '../src/main/replay-gain-service'
+import { LyricsBatchService } from '../src/main/lyrics-batch-service'
 
 const execFileAsync = promisify(execFile)
 
@@ -5934,7 +5935,8 @@ async function main(): Promise<void> {
       const insertTrack = (
         contentKey: string,
         filePath: string | null,
-        sourceKind: 'local' | 'youtube' = 'local'
+        sourceKind: 'local' | 'youtube' = 'local',
+        title = 'Lyrics'
       ): number =>
         lyricsRepo.insert(
           {
@@ -5943,7 +5945,7 @@ async function main(): Promise<void> {
             sourceId: sourceKind === 'youtube' ? 'dQw4w9WgXcQ' : null,
             originKind: null,
             originId: null,
-            title: 'Lyrics',
+            title,
             artist: null,
             albumArtist: null,
             album: null,
@@ -6234,6 +6236,280 @@ async function main(): Promise<void> {
           twinStore.fetched(twinId)?.source
         ].join('|'),
         'true|true|genius'
+      )
+
+      // ---- batch lyrics -----------------------------------------------------
+      // The scan is the slow half, so it is driven by a lookup that can answer,
+      // miss or fail per title. Nothing is stored until apply, and undo has to
+      // survive a lyric the user changed in between.
+      const batchLookup: LyricsLookup = {
+        lookup: async (query) => {
+          if (query.title === 'Batch Broken') throw new Error('The lookup exploded.')
+          if (query.title === 'Batch Nothing') {
+            return {
+              query,
+              candidates: [],
+              providers: [{ provider: 'lrclib', ok: true, message: null, count: 0 }],
+              message: null
+            }
+          }
+          const weak = query.title === 'Batch Weak'
+          return {
+            query,
+            candidates: [
+              {
+                provider: 'lrclib',
+                providerId: `batch-${query.title}`,
+                title: query.title,
+                artist: 'Smoke',
+                album: null,
+                durationMs: 1200,
+                synced: true,
+                text: `[00:00.10]${query.title}`,
+                instrumental: false,
+                url: null,
+                score: weak ? 0.45 : 0.95,
+                confidence: weak ? 'weak' : 'strong'
+              }
+            ],
+            providers: [{ provider: 'lrclib', ok: true, message: null, count: 1 }],
+            message: null
+          }
+        }
+      }
+      const batchLyrics = new LyricsService(
+        lyricsRepo,
+        new LyricsRepository(lyricsDb.db),
+        silentLogger,
+        writer,
+        batchLookup
+      )
+      const batchProgress: Array<{ phase: string; scanned: number; total: number }> = []
+      const reviewWaiters = new Map<string, (snapshot: LyricsBatchSnapshot | null) => void>()
+      let batchService: LyricsBatchService
+      batchService = new LyricsBatchService({
+        repo: lyricsRepo,
+        lyrics: batchLyrics,
+        log: silentLogger,
+        onProgress: (update) => {
+          batchProgress.push({ phase: update.phase, scanned: update.scanned, total: update.total })
+          if (update.phase !== 'review') return
+          reviewWaiters.get(update.jobId)?.(batchService.get(update.jobId))
+        }
+      })
+      const waitForReview = (jobId: string): Promise<LyricsBatchSnapshot | null> =>
+        new Promise((resolve) => {
+          reviewWaiters.set(jobId, resolve)
+          const found = batchService.get(jobId)
+          if (found) resolve(found)
+        })
+
+      const batchMatchFile = await makeLyricsFixture('batch-match.flac', ['-c:a', 'flac'])
+      const batchMatchId = insertTrack('smoke-batch-match', batchMatchFile, 'local', 'Batch Match')
+      const batchSkipFile = await makeLyricsFixture('batch-skip.flac', ['-c:a', 'flac'])
+      await writer.write(batchSkipFile, { lyrics: '[00:00.20]already here' })
+      const batchSkipId = insertTrack('smoke-batch-skip', batchSkipFile, 'local', 'Batch Skip')
+      const batchNoneFile = await makeLyricsFixture('batch-none.flac', ['-c:a', 'flac'])
+      const batchNoneId = insertTrack('smoke-batch-none', batchNoneFile, 'local', 'Batch Nothing')
+      const batchWeakFile = await makeLyricsFixture('batch-weak.flac', ['-c:a', 'flac'])
+      const batchWeakId = insertTrack('smoke-batch-weak', batchWeakFile, 'local', 'Batch Weak')
+      const batchBrokenFile = await makeLyricsFixture('batch-broken.flac', ['-c:a', 'flac'])
+      const batchBrokenId = insertTrack('smoke-batch-broken', batchBrokenFile, 'local', 'Batch Broken')
+
+      const batchStarted = batchService.start([
+        batchMatchId,
+        batchSkipId,
+        batchNoneId,
+        batchWeakId,
+        batchBrokenId
+      ])
+      check('lyrics batch: start returns a job id at once', batchStarted.jobId.length > 0)
+      const batchSnapshot = await waitForReview(batchStarted.jobId)
+      if (!batchSnapshot) throw new Error('the batch scan never finished')
+      const itemOf = (trackId: number) => batchSnapshot.items.find((item) => item.trackId === trackId)
+      const matchItem = itemOf(batchMatchId)
+      const skipItem = itemOf(batchSkipId)
+      const noneItem = itemOf(batchNoneId)
+      const weakItem = itemOf(batchWeakId)
+      const brokenItem = itemOf(batchBrokenId)
+      checkEqual('lyrics batch: a file with no lyrics is a match', matchItem?.status, 'match')
+      checkEqual('lyrics batch: the match carries the provider summary', matchItem?.match?.provider, 'lrclib')
+      checkEqual('lyrics batch: a file with lyrics is skipped', skipItem?.status, 'skipped')
+      checkEqual('lyrics batch: the skip says why', skipItem?.message, 'Already has lyrics.')
+      checkEqual('lyrics batch: an empty answer is no match', noneItem?.status, 'no-match')
+      checkEqual('lyrics batch: a weak match is still offered', weakItem?.match?.confidence, 'weak')
+      checkEqual('lyrics batch: a throwing lookup is a failure', brokenItem?.status, 'failed')
+      check('lyrics batch: the failure keeps its reason', (brokenItem?.message ?? '').includes('exploded'))
+      checkEqual(
+        'lyrics batch: progress reaches every track',
+        [
+          batchProgress[0]?.phase,
+          batchProgress.at(-1)?.phase,
+          batchProgress.at(-1)?.scanned,
+          batchProgress.at(-1)?.total
+        ].join('|'),
+        'scanning|review|5|5'
+      )
+      checkEqual(
+        'lyrics batch: the provider report totals the answered lookups',
+        batchSnapshot.providers.find((report) => report.provider === 'lrclib')?.count,
+        2
+      )
+      checkEqual('lyrics batch: a scan stores nothing', await batchLyrics.read(batchMatchId), null)
+
+      // Applying stores only what was named. The copy is the provider's text,
+      // and undo removes it because it still holds the batch's words.
+      if (!matchItem) throw new Error('the batch match disappeared')
+      const storedOnly = await batchService.apply(batchStarted.jobId, [matchItem.id], false)
+      checkEqual(
+        'lyrics batch: apply stores the accepted match',
+        [storedOnly.stored, storedOnly.written].join('|'),
+        '1|0'
+      )
+      checkEqual(
+        'lyrics batch: the stored copy is the match text',
+        (await batchLyrics.read(batchMatchId))?.text,
+        '[00:00.10]Batch Match'
+      )
+      const storedUndo = await batchService.undo(batchStarted.jobId)
+      checkEqual(
+        'lyrics batch: undo removes the stored copy',
+        [storedUndo.removed, storedUndo.restored].join('|'),
+        '1|0'
+      )
+      checkEqual('lyrics batch: the row is gone after undo', await batchLyrics.read(batchMatchId), null)
+
+      // A lyric fetched again after the batch is the user's, not the batch's.
+      await batchService.apply(batchStarted.jobId, [matchItem.id], false)
+      await batchLyrics.use(batchMatchId, {
+        provider: 'genius',
+        providerId: 're-fetched',
+        title: 'Batch Match',
+        artist: 'Smoke',
+        album: null,
+        durationMs: 1200,
+        synced: false,
+        text: 'words the user chose later',
+        instrumental: false,
+        url: null,
+        score: 0.9,
+        confidence: 'likely'
+      })
+      const guardedUndo = await batchService.undo(batchStarted.jobId)
+      checkEqual(
+        'lyrics batch: undo leaves a changed lyric alone',
+        [guardedUndo.removed, guardedUndo.skipped].join('|'),
+        '0|1'
+      )
+      checkEqual(
+        'lyrics batch: the user’s later choice survives',
+        (await batchLyrics.read(batchMatchId))?.text,
+        'words the user chose later'
+      )
+      await batchLyrics.useFile(batchMatchId)
+
+      // Writing into the file is the permanent half. The backup the writer
+      // keeps is what makes undo able to put the file back.
+      const batchWriteFile = await makeLyricsFixture('batch-write.flac', ['-c:a', 'flac'])
+      const batchWriteId = insertTrack('smoke-batch-write', batchWriteFile, 'local', 'Batch Write')
+      const writeStarted = batchService.start([batchWriteId])
+      const writeSnapshot = await waitForReview(writeStarted.jobId)
+      const writeItem = writeSnapshot?.items.find((item) => item.trackId === batchWriteId)
+      if (!writeItem) throw new Error('the batch write item disappeared')
+      const writtenBatch = await batchService.apply(writeStarted.jobId, [writeItem.id], true)
+      checkEqual(
+        'lyrics batch: writing reports the file write',
+        [writtenBatch.stored, writtenBatch.written].join('|'),
+        '0|1'
+      )
+      checkEqual(
+        'lyrics batch: the file is the source after writing',
+        (await batchLyrics.read(batchWriteId))?.source,
+        'embedded'
+      )
+      const writeUndo = await batchService.undo(writeStarted.jobId)
+      checkEqual('lyrics batch: undo restores the file from its backup', writeUndo.restored, 1)
+      checkEqual('lyrics batch: the restored file has no lyrics again', await batchLyrics.read(batchWriteId), null)
+
+      // A sidecar that appeared between the scan and apply wins over the tag, so
+      // the write is refused; the copy is still stored and still undoable.
+      const batchLrcFile = await makeLyricsFixture('batch-lrc.flac', ['-c:a', 'flac'])
+      const batchLrcId = insertTrack('smoke-batch-lrc', batchLrcFile, 'local', 'Batch LRC')
+      const lrcStarted = batchService.start([batchLrcId])
+      const lrcSnapshot = await waitForReview(lrcStarted.jobId)
+      const lrcItem = lrcSnapshot?.items.find((item) => item.trackId === batchLrcId)
+      if (!lrcItem) throw new Error('the batch lrc item disappeared')
+      await writeFile(join(lyricsRoot, 'batch-lrc.lrc'), '[00:00.30]sidecar words', 'utf8')
+      const lrcApplied = await batchService.apply(lrcStarted.jobId, [lrcItem.id], true)
+      checkEqual(
+        'lyrics batch: a .lrc refuses the file write but keeps the copy',
+        [lrcApplied.stored, lrcApplied.written].join('|'),
+        '1|0'
+      )
+      check('lyrics batch: the refusal names the .lrc', (lrcApplied.failed[0]?.message ?? '').includes('.lrc'))
+      const lrcUndo = await batchService.undo(lrcStarted.jobId)
+      checkEqual('lyrics batch: undo removes the copy a refused write left', lrcUndo.removed, 1)
+      await rm(join(lyricsRoot, 'batch-lrc.lrc'))
+
+      // The playing file is stored but not rewritten, because Windows will not
+      // replace it while it is open. The result says so and undo still works.
+      const guardedStarted = batchService.start([batchMatchId])
+      const guardedSnapshot = await waitForReview(guardedStarted.jobId)
+      const guardedItem = guardedSnapshot?.items.find((item) => item.trackId === batchMatchId)
+      if (!guardedItem) throw new Error('the guarded item disappeared')
+      const playingApply = await batchService.apply(
+        guardedStarted.jobId,
+        [guardedItem.id],
+        true,
+        () => false
+      )
+      checkEqual(
+        'lyrics batch: a playing file is stored but not written',
+        [playingApply.stored, playingApply.written].join('|'),
+        '1|0'
+      )
+      check(
+        'lyrics batch: the playback guard says why',
+        (playingApply.failed[0]?.message ?? '').includes('open for playback')
+      )
+      const playingUndo = await batchService.undo(guardedStarted.jobId)
+      checkEqual('lyrics batch: undo removes the stored copy after the guard', playingUndo.removed, 1)
+
+      // Cancelling stops before the next track and leaves no review behind.
+      const slowLookup: LyricsLookup = {
+        lookup: (query) =>
+          new Promise((resolve) =>
+            setTimeout(
+              () =>
+                resolve({
+                  query,
+                  candidates: [],
+                  providers: [{ provider: 'lrclib', ok: true, message: null, count: 0 }],
+                  message: null
+                }),
+              50
+            )
+          )
+      }
+      const slowService = new LyricsBatchService({
+        repo: lyricsRepo,
+        lyrics: new LyricsService(
+          lyricsRepo,
+          new LyricsRepository(lyricsDb.db),
+          silentLogger,
+          writer,
+          slowLookup
+        ),
+        log: silentLogger,
+        onProgress: () => undefined
+      })
+      const slowStarted = slowService.start([batchNoneId, batchWeakId])
+      slowService.cancel(slowStarted.jobId)
+      await new Promise((resolve) => setTimeout(resolve, 250))
+      checkEqual(
+        'lyrics batch: a cancelled scan has no review',
+        slowService.get(slowStarted.jobId),
+        null
       )
     } finally {
       lyricsDb.close()
