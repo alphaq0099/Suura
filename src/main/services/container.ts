@@ -10,7 +10,7 @@ import { TrackRepository } from '@core/library/track-repository'
 import { DownloadHistoryRepository } from '@core/library/download-history-repository'
 import { LibraryService } from '@core/library/library-service'
 import { TagWriter } from '@core/library/tag-writer'
-import { LyricsRepository } from '@core/library/lyrics-repository'
+import { LyricsRepository, StreamLyricsRepository } from '@core/library/lyrics-repository'
 import { LyricsService } from '@core/library/lyrics-service'
 import { FolderWatcher } from '@core/library/folder-watcher'
 import { PlaylistRepository } from '@core/library/playlist-repository'
@@ -247,7 +247,10 @@ export function createContainer(): AppContainer {
         createLyricsLookup({ log: log.child('lyrics-lookup') }),
         createGeniusProvider({ log: log.child('lyrics-lookup') })
       ]
-    })
+    }),
+    // A stream's lyrics are keyed by its video, not by a track row it does not
+    // have, so they follow the song rather than the queue row that carried it.
+    new StreamLyricsRepository(database.db)
   )
 
   // Keyless public services, asked in parallel when a file's tags are wrong.

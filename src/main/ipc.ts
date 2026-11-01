@@ -41,6 +41,7 @@ import type {
   EngineSettings,
   IconSet,
   LyricsAlign,
+  LyricsTarget,
   InteractionSettings,
   StartupSettings,
   StartupView,
@@ -57,6 +58,7 @@ import type {
   RetentionMode,
   RetentionSettings,
   SaveToLibraryRequest,
+  StreamLyricsTarget,
   SurfaceStyle,
   TextSize,
   ThemeMode,
@@ -120,6 +122,46 @@ function toId(value: unknown, what: string): number {
 
 function toTrackId(value: unknown): number {
   return toId(value, 'track')
+}
+
+/** Reads one nullable string field of a stream's metadata. */
+function optionalText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null
+}
+
+/**
+ * What a lyrics request is about: a library track, or a streaming link.
+ *
+ * A stream cannot be named by its track id — that id is negative by design and
+ * differs depending on whether the song arrived from the history, a counted
+ * listen or an imported playlist — so it arrives as the video id plus the row
+ * values the finder searches with, exactly as the artwork request already
+ * does. Every other handler keeps using `toTrackId`, which still refuses a
+ * negative id.
+ */
+function toLyricsTarget(value: unknown): LyricsTarget {
+  if (typeof value === 'number') return toTrackId(value)
+
+  if (!isPlainObject(value)) throw new Error('Invalid track id.')
+  if (value.sourceKind !== 'youtube') throw new Error('Invalid track id.')
+
+  const videoId = value.videoId
+  if (typeof videoId !== 'string' || !isYouTubeVideoId(videoId)) {
+    throw new Error('Invalid track id.')
+  }
+
+  const target: StreamLyricsTarget = {
+    sourceKind: 'youtube',
+    videoId,
+    title: optionalText(value.title),
+    artist: optionalText(value.artist),
+    album: optionalText(value.album),
+    durationMs:
+      typeof value.durationMs === 'number' && Number.isFinite(value.durationMs) && value.durationMs > 0
+        ? Math.round(value.durationMs)
+        : null
+  }
+  return target
 }
 
 /**
@@ -959,43 +1001,48 @@ export function registerIpcHandlers(container: AppContainer): void {
   })
 
   // Reading is safe while the track plays: it opens the file for a moment and
-  // writes nothing. The timing correction is a database row, never a tag.
-  ipcMain.handle(IPC.libraryLyrics, (_event, trackId: unknown) =>
-    container.lyrics.read(toTrackId(trackId))
+  // writes nothing. The timing correction is a database row, never a tag. A
+  // stream reads its fetched copy from the row keyed by its video id.
+  ipcMain.handle(IPC.libraryLyrics, (_event, target: unknown) =>
+    container.lyrics.read(toLyricsTarget(target))
   )
 
-  ipcMain.handle(IPC.libraryFileLyrics, (_event, trackId: unknown) =>
-    container.lyrics.readFile(toTrackId(trackId))
+  // A stream has no file, so this is null for one rather than an error: the
+  // tag editor is the only caller and never opens on a stream.
+  ipcMain.handle(IPC.libraryFileLyrics, (_event, target: unknown) =>
+    container.lyrics.readFile(toLyricsTarget(target))
   )
 
-  ipcMain.handle(IPC.libraryLyricsOffset, (_event, trackId: unknown, offset: unknown) =>
-    container.lyrics.setOffset(toTrackId(trackId), sanitizeLyricsOffset(offset))
+  ipcMain.handle(IPC.libraryLyricsOffset, (_event, target: unknown, offset: unknown) =>
+    container.lyrics.setOffset(toLyricsTarget(target), sanitizeLyricsOffset(offset))
   )
 
   // The finder reads the row and asks a provider; nothing is stored until the
-  // user chooses a match, so it is allowed while the track plays.
-  ipcMain.handle(IPC.libraryLyricsFind, (_event, trackId: unknown) =>
-    container.lyrics.find(toTrackId(trackId))
+  // user chooses a match, so it is allowed while the track plays. A stream
+  // carries the values to search with, since it has no row to read them from.
+  ipcMain.handle(IPC.libraryLyricsFind, (_event, target: unknown) =>
+    container.lyrics.find(toLyricsTarget(target))
   )
 
-  ipcMain.handle(IPC.libraryLyricsUse, (_event, trackId: unknown, candidate: unknown) =>
-    container.lyrics.use(toTrackId(trackId), sanitizeLyricsCandidate(candidate))
+  ipcMain.handle(IPC.libraryLyricsUse, (_event, target: unknown, candidate: unknown) =>
+    container.lyrics.use(toLyricsTarget(target), sanitizeLyricsCandidate(candidate))
   )
 
-  ipcMain.handle(IPC.libraryLyricsUseFile, (_event, trackId: unknown) =>
-    container.lyrics.useFile(toTrackId(trackId))
+  ipcMain.handle(IPC.libraryLyricsUseFile, (_event, target: unknown) =>
+    container.lyrics.useFile(toLyricsTarget(target))
   )
 
   // Writing into the file has the same guard as any other tag write: Windows
-  // will not replace a file that is open for playback.
-  ipcMain.handle(IPC.libraryLyricsWrite, async (_event, trackId: unknown) => {
-    const id = toTrackId(trackId)
-    if (playingTrackId === id) {
+  // will not replace a file that is open for playback. A stream has no file to
+  // write into and is refused by the service with that sentence.
+  ipcMain.handle(IPC.libraryLyricsWrite, async (_event, target: unknown) => {
+    const lyricsTarget = toLyricsTarget(target)
+    if (typeof lyricsTarget === 'number' && playingTrackId === lyricsTarget) {
       throw new Error(
         'Stop this track, or play something else, before writing its lyrics: the file is open for playback.'
       )
     }
-    return container.lyrics.writeToFile(id)
+    return container.lyrics.writeToFile(lyricsTarget)
   })
 
   ipcMain.handle(IPC.libraryRemoveFolder, (_event, folder: unknown) => {

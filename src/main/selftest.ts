@@ -3675,8 +3675,18 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       }
     ]
     const originalLyricsFind = container.lyrics.find
-    container.lyrics.find = async (trackId) => {
-      const track = container.repo.getById(trackId)
+    container.lyrics.find = async (target) => {
+      // The finder is asked about a library row in this probe; a stream would
+      // carry the same four values instead of a row.
+      const track =
+        typeof target === 'number'
+          ? container.repo.getById(target)
+          : {
+              title: target.title ?? '',
+              artist: target.artist,
+              album: target.album,
+              durationMs: target.durationMs
+            }
       return {
         query: {
           title: track?.title ?? '',

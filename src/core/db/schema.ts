@@ -492,6 +492,38 @@ export const MIGRATIONS: readonly Migration[] = [
       // leave it null: their origin is the path beside the track.
       db.exec(`ALTER TABLE track_lyrics ADD COLUMN origin TEXT;`)
     }
+  },
+  {
+    version: 17,
+    name: 'stream lyrics',
+    up: (db) => {
+      // A streaming track has no file and no row in `tracks`, so `track_lyrics`
+      // cannot hold its lyrics: that table is keyed on the track and cascades
+      // from it. What a stream does have is a video id, and it is the only
+      // stable thing it has — the same link reaches the player as a history
+      // row, a counted listen or an imported playlist entry, each with a
+      // different negative track id. Keying on the video is what makes one
+      // fetched copy follow the song instead of multiplying per route.
+      //
+      // There is deliberately no foreign key: an imported playlist entry can
+      // have no history row at all, so there is nothing to reference, and a
+      // lyric that outlived the link that introduced it is still worth keeping.
+      // Only fetched sources are ever written here — a stream has no tag and no
+      // `.lrc` beside it, so `embedded` and `sidecar` cannot exist.
+      db.exec(`
+        CREATE TABLE stream_lyrics (
+          video_id   TEXT    NOT NULL,
+          source     TEXT    NOT NULL,
+          language   TEXT,
+          synced     INTEGER NOT NULL DEFAULT 0,
+          text       TEXT    NOT NULL,
+          offset_ms  INTEGER NOT NULL DEFAULT 0,
+          fetched_at INTEGER NOT NULL,
+          origin     TEXT,
+          PRIMARY KEY (video_id, source)
+        );
+      `)
+    }
   }
 ]
 

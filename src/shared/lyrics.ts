@@ -18,7 +18,7 @@
 import { confidenceOf, durationScore, normalizeMatchText, textSimilarity, titleVariants } from './auto-tag'
 import { isGeniusUrl } from './genius'
 import { TAG_TEXT_LIMITS } from './tags'
-import type { LyricsCandidate, LyricsLookupQuery, LyricsProvider } from './types'
+import type { LyricsCandidate, LyricsLookupQuery, LyricsProvider, LyricsTarget, Track } from './types'
 
 export interface LyricLine {
   /** Start of the line in the file's own timeline. */
@@ -144,6 +144,28 @@ export function sanitizeLyricsOffset(value: unknown): number {
     throw new Error(`The lyrics offset must be a whole number of milliseconds within ±${LYRICS_OFFSET_MAX}.`)
   }
   return value
+}
+
+/**
+ * What a lyrics request names for this row.
+ *
+ * A file in the library is its own id. A streaming track has no row to name —
+ * its negative id is a route, not an identity — so the request carries the
+ * video id and the values the finder searches with. This is the same shape the
+ * artwork request uses for the same reason.
+ */
+export function lyricsTargetOf(track: Track): LyricsTarget {
+  if (track.sourceKind === 'youtube' && track.sourceId) {
+    return {
+      sourceKind: 'youtube',
+      videoId: track.sourceId,
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      durationMs: track.durationMs
+    }
+  }
+  return track.id
 }
 
 // ---- the finder ------------------------------------------------------------

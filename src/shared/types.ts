@@ -300,6 +300,35 @@ export interface LyricsLookupQuery {
 }
 
 /**
+ * A streaming track's identity in a lyrics request.
+ *
+ * A stream has no row in `tracks`, so its negative track id cannot be resolved
+ * to anything, and the same video reaches the player under a different id
+ * depending on whether it came from the history, a counted listen or an
+ * imported playlist. The video id is the only stable name it has, so it is the
+ * key; the row values ride along because the finder searches with them and
+ * nothing else can supply them.
+ *
+ * This mirrors how the artwork request already handles the same problem.
+ */
+export interface StreamLyricsTarget {
+  sourceKind: 'youtube'
+  videoId: string
+  title: string | null
+  artist: string | null
+  album: string | null
+  durationMs: number | null
+}
+
+/**
+ * What a lyrics request is about: a file in the library, or a streaming link.
+ *
+ * A bare number remains a library track id, which is what every existing caller
+ * already sends.
+ */
+export type LyricsTarget = number | StreamLyricsTarget
+
+/**
  * One lyrics match, already scored against the query.
  *
  * The text travels with the match rather than being fetched a second time when
@@ -351,9 +380,15 @@ export interface LyricsLookupResult {
   message: string | null
 }
 
-/** The lyrics the player found for one local track. */
+/** The lyrics the player found for one track. */
 export interface TrackLyrics {
-  trackId: number
+  /**
+   * The library row these lyrics belong to, or null when they belong to a
+   * streaming link, which has no row. `videoId` names those instead.
+   */
+  trackId: number | null
+  /** A streaming track's video id, or null for a file in the library. */
+  videoId: string | null
   source: LyricsSource
   /** The language tag the file carries, when it carries one. */
   language: string | null

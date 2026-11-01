@@ -50,7 +50,7 @@ import {
   textSimilarity,
   titleVariants
 } from '@shared/auto-tag'
-import type { AlbumSummary, EngineStatus, LyricsCandidate, TagCandidate, TagLookupQuery, Track } from '@shared/types'
+import type { AlbumSummary, EngineStatus, LyricsCandidate, StreamLyricsTarget, TagCandidate, TagLookupQuery, Track } from '@shared/types'
 import { serializeDetails, silentLogger } from '@core/logging/logger'
 import {
   DIAGNOSTICS_SUMMARY_LIMIT,
@@ -128,7 +128,7 @@ import {
 } from '@core/library/tag-writer'
 import { artworkKeyFor, extractArtwork, extensionForMime, mimeForExtension } from '@core/library/artwork'
 import { decodeLyricsFile } from '@core/library/lyrics'
-import { LyricsRepository } from '@core/library/lyrics-repository'
+import { LyricsRepository, StreamLyricsRepository } from '@core/library/lyrics-repository'
 import { LyricsService } from '@core/library/lyrics-service'
 import { LocalFileResolver } from '@engine/local-file-resolver'
 import { parseEbur128Summary } from '@engine/replay-gain'
@@ -5900,12 +5900,14 @@ async function main(): Promise<void> {
           }
         }
       }
+      const streamStore = new StreamLyricsRepository(lyricsDb.db)
       const lyricsService = new LyricsService(
         lyricsRepo,
         new LyricsRepository(lyricsDb.db),
         silentLogger,
         writer,
-        fakeLookup
+        fakeLookup,
+        streamStore
       )
 
       const makeLyricsFixture = async (fileName: string, codec: string[]): Promise<string> => {
@@ -6091,13 +6093,78 @@ async function main(): Promise<void> {
       await lyricsService.use(bareId, forWriting)
       checkEqual('lyrics: use file lyrics can mean no lyrics', await lyricsService.useFile(bareId), null)
 
-      const remoteLyricsId = insertTrack('smoke-lyrics-remote', null, 'youtube')
-      checkEqual('lyrics: a stream has no file lyrics', await lyricsService.read(remoteLyricsId), null)
-      let streamLookup = ''
-      await lyricsService.find(remoteLyricsId).catch((error) => {
-        streamLookup = error instanceof Error ? error.message : String(error)
+      // ---- streaming tracks -------------------------------------------------
+      // A stream has no file and no row in `tracks`, so its lyrics are keyed by
+      // the video id: one copy follows the song no matter which route into it
+      // the queue row came from.
+      const streamTarget: StreamLyricsTarget = {
+        sourceKind: 'youtube',
+        videoId: 'dQw4w9WgXcQ',
+        title: 'Lyrics',
+        artist: null,
+        album: null,
+        durationMs: 1200
+      }
+      checkEqual('lyrics: a stream starts with no lyrics', await lyricsService.read(streamTarget), null)
+      checkEqual('lyrics: a stream has no file lyrics', await lyricsService.readFile(streamTarget), null)
+
+      const streamFound = await lyricsService.find(streamTarget)
+      const streamAsked = findQueries[findQueries.length - 1]
+      checkEqual(
+        'lyrics: a stream is searched with the values it carries',
+        [streamAsked?.title, streamAsked?.artist, streamAsked?.durationMs].join('|'),
+        'Lyrics||1200'
+      )
+      const streamChoice = streamFound.candidates[0]
+      if (!streamChoice) throw new Error('the injected lyrics match disappeared')
+      const streamChosen = await lyricsService.use(streamTarget, streamChoice)
+      checkEqual('lyrics: a stream lyric has no library row', streamChosen?.trackId ?? 'none', 'none')
+      checkEqual('lyrics: a stream lyric is keyed by its video', streamChosen?.videoId, 'dQw4w9WgXcQ')
+      checkEqual('lyrics: a stream lyric is labelled with its source', streamChosen?.source, 'lrclib')
+      checkEqual('lyrics: a stream lyric keeps the fetched text', streamChosen?.text, fetchedText)
+      checkEqual(
+        'lyrics: the same video reads the same lyric again',
+        (await lyricsService.read(streamTarget))?.text,
+        fetchedText
+      )
+      checkEqual(
+        'lyrics: a stream offset is remembered',
+        lyricsService.setOffset(streamTarget, 750)?.offsetMs,
+        750
+      )
+      checkEqual(
+        'lyrics: a stream offset survives a re-read',
+        (await lyricsService.read(streamTarget))?.offsetMs,
+        750
+      )
+      // One video can arrive under several negative track ids; the store is
+      // keyed by the video, so a different one is a different song.
+      checkEqual(
+        'lyrics: another video has no lyric of its own',
+        await lyricsService.read({ ...streamTarget, videoId: '9bZkp7q19f0' }),
+        null
+      )
+      // A stream's negative id still cannot stand in for a library row.
+      let streamById = ''
+      await lyricsService.find(-33).catch((error) => {
+        streamById = error instanceof Error ? error.message : String(error)
       })
-      check('lyrics: a stream cannot be looked up', streamLookup.includes('Only files'))
+      check('lyrics: a stream id is not a library track', streamById.includes('Only files'))
+      let streamWrite = ''
+      await lyricsService.writeToFile(streamTarget).catch((error) => {
+        streamWrite = error instanceof Error ? error.message : String(error)
+      })
+      check('lyrics: a stream has no file to write into', streamWrite.includes('Only files'))
+      checkEqual(
+        'lyrics: forgetting a stream lyric leaves nothing',
+        await lyricsService.useFile(streamTarget),
+        null
+      )
+      checkEqual(
+        'lyrics: a forgotten stream lyric stays gone',
+        await lyricsService.read(streamTarget),
+        null
+      )
 
       // ---- Genius through the service ---------------------------------------
       // Same storage rules, one more shape of text and a page to link back to.

@@ -16,6 +16,7 @@ import type {
   ListTracksQuery,
   LyricsCandidate,
   LyricsLookupResult,
+  LyricsTarget,
   PlaybackSnapshot,
   ResolvedSource,
   TagLookupResult,
@@ -92,26 +93,26 @@ const api: PlayerApi = {
   findTrackTags: (trackId: number) =>
     ipcRenderer.invoke(IPC.libraryAutoTag, trackId) as Promise<TagLookupResult>,
 
-  getTrackLyrics: (trackId: number) =>
-    ipcRenderer.invoke(IPC.libraryLyrics, trackId) as Promise<TrackLyrics | null>,
+  getTrackLyrics: (target: LyricsTarget) =>
+    ipcRenderer.invoke(IPC.libraryLyrics, target) as Promise<TrackLyrics | null>,
 
-  getFileLyrics: (trackId: number) =>
-    ipcRenderer.invoke(IPC.libraryFileLyrics, trackId) as Promise<TrackLyrics | null>,
+  getFileLyrics: (target: LyricsTarget) =>
+    ipcRenderer.invoke(IPC.libraryFileLyrics, target) as Promise<TrackLyrics | null>,
 
-  setTrackLyricsOffset: (trackId: number, offsetMs: number) =>
-    ipcRenderer.invoke(IPC.libraryLyricsOffset, trackId, offsetMs) as Promise<TrackLyrics | null>,
+  setTrackLyricsOffset: (target: LyricsTarget, offsetMs: number) =>
+    ipcRenderer.invoke(IPC.libraryLyricsOffset, target, offsetMs) as Promise<TrackLyrics | null>,
 
-  findTrackLyrics: (trackId: number) =>
-    ipcRenderer.invoke(IPC.libraryLyricsFind, trackId) as Promise<LyricsLookupResult>,
+  findTrackLyrics: (target: LyricsTarget) =>
+    ipcRenderer.invoke(IPC.libraryLyricsFind, target) as Promise<LyricsLookupResult>,
 
-  useTrackLyrics: (trackId: number, candidate: LyricsCandidate) =>
-    ipcRenderer.invoke(IPC.libraryLyricsUse, trackId, candidate) as Promise<TrackLyrics | null>,
+  useTrackLyrics: (target: LyricsTarget, candidate: LyricsCandidate) =>
+    ipcRenderer.invoke(IPC.libraryLyricsUse, target, candidate) as Promise<TrackLyrics | null>,
 
-  useFileLyrics: (trackId: number) =>
-    ipcRenderer.invoke(IPC.libraryLyricsUseFile, trackId) as Promise<TrackLyrics | null>,
+  useFileLyrics: (target: LyricsTarget) =>
+    ipcRenderer.invoke(IPC.libraryLyricsUseFile, target) as Promise<TrackLyrics | null>,
 
-  writeTrackLyricsToFile: (trackId: number) =>
-    ipcRenderer.invoke(IPC.libraryLyricsWrite, trackId) as Promise<TrackLyrics | null>,
+  writeTrackLyricsToFile: (target: LyricsTarget) =>
+    ipcRenderer.invoke(IPC.libraryLyricsWrite, target) as Promise<TrackLyrics | null>,
 
   removeLibraryFolder: (folder: string) =>
     ipcRenderer.invoke(IPC.libraryRemoveFolder, folder) as Promise<AppSettings>,

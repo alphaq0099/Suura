@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { LyricsCandidate, Track, TrackLyrics } from '@shared/types'
-import { LYRICS_OFFSET_MAX, parseLyrics, type LyricLine } from '@shared/lyrics'
+import { LYRICS_OFFSET_MAX, lyricsTargetOf, parseLyrics, type LyricLine } from '@shared/lyrics'
 import { api, messageOf } from '../api'
 import { DoubleChevronLeftIcon, PencilIcon, SearchIcon, SpinnerIcon, TrashIcon } from './Icons'
 import { LyricsFinder } from './LyricsFinder'
@@ -67,6 +67,14 @@ function sourceLabel(lyrics: TrackLyrics): string {
 export function LyricsPanel(props: LyricsPanelProps) {
   const { track, positionMs, durationMs, readPositionMs, open, onSeek, artworkKey = null } = props
   const trackId = track?.id ?? null
+  // What a request names: a library row's id, or a streaming link's video and
+  // the values to search with. Memoised on the row so the effects below do not
+  // see a new object on every render.
+  const target = useMemo(() => (track ? lyricsTargetOf(track) : null), [track])
+  const isStream = track?.sourceKind === 'youtube'
+  // A stream can be looked up as readily as a file: the finder needs a title,
+  // an artist and a length, all of which the row carries.
+  const canFind = Boolean(track && (track.sourceKind === 'local' || track.sourceId))
   const [lyrics, setLyrics] = useState<TrackLyrics | null>(null)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -102,12 +110,16 @@ export function LyricsPanel(props: LyricsPanelProps) {
   }, [open])
 
   useEffect(() => {
-    if (!open || trackId === null) return
+    // Bumped first so a response for a previous row cannot land on this one.
     const request = ++requestRef.current
+    if (!open || !target) {
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setError(null)
     api
-      .getTrackLyrics(trackId)
+      .getTrackLyrics(target)
       .then((found) => {
         if (requestRef.current === request) setLyrics(found)
       })
@@ -117,7 +129,7 @@ export function LyricsPanel(props: LyricsPanelProps) {
       .finally(() => {
         if (requestRef.current === request) setLoading(false)
       })
-  }, [open, trackId])
+  }, [open, target])
 
   // Only a fetched row has the two file actions; the file's own lyrics have
   // nothing to switch back to. This is the same test the actions row uses,
@@ -132,15 +144,24 @@ export function LyricsPanel(props: LyricsPanelProps) {
   // A read failure counts as "nothing to go back to": the discard is the
   // promise that still holds either way.
   useEffect(() => {
-    if (!open || trackId === null || !fetchedShown) {
+    // Bumped first so a request started for a previous row can never land on
+    // this one, whichever branch below we take.
+    const request = ++fileRequestRef.current
+    if (!open || !target || !fetchedShown) {
       setFileLyrics(null)
       setFileChecked(false)
       return
     }
-    const request = ++fileRequestRef.current
+    // A stream has no file behind the fetch, so there is nothing to check and
+    // the forget button is only ever a discard.
+    if (isStream) {
+      setFileLyrics(null)
+      setFileChecked(true)
+      return
+    }
     setFileChecked(false)
     api
-      .getFileLyrics(trackId)
+      .getFileLyrics(target)
       .then((found) => {
         if (fileRequestRef.current === request) {
           setFileLyrics(found)
@@ -153,7 +174,7 @@ export function LyricsPanel(props: LyricsPanelProps) {
           setFileChecked(true)
         }
       })
-  }, [open, trackId, fetchedShown])
+  }, [open, target, fetchedShown, isStream])
 
   const parsed = useMemo(() => parseLyrics(lyrics?.text ?? ''), [lyrics])
   const lines = parsed.lines
@@ -172,7 +193,7 @@ export function LyricsPanel(props: LyricsPanelProps) {
   }, [expanded])
 
   const shift = (delta: number): void => {
-    if (!track || !lyrics || saving) return
+    if (!target || !lyrics || saving) return
     const next = Math.max(-LYRICS_OFFSET_MAX, Math.min(LYRICS_OFFSET_MAX, lyrics.offsetMs + delta))
     if (next === lyrics.offsetMs) return
     const previous = lyrics
@@ -180,7 +201,7 @@ export function LyricsPanel(props: LyricsPanelProps) {
     setSaving(true)
     setError(null)
     api
-      .setTrackLyricsOffset(track.id, next)
+      .setTrackLyricsOffset(target, next)
       .then((updated) => {
         if (updated) setLyrics(updated)
       })
@@ -192,8 +213,8 @@ export function LyricsPanel(props: LyricsPanelProps) {
   }
 
   const chooseLyrics = async (candidate: LyricsCandidate): Promise<void> => {
-    if (!track) return
-    const updated = await api.useTrackLyrics(track.id, candidate)
+    if (!target) return
+    const updated = await api.useTrackLyrics(target, candidate)
     setLyrics(updated)
     setError(null)
     setActionError(null)
@@ -201,14 +222,14 @@ export function LyricsPanel(props: LyricsPanelProps) {
   }
 
   const runFileAction = async (kind: 'use-file' | 'write'): Promise<void> => {
-    if (!track || action) return
+    if (!target || action) return
     setAction(kind)
     setActionError(null)
     try {
       const updated =
         kind === 'use-file'
-          ? await api.useFileLyrics(track.id)
-          : await api.writeTrackLyricsToFile(track.id)
+          ? await api.useFileLyrics(target)
+          : await api.writeTrackLyricsToFile(target)
       setLyrics(updated)
     } catch (cause) {
       setActionError(messageOf(cause))
@@ -240,9 +261,11 @@ export function LyricsPanel(props: LyricsPanelProps) {
   // it can only be a discard.
   const forgetLabel = !fileChecked
     ? 'Checking what the file has…'
-    : fileLyrics
-      ? 'Forget the fetched lyrics and show what the file has'
-      : 'This file has no lyrics of its own, so this only drops the fetched copy'
+    : isStream
+      ? 'Forget these lyrics and stop showing them for this video'
+      : fileLyrics
+        ? 'Forget the fetched lyrics and show what the file has'
+        : 'This file has no lyrics of its own, so this only drops the fetched copy'
 
   if (expanded) {
     return createPortal(
@@ -273,7 +296,7 @@ export function LyricsPanel(props: LyricsPanelProps) {
       <header className="np-lyrics-head">
         <h2>Lyrics</h2>
         <div className="np-lyrics-head-actions">
-          {track?.sourceKind === 'local' ? (
+          {canFind ? (
             <button
               type="button"
               className="icon-button subtle np-lyrics-find"
@@ -372,16 +395,20 @@ export function LyricsPanel(props: LyricsPanelProps) {
               >
                 {action === 'use-file' ? <SpinnerIcon size={15} /> : <TrashIcon size={15} />}
               </button>
-              <button
-                type="button"
-                className="icon-button np-lyrics-file-action np-lyrics-write-file"
-                onClick={() => void runFileAction('write')}
-                disabled={action !== null}
-                title="Write these lyrics into the file's tags"
-                aria-label="Write these lyrics into the file's tags"
-              >
-                {action === 'write' ? <SpinnerIcon size={15} /> : <PencilIcon size={15} />}
-              </button>
+              {/* A stream has no file, so there is nothing to write the words
+                  into: only the discard is offered for one. */}
+              {!isStream ? (
+                <button
+                  type="button"
+                  className="icon-button np-lyrics-file-action np-lyrics-write-file"
+                  onClick={() => void runFileAction('write')}
+                  disabled={action !== null}
+                  title="Write these lyrics into the file's tags"
+                  aria-label="Write these lyrics into the file's tags"
+                >
+                  {action === 'write' ? <SpinnerIcon size={15} /> : <PencilIcon size={15} />}
+                </button>
+              ) : null}
             </>
           ) : null}
 

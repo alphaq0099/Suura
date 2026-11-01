@@ -13,7 +13,7 @@ import { useLyricsFollow } from '../hooks/useLyricsFollow'
 function emptyMessage(track: Track | null): string {
   if (!track) return 'Nothing is playing.'
   if (track.sourceKind !== 'local') {
-    return 'This is a stream, so there is no file to read lyrics from.'
+    return 'No lyrics for this stream yet. Use Find lyrics to search LRCLIB and Genius.'
   }
   return 'No lyrics in this file yet. Use Find lyrics to search LRCLIB and Genius, add them from Edit tags, or put a .lrc file with the same name next to it.'
 }
@@ -175,7 +175,7 @@ export function LyricsBody(props: LyricsBodyProps) {
     return (
       <p className="np-lyrics-empty" role="status">
         <SpinnerIcon size={16} />
-        <span>Reading the lyrics in this file…</span>
+        <span>Reading the lyrics…</span>
       </p>
     )
   }

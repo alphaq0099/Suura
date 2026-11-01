@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { LyricsCandidate, LyricsLookupResult, Track } from '@shared/types'
 import { formatDuration } from '@shared/format'
+import { lyricsTargetOf } from '@shared/lyrics'
 import { api, messageOf } from '../api'
 import { CloseIcon, SpinnerIcon } from './Icons'
 
@@ -45,7 +46,7 @@ export function LyricsFinder(props: LyricsFinderProps) {
     setError(null)
     setActionError(null)
     api
-      .findTrackLyrics(track.id)
+      .findTrackLyrics(lyricsTargetOf(track))
       .then((found) => {
         if (!live) return
         setResult(found)
@@ -108,11 +109,14 @@ export function LyricsFinder(props: LyricsFinderProps) {
       {loading ? (
         <p className="auto-tag-status" role="status">
           <SpinnerIcon size={14} />
-          <span>Looking for lyrics that match this file’s title, artist and length…</span>
+          <span>Looking for lyrics that match this track’s title, artist and length…</span>
         </p>
       ) : candidates.length === 0 ? (
         <p className={error ? 'banner error' : 'auto-tag-status'} role={error ? 'alert' : 'status'}>
-          {error ?? 'Nothing close enough. Try correcting the title or artist in Edit tags, then search again.'}
+          {error ??
+            (track.sourceKind === 'local'
+              ? 'Nothing close enough. Try correcting the title or artist in Edit tags, then search again.'
+              : 'Nothing close enough. Try searching again.')}
         </p>
       ) : (
         <ul className="auto-tag-list lyrics-finder-list" role="radiogroup" aria-label="Lyrics matches">

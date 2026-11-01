@@ -40,6 +40,10 @@ function toSource(value: string): StoredLyricsSource {
   return 'embedded'
 }
 
+function toFetchedSource(value: string): FetchedLyricsSource {
+  return value === 'genius' ? 'genius' : 'lrclib'
+}
+
 function mapRow(row: LyricsRow): StoredLyrics {
   return {
     trackId: row.track_id,
@@ -52,6 +56,19 @@ function mapRow(row: LyricsRow): StoredLyrics {
     fetchedAt: row.fetched_at
   }
 }
+
+interface StreamLyricsRow {
+  video_id: string
+  source: string
+  language: string | null
+  synced: number
+  text: string
+  origin: string | null
+  offset_ms: number
+  fetched_at: number
+}
+
+const STREAM_COLUMNS = `video_id, source, language, synced, text, origin, offset_ms, fetched_at`
 
 /**
  * What the app has found for a track, keyed by source.
@@ -191,4 +208,112 @@ export interface StoredLyricsInput {
   text: string
   /** A fetched lyric's page, when the service has one to link back to. */
   origin?: string | null
+}
+
+/** A fetched lyric for a streaming track, keyed by the video rather than a row. */
+export interface StoredStreamLyrics {
+  videoId: string
+  source: FetchedLyricsSource
+  language: string | null
+  synced: boolean
+  text: string
+  origin: string | null
+  offsetMs: number
+  fetchedAt: number
+}
+
+function mapStreamRow(row: StreamLyricsRow): StoredStreamLyrics {
+  return {
+    videoId: row.video_id,
+    source: toFetchedSource(row.source),
+    language: row.language,
+    synced: row.synced === 1,
+    text: row.text,
+    origin: row.origin,
+    offsetMs: row.offset_ms,
+    fetchedAt: row.fetched_at
+  }
+}
+
+/**
+ * The fetched lyric a streaming track is showing, keyed by video id.
+ *
+ * A stream has no file, so it can never own an `embedded` or `sidecar` row:
+ * everything here came from the finder. That removes the ordering problem the
+ * file side has — there is exactly one source at a time, and `saveFetched`
+ * still drops the other service's row so the panel never has two to choose
+ * between.
+ *
+ * The key is the video, not the track id, because a stream's negative id
+ * changes with how it was reached while the video does not. The timing
+ * correction lives here for the same reason: it belongs to the song the user
+ * corrected, so it follows the video into the queue, the history and the
+ * imported playlist alike.
+ */
+export class StreamLyricsRepository {
+  constructor(private readonly db: SqlDatabase) {}
+
+  get(videoId: string, source: FetchedLyricsSource): StoredStreamLyrics | null {
+    const row = this.db
+      .prepare(`SELECT ${STREAM_COLUMNS} FROM stream_lyrics WHERE video_id = ? AND source = ?`)
+      .get<StreamLyricsRow>(videoId, source)
+    return row ? mapStreamRow(row) : null
+  }
+
+  /** The one fetched row for this video, whichever service supplied it. */
+  preferred(videoId: string): StoredStreamLyrics | null {
+    return this.get(videoId, 'lrclib') ?? this.get(videoId, 'genius')
+  }
+
+  /**
+   * Remembers the lyrics the user chose from the finder.
+   *
+   * Choosing from one service replaces the other's row, exactly as the file
+   * side does: the panel shows one fetched lyric, not a hidden second copy.
+   * The offset is left alone by the upsert — the correction belongs to the
+   * user, not to the text that arrived today.
+   */
+  saveFetched(
+    videoId: string,
+    source: FetchedLyricsSource,
+    input: StoredLyricsInput,
+    now = Date.now()
+  ): void {
+    this.db.transaction(() => {
+      const other: FetchedLyricsSource = source === 'lrclib' ? 'genius' : 'lrclib'
+      this.db
+        .prepare(`DELETE FROM stream_lyrics WHERE video_id = ? AND source = ?`)
+        .run(videoId, other)
+      this.db
+        .prepare(
+          `INSERT INTO stream_lyrics (video_id, source, language, synced, text, origin, offset_ms, fetched_at)
+           VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+           ON CONFLICT(video_id, source) DO UPDATE SET
+             language   = excluded.language,
+             synced     = excluded.synced,
+             text       = excluded.text,
+             origin     = excluded.origin,
+             fetched_at = excluded.fetched_at`
+        )
+        .run(videoId, source, input.language, input.synced, input.text, input.origin ?? null, now)
+    })
+  }
+
+  /** Forgets the fetched copy for this video. */
+  clearFetched(videoId: string): void {
+    this.db
+      .prepare(`DELETE FROM stream_lyrics WHERE video_id = ? AND source IN ('lrclib', 'genius')`)
+      .run(videoId)
+  }
+
+  setOffset(videoId: string, source: FetchedLyricsSource, offsetMs: number): void {
+    this.db
+      .prepare(`UPDATE stream_lyrics SET offset_ms = ? WHERE video_id = ? AND source = ?`)
+      .run(offsetMs, videoId, source)
+  }
+
+  /** Test and maintenance helper: forgets every cached stream lyric. */
+  clear(): number {
+    return this.db.prepare('DELETE FROM stream_lyrics').run().changes
+  }
 }

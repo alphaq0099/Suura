@@ -28,6 +28,7 @@ import type {
   ListTracksQuery,
   LyricsCandidate,
   LyricsLookupResult,
+  LyricsTarget,
   OnlinePlaylist,
   RelocateReport,
   OnlinePlaylistDetail,
@@ -350,44 +351,47 @@ export interface PlayerApi {
    * over it, because that is the copy a user can edit without rewriting the
    * audio. Nothing here touches the network.
    */
-  getTrackLyrics(trackId: number): Promise<TrackLyrics | null>
+  getTrackLyrics(target: LyricsTarget): Promise<TrackLyrics | null>
   /**
    * The lyrics the file itself carries, ignoring a fetched copy.
    *
    * The tag editor reads this: its draft must be what the file says, or an
    * ordinary save would write the finder's words into the tag by accident.
+   * A streaming track has no file, so this is null for one.
    */
-  getFileLyrics(trackId: number): Promise<TrackLyrics | null>
+  getFileLyrics(target: LyricsTarget): Promise<TrackLyrics | null>
   /**
    * Remembers how far the lyrics should be shifted for this track.
    *
    * Positive values show the lines later. The offset is the user's, so it is
    * stored in the database rather than written into the file.
    */
-  setTrackLyricsOffset(trackId: number, offsetMs: number): Promise<TrackLyrics | null>
+  setTrackLyricsOffset(target: LyricsTarget, offsetMs: number): Promise<TrackLyrics | null>
   /**
-   * Asks LRCLIB what lyrics match this file.
+   * Asks the providers what lyrics match this track.
    *
    * A proposal only: nothing is stored until a match is chosen. The result can
    * be empty (no match) or carry a message (the service was unreachable).
    */
-  findTrackLyrics(trackId: number): Promise<LyricsLookupResult>
+  findTrackLyrics(target: LyricsTarget): Promise<LyricsLookupResult>
   /**
-   * Remembers the chosen match as this track's lyrics, labelled `lrclib`.
+   * Remembers the chosen match as this track's lyrics, labelled with its
+   * provider.
    *
    * It wins over a `.lrc` or an embedded tag until the user goes back to the
    * file, because choosing it was an explicit act.
    */
-  useTrackLyrics(trackId: number, candidate: LyricsCandidate): Promise<TrackLyrics | null>
+  useTrackLyrics(target: LyricsTarget, candidate: LyricsCandidate): Promise<TrackLyrics | null>
   /** Forgets the fetched copy and shows the file's own lyrics again. */
-  useFileLyrics(trackId: number): Promise<TrackLyrics | null>
+  useFileLyrics(target: LyricsTarget): Promise<TrackLyrics | null>
   /**
    * Writes the chosen fetch into the file's tag and removes the fetched copy.
    *
    * Refused while the track is playing, and refused when a `.lrc` beside the
-   * file would keep winning over the tag that was just written.
+   * file would keep winning over the tag that was just written. A streaming
+   * track has no file and is refused outright.
    */
-  writeTrackLyricsToFile(trackId: number): Promise<TrackLyrics | null>
+  writeTrackLyricsToFile(target: LyricsTarget): Promise<TrackLyrics | null>
   removeLibraryFolder(folder: string): Promise<AppSettings>
   revealTrack(trackId: number): Promise<void>
   /**

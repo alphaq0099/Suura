@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { Track, TrackLyrics, TrackTagFields } from '@shared/types'
+import { lyricsTargetOf } from '@shared/lyrics'
 import { TAG_POSITION_MAX, TAG_YEAR_MAX, TAG_YEAR_MIN } from '@shared/tags'
 import { api, messageOf } from '../api'
 import { ArtworkImage } from './ArtworkImage'
@@ -184,7 +185,7 @@ export function TagEditor(props: TagEditorProps) {
     let live = true
     setLyricsLoading(true)
     api
-      .getFileLyrics(track.id)
+      .getFileLyrics(lyricsTargetOf(track))
       .then((found) => {
         if (!live) return
         setLoadedLyrics(found)
