@@ -3930,6 +3930,20 @@ input[type='radio'] {
   white-space: nowrap;
 }
 
+/* When the words came from a provider with a page, the pill that names the
+   provider is also the link back to it. It keeps the pill's shape so the header
+   does not move; the underline is the only hint that it goes somewhere. */
+a.np-lyrics-meta {
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+}
+
+a.np-lyrics-meta:hover {
+  color: var(--text);
+  text-decoration-color: currentColor;
+}
+
 /* The expand affordance lives in the footer, at the left, where it reads as
    "pull the sheet out of this panel" rather than as another header action. */
 .np-lyrics-expand {
@@ -4046,7 +4060,11 @@ input[type='radio'] {
   border-radius: inherit;
   background: rgb(var(--accent-rgb) / 24%);
   transform-origin: left center;
-  transition: transform 260ms linear;
+  /* No transition here on purpose. The fill is written once a frame straight
+     from the media element, and a transition would chase every one of those
+     writes: the bar would trail the song by the length of the transition and
+     visibly ramp up again at the start of each line, which is the stutter this
+     replaced. The loop moves it smoothly enough on its own. */
   pointer-events: none;
 }
 
@@ -4193,38 +4211,32 @@ input[type='radio'] {
   opacity: 0.8;
 }
 
-/* The fetched source has two actions of its own: go back to the file, or make
-   the fetch the file's own tag. They sit above the timing controls so neither
-   changes the footer's shape. */
-.np-lyrics-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 7px 10px;
-  border-top: 1px solid var(--border);
+/* The fetched copy has two actions of its own: go back to the file, or make the
+   fetch the file's own tag. They are icons in the footer rather than a labelled
+   row above it. The header pill already names the source, so a second line of
+   text said nothing new, and the footer's one row had the room. */
+.np-lyrics-file-action {
+  flex: none;
+  color: var(--text-dim);
 }
 
-.np-lyrics-actions-source {
-  margin-right: auto;
-  font-size: calc(11px * var(--text-scale));
-  color: var(--text-faint);
-  white-space: nowrap;
-}
-
-/* Genius asks for a link back to the page the words came from. It sits with the
-   source label rather than the buttons: it is attribution, not an action on the
-   track. */
-.np-lyrics-actions-link {
-  font-size: calc(11px * var(--text-scale));
-  color: var(--text-faint);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  white-space: nowrap;
-}
-
-.np-lyrics-actions-link:hover {
+.np-lyrics-file-action:hover:not(:disabled) {
   color: var(--text);
+}
+
+/* Forgetting is the destructive half of the pair, so it reads as danger rather
+   than as one more neutral control. */
+.np-lyrics-file-action.danger {
+  color: rgb(var(--danger-rgb) / 85%);
+}
+
+.np-lyrics-file-action.danger:hover:not(:disabled) {
+  color: var(--danger);
+}
+
+.np-lyrics-file-action:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .np-lyrics-action-error {
@@ -4242,8 +4254,9 @@ input[type='radio'] {
   border-top: 1px solid var(--border);
 }
 
-/* The timing controls sit together on the right; the expand button keeps the
-   left corner so the two kinds of action never trade places. */
+/* The timing controls sit together on the right; the expand button and the two
+   file actions keep the left corner, so the two kinds of action never trade
+   places. */
 .np-lyrics-offset-group {
   display: flex;
   align-items: center;
@@ -4251,8 +4264,14 @@ input[type='radio'] {
   margin-left: auto;
 }
 
-.np-lyrics-foot button:not(.icon-button),
-.np-lyrics-actions button {
+/* Only the timing controls are shaped buttons. The file actions are icons and
+   take their styling from `.np-lyrics-file-action` above. The labels never
+   wrap: they share the one footer row with the expand button and those two
+   icons, and a pill broken across two lines is worse than a slightly tighter
+   fit. */
+.np-lyrics-foot button:not(.icon-button) {
+  flex: none;
+  white-space: nowrap;
   padding: 5px 10px;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -4266,14 +4285,12 @@ input[type='radio'] {
     border-color 140ms ease;
 }
 
-.np-lyrics-foot button:not(.icon-button):hover:not(:disabled),
-.np-lyrics-actions button:hover:not(:disabled) {
+.np-lyrics-foot button:not(.icon-button):hover:not(:disabled) {
   border-color: rgb(var(--accent-rgb) / 60%);
   color: var(--text);
 }
 
-.np-lyrics-foot button:not(.icon-button):disabled,
-.np-lyrics-actions button:disabled {
+.np-lyrics-foot button:not(.icon-button):disabled {
   opacity: 0.45;
   cursor: default;
 }

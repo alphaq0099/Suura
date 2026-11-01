@@ -50,6 +50,12 @@ export interface NowPlayingViewProps {
   reconnecting: boolean
   positionMs: number
   durationMs: number
+  /**
+   * The playing position at frame rate, straight off the media element. The
+   * lyric fill is the only thing that needs it; everything else waits for the
+   * slower published position.
+   */
+  readPositionMs: () => number | null
   volume: number
   /** Percent per wheel notch. Shift still uses one percent. */
   volumeWheelStep: number
@@ -114,6 +120,7 @@ export function NowPlayingView(props: NowPlayingViewProps) {
     reconnecting,
     positionMs,
     durationMs,
+    readPositionMs,
     volume,
     volumeWheelStep,
     queueIndex,
@@ -459,6 +466,7 @@ export function NowPlayingView(props: NowPlayingViewProps) {
           track={current}
           positionMs={positionMs}
           durationMs={durationMs}
+          readPositionMs={readPositionMs}
           open={lyricsOpen}
           onSeek={onSeek}
           artworkKey={artworkKey}

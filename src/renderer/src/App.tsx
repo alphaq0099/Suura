@@ -1299,6 +1299,7 @@ export function App() {
           reconnecting={player.reconnecting}
           positionMs={player.positionMs}
           durationMs={player.durationMs}
+          readPositionMs={player.readPositionMs}
           volume={player.volume}
           volumeWheelStep={settings.interaction.volumeWheelStep}
           queueIndex={player.index}

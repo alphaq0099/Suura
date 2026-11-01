@@ -12,8 +12,10 @@ export interface LyricsStageProps {
   error: string | null
   lyrics: TrackLyrics | null
   lines: LyricLine[]
-  active: number
-  lineProgress: number
+  positionMs: number
+  offsetMs: number
+  durationMs: number
+  readPositionMs: (() => number | null) | null
   onSeek: (line: LyricLine) => void
   onClose: () => void
 }
@@ -43,8 +45,8 @@ function prefersReducedMotion(): boolean {
  * the window's DOM, and the first Escape should close the stage, not the player.
  */
 export function LyricsStage(props: LyricsStageProps) {
-  const { track, artworkKey, loading, error, lyrics, lines, active, lineProgress } = props
-  const { onSeek, onClose } = props
+  const { track, artworkKey, loading, error, lyrics, lines, onSeek, onClose } = props
+  const { positionMs, offsetMs, durationMs, readPositionMs } = props
   const rootRef = useRef<HTMLDivElement | null>(null)
   const closeTimer = useRef<number | null>(null)
   const [closing, setClosing] = useState(false)
@@ -116,8 +118,10 @@ export function LyricsStage(props: LyricsStageProps) {
           error={error}
           lyrics={lyrics}
           lines={lines}
-          active={active}
-          lineProgress={lineProgress}
+          positionMs={positionMs}
+          offsetMs={offsetMs}
+          durationMs={durationMs}
+          readPositionMs={readPositionMs}
           onSeek={onSeek}
           resetKey={track?.id ?? null}
         />

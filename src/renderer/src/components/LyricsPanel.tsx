@@ -1,14 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { LyricsCandidate, Track, TrackLyrics } from '@shared/types'
-import {
-  LYRICS_OFFSET_MAX,
-  activeLyricIndex,
-  parseLyrics,
-  type LyricLine
-} from '@shared/lyrics'
+import { LYRICS_OFFSET_MAX, parseLyrics, type LyricLine } from '@shared/lyrics'
 import { api, messageOf } from '../api'
-import { DoubleChevronLeftIcon, SearchIcon } from './Icons'
+import { DoubleChevronLeftIcon, PencilIcon, SearchIcon, SpinnerIcon, TrashIcon } from './Icons'
 import { LyricsFinder } from './LyricsFinder'
 import { LyricsBody, LyricsOffsetControls } from './LyricsLines'
 import { LyricsStage } from './LyricsStage'
@@ -18,6 +13,12 @@ export interface LyricsPanelProps {
   /** Playback position, in the same timeline as the lyric timestamps. */
   positionMs: number
   durationMs: number
+  /**
+   * The same position read at frame rate off the media element. The lines use
+   * it for the fill, which has to move continuously; `positionMs` remains the
+   * value everything else is happy to see a few times a second.
+   */
+  readPositionMs: () => number | null
   open: boolean
   onSeek: (positionMs: number) => void
   /** The cover behind the full-window stage, already resolved by the player. */
@@ -51,18 +52,20 @@ function sourceLabel(lyrics: TrackLyrics): string {
  * or Genius). Writing it into the file is a separate button, so a search can
  * never silently modify a file.
  *
- * A fetched copy shadows the file's own lyrics, so the row under it offers a
+ * A fetched copy shadows the file's own lyrics, so the footer under it offers a
  * way back — labelled by what is actually underneath. Over a file that has
  * lyrics it is "Use file lyrics"; over a file that has none the same click can
  * only drop the fetch, and the button says "Forget these lyrics" instead of
- * promising a copy that does not exist.
+ * promising a copy that does not exist. Both are icons rather than words: the
+ * footer shares its one row with the timing controls, and the source is already
+ * named in the header.
  *
  * The panel owns the data for both views. The full-window stage is a portal
  * rendered from here, so expanding is not a second fetch and the timing
  * correction is the same number in both places.
  */
 export function LyricsPanel(props: LyricsPanelProps) {
-  const { track, positionMs, durationMs, open, onSeek, artworkKey = null } = props
+  const { track, positionMs, durationMs, readPositionMs, open, onSeek, artworkKey = null } = props
   const trackId = track?.id ?? null
   const [lyrics, setLyrics] = useState<TrackLyrics | null>(null)
   const [loading, setLoading] = useState(false)
@@ -155,23 +158,10 @@ export function LyricsPanel(props: LyricsPanelProps) {
   const parsed = useMemo(() => parseLyrics(lyrics?.text ?? ''), [lyrics])
   const lines = parsed.lines
   // The file's own `[offset:]` tag and the user's correction add up. Only the
-  // user's half is ever written back to the database.
+  // user's half is ever written back to the database. Which line is current and
+  // how far through it the song is belong to the lines themselves, which read
+  // the media element at frame rate; this panel only hands them the numbers.
   const offsetMs = (lyrics?.offsetMs ?? 0) + parsed.fileOffsetMs
-  const active = activeLyricIndex(lines, positionMs, offsetMs)
-
-  // A line stays highlighted until the next one starts, so it can show how far
-  // through it the song is. The file has no word timings, and pretending
-  // otherwise with an invented curve would be a lie; a line-level fill is the
-  // honest version of the same idea.
-  const lineProgress = useMemo(() => {
-    const line = active >= 0 ? lines[active] : undefined
-    if (!line) return 0
-    const start = line.timeMs + offsetMs
-    const next = lines[active + 1]
-    const end = next ? next.timeMs + offsetMs : Math.max(durationMs, start + 1)
-    const span = Math.max(1, end - start)
-    return Math.min(1, Math.max(0, (positionMs - start) / span))
-  }, [active, lines, offsetMs, positionMs, durationMs])
 
   // Focus goes back to the button that opened the stage, not to the top of the
   // window, so a keyboard user lands where they left.
@@ -244,6 +234,16 @@ export function LyricsPanel(props: LyricsPanelProps) {
   // nothing to switch back to.
   const fetched = fetchedShown
 
+  // The two file actions are icons now, so what used to be their labels lives
+  // in the tooltips. The forget one stays honest about which promise holds:
+  // over a file with lyrics of its own it is a way back, and over one without
+  // it can only be a discard.
+  const forgetLabel = !fileChecked
+    ? 'Checking what the file has…'
+    : fileLyrics
+      ? 'Forget the fetched lyrics and show what the file has'
+      : 'This file has no lyrics of its own, so this only drops the fetched copy'
+
   if (expanded) {
     return createPortal(
       <LyricsStage
@@ -253,8 +253,10 @@ export function LyricsPanel(props: LyricsPanelProps) {
         error={error}
         lyrics={lyrics}
         lines={lines}
-        active={active}
-        lineProgress={lineProgress}
+        positionMs={positionMs}
+        offsetMs={offsetMs}
+        durationMs={durationMs}
+        readPositionMs={readPositionMs}
         onSeek={seekTo}
         onClose={() => setExpanded(false)}
       />,
@@ -283,9 +285,25 @@ export function LyricsPanel(props: LyricsPanelProps) {
               <SearchIcon size={15} />
             </button>
           ) : null}
-          <span className="np-lyrics-meta" title={lyrics?.origin ?? undefined}>
-            {meta}
-          </span>
+          {/* The source is named once, in this pill. When the words came from a
+              provider that has a page, the pill is also the way back to it —
+              that is the attribution LRCLIB and Genius ask for, and it needs no
+              second copy of the same name further down. */}
+          {fetched?.origin ? (
+            <a
+              className="np-lyrics-meta np-lyrics-meta-link"
+              href={fetched.origin}
+              target="_blank"
+              rel="noreferrer"
+              title={`Open these lyrics on ${fetched.source === 'genius' ? 'Genius' : 'LRCLIB'}`}
+            >
+              {meta}
+            </a>
+          ) : (
+            <span className="np-lyrics-meta" title={lyrics?.origin ?? undefined}>
+              {meta}
+            </span>
+          )}
         </div>
       </header>
 
@@ -303,56 +321,15 @@ export function LyricsPanel(props: LyricsPanelProps) {
             error={error}
             lyrics={lyrics}
             lines={lines}
-            active={active}
-            lineProgress={lineProgress}
+            positionMs={positionMs}
+            offsetMs={offsetMs}
+            durationMs={durationMs}
+            readPositionMs={readPositionMs}
             onSeek={seekTo}
             resetKey={trackId}
           />
         )}
       </div>
-
-      {!finderOpen && fetched ? (
-        <div className="np-lyrics-actions">
-          <span className="np-lyrics-actions-source">
-            From {fetched.source === 'genius' ? 'Genius' : 'LRCLIB'}
-          </span>
-          {fetched.source === 'genius' && fetched.origin ? (
-            <a
-              className="np-lyrics-actions-link"
-              href={fetched.origin}
-              target="_blank"
-              rel="noreferrer"
-              title="Open these lyrics on Genius"
-            >
-              Open on Genius
-            </a>
-          ) : null}
-          <button
-            type="button"
-            className="np-lyrics-use-file"
-            onClick={() => void runFileAction('use-file')}
-            disabled={action !== null || !fileChecked}
-            title={
-              !fileChecked
-                ? 'Checking what the file has…'
-                : fileLyrics
-                  ? 'Forget the fetched lyrics and show what the file has'
-                  : 'This file has no lyrics of its own, so this only drops the fetched copy'
-            }
-          >
-            {action === 'use-file' ? 'Forgetting…' : fileChecked && !fileLyrics ? 'Forget these lyrics' : 'Use file lyrics'}
-          </button>
-          <button
-            type="button"
-            className="np-lyrics-write-file"
-            onClick={() => void runFileAction('write')}
-            disabled={action !== null}
-            title="Write these lyrics into the file's tags"
-          >
-            {action === 'write' ? 'Writing…' : 'Write into file'}
-          </button>
-        </div>
-      ) : null}
 
       {!finderOpen && actionError ? (
         <p className="banner error np-lyrics-action-error" role="alert">
@@ -360,24 +337,59 @@ export function LyricsPanel(props: LyricsPanelProps) {
         </p>
       ) : null}
 
-      {!finderOpen && lyrics && lines.length > 0 ? (
+      {/* The footer carries every action on the row the sheet already has: the
+          expand affordance at the left, the two file actions beside it as
+          icons, and the timing controls on the right. It is shown whenever
+          there are lyrics or a fetch to act on, so plain-text lyrics keep
+          their actions even though they have no timing to correct. */}
+      {!finderOpen && (lyrics || fetched) ? (
         <footer className="np-lyrics-foot">
-          <button
-            ref={expandRef}
-            type="button"
-            className="icon-button np-lyrics-expand"
-            onClick={() => {
-              wasExpanded.current = true
-              setExpanded(true)
-            }}
-            title="Open the lyrics full-window"
-            aria-label="Open the lyrics full-window"
-          >
-            <DoubleChevronLeftIcon size={16} />
-          </button>
-          <div className="np-lyrics-offset-group">
-            <LyricsOffsetControls offsetMs={offsetMs} saving={saving} onShift={shift} />
-          </div>
+          {lines.length > 0 ? (
+            <button
+              ref={expandRef}
+              type="button"
+              className="icon-button np-lyrics-expand"
+              onClick={() => {
+                wasExpanded.current = true
+                setExpanded(true)
+              }}
+              title="Open the lyrics full-window"
+              aria-label="Open the lyrics full-window"
+            >
+              <DoubleChevronLeftIcon size={16} />
+            </button>
+          ) : null}
+
+          {fetched ? (
+            <>
+              <button
+                type="button"
+                className="icon-button np-lyrics-file-action np-lyrics-use-file danger"
+                onClick={() => void runFileAction('use-file')}
+                disabled={action !== null || !fileChecked}
+                title={action === 'use-file' ? 'Forgetting…' : forgetLabel}
+                aria-label={action === 'use-file' ? 'Forgetting…' : forgetLabel}
+              >
+                {action === 'use-file' ? <SpinnerIcon size={15} /> : <TrashIcon size={15} />}
+              </button>
+              <button
+                type="button"
+                className="icon-button np-lyrics-file-action np-lyrics-write-file"
+                onClick={() => void runFileAction('write')}
+                disabled={action !== null}
+                title="Write these lyrics into the file's tags"
+                aria-label="Write these lyrics into the file's tags"
+              >
+                {action === 'write' ? <SpinnerIcon size={15} /> : <PencilIcon size={15} />}
+              </button>
+            </>
+          ) : null}
+
+          {lines.length > 0 ? (
+            <div className="np-lyrics-offset-group">
+              <LyricsOffsetControls offsetMs={offsetMs} saving={saving} onShift={shift} />
+            </div>
+          ) : null}
         </footer>
       ) : null}
     </aside>

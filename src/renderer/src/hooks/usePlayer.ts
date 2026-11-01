@@ -67,6 +67,12 @@ export interface UsePlayerResult {
   reconnecting: boolean
   positionMs: number
   durationMs: number
+  /**
+   * The playing position read straight off the media element, several times a
+   * frame, or null when nothing is attached. For the one thing in the player
+   * that has to move continuously; everything else can wait for `timeupdate`.
+   */
+  readPositionMs: () => number | null
   volume: number
   error: string | null
   /** Replace the queue and start at `startIndex`. */
@@ -268,6 +274,22 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
   }, [])
 
   const audio = useCallback((): HTMLAudioElement => deck().active.element, [deck])
+
+  /**
+   * The playing position read straight from the media element.
+   *
+   * `timeupdate` only fires a few times a second, which is fine for React state
+   * (the seek bar, the persisted snapshot) but far too coarse for anything that
+   * has to move continuously across a line: the lyric fill samples this once a
+   * frame instead, so it tracks the song rather than the rate the browser
+   * reports it. Null while no element is attached, so a caller can fall back to
+   * the published state instead of inventing a position.
+   */
+  const readPositionMs = useCallback((): number | null => {
+    const element = deckRef.current?.active.element
+    if (!element || !Number.isFinite(element.currentTime)) return null
+    return element.currentTime * 1000
+  }, [])
 
   const current = index >= 0 ? (entries[index] ?? null) : null
 
@@ -1196,6 +1218,7 @@ export function usePlayer(options: UsePlayerOptions): UsePlayerResult {
     reconnecting,
     positionMs,
     durationMs,
+    readPositionMs,
     volume,
     error,
     playQueue,
