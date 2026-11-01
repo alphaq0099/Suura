@@ -4269,7 +4269,7 @@ a.np-lyrics-meta:hover {
    wrap: they share the one footer row with the expand button and those two
    icons, and a pill broken across two lines is worse than a slightly tighter
    fit. */
-.np-lyrics-foot button:not(.icon-button) {
+.np-lyrics-foot .np-lyrics-step {
   flex: none;
   white-space: nowrap;
   padding: 5px 10px;
@@ -4285,27 +4285,57 @@ a.np-lyrics-meta:hover {
     border-color 140ms ease;
 }
 
-.np-lyrics-foot button:not(.icon-button):hover:not(:disabled) {
+.np-lyrics-foot .np-lyrics-step:hover:not(:disabled) {
   border-color: rgb(var(--accent-rgb) / 60%);
   color: var(--text);
 }
 
-.np-lyrics-foot button:not(.icon-button):disabled {
+.np-lyrics-foot .np-lyrics-step:disabled {
   opacity: 0.45;
   cursor: default;
 }
 
+/* The readout is a button that wears two faces. At zero it is a plain number —
+   no border, nothing to press — and it is disabled, because there is no
+   correction to undo. Once the timing has been nudged it takes on the pill of
+   the steps around it, so it reads as the way back rather than as more
+   information. The figures are tabular, so the digits hold their places and only
+   the sign widens the box; the steps lost their own " s" to keep the whole row
+   on one line. */
 .np-lyrics-offset {
+  flex: none;
   min-width: 58px;
+  white-space: nowrap;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  font: inherit;
   font-size: calc(12px * var(--text-scale));
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
   text-align: center;
+  transition:
+    color 140ms ease,
+    border-color 140ms ease;
 }
 
-.np-lyrics-reset {
-  border-color: transparent;
-  color: var(--text-faint);
+.np-lyrics-offset:enabled {
+  border-color: var(--border);
+  cursor: pointer;
+}
+
+.np-lyrics-offset:enabled:hover {
+  border-color: rgb(var(--accent-rgb) / 60%);
+  color: var(--text);
+}
+
+/* Zero is this button's resting face, not a shortage of it. The global rule
+   dims every disabled button by more than half, which is right for the steps
+   and wrong for a number the user is meant to read: at 0.0 s the readout is
+   simply the truth about the timing, so it stays at full strength. */
+.np-lyrics-offset:disabled {
+  opacity: 1;
 }
 
 /* The finder fills the body, because the panel is already a sheet. It reuses

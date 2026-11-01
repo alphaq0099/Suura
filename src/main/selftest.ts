@@ -3772,6 +3772,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       fileActions: boolean
       forgetLabel: string
       forgotMeta: string
+      offsetPlainAtZero: boolean
+      offsetAdjusted: string
+      offsetResetByPress: boolean
+      offsetResetGone: boolean
+      offsetLive: boolean
       stageOpened: boolean
       stageLines: number
       stageCurrent: number
@@ -3781,7 +3786,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     }>(
       window,
       `(async () => {
-         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, volumeBeforeWheel: -1, volumeAfterWheel: -1, volumeWheelTop: -1, volumeWheelBottom: -1, wheelCancelled: false, barVolumeBefore: -1, barVolumeMuted: -1, barMutePressed: '', barVolumeRestored: -1, barPopHidden: false, barPopVertical: false, barPopWithin: false, barPopShownByFocus: false, barKeyBefore: -1, barKeyAfter: -1, barKeyProgress: '', barKeyRestored: -1, panelClosedByOutsidePress: false, panelStayedOpenOnInsidePress: false, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false, panelCloseState: '', lyricsOpened: false, queueClosedByLyrics: false, lyricRows: 0, lyricMeta: '', lyricCurrent: 0, lyricSeeked: false, lyricFill: false, lyricFillTransitionMs: -1, lyricFillFrames: 0, lyricPaused: false, lyricResumed: false, finderOpened: false, finderMatches: 0, finderMatchText: '', finderGeniusLabel: false, fetchedMeta: '', fetchedLines: 0, fetchedActions: false, fetchedActionText: '', fetchedFooterText: '', fetchedLink: false, fetchedLinkHref: '', fetchedUseFileLabel: '', fetchedUseFileEnabled: false, fileMeta: '', fileLines: 0, fileActions: false, forgetLabel: '', forgotMeta: '', stageOpened: false, stageLines: 0, stageCurrent: 0, stageClosed: false, escapeHidLyrics: false, escapeKeptWindowAfterLyrics: false }
+         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, volumeBeforeWheel: -1, volumeAfterWheel: -1, volumeWheelTop: -1, volumeWheelBottom: -1, wheelCancelled: false, barVolumeBefore: -1, barVolumeMuted: -1, barMutePressed: '', barVolumeRestored: -1, barPopHidden: false, barPopVertical: false, barPopWithin: false, barPopShownByFocus: false, barKeyBefore: -1, barKeyAfter: -1, barKeyProgress: '', barKeyRestored: -1, panelClosedByOutsidePress: false, panelStayedOpenOnInsidePress: false, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false, panelCloseState: '', lyricsOpened: false, queueClosedByLyrics: false, lyricRows: 0, lyricMeta: '', lyricCurrent: 0, lyricSeeked: false, lyricFill: false, lyricFillTransitionMs: -1, lyricFillFrames: 0, lyricPaused: false, lyricResumed: false, finderOpened: false, finderMatches: 0, finderMatchText: '', finderGeniusLabel: false, fetchedMeta: '', fetchedLines: 0, fetchedActions: false, fetchedActionText: '', fetchedFooterText: '', fetchedLink: false, fetchedLinkHref: '', fetchedUseFileLabel: '', fetchedUseFileEnabled: false, fileMeta: '', fileLines: 0, fileActions: false, forgetLabel: '', forgotMeta: '', offsetPlainAtZero: false, offsetAdjusted: '', offsetResetByPress: false, offsetResetGone: false, offsetLive: false, stageOpened: false, stageLines: 0, stageCurrent: 0, stageClosed: false, escapeHidLyrics: false, escapeKeptWindowAfterLyrics: false }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (selector) => document.querySelector(selector)
          const press = (element) => { if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
@@ -4224,6 +4229,49 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         out.fileLines = lyricLines().length
         out.fileActions = Boolean(pick('.np-lyrics-use-file'))
 
+        // The timing readout is the way back to zero, which is what retired the
+        // separate Reset button. At zero it is a plain number with nothing to
+        // press and no pill around it; nudging the timing turns it into a
+        // control, and pressing it puts the correction back to 0.0 s. The block
+        // ends where it started, at 0.0 s, because the seek checks further down
+        // count on the lines landing where the file put them.
+        const offsetReadout = () => pick('.np-lyrics-offset')
+        const offsetSteps = () => [...document.querySelectorAll('.np-lyrics-foot .np-lyrics-step')]
+        out.offsetResetGone = !pick('.np-lyrics-reset')
+        out.offsetPlainAtZero = Boolean(offsetReadout()) &&
+          offsetReadout().tagName === 'BUTTON' &&
+          offsetReadout().textContent.trim() === '0.0 s' &&
+          offsetReadout().disabled
+        const laterStep = offsetSteps()[1]
+        press(laterStep)
+        // The optimistic update shows the new number while the write is still
+        // in flight, and the button is disabled for as long as saving lasts —
+        // so settling means the number and a button you can press.
+        for (
+          let attempt = 0;
+          attempt < 40 &&
+          (!offsetReadout() ||
+            offsetReadout().textContent.trim() !== '+0.5 s' ||
+            offsetReadout().disabled);
+          attempt += 1
+        ) {
+          await sleep(100)
+        }
+        out.offsetAdjusted = offsetReadout() ? offsetReadout().textContent.trim() : ''
+        out.offsetLive = Boolean(offsetReadout()) && !offsetReadout().disabled
+        press(offsetReadout())
+        for (
+          let attempt = 0;
+          attempt < 40 &&
+          (!offsetReadout() || offsetReadout().textContent.trim() !== '0.0 s');
+          attempt += 1
+        ) {
+          await sleep(100)
+        }
+        out.offsetResetByPress = Boolean(offsetReadout()) &&
+          offsetReadout().disabled &&
+          offsetReadout().textContent.trim() === '0.0 s'
+
         // The stage is a portal out of the panel: expanding hands the same lines
         // to a full-window view, and Escape comes back to the panel rather than
         // closing the player behind it.
@@ -4503,6 +4551,15 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         visuals.forgotMeta === 'None found',
       'over a file with no lyrics the same icon is a discard and says so',
       `"${visuals.forgetLabel}", "${visuals.forgotMeta}"`
+    )
+    record(
+      visuals.offsetResetGone &&
+        visuals.offsetPlainAtZero &&
+        visuals.offsetAdjusted === '+0.5 s' &&
+        visuals.offsetLive &&
+        visuals.offsetResetByPress,
+      'the timing readout is its own reset: a plain number at zero, a button once nudged, back to 0.0 s when pressed',
+      `reset gone ${visuals.offsetResetGone}, nudged to "${visuals.offsetAdjusted}" (live ${visuals.offsetLive})`
     )
     record(
       visuals.stageOpened && visuals.stageLines === visuals.lyricRows && visuals.stageCurrent === 1,

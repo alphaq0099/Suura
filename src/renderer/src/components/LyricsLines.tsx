@@ -220,6 +220,12 @@ export interface LyricsOffsetControlsProps {
  * The timing correction, shared by the panel and the stage so the two cannot
  * drift apart. Only the user's own correction is written back, never the file's
  * `[offset:]`.
+ *
+ * The readout doubles as the way back to zero. At zero there is nothing to undo,
+ * so it stays a plain indicator and does not wear the pill the steps do; once
+ * the timing has been nudged it takes on the shape of a control, and pressing
+ * it puts the correction back to 0.0 s. That is what retires the separate Reset
+ * button, which spent most of its life doing nothing.
  */
 export function LyricsOffsetControls(props: LyricsOffsetControlsProps) {
   const { offsetMs, saving, onShift } = props
@@ -228,31 +234,34 @@ export function LyricsOffsetControls(props: LyricsOffsetControlsProps) {
     <>
       <button
         type="button"
+        className="np-lyrics-step"
         onClick={() => onShift(-LYRICS_OFFSET_STEP)}
         disabled={saving || offsetMs <= -LYRICS_OFFSET_MAX}
         title="Show the lyrics earlier by half a second"
       >
-        −0.5 s
+        −0.5
       </button>
-      <span className="np-lyrics-offset" title="Timing correction for this track">
-        {formatLyricsOffset(offsetMs)}
-      </span>
       <button
         type="button"
+        className="np-lyrics-offset"
+        onClick={() => onShift(-offsetMs)}
+        disabled={saving || offsetMs === 0}
+        title={
+          offsetMs === 0
+            ? 'Timing correction for this track'
+            : 'Remove the timing correction and go back to 0.0 s'
+        }
+      >
+        {formatLyricsOffset(offsetMs)}
+      </button>
+      <button
+        type="button"
+        className="np-lyrics-step"
         onClick={() => onShift(LYRICS_OFFSET_STEP)}
         disabled={saving || offsetMs >= LYRICS_OFFSET_MAX}
         title="Show the lyrics later by half a second"
       >
-        +0.5 s
-      </button>
-      <button
-        type="button"
-        className="np-lyrics-reset"
-        onClick={() => onShift(-offsetMs)}
-        disabled={saving || offsetMs === 0}
-        title="Remove the timing correction"
-      >
-        Reset
+        +0.5
       </button>
     </>
   )
