@@ -141,6 +141,7 @@ import { LocalFileResolver } from '@engine/local-file-resolver'
 import { parseEbur128Summary } from '@engine/replay-gain'
 import { EngineStatusCache, getEngineStatus } from '@engine/sidecar/engine-status'
 import { RequestScheduler } from '@engine/sidecar/request-scheduler'
+import { retryAfterMs, retryWaitMs } from '@core/scheduling/provider-retry'
 import {
   parseChannelInfo,
   parseChannelPage,
@@ -3627,6 +3628,37 @@ async function main(): Promise<void> {
         (schedulerStarts[2] ?? 0) - (schedulerStarts[1] ?? 0) >= 20
     )
 
+    // A service that answers 429 is correcting the pace the scheduler guessed.
+    // The pause must hold the next start, and must not leak past its own wait.
+    const cooled = new RequestScheduler({ maxConcurrent: 1, minGapMs: 0, jitterMs: 0 })
+    const cooledStarts: number[] = []
+    await cooled.schedule(async () => {
+      cooledStarts.push(Date.now())
+      cooled.pause(80)
+    })
+    await cooled.schedule(async () => {
+      cooledStarts.push(Date.now())
+    })
+    check(
+      'scheduler: a cooldown holds the next start',
+      cooledStarts.length === 2 && (cooledStarts[1] ?? 0) - (cooledStarts[0] ?? 0) >= 60,
+      JSON.stringify(cooledStarts.map((at) => at - (cooledStarts[0] ?? 0)))
+    )
+    checkEqual('scheduler: the cooldown ends with its wait', cooled.cooldownMs, 0)
+
+    // The policy behind that pause, before any request is made.
+    checkEqual('retry: delta-seconds are honoured', retryAfterMs('2', 1_000), 2_000)
+    checkEqual(
+      'retry: an HTTP date is honoured',
+      retryAfterMs(new Date(10_000).toUTCString(), 4_000),
+      6_000
+    )
+    checkEqual('retry: a garbage header is no header', retryAfterMs('soon'), null)
+    checkEqual('retry: a 429 without a header uses the backoff', retryWaitMs(429, new Headers(), 1), 400)
+    checkEqual('retry: the second attempt backs off twice as far', retryWaitMs(429, null, 2), 800)
+    checkEqual('retry: a huge header is capped', retryWaitMs(429, new Headers({ 'Retry-After': '600' }), 1), 5_000)
+    checkEqual('retry: a 404 is not a rate limit', retryWaitMs(404, null, 1), null)
+
     const nestedError = Object.assign(new TypeError('fetch failed'), {
       cause: Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' })
     })
@@ -5225,7 +5257,7 @@ async function main(): Promise<void> {
       const url = String(input)
       calls.push(url)
       if (url.startsWith('https://musicbrainz.org')) {
-        return new Response('busy', { status: 503 })
+        return new Response('busy', { status: 503, headers: { 'Retry-After': '0' } })
       }
       if (init?.headers?.['User-Agent']) userAgents.push(init.headers['User-Agent'])
       return new Response(JSON.stringify(itunesPayload), {
@@ -5249,6 +5281,70 @@ async function main(): Promise<void> {
       'auto-tag: the failure reads as a sentence',
       partial.providers.find((provider) => provider.provider === 'musicbrainz')?.message,
       'MusicBrainz could not be reached.'
+    )
+
+    // A 429 is "later", not "no": the batch has to wait the header's short wait
+    // and ask again, or a large selection develops holes wherever the service
+    // asked for a breather.
+    const rateCalls: string[] = []
+    const itunesRateLimitedOnce = (async (input: unknown) => {
+      const url = String(input)
+      rateCalls.push(url)
+      const itunesCalls = rateCalls.filter((call) => call.startsWith('https://itunes')).length
+      if (url.startsWith('https://musicbrainz.org')) {
+        return new Response(JSON.stringify({ recordings: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      }
+      if (itunesCalls === 1) {
+        return new Response(null, { status: 429, headers: { 'Retry-After': '0' } })
+      }
+      return new Response(JSON.stringify(itunesPayload), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    }) as unknown as typeof fetch
+    const recovered = await createTagLookup({
+      log: silentLogger,
+      fetch: itunesRateLimitedOnce,
+      schedule: (work) => work()
+    }).lookup(exactQuery)
+    checkEqual(
+      'auto-tag: a 429 is retried, and the match still arrives',
+      recovered.candidates.map((candidate) => candidate.provider).join(','),
+      'itunes'
+    )
+    checkEqual(
+      'auto-tag: the retry is one extra request',
+      rateCalls.filter((call) => call.startsWith('https://itunes')).length,
+      2
+    )
+    checkEqual(
+      'auto-tag: a recovered provider is reported as answering',
+      recovered.providers.find((provider) => provider.provider === 'itunes')?.ok,
+      true
+    )
+
+    const refusedCalls: string[] = []
+    const persistentRateLimit = (async (input: unknown) => {
+      refusedCalls.push(String(input))
+      return new Response(null, { status: 429, headers: { 'Retry-After': '0' } })
+    }) as unknown as typeof fetch
+    const refused = await createTagLookup({
+      log: silentLogger,
+      fetch: persistentRateLimit,
+      schedule: (work) => work()
+    }).lookup(exactQuery)
+    checkEqual(
+      'auto-tag: a second 429 ends the retries',
+      refusedCalls.filter((call) => call.startsWith('https://itunes')).length,
+      2
+    )
+    checkEqual(
+      'auto-tag: a persistent rate limit is its own sentence',
+      refused.providers.find((provider) => provider.provider === 'itunes')?.message,
+      'iTunes is rate-limiting requests. Try again in a moment.'
     )
 
     const bothFetch = (async (input: unknown, init?: { headers?: Record<string, string> }) => {
@@ -5604,6 +5700,39 @@ async function main(): Promise<void> {
       'LRCLIB could not be reached.'
     )
 
+    // LRCLIB answers 429 when a batch runs long. The retry keeps the track in
+    // the batch instead of turning one rate-limit answer into a missing lyric.
+    const rateLimitedRequests: string[] = []
+    const rateLimitedOnce = (async (input: string | URL | Request): Promise<Response> => {
+      const url = String(input)
+      rateLimitedRequests.push(url)
+      if (rateLimitedRequests.length === 1) {
+        return new Response(null, { status: 429, headers: { 'Retry-After': '0' } })
+      }
+      return new Response(
+        JSON.stringify({
+          id: 9,
+          trackName: 'Song',
+          artistName: 'Artist',
+          duration: 212,
+          syncedLyrics: '[00:01.00]after the wait'
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      )
+    }) as typeof fetch
+    const rateLimitedLookup = createLyricsLookup({
+      log: silentLogger,
+      fetch: rateLimitedOnce,
+      timeoutMs: 2_000
+    })
+    const recoveredLyrics = await rateLimitedLookup.lookup(query)
+    checkEqual(
+      'lyrics finder: a 429 is retried, and the lyric still arrives',
+      recoveredLyrics.candidates[0]?.providerId,
+      '9'
+    )
+    checkEqual('lyrics finder: the retry is one extra request', rateLimitedRequests.length, 2)
+
     // ---- Genius, the plain-text source ------------------------------------
     // Their pages are HTML, so the parser is pinned down against a trimmed copy
     // of a real one: several lyric containers, a contributor header that is
@@ -5763,7 +5892,7 @@ async function main(): Promise<void> {
 
     const geniusDown = createGeniusProvider({
       log: silentLogger,
-      fetch: (async () => new Response(null, { status: 503 })) as typeof fetch,
+      fetch: (async () => new Response(null, { status: 503, headers: { 'Retry-After': '0' } })) as typeof fetch,
       timeoutMs: 2_000
     })
     const geniusDownAnswer = await geniusDown.lookup(searchQuery)
@@ -5775,13 +5904,44 @@ async function main(): Promise<void> {
 
     const geniusRateLimited = createGeniusProvider({
       log: silentLogger,
-      fetch: (async () => new Response(null, { status: 429 })) as typeof fetch,
+      fetch: (async () => new Response(null, { status: 429, headers: { 'Retry-After': '0' } })) as typeof fetch,
       timeoutMs: 2_000
     })
     checkEqual(
       'genius: a 429 reads as rate limiting',
       (await geniusRateLimited.lookup(searchQuery)).message,
       'Genius is rate-limiting requests. Try again in a moment.'
+    )
+
+    // The search is retried once, so a brief rate limit does not empty the
+    // provider for that track. The pages it leads to are not retried: they run
+    // together, and asking three times in parallel is the burst being refused.
+    const geniusRateCalls: string[] = []
+    const geniusRecovers = createGeniusProvider({
+      log: silentLogger,
+      fetch: (async (input: string | URL | Request) => {
+        const url = String(input)
+        geniusRateCalls.push(url)
+        if (url.includes('/api/search/multi')) {
+          if (geniusRateCalls.filter((call) => call.includes('/api/search/multi')).length === 1) {
+            return new Response(null, { status: 429, headers: { 'Retry-After': '0' } })
+          }
+          return new Response(JSON.stringify(geniusSearchPayload), { status: 200 })
+        }
+        return new Response('<div data-lyrics-container="true">line one</div>', { status: 200 })
+      }) as typeof fetch,
+      timeoutMs: 2_000
+    })
+    const geniusRecovered = await geniusRecovers.lookup(searchQuery)
+    check(
+      'genius: a 429 is retried, and the search still answers',
+      geniusRecovered.ok && geniusRecovered.candidates.length > 0,
+      JSON.stringify(geniusRecovered)
+    )
+    checkEqual(
+      'genius: the retry costs one extra search',
+      geniusRateCalls.filter((call) => call.includes('/api/search/multi')).length,
+      2
     )
 
     // ---- the merge over both services --------------------------------------

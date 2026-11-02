@@ -16,6 +16,7 @@ import {
   type LyricsSchedule
 } from './lyrics-lookup'
 import { RequestScheduler } from '@core/scheduling/request-scheduler'
+import { retryWaitMs, withProviderRetry } from '@core/scheduling/provider-retry'
 
 /**
  * Genius: the plain-text source.
@@ -71,10 +72,16 @@ export function createGeniusProvider(options: GeniusProviderOptions): LyricsProv
       try {
         return await schedule(async (): Promise<LyricsProviderAnswer> => {
           const signal = AbortSignal.timeout(timeoutMs)
-          const search = await request(geniusSearchUrl(query), {
-            signal,
-            headers: { Accept: 'application/json', 'User-Agent': GENIUS_USER_AGENT }
-          })
+          // The search is the one request worth one more try: it is what makes
+          // the lookup possible, and a 429 there is the whole provider's answer.
+          const search = await withProviderRetry(
+            () =>
+              request(geniusSearchUrl(query), {
+                signal,
+                headers: { Accept: 'application/json', 'User-Agent': GENIUS_USER_AGENT }
+              }),
+            { onCooldown: (ms) => scheduler.pause(ms) }
+          )
           if (!search.ok) throw new LyricsHttpError(search.status)
 
           const hits = geniusHits(await search.json())
@@ -104,6 +111,11 @@ export function createGeniusProvider(options: GeniusProviderOptions): LyricsProv
                   headers: { Accept: 'text/html', 'User-Agent': GENIUS_USER_AGENT }
                 })
                 if (!page.ok) {
+                  // No retry for a page: three pages run at once, and asking
+                  // again in parallel is what a rate limiter is objecting to.
+                  // The cooldown still reaches every later lookup.
+                  const cooldown = retryWaitMs(page.status, page.headers, 1)
+                  if (cooldown !== null) scheduler.pause(cooldown)
                   options.log.debug('genius page failed', { url, status: page.status })
                   return null
                 }

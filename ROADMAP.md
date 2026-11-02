@@ -614,7 +614,7 @@ and its tabs.
 
 ---
 
-### M13 — Library Metadata & Lyrics  *(~6 weeks; scheduled after M8, before M9)*
+### M13 — Library Metadata & Lyrics  *(~6 weeks; Phases 1–5 complete, Phase 6 after M8's sidecar work)*
 **Goal:** fix the tags YouTube got wrong, and show the lyrics a file already has, without leaving the player.
 
 The number is next because the milestone was added last; the **schedule** is after M8 and before M9, so the Android
@@ -626,7 +626,8 @@ port inherits the metadata core instead of reimplementing it. M12 set the same p
 - [x] Atomic write: temp file in the same folder → verify by parsing → replace; the original survives any failure
 - [x] Refuse while the track is playing, handle read-only and locked files, update the row afterwards
 - [x] Manual tag editor: title, artist, album artist, album, year, genre, track/disc, lyrics
-- [ ] Cover in the manual editor (moved to Phase 3 with the rest of the artwork work)
+- [x] Cover in the manual editor: the picker and its preview live inside the editor (the artwork work landed in
+      Phase 3, not as a separate pass)
 
 **Phase 2 — lyrics, read-only**
 - [x] `track_lyrics` table (track, source, language, synced, LRC, offset, fetched at)
@@ -643,13 +644,21 @@ port inherits the metadata core instead of reimplementing it. M12 set the same p
 - [x] LRCLIB fetch, match, cache, source label, offset; optional "write into the file"
 
 **Phase 5 — batch**
-- [ ] Selection queue, review, undo, per-provider rate limits, "fetch missing lyrics"
+- [x] Selection queue, review, undo and "fetch missing lyrics": the scan keeps the candidates in the main process, the
+      dialog returns the accepted items, and undo is one-shot (a file edited since is left alone)
+- [x] Per-provider rate limits: each service gets its own scheduler (iTunes and LRCLIB two at a time, Genius one lookup
+      a second, MusicBrainz 1.1 s apart), and a 429/502/503 is obeyed once — `Retry-After` when sent, a doubling
+      backoff otherwise, capped so the batch stays cancellable — before the answer becomes the dialog's sentence
 
 **Phase 6 — fingerprint fallback**
 - [ ] `fpcalc` sidecar, AcoustID key, MusicBrainz lookup, Cover Art Archive
 
 **Phase 7 — deferred**
 - [ ] AI transcription: local, opt-in, labelled "generated"; only if the rest is done and asked for
+
+**Status:** Phases 1–5 are complete as written: a wrong tag can be fixed by hand or in a batch, a cover can be replaced,
+and lyrics can be read, found and written — each write reversible. Phase 6 is the open item, and it needs `fpcalc`
+bundled, which is the sidecar work still open in M8. Phase 7 stays deferred.
 
 **Exit:** a wrong tag can be fixed and a lyric found from inside the app on MP3/FLAC/M4A/Ogg; every write is reversible
 and survives a kill between the temp write and the replace.
@@ -673,7 +682,7 @@ and survives a kill between the temp write and the replace.
 | M10 | Two-Device Continuity *(optional)* | LAN companion server | 2–4 w | M9 |
 | M11 | Long-term extras | Scrobbling, hi-res, plugins, visualiser | continuous | — |
 | M12 | Offline Cache & Downloads *(complete)* | Cache engine, offline replay, history; manager and Downloads screens | 2–3 w | M4, M6 |
-| M13 | Library Metadata & Lyrics *(next, after M8)* | Tag writing, auto-tag, artwork, lyrics | 6 w | M1, M7 |
+| M13 | Library Metadata & Lyrics *(Phases 1–5 done; Phase 6 open)* | Tag writing, auto-tag, artwork, lyrics | 6 w | M1, M7 |
 
 **Critical path:** M0 → M1 → M3 → M4 → M5 → M6 → M8 → M13 → M9. M2 can be interleaved, M7 is data-care hygiene, and M12 is
 complete (data layer plus manager and Downloads screens). M13 is numbered next because it was added last; it is scheduled
@@ -785,4 +794,5 @@ slider (3–60 s) instead of a constant.
 renderer sandbox are in place and the packaged app passes its self-test; signing is documented but not configured, and
 update, crash reporting and sidecar packaging remain.
 
-**Next:** finish M8 (signing, update channel, sidecar bundling, CI), then **M13 (tags & lyrics)** before M9.
+**Next:** finish M8 (signing, update channel, sidecar bundling, CI), which also unblocks M13's Phase 6 (AcoustID needs
+the `fpcalc` sidecar); Phases 1–5 of M13 are complete. Then M9.

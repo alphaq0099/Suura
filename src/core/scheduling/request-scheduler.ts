@@ -11,6 +11,11 @@
  * schedulers, because a download can hold its slot for minutes and must never
  * sit in front of a play request, and the lyrics providers each get their own so
  * one slow service cannot spend another's budget.
+ *
+ * A schedule is a guess at the pace; `pause` is the service correcting it. When
+ * a provider answers 429 with a `Retry-After`, every start for that provider
+ * waits out the cooldown, so one rate-limited lookup slows the rest of the batch
+ * instead of the batch hammering on (see `provider-retry.ts`).
  */
 
 export interface RequestSchedulerOptions {
@@ -56,6 +61,8 @@ export class RequestScheduler {
   private active = 0
   private lastStartAt: number | null = null
   private timer: ReturnType<typeof setTimeout> | null = null
+  /** No job starts before this; set by `pause` when a provider asks to slow down. */
+  private resumeAt = 0
 
   constructor(options: RequestSchedulerOptions) {
     this.maxConcurrent = Math.max(1, Math.floor(options.maxConcurrent))
@@ -71,6 +78,27 @@ export class RequestScheduler {
 
   get running(): number {
     return this.active
+  }
+
+  /** How long every start is still held for, in milliseconds; 0 when free. */
+  get cooldownMs(): number {
+    return Math.max(0, this.resumeAt - this.now())
+  }
+
+  /**
+   * Holds every start for at least `ms`, keeping the longest request.
+   *
+   * An already-running job is not interrupted: the cooldown is about the calls
+   * not yet made. The running job that received the 429 is the one that calls
+   * this, and it waits out the same delay itself.
+   */
+  pause(ms: number): void {
+    const wait = Math.max(0, Math.floor(ms))
+    if (wait === 0) return
+    this.resumeAt = Math.max(this.resumeAt, this.now() + wait)
+    // A timer may already be armed for the old gap; the pump re-reads the
+    // cooldown when it fires, so it can reschedule itself without help here.
+    this.pump()
   }
 
   schedule<T>(work: () => Promise<T>, options: ScheduleOptions = {}): Promise<T> {
@@ -113,8 +141,12 @@ export class RequestScheduler {
       const now = this.now()
       const job = this.queue[0]
       if (!job) return
-      // The first job starts at once; gap and jitter only separate starts.
-      const dueAt = this.lastStartAt === null ? now : this.lastStartAt + this.minGapMs + job.jitterMs
+      // The first job starts at once; gap and jitter only separate starts. A
+      // cooldown holds every start, whatever the gap would have allowed.
+      const dueAt =
+        this.lastStartAt === null
+          ? Math.max(now, this.resumeAt)
+          : Math.max(this.lastStartAt + this.minGapMs + job.jitterMs, this.resumeAt)
       const wait = dueAt - now
       if (wait > 0) {
         this.timer = setTimeout(() => {

@@ -7,6 +7,7 @@ import type {
 } from '@shared/types'
 import type { Logger } from '@core/logging/logger'
 import { RequestScheduler } from '@core/scheduling/request-scheduler'
+import { withProviderRetry } from '@core/scheduling/provider-retry'
 
 /**
  * The services the finder asks, and the merge in front of them.
@@ -157,13 +158,19 @@ export function createLyricsLookup(options: LyricsLookupOptions): LyricsProvider
     options.schedule ?? (<T>(work: () => Promise<T>) => scheduler.schedule(work))
 
   const getJson = async (url: string): Promise<Answer> => {
-    const response = await request(url, {
-      signal: AbortSignal.timeout(timeoutMs),
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': LRCLIB_USER_AGENT
-      }
-    })
+    // A 429 here is the service's own pace, and it governs the rest of the
+    // batch too: the scheduler holds every later LRCLIB lookup for the wait.
+    const response = await withProviderRetry(
+      () =>
+        request(url, {
+          signal: AbortSignal.timeout(timeoutMs),
+          headers: {
+            Accept: 'application/json',
+            'User-Agent': LRCLIB_USER_AGENT
+          }
+        }),
+      { onCooldown: (ms) => scheduler.pause(ms) }
+    )
     if (!response.ok) return { ok: false, status: response.status, body: null }
     return { ok: true, status: response.status, body: (await response.json()) as unknown }
   }

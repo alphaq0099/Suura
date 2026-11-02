@@ -2,6 +2,7 @@ import { candidatesFromItunes, candidatesFromMusicBrainz, rankCandidates } from 
 import type { TagCandidate, TagLookupQuery, TagLookupResult, TagProviderReport } from '@shared/types'
 import type { Logger } from '@core/logging/logger'
 import { RequestScheduler } from '@core/scheduling/request-scheduler'
+import { withProviderRetry } from '@core/scheduling/provider-retry'
 
 /**
  * The two public metadata services the tag finder asks.
@@ -10,6 +11,11 @@ import { RequestScheduler } from '@core/scheduling/request-scheduler'
  * install with nothing to configure, and a failed lookup has to be a sentence
  * rather than a settings page. Each provider is asked independently, so one
  * being down still leaves the other's matches in the review dialog.
+ *
+ * A batch asks these services hundreds of times, so each provider is paced, and
+ * a "slow down" answer is obeyed once (`provider-retry.ts`): the request waits
+ * out `Retry-After`, the provider's whole queue waits with it, and a second
+ * refusal becomes the sentence the review dialog shows.
  */
 
 export const ITUNES_SEARCH_URL = 'https://itunes.apple.com/search'
@@ -103,10 +109,21 @@ function report(
   return { provider, ok: message === null, message, count }
 }
 
+/** A status a provider answered with, so the sentence can name the reason. */
+export class TagHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`tag provider answered ${status}`)
+    this.name = 'TagHttpError'
+  }
+}
+
 /** A user-facing sentence: the URL and the status live in the log. */
 function describeFailure(error: unknown, name: string): string {
   if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
     return `${name} took too long to answer.`
+  }
+  if (error instanceof TagHttpError && error.status === 429) {
+    return `${name} is rate-limiting requests. Try again in a moment.`
   }
   return `${name} could not be reached.`
 }
@@ -123,27 +140,43 @@ export function createTagLookup(options: TagLookupOptions): TagLookup {
   const itunesSchedule: TagSchedule =
     options.schedule ?? (<T>(work: () => Promise<T>) => scheduler.schedule(work))
 
-  const getJson = async (url: string, headers: Record<string, string> = {}): Promise<unknown> => {
-    const response = await request(url, {
-      signal: AbortSignal.timeout(timeoutMs),
-      headers: { Accept: 'application/json', ...headers }
-    })
-    if (!response.ok) throw new Error(`the service answered ${response.status}`)
+  const getJson = async (
+    url: string,
+    headers: Record<string, string> = {},
+    cooldown?: (ms: number) => void
+  ): Promise<unknown> => {
+    const response = await withProviderRetry(
+      () =>
+        request(url, {
+          signal: AbortSignal.timeout(timeoutMs),
+          headers: { Accept: 'application/json', ...headers }
+        }),
+      { onCooldown: cooldown }
+    )
+    if (!response.ok) throw new TagHttpError(response.status)
     return (await response.json()) as unknown
   }
 
   // MusicBrainz is serialised across lookups, not just within one: two quick
   // edits would otherwise break the one-request-a-second rule and get the app
   // blocked. The chain never rejects, so one failure does not stall the next.
+  // A 429 pushes the whole queue back as well as the request that saw it.
   let musicBrainzChain: Promise<unknown> = Promise.resolve()
   let musicBrainzLastAt = 0
+  let musicBrainzResumeAt = 0
 
   const musicBrainzJson = (url: string): Promise<unknown> => {
     const run = musicBrainzChain.then(async () => {
-      const wait = Math.max(0, musicBrainzLastAt + MUSICBRAINZ_GAP_MS - Date.now())
+      const wait = Math.max(
+        0,
+        musicBrainzLastAt + MUSICBRAINZ_GAP_MS - Date.now(),
+        musicBrainzResumeAt - Date.now()
+      )
       if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait))
       musicBrainzLastAt = Date.now()
-      return getJson(url, { 'User-Agent': MUSICBRAINZ_USER_AGENT })
+      return getJson(url, { 'User-Agent': MUSICBRAINZ_USER_AGENT }, (ms) => {
+        musicBrainzResumeAt = Math.max(musicBrainzResumeAt, Date.now() + ms)
+      })
     })
     musicBrainzChain = run.then(
       () => undefined,
@@ -154,7 +187,11 @@ export function createTagLookup(options: TagLookupOptions): TagLookup {
 
   const lookupItunes = async (query: TagLookupQuery): Promise<ProviderAnswer> => {
     try {
-      const candidates = candidatesFromItunes(await itunesSchedule(() => getJson(itunesUrl(query))))
+      const candidates = candidatesFromItunes(
+        await itunesSchedule(() =>
+          getJson(itunesUrl(query), {}, (ms) => scheduler.pause(ms))
+        )
+      )
       options.log.debug('itunes lookup answered', { count: candidates.length })
       return { candidates, report: report('itunes', candidates.length) }
     } catch (error) {
