@@ -50,6 +50,11 @@ import type {
   SaveToLibraryRequest,
   ScanProgress,
   StreamPlay,
+  TagBatchApplyResult,
+  TagBatchMode,
+  TagBatchProgress,
+  TagBatchSnapshot,
+  TagBatchUndoResult,
   TagLookupResult,
   Track,
   TrackLyrics,
@@ -103,6 +108,11 @@ export const IPC = {
   libraryLyricsBatchCancel: 'library:lyrics-batch-cancel',
   libraryLyricsBatchApply: 'library:lyrics-batch-apply',
   libraryLyricsBatchUndo: 'library:lyrics-batch-undo',
+  libraryTagBatchStart: 'library:tag-batch-start',
+  libraryTagBatchGet: 'library:tag-batch-get',
+  libraryTagBatchCancel: 'library:tag-batch-cancel',
+  libraryTagBatchApply: 'library:tag-batch-apply',
+  libraryTagBatchUndo: 'library:tag-batch-undo',
   libraryRemoveFolder: 'library:remove-folder',
   libraryRevealTrack: 'library:reveal-track',
   libraryArtwork: 'library:artwork',
@@ -182,7 +192,8 @@ export const IPC_EVENTS = {
   playHistoryChanged: 'event:play-history-changed',
   playerCommand: 'event:player-command',
   replayGainProgress: 'event:replay-gain-progress',
-  lyricsBatchProgress: 'event:lyrics-batch-progress'
+  lyricsBatchProgress: 'event:lyrics-batch-progress',
+  tagBatchProgress: 'event:tag-batch-progress'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -227,6 +238,8 @@ export interface PlayerEvents {
   replayGainProgress: ReplayGainStatus
   /** A batch lyrics scan advanced, or finished and is ready to review. */
   lyricsBatchProgress: LyricsBatchProgress
+  /** A batch tag scan advanced, or finished and is ready to review. */
+  tagBatchProgress: TagBatchProgress
 }
 
 export type PlayerEventName = keyof PlayerEvents
@@ -240,7 +253,8 @@ export const EVENT_CHANNELS: Record<PlayerEventName, IpcEventChannel> = {
   playHistoryChanged: IPC_EVENTS.playHistoryChanged,
   playerCommand: IPC_EVENTS.playerCommand,
   replayGainProgress: IPC_EVENTS.replayGainProgress,
-  lyricsBatchProgress: IPC_EVENTS.lyricsBatchProgress
+  lyricsBatchProgress: IPC_EVENTS.lyricsBatchProgress,
+  tagBatchProgress: IPC_EVENTS.tagBatchProgress
 }
 
 /**
@@ -430,6 +444,32 @@ export interface PlayerApi {
   ): Promise<LyricsBatchApplyResult>
   /** Reverses everything this job applied, as far as it is still unchanged. */
   undoLyricsBatch(jobId: string): Promise<LyricsBatchUndoResult>
+  /**
+   * Starts a batch tag scan over local tracks.
+   *
+   * Returns at once with a job id; progress arrives on `tagBatchProgress`, and
+   * `getTagBatch` returns the finished snapshot. Nothing is written until
+   * `applyTagBatch` names the items to keep.
+   */
+  startTagBatch(trackIds: number[]): Promise<{ jobId: string }>
+  /** The finished scan, or null while it is still running. */
+  getTagBatch(jobId: string): Promise<TagBatchSnapshot | null>
+  /** Stops a scan before it reaches the next track. */
+  cancelTagBatch(jobId: string): Promise<void>
+  /**
+   * Writes the accepted matches into their files.
+   *
+   * `fill` touches only empty fields; `replace` also overwrites a value the
+   * match disagrees with. Every write keeps its backup, so `undoTagBatch` can
+   * put each file back while it is still the one the batch wrote.
+   */
+  applyTagBatch(
+    jobId: string,
+    itemIds: string[],
+    mode: TagBatchMode
+  ): Promise<TagBatchApplyResult>
+  /** Reverses everything this job wrote, as far as it is still unchanged. */
+  undoTagBatch(jobId: string): Promise<TagBatchUndoResult>
   removeLibraryFolder(folder: string): Promise<AppSettings>
   revealTrack(trackId: number): Promise<void>
   /**

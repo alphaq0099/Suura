@@ -126,9 +126,9 @@ export function LyricsBatchDialog(props: LyricsBatchDialogProps) {
         </header>
 
         {phase === 'scanning' ? (
-          <div className="lyrics-batch-progress" role="status">
+          <div className="batch-progress" role="status">
             <SpinnerIcon size={16} />
-            <div className="lyrics-batch-progress-text">
+            <div className="batch-progress-text">
               <p>
                 {progress
                   ? `${progress.scanned} of ${progress.total} checked`
@@ -152,7 +152,7 @@ export function LyricsBatchDialog(props: LyricsBatchDialogProps) {
               </p>
             ) : null}
             {providerWarnings.length > 0 ? (
-              <p className="lyrics-batch-warning" role="status">
+              <p className="batch-warning" role="status">
                 {providerWarnings.join(' ')}
               </p>
             ) : null}
@@ -164,7 +164,7 @@ export function LyricsBatchDialog(props: LyricsBatchDialogProps) {
 
             {matches.length > 0 ? (
               <>
-                <div className="lyrics-batch-tools">
+                <div className="batch-tools">
                   <button type="button" onClick={() => batch.selectAll(true)}>
                     Select all
                   </button>
@@ -176,10 +176,10 @@ export function LyricsBatchDialog(props: LyricsBatchDialogProps) {
                   </span>
                 </div>
 
-                <ul className="auto-tag-list lyrics-batch-list" aria-label="Lyrics matches">
+                <ul className="auto-tag-list batch-list" aria-label="Lyrics matches">
                   {matches.map((item) => (
                     <li key={item.id}>
-                      <label className="auto-tag-match lyrics-batch-match">
+                      <label className="auto-tag-match batch-match">
                         <input
                           type="checkbox"
                           checked={selected.has(item.id)}
@@ -218,7 +218,7 @@ export function LyricsBatchDialog(props: LyricsBatchDialogProps) {
             )}
 
             {others.length > 0 ? (
-              <details className="lyrics-batch-skipped">
+              <details className="batch-skipped">
                 <summary>
                   Not fetching {others.length} {others.length === 1 ? 'track' : 'tracks'}
                 </summary>
@@ -277,7 +277,7 @@ export function LyricsBatchDialog(props: LyricsBatchDialogProps) {
 
         {phase === 'result' && result ? (
           <>
-            <div className="lyrics-batch-result" role="status">
+            <div className="batch-result" role="status">
               <p>
                 <strong>{result.stored}</strong> stored in the library
                 {result.written > 0 ? (
@@ -297,7 +297,7 @@ export function LyricsBatchDialog(props: LyricsBatchDialogProps) {
             </div>
 
             {undoResult ? (
-              <div className="lyrics-batch-result" role="status">
+              <div className="batch-result" role="status">
                 <p>
                   Undone: <strong>{undoResult.removed}</strong> removed ·{' '}
                   <strong>{undoResult.restored}</strong> files restored

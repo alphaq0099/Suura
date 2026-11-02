@@ -8531,13 +8531,17 @@ button.danger-quiet:disabled {
   }
 }
 
-/* ---------- batch lyrics ---------- */
+/* ---------- batch dialogs (lyrics and tags) ---------- */
 
-.lyrics-batch-dialog {
+/* The two batches share one shape: a scan with a progress bar, a list of
+   matches with a checkbox each, a disclosure for what was left out, and a
+   result panel. Only the write option and the field summary differ. */
+.lyrics-batch-dialog,
+.tag-batch-dialog {
   width: min(680px, 100%);
 }
 
-.lyrics-batch-progress {
+.batch-progress {
   display: flex;
   align-items: flex-start;
   gap: 10px;
@@ -8546,55 +8550,55 @@ button.danger-quiet:disabled {
   background: var(--bg-input);
 }
 
-.lyrics-batch-progress-text {
+.batch-progress-text {
   display: grid;
   flex: 1;
   gap: 6px;
   min-width: 0;
 }
 
-.lyrics-batch-progress-text p {
+.batch-progress-text p {
   margin: 0;
   font-size: calc(12.5px * var(--text-scale));
 }
 
-.lyrics-batch-progress progress {
+.batch-progress progress {
   width: 100%;
   height: 6px;
   accent-color: var(--accent);
 }
 
-.lyrics-batch-tools {
+.batch-tools {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.lyrics-batch-tools .field-note {
+.batch-tools .field-note {
   margin: 0 0 0 auto;
 }
 
-.lyrics-batch-tools button {
+.batch-tools button {
   padding: 4px 8px;
   font-size: calc(11px * var(--text-scale));
 }
 
-.lyrics-batch-list {
+.batch-list {
   max-height: 320px;
 }
 
-.lyrics-batch-match {
+.batch-match {
   grid-template-columns: auto minmax(0, 1fr) auto;
   cursor: pointer;
 }
 
-.lyrics-batch-match input {
+.batch-match input {
   width: 14px;
   height: 14px;
   margin: 0;
 }
 
-.lyrics-batch-warning {
+.batch-warning {
   margin: 0;
   padding: 7px 9px;
   border-radius: var(--radius-sm);
@@ -8604,7 +8608,7 @@ button.danger-quiet:disabled {
   line-height: 1.45;
 }
 
-.lyrics-batch-skipped {
+.batch-skipped {
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -8612,12 +8616,12 @@ button.danger-quiet:disabled {
   font-size: calc(11.5px * var(--text-scale));
 }
 
-.lyrics-batch-skipped summary {
+.batch-skipped summary {
   cursor: pointer;
   font-weight: 600;
 }
 
-.lyrics-batch-skipped ul {
+.batch-skipped ul {
   display: grid;
   gap: 5px;
   max-height: 180px;
@@ -8627,12 +8631,12 @@ button.danger-quiet:disabled {
   list-style: none;
 }
 
-.lyrics-batch-skipped li {
+.batch-skipped li {
   display: grid;
   gap: 1px;
 }
 
-.lyrics-batch-skipped li strong {
+.batch-skipped li strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -8640,9 +8644,29 @@ button.danger-quiet:disabled {
   font-weight: 600;
 }
 
-.lyrics-batch-skipped li span {
+.batch-skipped li span {
   color: var(--text-faint);
 }
+
+.batch-result {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+}
+
+.batch-result p {
+  margin: 0;
+  font-size: calc(12.5px * var(--text-scale));
+  line-height: 1.5;
+}
+
+.batch-result .banner {
+  margin: 0;
+}
+
+/* ---------- batch lyrics ---------- */
 
 .lyrics-batch-write {
   display: flex;
@@ -8676,20 +8700,52 @@ button.danger-quiet:disabled {
   margin: 0;
 }
 
-.lyrics-batch-result {
-  display: grid;
-  gap: 8px;
-  padding: 10px;
+/* ---------- batch tags ---------- */
+
+/* The one destructive choice in the dialog: replacing values the file already
+   has. It is a checkbox rather than a mode switch so the safe default is the
+   thing that is already true when the dialog opens. */
+.tag-batch-mode {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-input);
+  cursor: pointer;
 }
 
-.lyrics-batch-result p {
-  margin: 0;
+.tag-batch-mode input {
+  width: 14px;
+  height: 14px;
+  margin: 2px 0 0;
+}
+
+.tag-batch-mode > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.tag-batch-mode strong {
   font-size: calc(12.5px * var(--text-scale));
-  line-height: 1.5;
+  font-weight: 600;
 }
 
-.lyrics-batch-result .banner {
+.tag-batch-mode .field-note {
   margin: 0;
+}
+
+/* One line per field the match would write; a row with nothing to write in the
+   current mode says so quietly rather than disappearing. */
+.tag-batch-changes {
+  color: var(--text-dim);
+  font-size: calc(11.5px * var(--text-scale));
+  line-height: 1.45;
+}
+
+.tag-batch-changes.quiet {
+  color: var(--text-faint);
+  font-style: italic;
 }

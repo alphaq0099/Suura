@@ -45,6 +45,15 @@ export interface TagArtworkWrite {
   key: string
 }
 
+/** How a tag write should tell the rest of the app that it happened. */
+export interface TagWriteOptions {
+  /**
+   * False for a batch: it writes many rows and refreshes the library once at
+   * the end, instead of making every row reload the whole table.
+   */
+  notify?: boolean
+}
+
 /**
  * Owns everything about the local library: folders, scanning, querying.
  *
@@ -307,6 +316,21 @@ export class LibraryService {
     input: TrackTagFields,
     artwork?: TagArtworkWrite
   ): Promise<Track> {
+    return (await this.writeTags(id, input, artwork)).track
+  }
+
+  /**
+   * The same write, plus the backup it took.
+   *
+   * A single edit discards the path: the user can undo by editing again. A
+   * batch keeps it, because undoing forty files by hand is not an undo.
+   */
+  async writeTags(
+    id: number,
+    input: TrackTagFields,
+    artwork?: TagArtworkWrite,
+    options: TagWriteOptions = {}
+  ): Promise<{ track: Track; backupPath: string | null; fileMtimeMs: number }> {
     const track = this.repo.getById(id)
     if (!track) throw new Error('That track is no longer in the library.')
     if (track.sourceKind !== 'local' || !track.filePath) {
@@ -329,34 +353,79 @@ export class LibraryService {
       if (!('discTotal' in fields)) fields.discTotal = track.discTotal
     }
 
-    await this.tagWriter.write(track.filePath, fields)
+    const result = await this.tagWriter.write(track.filePath, fields)
+    const rebuilt = await this.rebuildRow(track, track.filePath, artwork)
+    this.log.info('tags written', { trackId: id, filePath: track.filePath, fields: Object.keys(fields) })
+    if (options.notify !== false) this.emitChanged()
+    return { track: rebuilt.track, backupPath: result.backupPath, fileMtimeMs: rebuilt.fileMtimeMs }
+  }
 
-    const metadata = await extractMetadata(track.filePath)
-    const info = await stat(track.filePath)
+  /**
+   * Puts a file back from a backup a tag write took, and refreshes its row.
+   *
+   * Only a batch uses this: the writer's backup is the only record of what the
+   * file said before the batch touched it.
+   */
+  async restoreTags(
+    id: number,
+    backupPath: string,
+    options: TagWriteOptions = {}
+  ): Promise<Track> {
+    const track = this.repo.getById(id)
+    if (!track) throw new Error('That track is no longer in the library.')
+    if (track.sourceKind !== 'local' || !track.filePath) {
+      throw new Error('Only files in your library can have their tags restored.')
+    }
+    if (!this.tagWriter) throw new Error('Tag editing is not available in this build.')
+    if (this.activeScan) throw new Error('Wait for the library scan to finish, then try again.')
+
+    await this.tagWriter.restore(track.filePath, backupPath)
+    const rebuilt = await this.rebuildRow(track, track.filePath)
+    this.log.info('tags restored', { trackId: id, backupPath })
+    if (options.notify !== false) this.emitChanged()
+    return rebuilt.track
+  }
+
+  /** Tells the renderer the library changed; a batch calls this once at the end. */
+  notifyChanged(): void {
+    this.emitChanged()
+  }
+
+  /**
+   * Rebuilds a row from the file that was just written or restored.
+   *
+   * `content_key` is the path, so the row keeps its identity (and its
+   * playlists) across a rewrite. A tag edit must never cost a track its video:
+   * if the file's comment was the only record of it and the writer could not
+   * keep it, the row's own answer is still the right one.
+   */
+  private async rebuildRow(
+    track: Track,
+    filePath: string,
+    artwork?: TagArtworkWrite
+  ): Promise<{ track: Track; fileMtimeMs: number }> {
+    const metadata = await extractMetadata(filePath)
+    const info = await stat(filePath)
+    const fileMtimeMs = Math.trunc(info.mtimeMs)
     const next: TrackWriteInput = {
-      contentKey: localContentKey(track.filePath),
+      contentKey: localContentKey(filePath),
       sourceKind: track.sourceKind,
       sourceId: track.sourceId,
       ...metadata,
-      // A tag edit must never cost a track its video: if the file's comment was
-      // the only record of it and the writer could not keep it, the row's own
-      // answer is still the right one.
       originKind: metadata.originKind ?? track.originKind,
       originId: metadata.originId ?? track.originId,
       fileSize: info.size,
-      fileMtimeMs: Math.trunc(info.mtimeMs),
-      filePath: track.filePath
+      fileMtimeMs,
+      filePath
     }
-    this.repo.update(id, next, Date.now())
+    this.repo.update(track.id, next, Date.now())
     // Record the cover that was just written (or its removal) so the artwork
     // service serves the chosen picture instead of re-extracting the file.
-    if (artwork) this.repo.setArtworkKey(id, artwork.key)
-    this.log.info('tags written', { trackId: id, filePath: track.filePath, fields: Object.keys(fields) })
-    this.emitChanged()
+    if (artwork) this.repo.setArtworkKey(track.id, artwork.key)
 
-    const updated = this.repo.getById(id)
+    const updated = this.repo.getById(track.id)
     if (!updated) throw new Error('The track disappeared while its tags were being written.')
-    return updated
+    return { track: updated, fileMtimeMs }
   }
 
   /** Called by the player when a track has been played enough to count. */

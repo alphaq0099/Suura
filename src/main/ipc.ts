@@ -1105,6 +1105,38 @@ export function registerIpcHandlers(container: AppContainer): void {
     container.lyricsBatch.undo(toBatchJobId(jobId))
   )
 
+  // Batch tags write real files, so the same playback guard the single editor
+  // uses is passed per call: Windows will not replace a file that is open for
+  // playback, and the row is reported instead of failing the whole batch.
+  ipcMain.handle(IPC.libraryTagBatchStart, (_event, trackIds: unknown) =>
+    container.tagBatch.start(toBatchTrackIds(trackIds))
+  )
+
+  ipcMain.handle(IPC.libraryTagBatchGet, (_event, jobId: unknown) =>
+    container.tagBatch.get(toBatchJobId(jobId))
+  )
+
+  ipcMain.handle(IPC.libraryTagBatchCancel, (_event, jobId: unknown) => {
+    container.tagBatch.cancel(toBatchJobId(jobId))
+  })
+
+  ipcMain.handle(
+    IPC.libraryTagBatchApply,
+    (_event, jobId: unknown, itemIds: unknown, mode: unknown) =>
+      container.tagBatch.apply(
+        toBatchJobId(jobId),
+        toBatchItemIds(itemIds),
+        // Only the one word that means "overwrite" gets it; anything else is the
+        // safe default, because a malformed request must never replace tags.
+        mode === 'replace' ? 'replace' : 'fill',
+        (trackId) => playingTrackId !== trackId
+      )
+  )
+
+  ipcMain.handle(IPC.libraryTagBatchUndo, (_event, jobId: unknown) =>
+    container.tagBatch.undo(toBatchJobId(jobId))
+  )
+
   ipcMain.handle(IPC.libraryRemoveFolder, (_event, folder: unknown) => {
     if (typeof folder !== 'string' || folder.trim().length === 0) {
       throw new Error('Invalid folder.')

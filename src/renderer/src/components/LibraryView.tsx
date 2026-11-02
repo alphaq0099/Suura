@@ -22,6 +22,7 @@ import { TrackContextMenu } from './TrackContextMenu'
 import { TrackDetails } from './TrackDetails'
 import { TrackList } from './TrackList'
 import { LyricsBatchDialog } from './LyricsBatchDialog'
+import { TagBatchDialog } from './TagBatchDialog'
 import {
   CheckIcon,
   CloseIcon,
@@ -36,6 +37,7 @@ import {
   RefreshIcon,
   SearchIcon,
   SpinnerIcon,
+  TagIcon,
   TrashIcon
 } from './Icons'
 
@@ -163,6 +165,7 @@ export function LibraryView(props: LibraryViewProps) {
   const [bulkError, setBulkError] = useState<string | null>(null)
   // The local tracks the batch dialog is scanning, or null when it is closed.
   const [lyricsBatchIds, setLyricsBatchIds] = useState<number[] | null>(null)
+  const [tagBatchIds, setTagBatchIds] = useState<number[] | null>(null)
   const fieldMenu = useFieldContextMenu(searchInputRef)
 
   const { saved, states, save: saveToLibrary, refreshSaved } = downloads
@@ -418,6 +421,16 @@ export function LibraryView(props: LibraryViewProps) {
             >
               <LyricsIcon size={14} />
               <span>Fetch missing lyrics</span>
+            </button>
+          ) : null}
+          {!showingStreams ? (
+            <button
+              type="button"
+              onClick={() => setTagBatchIds([...selectedIds])}
+              title="Look up the selected files and fix the tags they have wrong or missing"
+            >
+              <TagIcon size={14} />
+              <span>Fix tags</span>
             </button>
           ) : null}
           {!showingStreams ? (
@@ -689,6 +702,10 @@ export function LibraryView(props: LibraryViewProps) {
           trackIds={lyricsBatchIds}
           onClose={() => setLyricsBatchIds(null)}
         />
+      ) : null}
+
+      {tagBatchIds ? (
+        <TagBatchDialog trackIds={tagBatchIds} onClose={() => setTagBatchIds(null)} />
       ) : null}
     </section>
   )

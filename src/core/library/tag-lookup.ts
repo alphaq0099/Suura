@@ -1,6 +1,7 @@
 import { candidatesFromItunes, candidatesFromMusicBrainz, rankCandidates } from '@shared/auto-tag'
 import type { TagCandidate, TagLookupQuery, TagLookupResult, TagProviderReport } from '@shared/types'
 import type { Logger } from '@core/logging/logger'
+import { RequestScheduler } from '@core/scheduling/request-scheduler'
 
 /**
  * The two public metadata services the tag finder asks.
@@ -35,7 +36,21 @@ export interface TagLookupOptions {
   /** Injected by the self-test so the review dialog can be driven offline. */
   fetch?: typeof fetch
   timeoutMs?: number
+  /** Replaces the iTunes pacing; the smoke tests pass a pass-through. */
+  schedule?: TagSchedule
 }
+
+/**
+ * Runs one whole iTunes lookup inside the service's budget.
+ *
+ * MusicBrainz serialises itself below, because its rule is one request a
+ * second. iTunes publishes no such rule, but a batch of five hundred tracks
+ * must not arrive as five hundred searches in a burst either, so it is paced
+ * here: two at a time, a short gap between starts.
+ */
+export type TagSchedule = <T>(work: () => Promise<T>) => Promise<T>
+
+const ITUNES_PACING = { maxConcurrent: 2, minGapMs: 200, jitterMs: 100 } as const
 
 /** The text both search APIs are given: the title without its bracketed noise. */
 export function searchTerm(query: TagLookupQuery): string {
@@ -104,6 +119,9 @@ interface ProviderAnswer {
 export function createTagLookup(options: TagLookupOptions): TagLookup {
   const request = options.fetch ?? fetch
   const timeoutMs = options.timeoutMs ?? LOOKUP_TIMEOUT_MS
+  const scheduler = new RequestScheduler(ITUNES_PACING)
+  const itunesSchedule: TagSchedule =
+    options.schedule ?? (<T>(work: () => Promise<T>) => scheduler.schedule(work))
 
   const getJson = async (url: string, headers: Record<string, string> = {}): Promise<unknown> => {
     const response = await request(url, {
@@ -136,7 +154,7 @@ export function createTagLookup(options: TagLookupOptions): TagLookup {
 
   const lookupItunes = async (query: TagLookupQuery): Promise<ProviderAnswer> => {
     try {
-      const candidates = candidatesFromItunes(await getJson(itunesUrl(query)))
+      const candidates = candidatesFromItunes(await itunesSchedule(() => getJson(itunesUrl(query))))
       options.log.debug('itunes lookup answered', { count: candidates.length })
       return { candidates, report: report('itunes', candidates.length) }
     } catch (error) {

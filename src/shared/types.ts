@@ -499,6 +499,128 @@ export interface LyricsBatchUndoResult {
   failed: LyricsBatchFailure[]
 }
 
+// ---- batch tags ------------------------------------------------------------
+
+/** One field group a batch can write, the same ones the single-track finder offers. */
+export type TagBatchField =
+  | 'title'
+  | 'artist'
+  | 'albumArtist'
+  | 'album'
+  | 'genre'
+  | 'year'
+  | 'track'
+  | 'disc'
+
+/**
+ * `fill` writes only what the file leaves empty; `replace` also overwrites a
+ * value the match disagrees with. The second is a choice the user makes in the
+ * review dialog, never a default.
+ */
+export type TagBatchMode = 'fill' | 'replace'
+
+/** One field a match would change on one row. */
+export interface TagBatchChange {
+  field: TagBatchField
+  label: string
+  /** What the row says now, or null when the field is empty. */
+  from: string | null
+  /** What the match would write. Never empty. */
+  to: string
+  /** True when the field is empty now, so writing it replaces nothing. */
+  fills: boolean
+  /** Exactly the tag fields this one change writes. */
+  fields: TrackTagFields
+}
+
+/**
+ * One match a tag batch found, with the changes it would make.
+ *
+ * The candidate itself stays in the main process: what the review row needs is
+ * which fields differ, how much they differ, and how sure the match is. The
+ * changes carry the exact write for each field, so applying a subset is a merge
+ * rather than a second decision about what the match means.
+ */
+export interface TagBatchMatch {
+  provider: TagProvider
+  providerId: string
+  title: string
+  artist: string
+  album: string | null
+  year: number | null
+  durationMs: number | null
+  score: number
+  confidence: TagCandidate['confidence']
+  /** Every difference from the row, blank fields included. */
+  changes: TagBatchChange[]
+}
+
+/** What a batch found, or why it found nothing, for one selected track. */
+export interface TagBatchItem {
+  /** Stable within one scan: `track:<id>`. */
+  id: string
+  trackId: number
+  title: string
+  artist: string | null
+  album: string | null
+  /**
+   * `match` has differences worth writing; `no-match` is a working lookup with
+   * nothing close; `skipped` is not a file or already agrees with its best
+   * match; `failed` is an error worth showing.
+   */
+  status: 'match' | 'no-match' | 'skipped' | 'failed'
+  message: string | null
+  match: TagBatchMatch | null
+}
+
+/** Live progress while a batch scans; `review` means the snapshot is ready. */
+export interface TagBatchProgress {
+  jobId: string
+  phase: 'scanning' | 'review'
+  scanned: number
+  total: number
+  /** The track being looked up, for the status line. */
+  currentTitle: string | null
+}
+
+/** Everything a finished scan found, for the review dialog. */
+export interface TagBatchSnapshot {
+  jobId: string
+  items: TagBatchItem[]
+  /**
+   * How each provider did across the whole scan. `ok` is false when it failed
+   * at least once; `count` is the number of matches it contributed.
+   */
+  providers: TagProviderReport[]
+  /** Set only when every lookup failed for the same reason. */
+  message: string | null
+}
+
+/** One track a batch could not write, and why. */
+export interface TagBatchFailure {
+  trackId: number
+  title: string
+  message: string
+}
+
+export interface TagBatchApplyResult {
+  jobId: string
+  /** Files rewritten and re-read into the library. */
+  written: number
+  /** Chosen tracks that had nothing to write in the mode that was picked. */
+  skipped: number
+  failed: TagBatchFailure[]
+}
+
+export interface TagBatchUndoResult {
+  jobId: string
+  /** Files put back from the backup taken before the batch wrote them. */
+  restored: number
+  /** Items left alone: no backup, or the file changed after the write. */
+  skipped: number
+  failed: TagBatchFailure[]
+}
+
 export interface LibraryStats {
   tracks: number
   artists: number

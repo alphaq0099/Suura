@@ -5266,26 +5266,26 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          await sleep(300)
          out.opened = Boolean(pick('.lyrics-batch-dialog'))
          out.title = text(pick('#lyrics-batch-title'))
-         await until(() => pick('.lyrics-batch-match') || pick('.lyrics-batch-result'), 20000)
+         await until(() => pick('.batch-match') || pick('.batch-result'), 20000)
 
-         out.matches = pickAll('.lyrics-batch-match').length
-         out.matchTitle = text(pick('.lyrics-batch-match .auto-tag-match-text strong'))
-         out.ticked = pickAll('.lyrics-batch-match input[type="checkbox"]').filter(
+         out.matches = pickAll('.batch-match').length
+         out.matchTitle = text(pick('.batch-match .auto-tag-match-text strong'))
+         out.ticked = pickAll('.batch-match input[type="checkbox"]').filter(
            (input) => input.checked
          ).length
          const writeBox = pick('.lyrics-batch-write input')
          out.writeChecked = writeBox ? writeBox.checked : true
          out.applyLabel = text(pick('.details-foot button.primary'))
-         out.skipped = text(pick('.lyrics-batch-skipped summary'))
+         out.skipped = text(pick('.batch-skipped summary'))
 
          press(pick('.details-foot button.primary'))
-         await until(() => pick('.lyrics-batch-result'), 20000)
-         out.stored = text(pick('.lyrics-batch-result p'))
+         await until(() => pick('.batch-result'), 20000)
+         out.stored = text(pick('.batch-result p'))
          out.storedText = ((await window.player.getTrackLyrics(${batchSilent.id})) || {}).text || ''
 
          press(pickAll('.details-foot button').find((el) => text(el) === 'Undo'))
-         await until(() => pickAll('.lyrics-batch-result').length > 1, 20000)
-         out.undone = text(pickAll('.lyrics-batch-result p')[1])
+         await until(() => pickAll('.batch-result').length > 1, 20000)
+         out.undone = text(pickAll('.batch-result p')[1])
          out.afterUndo = (await window.player.getTrackLyrics(${batchSilent.id})) === null
 
          press(pickAll('.details-foot button').find((el) => text(el) === 'Done'))
@@ -5829,6 +5829,175 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       'Escape closes the cover picker before the editor, then the editor and its sheet',
       `picker ${coverPicker.escapeClosedPicker}, editor ${coverPicker.escapeKeptEditor}/${coverPicker.editorClosed}, sheet ${coverPicker.sheetClosed}`
     )
+
+    // ---- 13g. batch tags from the library selection -----------------------
+    // The fill/replace rule and the service's write-and-undo path are pinned
+    // down in `npm run smoke`. What only the real window can prove is the seam:
+    // the selection bar offers the batch, the review starts in the safe mode,
+    // the replace checkbox widens what is shown, and Apply then Undo moves the
+    // row and the file back.
+    const batchTagTone = container.library
+      .list()
+      .tracks.find((track) => track.title === 'Selftest Tone')
+    if (!batchTagTone) throw new Error('selftest: the batch tag fixture is missing')
+    const originalBatchTagLookup = container.tagLookup.lookup
+    container.tagLookup.lookup = async (query) => ({
+      query,
+      candidates: [
+        {
+          provider: 'itunes',
+          providerId: 'selftest-batch-tag',
+          title: 'Selftest Tone',
+          artist: 'Selftest',
+          albumArtist: 'Selftest',
+          // A value the file already has: fill must leave it, replace must show
+          // it, and undo must be able to put it back either way.
+          album: 'Correct Album',
+          year: 1998,
+          genre: 'Test Genre',
+          trackNo: 2,
+          trackTotal: 10,
+          discNo: 1,
+          discTotal: 1,
+          durationMs: 2000,
+          artworkUrl: null,
+          score: 0.93,
+          confidence: 'strong'
+        }
+      ],
+      providers: [{ provider: 'itunes', ok: true, message: null, count: 1 }]
+    })
+    const batchTagProbe = await evaluate<{
+      buttonLabel: string
+      opened: boolean
+      title: string
+      matchTitle: string
+      matches: number
+      ticked: number
+      replaceChecked: boolean
+      fillChanges: string
+      replaceChanges: string
+      applyLabel: string
+      written: string
+      genreAfterWrite: string | null
+      undone: string
+      genreAfterUndo: string | null
+      closed: boolean
+    }>(
+      window,
+      `(async () => {
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const pick = (selector) => document.querySelector(selector)
+         const pickAll = (selector) => [...document.querySelectorAll(selector)]
+         const text = (element) => (element ? (element.textContent || '').trim() : '')
+         const press = (element) => {
+           if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         }
+         const until = async (predicate, timeoutMs) => {
+           const deadline = Date.now() + timeoutMs
+           for (;;) {
+             if (predicate()) return true
+             if (Date.now() > deadline) return false
+             await sleep(50)
+           }
+         }
+         const rowFor = (title) =>
+           pickAll('.track-row').find((row) => text(row.querySelector('.row-title-text')) === title)
+         const out = {
+           buttonLabel: '', opened: false, title: '', matchTitle: '', matches: 0,
+           ticked: 0, replaceChecked: true, fillChanges: '', replaceChanges: '',
+           applyLabel: '', written: '', genreAfterWrite: null, undone: '',
+           genreAfterUndo: null, closed: false
+         }
+
+         const silent = rowFor('Selftest Tone')
+         if (silent) silent.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
+         await sleep(300)
+
+         const fixButton = pickAll('.selection-bar button').find(
+           (el) => text(el) === 'Fix tags'
+         )
+         out.buttonLabel = text(fixButton)
+         press(fixButton)
+         await sleep(300)
+         out.opened = Boolean(pick('.tag-batch-dialog'))
+         out.title = text(pick('#tag-batch-title'))
+         await until(() => pick('.batch-match') || pick('.batch-result'), 20000)
+
+         out.matches = pickAll('.batch-match').length
+         out.matchTitle = text(pick('.batch-match .auto-tag-match-text strong'))
+         out.ticked = pickAll('.batch-match input[type="checkbox"]').filter(
+           (input) => input.checked
+         ).length
+         const modeBox = pick('.tag-batch-mode input')
+         out.replaceChecked = modeBox ? modeBox.checked : true
+         out.fillChanges = text(pick('.tag-batch-changes'))
+
+         // Replace is the one destructive choice: it must be unticked at first,
+         // and ticking it must widen what the row says it will write.
+         if (modeBox) modeBox.click()
+         await sleep(300)
+         out.replaceChanges = text(pick('.tag-batch-changes'))
+         const modeAgain = pick('.tag-batch-mode input')
+         if (modeAgain) modeAgain.click()
+         await sleep(300)
+
+         out.applyLabel = text(pick('.details-foot button.primary'))
+         press(pick('.details-foot button.primary'))
+         await until(() => pick('.batch-result'), 20000)
+         out.written = text(pick('.batch-result p'))
+         out.genreAfterWrite = (await window.player.getTracks([${batchTagTone.id}]))[0].genre
+
+         press(pickAll('.details-foot button').find((el) => text(el) === 'Undo'))
+         await until(() => pickAll('.batch-result').length > 1, 20000)
+         out.undone = text(pickAll('.batch-result p')[1])
+         out.genreAfterUndo = (await window.player.getTracks([${batchTagTone.id}]))[0].genre
+
+         press(pickAll('.details-foot button').find((el) => text(el) === 'Done'))
+         await sleep(350)
+         out.closed = !pick('.tag-batch-dialog')
+         press(pick('.selection-bar .selection-clear'))
+         await sleep(300)
+         return out
+       })()`
+    )
+    container.tagLookup.lookup = originalBatchTagLookup
+    record(
+      batchTagProbe.buttonLabel === 'Fix tags' &&
+        batchTagProbe.opened &&
+        batchTagProbe.title === 'Fix tags',
+      'the library selection bar opens the batch tag dialog',
+      `"${batchTagProbe.buttonLabel}" -> "${batchTagProbe.title}"`
+    )
+    record(
+      batchTagProbe.matches === 1 &&
+        batchTagProbe.matchTitle === 'Selftest Tone' &&
+        batchTagProbe.ticked === 1 &&
+        batchTagProbe.applyLabel === 'Write 1 file',
+      'the review shows the match and ticks it by default',
+      `${batchTagProbe.matches} matches, "${batchTagProbe.matchTitle}", ${batchTagProbe.ticked} ticked, "${batchTagProbe.applyLabel}"`
+    )
+    record(
+      batchTagProbe.replaceChecked === false &&
+        batchTagProbe.fillChanges.includes('Genre: Test Genre') &&
+        !batchTagProbe.fillChanges.includes('Album:') &&
+        batchTagProbe.replaceChanges.includes('Album: Selftest Album → Correct Album'),
+      'fill is the default and only replace shows the field the file already has',
+      `fill "${batchTagProbe.fillChanges}" | replace "${batchTagProbe.replaceChanges}"`
+    )
+    record(
+      batchTagProbe.written.startsWith('1 file rewritten') &&
+        batchTagProbe.genreAfterWrite === 'Test Genre',
+      'writing the batch fills the blank fields in the file',
+      `"${batchTagProbe.written}", genre ${batchTagProbe.genreAfterWrite}`
+    )
+    record(
+      batchTagProbe.undone.startsWith('Undone: 1 file restored') &&
+        batchTagProbe.genreAfterUndo === null,
+      'undo puts the file back from the backup the batch took',
+      `"${batchTagProbe.undone}", genre ${batchTagProbe.genreAfterUndo}`
+    )
+    record(batchTagProbe.closed, 'Done closes the batch tag dialog and leaves the library selection bar')
 
     // ---- 14. the library keeps up with the disk by itself ----------------
     // File watching is the difference between "the album I just copied in is

@@ -22,6 +22,10 @@ import type {
   LyricsTarget,
   PlaybackSnapshot,
   ResolvedSource,
+  TagBatchApplyResult,
+  TagBatchMode,
+  TagBatchSnapshot,
+  TagBatchUndoResult,
   TagLookupResult,
   Track,
   TrackLyrics,
@@ -131,6 +135,21 @@ const api: PlayerApi = {
 
   undoLyricsBatch: (jobId: string) =>
     ipcRenderer.invoke(IPC.libraryLyricsBatchUndo, jobId) as Promise<LyricsBatchUndoResult>,
+
+  startTagBatch: (trackIds: number[]) =>
+    ipcRenderer.invoke(IPC.libraryTagBatchStart, trackIds) as Promise<{ jobId: string }>,
+
+  getTagBatch: (jobId: string) =>
+    ipcRenderer.invoke(IPC.libraryTagBatchGet, jobId) as Promise<TagBatchSnapshot | null>,
+
+  cancelTagBatch: (jobId: string) =>
+    ipcRenderer.invoke(IPC.libraryTagBatchCancel, jobId) as Promise<void>,
+
+  applyTagBatch: (jobId: string, itemIds: string[], mode: TagBatchMode) =>
+    ipcRenderer.invoke(IPC.libraryTagBatchApply, jobId, itemIds, mode) as Promise<TagBatchApplyResult>,
+
+  undoTagBatch: (jobId: string) =>
+    ipcRenderer.invoke(IPC.libraryTagBatchUndo, jobId) as Promise<TagBatchUndoResult>,
 
   removeLibraryFolder: (folder: string) =>
     ipcRenderer.invoke(IPC.libraryRemoveFolder, folder) as Promise<AppSettings>,

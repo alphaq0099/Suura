@@ -583,3 +583,13 @@ export function InfoIcon({ size = 16 }: IconProps) {
     </svg>
   )
 }
+
+/** A tag with its hole: fixing the metadata, not the file. */
+export function TagIcon({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <path d="M11.4 3.2H5.1a1.9 1.9 0 0 0-1.9 1.9v6.3a1.9 1.9 0 0 0 .56 1.34l8.1 8.1a1.9 1.9 0 0 0 2.69 0l6.3-6.3a1.9 1.9 0 0 0 0-2.69l-8.1-8.1a1.9 1.9 0 0 0-1.35-.55z" />
+      <circle cx="8.1" cy="8.1" r="1.5" />
+    </svg>
+  )
+}

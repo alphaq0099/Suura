@@ -43,6 +43,7 @@ import { createGeniusProvider } from '@core/library/lyrics-genius'
 import { createArtworkChoices, type ArtworkChoicesService } from '../artwork-choices'
 import { createYoutubeService, type YoutubeService } from '../youtube-service'
 import { LyricsBatchService } from '../lyrics-batch-service'
+import { TagBatchService } from '../tag-batch-service'
 
 /**
  * Owns every long-lived service and their wiring.
@@ -95,6 +96,8 @@ export interface AppContainer {
   lyricsBatch: LyricsBatchService
   /** iTunes and MusicBrainz lookups for the tag finder. */
   tagLookup: TagLookup
+  /** Scans a selection for better tags and writes the accepted ones. */
+  tagBatch: TagBatchService
   /** The covers the artwork picker offers, local and provider-supplied. */
   artworkChoices: ArtworkChoicesService
   dispose(): void
@@ -269,6 +272,18 @@ export function createContainer(): AppContainer {
   // The client owns its own timeouts and never throws: a provider being down is
   // a sentence in the review dialog, not a failed request.
   const tagLookup = createTagLookup({ log: log.child('tag-lookup') })
+
+  // The same two-pass shape as the lyrics batch: the scan keeps the candidates
+  // here, and only the accepted ones are written. Every write keeps its backup
+  // so the whole batch can be undone.
+  const tagBatch = new TagBatchService({
+    repo,
+    library,
+    tagLookup,
+    log: log.child('tag-batch'),
+    onProgress: (progress) => broadcast(IPC_EVENTS.tagBatchProgress, progress)
+  })
+
   const artworkChoices = createArtworkChoices({
     repo,
     artwork,
@@ -403,6 +418,7 @@ export function createContainer(): AppContainer {
     lyrics,
     lyricsBatch,
     tagLookup,
+    tagBatch,
     artworkChoices,
     dispose: () => {
       unwatchSettings()

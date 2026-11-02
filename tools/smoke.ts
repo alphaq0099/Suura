@@ -50,7 +50,13 @@ import {
   textSimilarity,
   titleVariants
 } from '@shared/auto-tag'
-import type { AlbumSummary, EngineStatus, LyricsBatchSnapshot, LyricsCandidate, StreamLyricsTarget, TagCandidate, TagLookupQuery, Track } from '@shared/types'
+import {
+  describeTagBatchChange,
+  positionText,
+  tagBatchChanges,
+  tagBatchFields
+} from '@shared/tag-batch'
+import type { AlbumSummary, EngineStatus, LyricsBatchSnapshot, LyricsCandidate, StreamLyricsTarget, TagBatchSnapshot, TagCandidate, TagLookupQuery, Track } from '@shared/types'
 import { serializeDetails, silentLogger } from '@core/logging/logger'
 import {
   DIAGNOSTICS_SUMMARY_LIMIT,
@@ -104,6 +110,7 @@ import { StreamPlayRepository } from '@core/library/stream-play-repository'
 import { PlayStateRepository } from '@core/library/play-state-repository'
 import { PlaybackService } from '@core/library/playback-service'
 import { createTagLookup, itunesUrl, musicBrainzQuery } from '@core/library/tag-lookup'
+import type { TagLookup } from '@core/library/tag-lookup'
 import {
   createLyricsFinder,
   createLyricsLookup,
@@ -213,6 +220,7 @@ import { AsyncTtlCache } from '../src/main/async-cache'
 import { cleanupAbandonedDownloads, DownloadService } from '../src/main/download-service'
 import { ReplayGainService } from '../src/main/replay-gain-service'
 import { LyricsBatchService } from '../src/main/lyrics-batch-service'
+import { TagBatchService } from '../src/main/tag-batch-service'
 
 const execFileAsync = promisify(execFile)
 
@@ -5202,7 +5210,7 @@ async function main(): Promise<void> {
       })
     }) as unknown as typeof fetch
 
-    const partial = await createTagLookup({ log: silentLogger, fetch: itunesOnlyFetch }).lookup(exactQuery)
+    const partial = await createTagLookup({ log: silentLogger, fetch: itunesOnlyFetch, schedule: (work) => work() }).lookup(exactQuery)
     check(
       'auto-tag: one provider being down still returns the other',
       partial.candidates.length === 1 && partial.candidates[0]?.provider === 'itunes',
@@ -5261,7 +5269,7 @@ async function main(): Promise<void> {
       })
     }) as unknown as typeof fetch
 
-    const both = await createTagLookup({ log: silentLogger, fetch: bothFetch }).lookup(exactQuery)
+    const both = await createTagLookup({ log: silentLogger, fetch: bothFetch, schedule: (work) => work() }).lookup(exactQuery)
     checkEqual('auto-tag: both providers answering still dedupes', both.candidates.length, 1)
     checkEqual(
       'auto-tag: every provider is reported',
@@ -5277,7 +5285,7 @@ async function main(): Promise<void> {
     // A row with no title cannot be looked up: there is nothing to search with,
     // and asking anyway would spend two requests to get noise back.
     calls.length = 0
-    const blank = await createTagLookup({ log: silentLogger, fetch: itunesOnlyFetch }).lookup({
+    const blank = await createTagLookup({ log: silentLogger, fetch: itunesOnlyFetch, schedule: (work) => work() }).lookup({
       title: '   ',
       artist: 'Arijit Singh',
       album: null,
@@ -6516,6 +6524,504 @@ async function main(): Promise<void> {
     }
   } finally {
     await rm(lyricsRoot, { recursive: true, force: true }).catch(() => undefined)
+  }
+
+  // ---- batch tags --------------------------------------------------------
+  // The rule that decides what a match may write is pure, so its edges are
+  // pinned down first. The service is then run against real files: a fill has
+  // to leave what the user already wrote, a replace has to overwrite it, and
+  // undo has to put the file back only while it is still the batch's version.
+  {
+    const tagged: Track = {
+      id: 1,
+      sourceKind: 'local',
+      sourceId: null,
+      originKind: null,
+      originId: null,
+      title: 'Tagged',
+      artist: 'Old Artist',
+      albumArtist: null,
+      album: null,
+      trackNo: null,
+      discNo: null,
+      trackTotal: null,
+      discTotal: null,
+      year: null,
+      genre: null,
+      durationMs: 1200,
+      codec: null,
+      bitrateKbps: null,
+      sampleRate: null,
+      channels: null,
+      fileSize: null,
+      missingAt: null,
+      filePath: 'C:\\music\\tagged.flac',
+      artworkKey: null,
+      replayGainDb: null,
+      replayGainPeak: null,
+      addedAt: 0,
+      playCount: 0,
+      lastPlayedAt: null
+    }
+    const candidate: TagCandidate = {
+      provider: 'itunes',
+      providerId: 'rule-1',
+      title: 'Tagged',
+      artist: 'New Artist',
+      albumArtist: 'New Artist',
+      album: 'New Album',
+      year: 2022,
+      genre: 'Pop',
+      trackNo: 3,
+      trackTotal: 12,
+      discNo: 1,
+      discTotal: 2,
+      durationMs: 1200,
+      artworkUrl: null,
+      score: 0.95,
+      confidence: 'strong'
+    }
+    const ruleChanges = tagBatchChanges(tagged, candidate)
+    checkEqual(
+      'tag batch: every difference is listed in dialog order',
+      ruleChanges.map((change) => change.field).join(','),
+      'artist,albumArtist,album,genre,year,track,disc'
+    )
+    checkEqual(
+      'tag batch: a blank field is a fill and an occupied one is not',
+      [ruleChanges[0]?.fills, ruleChanges[2]?.fills].join('|'),
+      'false|true'
+    )
+    checkEqual(
+      'tag batch: fill writes only the blank fields',
+      JSON.stringify(tagBatchFields(ruleChanges, 'fill')),
+      JSON.stringify({
+        albumArtist: 'New Artist',
+        album: 'New Album',
+        genre: 'Pop',
+        year: 2022,
+        trackNo: 3,
+        trackTotal: 12,
+        discNo: 1,
+        discTotal: 2
+      })
+    )
+    checkEqual(
+      'tag batch: replace writes the occupied ones too',
+      JSON.stringify(tagBatchFields(ruleChanges, 'replace')),
+      JSON.stringify({
+        artist: 'New Artist',
+        albumArtist: 'New Artist',
+        album: 'New Album',
+        genre: 'Pop',
+        year: 2022,
+        trackNo: 3,
+        trackTotal: 12,
+        discNo: 1,
+        discTotal: 2
+      })
+    )
+    checkEqual(
+      'tag batch: a row that already agrees has nothing to change',
+      tagBatchChanges(tagged, { ...candidate, artist: 'Old Artist', albumArtist: null, album: null, genre: null, year: null, trackNo: null, trackTotal: null, discNo: null, discTotal: null }).length,
+      0
+    )
+    checkEqual(
+      'tag batch: a position is written as the editor shows it',
+      [positionText(3, 12), positionText(3, null), positionText(null, 12)].join('|'),
+      '3 of 12|3|'
+    )
+    checkEqual(
+      'tag batch: a fill reads as a proposal, a replace as a change',
+      [
+        describeTagBatchChange({ field: 'album', label: 'Album', from: null, to: 'A', fills: true, fields: {} }),
+        describeTagBatchChange({ field: 'artist', label: 'Artist', from: 'A', to: 'B', fills: false, fields: {} })
+      ].join(' | '),
+      'Album: A | Artist: A → B'
+    )
+
+    const tagBatchRoot = await mkdtemp(join(tmpdir(), 'player-tag-batch-'))
+    try {
+      const batchPaths = resolveAppPaths(join(tagBatchRoot, 'userData'))
+      ensureAppDirectories(batchPaths)
+      const batchDb = openLibraryDatabase(batchPaths.database, silentLogger)
+      try {
+        const batchRepo = new TrackRepository(batchDb.db)
+        const batchSettings = new SettingsService(batchPaths.config, silentLogger)
+        const batchWriter = new TagWriter({
+          backupDir: join(tagBatchRoot, 'backups'),
+          resolveFfmpeg: async () => ffmpegPath
+        })
+        const batchLibrary = new LibraryService(
+          batchRepo,
+          batchSettings,
+          silentLogger,
+          {},
+          batchWriter
+        )
+
+        const makeBatchFixture = async (
+          fileName: string,
+          metadata: Record<string, string>
+        ): Promise<string> => {
+          const target = join(tagBatchRoot, fileName)
+          await execFileAsync(
+            ffmpegPath,
+            [
+              '-hide_banner',
+              '-loglevel',
+              'error',
+              '-y',
+              '-f',
+              'lavfi',
+              '-i',
+              'sine=frequency=440:duration=1.2',
+              '-c:a',
+              'flac',
+              ...Object.entries(metadata).flatMap(([key, value]) => ['-metadata', `${key}=${value}`]),
+              target
+            ],
+            { timeout: 60_000 }
+          )
+          return target
+        }
+
+        const insertBatchRow = (input: {
+          contentKey: string
+          filePath: string | null
+          sourceKind?: 'local' | 'youtube'
+          title: string
+          artist?: string | null
+          album?: string | null
+          year?: number | null
+        }): number =>
+          batchRepo.insert(
+            {
+              contentKey: input.contentKey,
+              sourceKind: input.sourceKind ?? 'local',
+              sourceId: input.sourceKind === 'youtube' ? 'dQw4w9WgXcQ' : null,
+              originKind: null,
+              originId: null,
+              title: input.title,
+              artist: input.artist ?? null,
+              albumArtist: null,
+              album: input.album ?? null,
+              trackNo: null,
+              discNo: null,
+              trackTotal: null,
+              discTotal: null,
+              year: input.year ?? null,
+              genre: null,
+              durationMs: 1200,
+              codec: null,
+              bitrateKbps: null,
+              sampleRate: null,
+              channels: null,
+              fileSize: null,
+              fileMtimeMs: null,
+              filePath: input.filePath
+            },
+            Date.now()
+          )
+
+        const candidateFor = (title: string, over: Partial<TagCandidate> = {}): TagCandidate => ({
+          provider: 'itunes',
+          providerId: `itunes-${title}`,
+          title,
+          artist: 'New Artist',
+          albumArtist: null,
+          album: 'New Album',
+          year: 2022,
+          genre: 'Pop',
+          trackNo: null,
+          trackTotal: null,
+          discNo: null,
+          discTotal: null,
+          durationMs: 1200,
+          artworkUrl: null,
+          score: 0.95,
+          confidence: 'strong',
+          ...over
+        })
+
+        const batchLookup: TagLookup = {
+          lookup: async (query) => {
+            if (query.title === 'Tag Broken') throw new Error('The tag lookup exploded.')
+            if (query.title === 'Tag None') {
+              return {
+                query,
+                candidates: [],
+                providers: [{ provider: 'itunes', ok: true, message: null, count: 0 }]
+              }
+            }
+            if (query.title === 'Tag Same') {
+              return {
+                query,
+                candidates: [
+                  candidateFor('Tag Same', {
+                    artist: 'Same Artist',
+                    album: null,
+                    year: null,
+                    genre: null
+                  })
+                ],
+                providers: [{ provider: 'itunes', ok: true, message: null, count: 1 }]
+              }
+            }
+            if (query.title === 'Tag Stale') {
+              return {
+                query,
+                candidates: [candidateFor('Tag Stale', { album: null, year: null, genre: null })],
+                providers: [{ provider: 'itunes', ok: true, message: null, count: 1 }]
+              }
+            }
+            if (query.title === 'Tag Replace') {
+              return {
+                query,
+                candidates: [candidateFor('Tag Replace', { year: null, genre: null })],
+                providers: [{ provider: 'itunes', ok: true, message: null, count: 1 }]
+              }
+            }
+            return {
+              query,
+              candidates: [candidateFor(query.title)],
+              providers: [{ provider: 'itunes', ok: true, message: null, count: 1 }]
+            }
+          }
+        }
+
+        const progress: Array<{ phase: string; scanned: number; total: number }> = []
+        const reviewWaiters = new Map<string, (snapshot: TagBatchSnapshot | null) => void>()
+        let batchService: TagBatchService
+        batchService = new TagBatchService({
+          repo: batchRepo,
+          library: batchLibrary,
+          tagLookup: batchLookup,
+          log: silentLogger,
+          onProgress: (update) => {
+            progress.push({ phase: update.phase, scanned: update.scanned, total: update.total })
+            if (update.phase !== 'review') return
+            reviewWaiters.get(update.jobId)?.(batchService.get(update.jobId))
+          }
+        })
+        const waitForReview = (jobId: string): Promise<TagBatchSnapshot | null> =>
+          new Promise((resolve) => {
+            reviewWaiters.set(jobId, resolve)
+            const found = batchService.get(jobId)
+            if (found) resolve(found)
+          })
+
+        const fillFile = await makeBatchFixture('fill.flac', { title: 'Tag Fill' })
+        const fillId = insertBatchRow({ contentKey: 'smoke-tag-fill', filePath: fillFile, title: 'Tag Fill' })
+        const sameFile = await makeBatchFixture('same.flac', {
+          title: 'Tag Same',
+          artist: 'Same Artist'
+        })
+        const sameId = insertBatchRow({
+          contentKey: 'smoke-tag-same',
+          filePath: sameFile,
+          title: 'Tag Same',
+          artist: 'Same Artist'
+        })
+        const noneFile = await makeBatchFixture('none.flac', { title: 'Tag None' })
+        const noneId = insertBatchRow({ contentKey: 'smoke-tag-none', filePath: noneFile, title: 'Tag None' })
+        const brokenFile = await makeBatchFixture('broken.flac', { title: 'Tag Broken' })
+        const brokenId = insertBatchRow({
+          contentKey: 'smoke-tag-broken',
+          filePath: brokenFile,
+          title: 'Tag Broken'
+        })
+        const streamId = insertBatchRow({
+          contentKey: 'smoke-tag-stream',
+          filePath: null,
+          sourceKind: 'youtube',
+          title: 'Tag Stream'
+        })
+
+        const started = batchService.start([fillId, sameId, noneId, brokenId, streamId])
+        check('tag batch: start returns a job id at once', started.jobId.length > 0)
+        const snapshot = await waitForReview(started.jobId)
+        if (!snapshot) throw new Error('the tag batch scan never finished')
+        const itemOf = (trackId: number) => snapshot.items.find((item) => item.trackId === trackId)
+        const fillItem = itemOf(fillId)
+        const sameItem = itemOf(sameId)
+        const noneItem = itemOf(noneId)
+        const brokenItem = itemOf(brokenId)
+        const streamItem = itemOf(streamId)
+        checkEqual('tag batch: a file with blanks is a match', fillItem?.status, 'match')
+        checkEqual(
+          'tag batch: the match carries the fields it would write',
+          fillItem?.match?.changes.map((change) => change.field).join(','),
+          'artist,album,genre,year'
+        )
+        checkEqual('tag batch: a row that already agrees is skipped', sameItem?.status, 'skipped')
+        checkEqual('tag batch: the skip says why', sameItem?.message, 'Tags already match.')
+        checkEqual('tag batch: an empty answer is no match', noneItem?.status, 'no-match')
+        checkEqual('tag batch: a throwing lookup is a failure', brokenItem?.status, 'failed')
+        check('tag batch: the failure keeps its reason', (brokenItem?.message ?? '').includes('exploded'))
+        checkEqual('tag batch: a stream is not a file to tag', streamItem?.status, 'skipped')
+        checkEqual('tag batch: a stream is skipped for the right reason', streamItem?.message, 'Not a file in the library.')
+        checkEqual(
+          'tag batch: progress reaches every track',
+          [progress[0]?.phase, progress.at(-1)?.phase, progress.at(-1)?.scanned, progress.at(-1)?.total].join('|'),
+          'scanning|review|5|5'
+        )
+        checkEqual(
+          'tag batch: the provider report totals the answered lookups',
+          snapshot.providers.find((report) => report.provider === 'itunes')?.count,
+          2
+        )
+        checkEqual(
+          'tag batch: a scan writes nothing',
+          (await extractMetadata(fillFile)).artist,
+          null
+        )
+
+        if (!fillItem) throw new Error('the fill item disappeared')
+        const fillApply = await batchService.apply(started.jobId, [fillItem.id], 'fill')
+        checkEqual('tag batch: fill writes the chosen file', fillApply.written, 1)
+        checkEqual(
+          'tag batch: fill leaves the occupied field alone',
+          (await extractMetadata(fillFile)).artist,
+          'New Artist'
+        )
+        checkEqual(
+          'tag batch: the row is rebuilt from the written file',
+          [batchRepo.getById(fillId)?.artist, batchRepo.getById(fillId)?.album].join('|'),
+          'New Artist|New Album'
+        )
+        const fillUndo = await batchService.undo(started.jobId)
+        checkEqual('tag batch: undo restores the file from its backup', fillUndo.restored, 1)
+        checkEqual(
+          'tag batch: the restored file has no artist again',
+          (await extractMetadata(fillFile)).artist,
+          null
+        )
+
+        // A stale decision is not a write: the row gained an artist after the
+        // scan, so fill now has nothing to do even though the scan said it did.
+        const staleFile = await makeBatchFixture('stale.flac', { title: 'Tag Stale' })
+        const staleId = insertBatchRow({
+          contentKey: 'smoke-tag-stale',
+          filePath: staleFile,
+          title: 'Tag Stale'
+        })
+        const staleStarted = batchService.start([staleId])
+        const staleSnapshot = await waitForReview(staleStarted.jobId)
+        const staleItem = staleSnapshot?.items.find((item) => item.trackId === staleId)
+        if (!staleItem) throw new Error('the stale item disappeared')
+        await batchLibrary.updateTags(staleId, { artist: 'Filled Later' })
+        const staleApply = await batchService.apply(staleStarted.jobId, [staleItem.id], 'fill')
+        checkEqual(
+          'tag batch: apply recomputes against the live row',
+          [staleApply.written, staleApply.skipped].join('|'),
+          '0|1'
+        )
+        checkEqual(
+          'tag batch: the value added after the scan survives',
+          (await extractMetadata(staleFile)).artist,
+          'Filled Later'
+        )
+
+        // Replace is the explicit choice: the same match now overwrites the
+        // artist the file already has.
+        const replaceFile = await makeBatchFixture('replace.flac', {
+          title: 'Tag Replace',
+          artist: 'Old Artist'
+        })
+        const replaceId = insertBatchRow({
+          contentKey: 'smoke-tag-replace',
+          filePath: replaceFile,
+          title: 'Tag Replace',
+          artist: 'Old Artist'
+        })
+        const replaceStarted = batchService.start([replaceId])
+        const replaceSnapshot = await waitForReview(replaceStarted.jobId)
+        const replaceItem = replaceSnapshot?.items.find((item) => item.trackId === replaceId)
+        if (!replaceItem) throw new Error('the replace item disappeared')
+        const replaced = await batchService.apply(replaceStarted.jobId, [replaceItem.id], 'replace')
+        checkEqual('tag batch: replace writes the file', replaced.written, 1)
+        checkEqual(
+          'tag batch: replace overwrites the occupied field',
+          (await extractMetadata(replaceFile)).artist,
+          'New Artist'
+        )
+        const replaceUndo = await batchService.undo(replaceStarted.jobId)
+        checkEqual('tag batch: undo of a replace restores the original', replaceUndo.restored, 1)
+        checkEqual(
+          'tag batch: the original artist is back after undo',
+          (await extractMetadata(replaceFile)).artist,
+          'Old Artist'
+        )
+
+        // The playback guard is the same one the single editor uses: a file
+        // Windows has open cannot be replaced, and the row says so.
+        const guardFile = await makeBatchFixture('guard.flac', { title: 'Tag Fill' })
+        const guardId = insertBatchRow({ contentKey: 'smoke-tag-guard', filePath: guardFile, title: 'Tag Fill' })
+        const guardStarted = batchService.start([guardId])
+        const guardSnapshot = await waitForReview(guardStarted.jobId)
+        const guardItem = guardSnapshot?.items.find((item) => item.trackId === guardId)
+        if (!guardItem) throw new Error('the guard item disappeared')
+        const guarded = await batchService.apply(guardStarted.jobId, [guardItem.id], 'fill', () => false)
+        checkEqual('tag batch: a playing file is not written', guarded.written, 0)
+        check(
+          'tag batch: the playback guard says why',
+          (guarded.failed[0]?.message ?? '').includes('open for playback')
+        )
+
+        // A file edited after the batch is the user's: undo leaves it alone.
+        const laterFile = await makeBatchFixture('later.flac', { title: 'Tag Fill' })
+        const laterId = insertBatchRow({ contentKey: 'smoke-tag-later', filePath: laterFile, title: 'Tag Fill' })
+        const laterStarted = batchService.start([laterId])
+        const laterSnapshot = await waitForReview(laterStarted.jobId)
+        const laterItem = laterSnapshot?.items.find((item) => item.trackId === laterId)
+        if (!laterItem) throw new Error('the later item disappeared')
+        await batchService.apply(laterStarted.jobId, [laterItem.id], 'fill')
+        await batchWriter.write(laterFile, { artist: 'User Edit' })
+        const laterUndo = await batchService.undo(laterStarted.jobId)
+        checkEqual(
+          'tag batch: undo leaves a file edited after the batch alone',
+          [laterUndo.restored, laterUndo.skipped].join('|'),
+          '0|1'
+        )
+        checkEqual(
+          'tag batch: the later edit survives',
+          (await extractMetadata(laterFile)).artist,
+          'User Edit'
+        )
+
+        // Cancelling stops before the next track and leaves no review behind.
+        const slowLookup: TagLookup = {
+          lookup: (query) =>
+            new Promise((resolve) =>
+              setTimeout(
+                () =>
+                  resolve({
+                    query,
+                    candidates: [],
+                    providers: [{ provider: 'itunes', ok: true, message: null, count: 0 }]
+                  }),
+                50
+              )
+            )
+        }
+        const slowService = new TagBatchService({
+          repo: batchRepo,
+          library: batchLibrary,
+          tagLookup: slowLookup,
+          log: silentLogger,
+          onProgress: () => undefined
+        })
+        const slowStarted = slowService.start([fillId, sameId])
+        slowService.cancel(slowStarted.jobId)
+        await new Promise((resolve) => setTimeout(resolve, 250))
+        checkEqual('tag batch: a cancelled scan has no review', slowService.get(slowStarted.jobId), null)
+      } finally {
+        batchDb.close()
+      }
+    } finally {
+      await rm(tagBatchRoot, { recursive: true, force: true }).catch(() => undefined)
+    }
   }
 
   // The scale budgets are a pure decision, so they are held to their edges here
