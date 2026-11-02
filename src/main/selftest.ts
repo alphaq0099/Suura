@@ -8064,11 +8064,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       localCardHasSelect: boolean
       streamCardItems: string
       albumCardItems: string
-      albumCardOverflowItems: string
+      albumCardHasButton: boolean
       localRowItems: string
       localRowHasSelect: boolean
       streamRowItems: string
-      overflowItems: string
+      trackCardHasButton: boolean
       menusClosed: boolean
     }>(
       window,
@@ -8111,9 +8111,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          }
          const out = {
            localCardItems: '', localCardHasSelect: false, streamCardItems: '',
-           albumCardItems: '', albumCardOverflowItems: '',
+           albumCardItems: '', albumCardHasButton: false,
            localRowItems: '', localRowHasSelect: false, streamRowItems: '',
-           overflowItems: '', menusClosed: false
+           trackCardHasButton: false, menusClosed: false
          }
 
          nav('Home')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -8142,17 +8142,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          const albumDeadline = Date.now() + 3000
          while (Date.now() < albumDeadline && !document.querySelector('.row-menu')) await sleep(40)
          out.albumCardItems = items('.row-menu')
-         await close()
-
-         const albumOverflow = albumCard('Recently added', 'Shelf Test Multi Album')?.querySelector(
-           '.album-card-overflow'
+         out.albumCardHasButton = Boolean(
+           albumCard('Recently added', 'Shelf Test Multi Album')?.querySelector('.card-overflow')
          )
-         albumOverflow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-         const albumOverflowDeadline = Date.now() + 3000
-         while (Date.now() < albumOverflowDeadline && !document.querySelector('.row-menu')) {
-           await sleep(40)
-         }
-         out.albumCardOverflowItems = items('.row-menu')
          await close()
 
          rightClick(rowFor('Shelf Test Single'), 260, 300)
@@ -8168,16 +8160,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.streamRowItems = items('.row-menu')
          await close()
 
-         // The same menu is reachable without a right mouse button: the card's
-         // overflow control opens it at its own corner.
-         const overflow = trackCard('Recently added', 'Shelf Test Single')?.querySelector(
-           '.track-card-overflow'
+         // The sheet covers the card's artwork, which the user does not want,
+         // so there is no overlay button: right-click is the only entry point.
+         out.trackCardHasButton = Boolean(
+           trackCard('Recently added', 'Shelf Test Single')?.querySelector('.card-overflow')
          )
-         overflow?.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 180, clientY: 200 }))
-         const overflowDeadline = Date.now() + 3000
-         while (Date.now() < overflowDeadline && !document.querySelector('.context-menu')) await sleep(40)
-         out.overflowItems = items('.context-menu')
-         await close()
          out.menusClosed = !document.querySelector('.context-menu') && !document.querySelector('.row-menu')
          return out
        })()`
@@ -8202,9 +8189,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       homeMenus.albumCardItems || 'no menu'
     )
     record(
-      homeMenus.albumCardOverflowItems === homeMenus.albumCardItems,
-      'home: an album card overflow button opens the same menu',
-      homeMenus.albumCardOverflowItems || 'no menu'
+      !homeMenus.albumCardHasButton && !homeMenus.trackCardHasButton && homeMenus.menusClosed,
+      'home: a shelf card has no overlay button, and right-click alone opens and closes the menu',
+      `album button ${homeMenus.albumCardHasButton}, track button ${homeMenus.trackCardHasButton}, closed ${homeMenus.menusClosed}`
     )
     record(
       homeMenus.localRowItems.includes('Play') &&
@@ -8218,11 +8205,6 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       homeMenus.streamRowItems === 'Play|Details',
       'home: right-clicking an All tracks stream row opens Play and Details only',
       homeMenus.streamRowItems || 'no menu'
-    )
-    record(
-      homeMenus.overflowItems === homeMenus.localCardItems && homeMenus.menusClosed,
-      'home: a track card overflow button opens the same menu and both close',
-      `${homeMenus.overflowItems || 'no menu'} · closed ${homeMenus.menusClosed}`
     )
 
     container.library.removeTracks([shelfSingleId, shelfAlbumId, shelfMultiOneId, shelfMultiTwoId])

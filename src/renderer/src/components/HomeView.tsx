@@ -312,22 +312,6 @@ function AlbumCard({
       >
         {busy ? <SpinnerIcon size={16} /> : <PlayIcon size={16} />}
       </button>
-      {onMenu ? (
-        <button
-          type="button"
-          className="card-overflow album-card-overflow"
-          onClick={(event) => {
-            // A keyboard activation has no pointer coordinates, so anchor the
-            // menu to the button itself.
-            const rect = event.currentTarget.getBoundingClientRect()
-            onMenu(album, { x: rect.left, y: rect.bottom + 4 })
-          }}
-          aria-label={`More actions for ${album.album}`}
-          title={`More actions for ${album.album}`}
-        >
-          <MoreIcon size={15} />
-        </button>
-      ) : null}
     </div>
   )
 }
@@ -405,22 +389,6 @@ function TrackCard({
       >
         <PlayIcon size={16} />
       </button>
-      {onMenu ? (
-        <button
-          type="button"
-          className="card-overflow track-card-overflow"
-          onClick={(event) => {
-            // A keyboard activation has no pointer coordinates, so anchor the
-            // menu to the button itself.
-            const rect = event.currentTarget.getBoundingClientRect()
-            onMenu(track, { x: rect.left, y: rect.bottom + 4 })
-          }}
-          aria-label={`More actions for ${track.title}`}
-          title={`More actions for ${track.title}`}
-        >
-          <MoreIcon size={15} />
-        </button>
-      ) : null}
     </div>
   )
 }

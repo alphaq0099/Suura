@@ -1256,15 +1256,6 @@ input[type='radio'] {
   opacity: 1;
 }
 
-/* A track or album card's overflow sits opposite its play badge, so both stay
-   reachable and a right-click has a keyboard equivalent. */
-.track-card-overflow,
-.album-card-overflow {
-  top: 7px;
-  right: auto;
-  left: 7px;
-}
-
 .album-card-title {
   display: block;
   overflow: hidden;
