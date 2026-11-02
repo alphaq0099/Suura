@@ -242,12 +242,14 @@ function AlbumCard({
   album,
   busy,
   onOpen,
-  onPlay
+  onPlay,
+  onMenu
 }: {
   album: AlbumSummary
   busy: boolean
   onOpen: (album: AlbumSummary) => void
   onPlay: (album: AlbumSummary) => void
+  onMenu?: (album: AlbumSummary, at: { x: number; y: number }) => void
 }) {
   const ref = useRef<HTMLDivElement | null>(null)
   const visible = useNearViewport(ref)
@@ -263,7 +265,18 @@ function AlbumCard({
   const isSingle = album.trackCount <= 1
 
   return (
-    <div className="album-card" ref={ref}>
+    <div
+      className="album-card"
+      ref={ref}
+      onContextMenu={
+        onMenu
+          ? (event) => {
+              event.preventDefault()
+              onMenu(album, { x: event.clientX, y: event.clientY })
+            }
+          : undefined
+      }
+    >
       <button
         type="button"
         className="album-card-main"
@@ -299,6 +312,22 @@ function AlbumCard({
       >
         {busy ? <SpinnerIcon size={16} /> : <PlayIcon size={16} />}
       </button>
+      {onMenu ? (
+        <button
+          type="button"
+          className="card-overflow album-card-overflow"
+          onClick={(event) => {
+            // A keyboard activation has no pointer coordinates, so anchor the
+            // menu to the button itself.
+            const rect = event.currentTarget.getBoundingClientRect()
+            onMenu(album, { x: rect.left, y: rect.bottom + 4 })
+          }}
+          aria-label={`More actions for ${album.album}`}
+          title={`More actions for ${album.album}`}
+        >
+          <MoreIcon size={15} />
+        </button>
+      ) : null}
     </div>
   )
 }
@@ -763,6 +792,10 @@ export function HomeView(props: HomeViewProps) {
   )
   const [trackDetails, setTrackDetails] = useState<Track | null>(null)
   const [trackEditing, setTrackEditing] = useState(false)
+  /** A right-click on an album card: the shelf groups tracks, so the menu is album-level. */
+  const [albumCardMenu, setAlbumCardMenu] = useState<
+    { album: AlbumSummary; at: { x: number; y: number } } | null
+  >(null)
 
   const scrollRef = useRef<HTMLElement | null>(null)
   const gridRef = useRef<HTMLElement | null>(null)
@@ -1006,6 +1039,30 @@ export function HomeView(props: HomeViewProps) {
       }
     },
     [onPlayLocal]
+  )
+
+  /**
+   * Adds an album to the queue instead of replacing what is playing.
+   *
+   * The shelf card plays on a click, so the menu's queue action is the one way
+   * to add a whole release without stopping the current track.
+   */
+  const queueAlbum = useCallback(
+    async (album: AlbumSummary): Promise<void> => {
+      try {
+        const page = await api.listTracks({
+          album: album.album,
+          albumArtist: album.albumArtist,
+          limit: 5000,
+          sort: 'album',
+          direction: 'asc'
+        })
+        if (page.tracks.length > 0) onQueueLocal(page.tracks)
+      } catch (cause) {
+        setShelvesError(messageOf(cause))
+      }
+    },
+    [onQueueLocal]
   )
 
   const playArtist = useCallback(
@@ -1617,6 +1674,7 @@ export function HomeView(props: HomeViewProps) {
                     busy={busyAlbum === albumKeyOf(entry.album)}
                     onOpen={openAlbumDetail}
                     onPlay={(next) => void playAlbum(next)}
+                    onMenu={(next, at) => setAlbumCardMenu({ album: next, at })}
                   />
                 ) : (
                   <TrackCard
@@ -1655,6 +1713,7 @@ export function HomeView(props: HomeViewProps) {
                     busy={busyAlbum === albumKeyOf(entry.album)}
                     onOpen={openAlbumDetail}
                     onPlay={(next) => void playAlbum(next)}
+                    onMenu={(next, at) => setAlbumCardMenu({ album: next, at })}
                   />
                 ) : (
                   <TrackCard
@@ -1854,6 +1913,44 @@ export function HomeView(props: HomeViewProps) {
           </>
         )}
       </section>
+
+      {albumCardMenu ? (
+        <RowMenu
+          at={albumCardMenu.at}
+          title={albumCardMenu.album.album}
+          portal
+          onClose={() => setAlbumCardMenu(null)}
+          items={[
+            {
+              id: 'play',
+              label: 'Play',
+              icon: <PlayIcon size={15} />,
+              onSelect: () => {
+                void playAlbum(albumCardMenu.album)
+                setAlbumCardMenu(null)
+              }
+            },
+            {
+              id: 'open',
+              label: 'Open album',
+              icon: <DiscIcon size={15} />,
+              onSelect: () => {
+                openAlbumDetail(albumCardMenu.album)
+                setAlbumCardMenu(null)
+              }
+            },
+            {
+              id: 'queue',
+              label: 'Add to queue',
+              icon: <QueueIcon size={15} />,
+              onSelect: () => {
+                void queueAlbum(albumCardMenu.album)
+                setAlbumCardMenu(null)
+              }
+            }
+          ]}
+        />
+      ) : null}
 
       {playlistMenu ? (
         <RowMenu

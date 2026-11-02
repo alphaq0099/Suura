@@ -8055,12 +8055,16 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     // The shelves and All tracks are a launch surface with no selection, so
     // their menu is the row's own actions: Play, Add to playlist, Details and
     // — for a file — Edit tags and Show in folder. A stream has no file and
-    // gets the smaller Play/Details menu. Select must never appear, because
-    // there is no selection for it to change.
+    // gets the smaller Play/Details menu. A shelf groups files into album
+    // cards, so those get the album's own Play/Open/Queue menu instead of
+    // ignoring the right-click. Select must never appear, because there is no
+    // selection for it to change.
     const homeMenus = await evaluate<{
       localCardItems: string
       localCardHasSelect: boolean
       streamCardItems: string
+      albumCardItems: string
+      albumCardOverflowItems: string
       localRowItems: string
       localRowHasSelect: boolean
       streamRowItems: string
@@ -8084,6 +8088,12 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            [...(shelf(title)?.querySelectorAll('.track-card') || [])].find(
              (card) => text(card.querySelector('.album-card-title')).trim() === name
            )
+         const albumCard = (title, name) =>
+           [...(shelf(title)?.querySelectorAll('.album-card') || [])].find(
+             (card) =>
+               !card.classList.contains('track-card') &&
+               text(card.querySelector('.album-card-title')).trim() === name
+           )
          const rowFor = (title) =>
            [...document.querySelectorAll('.all-tracks-list .track-row')].find(
              (row) => text(row.querySelector('.row-title-text')).trim() === title
@@ -8101,6 +8111,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          }
          const out = {
            localCardItems: '', localCardHasSelect: false, streamCardItems: '',
+           albumCardItems: '', albumCardOverflowItems: '',
            localRowItems: '', localRowHasSelect: false, streamRowItems: '',
            overflowItems: '', menusClosed: false
          }
@@ -8122,6 +8133,26 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          const streamDeadline = Date.now() + 3000
          while (Date.now() < streamDeadline && !document.querySelector('.row-menu')) await sleep(40)
          out.streamCardItems = items('.row-menu')
+         await close()
+
+         // The shelves group files into album cards, and those are the cards
+         // most shelves actually show. Right-clicking one must open the
+         // album's own menu rather than doing nothing.
+         rightClick(albumCard('Recently added', 'Shelf Test Multi Album'), 250, 280)
+         const albumDeadline = Date.now() + 3000
+         while (Date.now() < albumDeadline && !document.querySelector('.row-menu')) await sleep(40)
+         out.albumCardItems = items('.row-menu')
+         await close()
+
+         const albumOverflow = albumCard('Recently added', 'Shelf Test Multi Album')?.querySelector(
+           '.album-card-overflow'
+         )
+         albumOverflow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         const albumOverflowDeadline = Date.now() + 3000
+         while (Date.now() < albumOverflowDeadline && !document.querySelector('.row-menu')) {
+           await sleep(40)
+         }
+         out.albumCardOverflowItems = items('.row-menu')
          await close()
 
          rightClick(rowFor('Shelf Test Single'), 260, 300)
@@ -8164,6 +8195,16 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       homeMenus.streamCardItems === 'Play|Details',
       'home: right-clicking a stream shelf card opens Play and Details only',
       homeMenus.streamCardItems || 'no menu'
+    )
+    record(
+      homeMenus.albumCardItems === 'Play|Open album|Add to queue',
+      'home: right-clicking an album shelf card opens its album menu',
+      homeMenus.albumCardItems || 'no menu'
+    )
+    record(
+      homeMenus.albumCardOverflowItems === homeMenus.albumCardItems,
+      'home: an album card overflow button opens the same menu',
+      homeMenus.albumCardOverflowItems || 'no menu'
     )
     record(
       homeMenus.localRowItems.includes('Play') &&
