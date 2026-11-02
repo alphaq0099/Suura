@@ -9,7 +9,7 @@ installing and using the app, read the [README](../README.md) instead. The full 
 
 ---
 
-## Status: M1–M7 and M12 complete, including the visual revamp (Home dashboard, merged **All tracks**, album/artist detail, playlist hero). M8 Windows release engineering is in progress: the per-user installer, local diagnostics export, renderer sandbox and the headless performance gate are done; signing, auto-update, opt-in crash reporting, bundled sidecars, the compatibility/accessibility pass and a CI runner for that gate remain.
+## Status: M1–M7 and M12 complete, including the visual revamp (Home dashboard, merged **All tracks**, album/artist detail, playlist hero). M8 Windows release engineering is in progress: the per-user installer, local diagnostics export, renderer sandbox and the headless performance gate are done; signing, auto-update, opt-in crash reporting, bundled sidecars and the compatibility/accessibility pass remain. A GitHub Actions workflow (`.github/workflows/ci.yml`) now runs the build, smoke, self-test and perf gates on `windows-latest`; it is unverified until the first push runs it.
 
 Working today:
 
@@ -303,7 +303,8 @@ npm run package:win  # build the per-user NSIS installer under release/
 
 ## Verifying it works
 
-Seven independent checks, from cheapest to most convincing:
+Seven independent local checks, from cheapest to most convincing. CI (`.github/workflows/ci.yml`) runs the same gates
+on `windows-latest`: build, smoke and the self-test in one job, and the perf budgets in another.
 
 | Command | What it proves |
 |---|---|
