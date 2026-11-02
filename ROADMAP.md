@@ -527,8 +527,9 @@ installer is already done; what is open is what the installed app *contains* and
 artifact's shape is settled before the work tested against it (updates, provenance, signing checks, compatibility, CI
 packaging).
 
-- [ ] CI on GitHub Actions: build (typecheck included), smoke and the self-test on `windows-latest`, plus `npm run perf`
-      in its own job. The workflow exists at `.github/workflows/ci.yml`; it is unchecked until the first push runs green.
+- [x] CI on GitHub Actions: build (typecheck included), smoke and the self-test on `windows-latest`, plus `npm run perf`
+      in its own job. The workflow at `.github/workflows/ci.yml` ran green on the first push: smoke 1257/1257, self-test
+      all checks, perf budgets met.
 - [x] Installer (per-user, no admin): electron-builder NSIS x64, clean uninstall and an opt-in prompt to delete
       `%APPDATA%\Suura`. Silent install, the installed build's `--selftest`, and silent uninstall were verified; app
       data survived by default.
@@ -553,14 +554,15 @@ packaging).
 - [ ] Windows 10/11 compatibility matrix, HiDPI, multi-monitor, 4K scaling
 - [x] Performance budgets enforced headlessly (`npm run perf`): 10,000-file scan, incremental rescan, first page,
       search, database size and main-process memory, with a non-zero exit and the missed metric named on a regression
-- [ ] The same budgets on a CI runner (the workflow now runs `npm run perf`; unverified until the first green run), plus
-      cold start, first audio and memory under playback
+- [x] The same budgets on a CI runner: `npm run perf` runs in its own job and passed there, so the scan, rescan, paging,
+      search, database size and main-process memory gates now guard every push. Cold start, first audio and memory under
+      playback stay manual.
 - [ ] Accessibility pass: keyboard-only navigation, screen-reader labels, contrast
 
 **Exit:** a stranger can install, use and uninstall it without instructions.
-**Status:** the installer, manual diagnostics export, renderer sandboxing, headless perf budgets, daily yt-dlp update and
-the fetch-on-first-use sidecar installer are complete. CI, update/rollback, crash reporting, compatibility and
-accessibility remain; signing is documented but not configured.
+**Status:** the installer, manual diagnostics export, renderer sandboxing, headless perf budgets, daily yt-dlp update,
+the fetch-on-first-use sidecar installer and the CI workflow are complete. Update/rollback, crash reporting,
+compatibility and accessibility remain; signing is documented but not configured.
 
 ### M9 — Android Port  *(~4–6 weeks)*
 **Goal:** reuse the core, replace the platform-specific layers.
@@ -811,10 +813,10 @@ and a YouTube row saves through the same download queue as YouTube Links. A shel
 place with a removable chip. The hero art is at full strength in both themes, and its crossfade pace is a Settings
 slider (3–60 s) instead of a constant.
 **Windows release engineering (M8) is in progress**: the per-user NSIS installer, icon, uninstall data prompt, renderer
-sandbox, headless perf budgets and the fetch-on-first-use sidecar installer are in place, and the packaged app passes
-its self-test. The remaining work is sequenced around the artifact: CI first, then the update channel and engine
-rollback, then crash reporting and the compatibility/accessibility pass, with signing last. A streaming UX redesign is
-independent of that sequence as long as it only changes the renderer; it must come before the sidecar work only if it
-changes what the engine must resolve, cache or download.
+sandbox, headless perf budgets, fetch-on-first-use sidecar installer and the CI workflow are in place, and the packaged
+app passes its self-test. The remaining work is the update channel and engine rollback, then crash reporting and the
+compatibility/accessibility pass, with signing last. A streaming UX redesign is independent of that sequence as long as
+it only changes the renderer; it must come before the sidecar work only if it changes what the engine must resolve,
+cache or download.
 
-**Next:** add CI, then update/rollback, then M13 Phase 6 (AcoustID via the new `fpcalc` sidecar); then M9.
+**Next:** update/rollback, then M13 Phase 6 (AcoustID via the new `fpcalc` sidecar); then M9.

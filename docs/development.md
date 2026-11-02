@@ -9,7 +9,7 @@ installing and using the app, read the [README](../README.md) instead. The full 
 
 ---
 
-## Status: M1–M7 and M12 complete, including the visual revamp (Home dashboard, merged **All tracks**, album/artist detail, playlist hero). M8 Windows release engineering is in progress: the per-user installer, local diagnostics export, renderer sandbox, headless performance gate and the fetch-on-first-use sidecar installer are done; signing, auto-update, opt-in crash reporting and the compatibility/accessibility pass remain. A GitHub Actions workflow (`.github/workflows/ci.yml`) now runs the build, smoke, self-test and perf gates on `windows-latest`; it is unverified until the first push runs it.
+## Status: M1–M7 and M12 complete, including the visual revamp (Home dashboard, merged **All tracks**, album/artist detail, playlist hero). M8 Windows release engineering is in progress: the per-user installer, local diagnostics export, renderer sandbox, headless performance gate, fetch-on-first-use sidecar installer and the CI workflow are done; signing, auto-update, opt-in crash reporting and the compatibility/accessibility pass remain. The GitHub Actions workflow (`.github/workflows/ci.yml`) runs the build, smoke, self-test and perf gates on `windows-latest` and is green.
 
 Working today:
 
@@ -965,9 +965,9 @@ Everything below is release work, not product work; M1–M7 and M12 are built.
    is uploaded today.
 5. **Compatibility and accessibility pass**: Windows 10/11 at 100–200% scaling, multi-monitor and HiDPI, plus
    keyboard-only navigation, screen-reader labels and contrast.
-6. **Run the performance gate in CI**: `npm run perf` now enforces the 10 000-file scan, rescan, paging, search,
-   database size and main-process memory budgets headlessly, and exits non-zero on a miss. What is still missing is a
-   CI runner to call it, which needs the repository. Cold start, first audio and memory under playback stay manual.
+6. **Extend the performance gate**: `npm run perf` already runs in CI and passed there, enforcing the 10 000-file scan,
+   rescan, paging, search, database size and main-process memory budgets. Cold start, first audio and memory under
+   playback stay manual.
 7. **M2 gap**: optional crossfade.
 
 The update endpoint, crash-reporting service and signing certificate are decisions rather than code, so they come
