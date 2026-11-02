@@ -267,7 +267,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       cardLift: number
       cardRest: number
       livePlayShelf: boolean
-      livePlayAlbum: boolean
+      livePlayCard: string
     }>(
       window,
       `(async () => {
@@ -311,7 +311,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            heroDarkOpacity: '', heroActionsAfterLivePlay: -1, sourceHeading: '',
            badgesInSource: -1, badgesInTitle: -1, toolsBelowHeading: false,
            cardFocus: false, cardLift: 0, cardRest: 0,
-           livePlayShelf: false, livePlayAlbum: false
+           livePlayShelf: false, livePlayCard: ''
          }
 
          nav('Home')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -503,9 +503,10 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            await sleep(100)
          }
          out.livePlayShelf = !hadRecentShelf && Boolean(recentShelf)
-         out.livePlayAlbum =
-           (recentShelf?.querySelector('.album-card-title')?.textContent || '').trim() ===
-           'Selftest Album'
+         // The two base fixtures share an album title but have different
+         // artists, so each is a one-file release and the shelf's newest card
+         // is the track card for the file that was just played.
+         out.livePlayCard = (recentShelf?.querySelector('.album-card-title')?.textContent || '').trim()
          // The hero action follows that same shelf: it names the newest listen
          // as a resume instead of replaying a fixed album.
          out.heroResumeAfter = (
@@ -822,9 +823,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       playHover
     )
     record(
-      home.livePlayShelf && home.livePlayAlbum,
+      home.livePlayShelf && home.livePlayCard === 'Selftest Tone',
       'home: a counted listen refreshes Recently played while the view stays open',
-      { shelf: home.livePlayShelf, album: home.livePlayAlbum }
+      { shelf: home.livePlayShelf, card: home.livePlayCard }
     )
     record(
       home.heroResumeAfter === '' && home.heroActionsAfterLivePlay === 0,
@@ -7594,8 +7595,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       artistHasSingle: boolean
       artistAlbumColumn: string
       playStarted: boolean
-      singleAlbumPlayed: boolean
-      singleAlbumDetail: boolean
+      singleTrackPlayed: boolean
+      singleTrackCard: boolean
       multiDetailTitle: string
       multiDetailRows: number
       multiBackWorks: boolean
@@ -7650,7 +7651,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            shelfScrolled: 0, arrowBackEnabled: false, shelfNodeStable: false,
            artistKicker: '', artistTitle: '', artistRows: 0, artistHasSingle: false,
            artistAlbumColumn: '',
-           playStarted: false, singleAlbumPlayed: false, singleAlbumDetail: false,
+           playStarted: false, singleTrackPlayed: false, singleTrackCard: false,
            multiDetailTitle: '', multiDetailRows: 0, multiBackWorks: false,
            openMenuItems: '',
            onPlaylists: false, paneTitle: '', paneRows: 0,
@@ -7837,12 +7838,13 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          const backDeadline = Date.now() + 6000
          while (Date.now() < backDeadline && !document.querySelector('.home-shelf')) await sleep(100)
 
-         // A one-track album is a single, not a release worth its own page:
-         // its card plays the song instead of opening a one-row detail.
-         const singleAlbum = [...document.querySelectorAll('.home-shelf .album-card')].find(
-           (card) => text(card.querySelector('.album-card-title')).trim() === 'Shelf Test Single Album'
+         // A release with one file is a track, not an album: it appears as a
+         // track card and plays on a click, with the track actions in its menu.
+         const singleTrack = [...document.querySelectorAll('.home-shelf .track-card')].find(
+           (card) => text(card.querySelector('.album-card-title')).trim() === 'Shelf Test Album Single'
          )
-         singleAlbum
+         out.singleTrackCard = Boolean(singleTrack)
+         singleTrack
            ?.querySelector('.album-card-main')
            ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
          const singleDeadline = Date.now() + 6000
@@ -7850,9 +7852,13 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            if (text(document.querySelector('.player-title')).trim() === 'Shelf Test Album Single') break
            await sleep(100)
          }
-         out.singleAlbumPlayed =
+         out.singleTrackPlayed =
            text(document.querySelector('.player-title')).trim() === 'Shelf Test Album Single'
-         out.singleAlbumDetail = Boolean(document.querySelector('.album-detail'))
+         out.singleTrackCard =
+           out.singleTrackCard &&
+           ![...document.querySelectorAll('.home-shelf .album-card')].some(
+             (card) => text(card.querySelector('.album-card-title')).trim() === 'Shelf Test Single Album'
+           )
 
          // A real album keeps its detail page: two rows, Play and Queue, and a
          // back button that returns to the shelves.
@@ -7948,9 +7954,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       `${homeShelves.addedTitle || 'none'} · ${homeShelves.addedMeta || 'no meta'} · leaked ${homeShelves.addedInPlayed}`
     )
     record(
-      homeShelves.singleAlbumPlayed && !homeShelves.singleAlbumDetail,
-      'home: a one-track album card plays instead of opening a one-row page',
-      { played: homeShelves.singleAlbumPlayed, detail: homeShelves.singleAlbumDetail }
+      homeShelves.singleTrackCard && homeShelves.singleTrackPlayed,
+      'home: a one-file release appears as a track card and plays on a click',
+      { card: homeShelves.singleTrackCard, played: homeShelves.singleTrackPlayed }
     )
     record(
       homeShelves.multiDetailTitle === 'Shelf Test Multi Album' &&

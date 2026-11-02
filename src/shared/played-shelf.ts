@@ -15,6 +15,12 @@ function limitOf(value: number): number {
  * `atOf` is the timestamp that decides the order, and `include` is where the
  * caller states which tracks are already represented by an album card. The
  * shelves share this loop so "newest first" and the limit cannot drift apart.
+ *
+ * A release with exactly one file is a track, not an album: its album summary
+ * is skipped and its track card represents it, so a lone newly added song
+ * offers the track actions instead of an album page with one row. The album
+ * stays if its track was not passed in, so a caller that does not fetch tracks
+ * separately still shows the release rather than losing it.
  */
 function mergeShelf(
   atOf: (value: AlbumSummary | Track) => number | null,
@@ -29,8 +35,13 @@ function mergeShelf(
   // shelf in insertion order instead of newest first.
   const usable = (at: number | null | undefined): at is number =>
     typeof at === 'number' && Number.isFinite(at)
+  const trackIds = new Set(tracks.map((track) => track.id))
+  const singleAlbumTracks = new Set(
+    albums.filter((album) => album.trackCount === 1).map((album) => album.trackId)
+  )
 
   for (const album of albums) {
+    if (album.trackCount === 1 && trackIds.has(album.trackId)) continue
     const at = atOf(album)
     if (!usable(at)) continue
     entries.push({ kind: 'album', at, album })
@@ -39,7 +50,7 @@ function mergeShelf(
   for (const track of tracks) {
     const at = atOf(track)
     if (!usable(at)) continue
-    if (!include(track)) continue
+    if (!include(track) && !singleAlbumTracks.has(track.id)) continue
     entries.push({ kind: 'track', at, track })
   }
 
@@ -54,7 +65,8 @@ function mergeShelf(
  * appears there even though its play count and timestamp are recorded. Those
  * singles are the one case where a track card is the honest representation;
  * every track that belongs to an album stays represented by its album card, so
- * the shelf never shows the same listen twice.
+ * the shelf never shows the same listen twice. A release with a single file
+ * also becomes its track card, because there is no album to open.
  *
  * A stream is different: it has no row in the local library at all, and its
  * YouTube album tag does not place it on the album shelf. It is always its own
@@ -97,7 +109,9 @@ export function mergePlayedShelf(
  *
  * Recently added is built from album summaries, so a single with no album tag
  * was invisible there for the same reason it was invisible on Recently played.
- * Albums keep their card and albumless files get a track card, newest first.
+ * Albums keep their card and albumless files get a track card, newest first. A
+ * release with one file is a track card too, so a lone added song offers the
+ * track actions rather than an album page with one row.
  */
 export function mergeAddedShelf(
   albums: readonly AlbumSummary[],

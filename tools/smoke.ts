@@ -680,11 +680,11 @@ async function main(): Promise<void> {
     // which card represents a listen; the SQL below proves the query can find
     // them without a scan-time copy of album data.
     const mergeAlbum = (name: string, at: number | null) =>
-      ({ album: name, lastPlayedAt: at }) as AlbumSummary
+      ({ album: name, lastPlayedAt: at, trackCount: 2, trackId: -1 }) as AlbumSummary
     // The added shelf reads a different timestamp, so an album fixture built for
     // the played shelf would sort as `undefined`. Keep the two explicit.
     const mergeAddedAlbum = (name: string, at: number | null) =>
-      ({ album: name, addedAt: at }) as AlbumSummary
+      ({ album: name, addedAt: at, trackCount: 2, trackId: -1 }) as AlbumSummary
     const mergeTrack = (id: number, album: string | null, at: number | null) =>
       ({ id, album, lastPlayedAt: at }) as Track
     const mergeStream = (videoId: string, album: string | null, at: number | null) =>
@@ -734,21 +734,44 @@ async function main(): Promise<void> {
     )
 
     const addedMerge = mergeAddedShelf(
-      [mergeAddedAlbum('Recent Album', 200)],
+      [
+        mergeAddedAlbum('Recent Album', 200),
+        // A release with one file is a track; its album card must give way to
+        // the track card, which is what carries the track actions.
+        ({ ...mergeAddedAlbum('Single Release', 250), trackCount: 1, trackId: 13 } as AlbumSummary)
+      ],
       [
         ({ ...mergeTrack(11, null, 300), addedAt: 300 } as Track),
-        ({ ...mergeTrack(12, 'Has Album', 400), addedAt: 400 } as Track)
+        ({ ...mergeTrack(12, 'Has Album', 400), addedAt: 400 } as Track),
+        ({ ...mergeTrack(13, 'Single Release', 250), addedAt: 250 } as Track)
       ],
       3
     )
     checkEqual(
       'recently added merges albumless files with albums newest first',
       addedMerge.map((entry) => (entry.kind === 'album' ? entry.album.album : entry.track.id)).join(','),
-      '11,Recent Album'
+      '11,13,Recent Album'
     )
     check(
       'recently added keeps album tracks on their album card',
       !addedMerge.some((entry) => entry.kind === 'track' && entry.track.id === 12)
+    )
+    check(
+      'recently added shows a one-file release as its track, not an album',
+      addedMerge.some((entry) => entry.kind === 'track' && entry.track.id === 13) &&
+        !addedMerge.some((entry) => entry.kind === 'album' && entry.album.album === 'Single Release')
+    )
+
+    const playedSingle = mergePlayedShelf(
+      [({ ...mergeAlbum('Solo Release', 150), trackCount: 1, trackId: 13 } as AlbumSummary)],
+      [mergeTrack(13, 'Solo Release', 150)],
+      [],
+      3
+    )
+    checkEqual(
+      'recently played shows a one-file release as its track, not an album',
+      playedSingle.map((entry) => (entry.kind === 'album' ? entry.album.album : entry.track.id)).join(','),
+      '13'
     )
 
     // The stream play log is what makes a YouTube listen visible on Home.

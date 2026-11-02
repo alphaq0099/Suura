@@ -717,8 +717,12 @@ export function HomeView(props: HomeViewProps) {
   const allTracks = useAllTracks()
   const [recentAlbums, setRecentAlbums] = useState<AlbumSummary[]>([])
   const [addedSingles, setAddedSingles] = useState<Track[]>([])
+  // Tracks behind one-file releases. They are shown as track cards rather than
+  // album cards, so Home fetches the row itself once per shelf load.
+  const [addedSingleAlbumTracks, setAddedSingleAlbumTracks] = useState<Track[]>([])
   const [playedAlbums, setPlayedAlbums] = useState<AlbumSummary[]>([])
   const [playedSingles, setPlayedSingles] = useState<Track[]>([])
+  const [playedSingleAlbumTracks, setPlayedSingleAlbumTracks] = useState<Track[]>([])
   const [playedStreams, setPlayedStreams] = useState<Track[]>([])
   const [artists, setArtists] = useState<ArtistSummary[]>([])
   const [shelvesLoading, setShelvesLoading] = useState(true)
@@ -798,11 +802,29 @@ export function HomeView(props: HomeViewProps) {
         api.listStreamPlays(24),
         api.listArtists(12)
       ])
+      // A release with one file is a track, not an album. The merge turns it
+      // into a track card, so its row has to be here: the album summary only
+      // names a representative id.
+      const playedRecent = played.albums
+        .filter((album) => album.lastPlayedAt !== null)
+        .slice(0, 12)
+      const recentSingleIds = recent.albums
+        .filter((album) => album.trackCount === 1)
+        .map((album) => album.trackId)
+      const playedSingleIds = playedRecent
+        .filter((album) => album.trackCount === 1)
+        .map((album) => album.trackId)
+      const [recentSingleTracks, playedSingleTracks] = await Promise.all([
+        recentSingleIds.length > 0 ? api.getTracks(recentSingleIds) : Promise.resolve([]),
+        playedSingleIds.length > 0 ? api.getTracks(playedSingleIds) : Promise.resolve([])
+      ])
       if (token !== shelvesTokenRef.current) return
       setRecentAlbums(recent.albums)
       setAddedSingles(added.tracks)
-      setPlayedAlbums(played.albums.filter((album) => album.lastPlayedAt !== null).slice(0, 12))
+      setAddedSingleAlbumTracks(recentSingleTracks)
+      setPlayedAlbums(playedRecent)
       setPlayedSingles(singles.tracks)
+      setPlayedSingleAlbumTracks(playedSingleTracks)
       setPlayedStreams(streams.map(streamPlayToTrack))
       setArtists(artistRows)
       setShelvesError(null)
@@ -831,12 +853,18 @@ export function HomeView(props: HomeViewProps) {
   }, [loadShelves])
 
   const playedShelf = useMemo(
-    () => mergePlayedShelf(playedAlbums, playedSingles, playedStreams, 12),
-    [playedAlbums, playedSingles, playedStreams]
+    () =>
+      mergePlayedShelf(
+        playedAlbums,
+        [...playedSingles, ...playedSingleAlbumTracks],
+        playedStreams,
+        12
+      ),
+    [playedAlbums, playedSingleAlbumTracks, playedSingles, playedStreams]
   )
   const addedShelf = useMemo(
-    () => mergeAddedShelf(recentAlbums, addedSingles, 12),
-    [addedSingles, recentAlbums]
+    () => mergeAddedShelf(recentAlbums, [...addedSingles, ...addedSingleAlbumTracks], 12),
+    [addedSingleAlbumTracks, addedSingles, recentAlbums]
   )
   useRevealNewest(playedShelfRef, firstShelfKey(playedShelf))
   useRevealNewest(addedShelfRef, firstShelfKey(addedShelf))
