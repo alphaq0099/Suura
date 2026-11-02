@@ -4520,7 +4520,10 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       'the line being sung fills as it plays, so a long line reads as long'
     )
     record(
-      visuals.lyricFillTransitionMs === 0 && visuals.lyricFillFrames > 2,
+      // Chromium may serialise a zero duration as a tiny scientific-notation
+      // value (`1e-06s`), which rounds to 0.001 ms here. Anything under a
+      // millisecond is the no-transition case the CSS asks for.
+      visuals.lyricFillTransitionMs >= 0 && visuals.lyricFillTransitionMs < 1 && visuals.lyricFillFrames > 2,
       'the fill follows the song at frame rate, with no transition smoothing it afterwards',
       `${visuals.lyricFillFrames} distinct positions in 200 ms, ${visuals.lyricFillTransitionMs} ms transition`
     )
