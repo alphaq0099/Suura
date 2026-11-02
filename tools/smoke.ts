@@ -56,7 +56,7 @@ import {
   tagBatchChanges,
   tagBatchFields
 } from '@shared/tag-batch'
-import type { AlbumSummary, EngineStatus, LyricsBatchSnapshot, LyricsCandidate, StreamLyricsTarget, TagBatchSnapshot, TagCandidate, TagLookupQuery, Track } from '@shared/types'
+import type { AlbumSummary, EngineStatus, LyricsBatchSnapshot, LyricsCandidate, PendingWriteNotice, StreamLyricsTarget, TagBatchSnapshot, TagCandidate, TagLookupQuery, Track } from '@shared/types'
 import { serializeDetails, silentLogger } from '@core/logging/logger'
 import {
   DIAGNOSTICS_SUMMARY_LIMIT,
@@ -221,6 +221,7 @@ import { cleanupAbandonedDownloads, DownloadService } from '../src/main/download
 import { ReplayGainService } from '../src/main/replay-gain-service'
 import { LyricsBatchService } from '../src/main/lyrics-batch-service'
 import { TagBatchService } from '../src/main/tag-batch-service'
+import { mergeDeferredTagWrite, PendingWrites } from '../src/main/pending-writes'
 
 const execFileAsync = promisify(execFile)
 
@@ -7022,6 +7023,157 @@ async function main(): Promise<void> {
     } finally {
       await rm(tagBatchRoot, { recursive: true, force: true }).catch(() => undefined)
     }
+  }
+
+  // ---- deferred writes ----------------------------------------------------
+  // A file open for playback cannot be replaced, so tag and lyric writes aimed
+  // at it are queued instead of refused. The queue is pure, so its rules are
+  // pinned down here rather than through a window.
+  {
+    const notices: PendingWriteNotice[] = []
+    const queue = new PendingWrites({
+      log: silentLogger,
+      onResult: (notice) => notices.push(notice)
+    })
+
+    // Last write wins: the second edit already contains the first, and writing
+    // both would rewrite the same file twice.
+    const order: string[] = []
+    queue.enqueue(1, 'tags', async () => order.push('first'))
+    queue.enqueue(1, 'tags', async () => order.push('second'))
+    checkEqual('deferred writes: one entry per track and kind', queue.size, 1)
+    const firstFlush = await queue.flush(() => false)
+    checkEqual('deferred writes: a successful flush runs the write', order.join(','), 'second')
+    checkEqual('deferred writes: a successful flush empties the queue', queue.size, 0)
+    checkEqual(
+      'deferred writes: a success is reported once',
+      [firstFlush.written, notices.filter((notice) => notice.ok).length].join('|'),
+      '1|1'
+    )
+
+    // Tags and lyrics for the same track are different writes and must not
+    // replace one another.
+    queue.enqueue(2, 'tags', async () => undefined)
+    queue.enqueue(2, 'lyrics', async () => undefined)
+    checkEqual('deferred writes: tags and lyrics are separate entries', queue.size, 2)
+    await queue.flush(() => false)
+    checkEqual('deferred writes: both kinds drain together', queue.size, 0)
+
+    // A file that is still open stays queued, and the write is not attempted.
+    let busyAttempts = 0
+    queue.enqueue(3, 'tags', async () => {
+      busyAttempts += 1
+    })
+    const busy = await queue.flush((trackId) => trackId === 3)
+    checkEqual('deferred writes: a playing file is not written', busy.written, 0)
+    checkEqual('deferred writes: a playing file stays queued', queue.size, 1)
+    checkEqual('deferred writes: a playing file is not even attempted', busyAttempts, 0)
+
+    // Once playback moves on, the same entry runs.
+    const resumed = await queue.flush(() => false)
+    checkEqual('deferred writes: the entry runs after playback', resumed.written, 1)
+    checkEqual('deferred writes: the entry leaves the queue', queue.size, 0)
+
+    // A write that fails stays queued, because the usual cause is the OS still
+    // holding the file; the next state change tries again.
+    let failOnce = true
+    queue.enqueue(4, 'lyrics', async () => {
+      if (failOnce) {
+        failOnce = false
+        throw new Error('the file is still open')
+      }
+    })
+    const failed = await queue.flush(() => false)
+    checkEqual('deferred writes: a failure keeps the entry', queue.size, 1)
+    checkEqual('deferred writes: a failure is counted', failed.failed, 1)
+    const recovered = await queue.flush(() => false)
+    checkEqual('deferred writes: a retry can succeed', recovered.written, 1)
+    checkEqual('deferred writes: a retry empties the queue', queue.size, 0)
+
+    // A write queued while a flush is running belongs to the newer edit; the
+    // finishing entry must not delete it.
+    let queuedDuringFlush = false
+    queue.enqueue(5, 'tags', async () => {
+      queue.enqueue(5, 'tags', async () => {
+        queuedDuringFlush = true
+      })
+    })
+    await queue.flush(() => false)
+    checkEqual('deferred writes: a newer entry survives the flush', queue.size, 1)
+    await queue.flush(() => false)
+    checkEqual('deferred writes: the newer entry then runs', queuedDuringFlush, true)
+
+    // A permanent failure is reported once, not on every retry.
+    notices.length = 0
+    queue.enqueue(6, 'tags', async () => {
+      throw new Error('permission denied')
+    })
+    for (let attempt = 0; attempt < 4; attempt += 1) await queue.flush(() => false)
+    const reported = notices.filter((notice) => !notice.ok)
+    checkEqual('deferred writes: a permanent failure is reported once', reported.length, 1)
+    checkEqual(
+      'deferred writes: the report names the track and reason',
+      `${reported[0]?.trackId}|${reported[0]?.kind}|${reported[0]?.message}`,
+      '6|tags|permission denied'
+    )
+    checkEqual('deferred writes: a permanent failure stays queued', queue.size, 1)
+
+    // A second save while the first is still queued must not drop a field the
+    // first one touched: both patches are measured against the same unchanged
+    // row, so only the merge knows about both edits.
+    const firstTagSave = mergeDeferredTagWrite(undefined, {
+      fields: { genre: 'Deferred Genre' },
+      artwork: undefined
+    })
+    const secondTagSave = mergeDeferredTagWrite(firstTagSave, {
+      fields: { year: 2000 },
+      artwork: undefined
+    })
+    checkEqual(
+      'deferred writes: a later tag save keeps a field the earlier one touched',
+      `${secondTagSave.fields.genre}|${secondTagSave.fields.year}`,
+      'Deferred Genre|2000'
+    )
+    const replaced = mergeDeferredTagWrite(secondTagSave, {
+      fields: { genre: 'Replaced Genre' },
+      artwork: undefined
+    })
+    checkEqual(
+      'deferred writes: a later tag save wins for the field it changes',
+      replaced.fields.genre,
+      'Replaced Genre'
+    )
+    const cleared = mergeDeferredTagWrite(replaced, {
+      fields: { genre: null },
+      artwork: undefined
+    })
+    checkEqual(
+      'deferred writes: a later blank is an explicit clear, not a dropped edit',
+      `${String(cleared.fields.genre)}|${cleared.fields.year}`,
+      'null|2000'
+    )
+
+    // The cover is part of the same queued write, and follows the same rule.
+    const cover = { image: { data: new Uint8Array([1, 2, 3]), mime: 'image/png' }, key: 'one' }
+    const coverSave = mergeDeferredTagWrite(undefined, { fields: {}, artwork: cover })
+    const noCoverChange = mergeDeferredTagWrite(coverSave, {
+      fields: { genre: 'Deferred Genre' },
+      artwork: undefined
+    })
+    checkEqual(
+      'deferred writes: a later tag save keeps the cover the earlier one chose',
+      noCoverChange.artwork?.key,
+      'one'
+    )
+    const removedCover = mergeDeferredTagWrite(noCoverChange, {
+      fields: {},
+      artwork: { image: null, key: '' }
+    })
+    checkEqual(
+      'deferred writes: a later cover removal wins',
+      `${removedCover.artwork?.key}|${String(removedCover.artwork?.image)}`,
+      '|null'
+    )
   }
 
   // The scale budgets are a pure decision, so they are held to their edges here

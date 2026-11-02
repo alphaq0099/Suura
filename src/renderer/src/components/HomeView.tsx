@@ -31,6 +31,7 @@ import {
   DiscIcon,
   FolderIcon,
   HistoryIcon,
+  InfoIcon,
   LibraryIcon,
   ListMusicIcon,
   MoreIcon,
@@ -310,7 +311,15 @@ function AlbumCard({
  * exist. The meta line carries the duration, which is what tells it apart from
  * the album cards around it.
  */
-function TrackCard({ track, onPlay }: { track: Track; onPlay: (track: Track) => void }) {
+function TrackCard({
+  track,
+  onPlay,
+  onMenu
+}: {
+  track: Track
+  onPlay: (track: Track) => void
+  onMenu?: (track: Track, at: { x: number; y: number }) => void
+}) {
   const ref = useRef<HTMLDivElement | null>(null)
   const visible = useNearViewport(ref)
   const meta = [
@@ -322,7 +331,18 @@ function TrackCard({ track, onPlay }: { track: Track; onPlay: (track: Track) => 
     .join(' · ')
 
   return (
-    <div className="album-card track-card" ref={ref}>
+    <div
+      className="album-card track-card"
+      ref={ref}
+      onContextMenu={
+        onMenu
+          ? (event) => {
+              event.preventDefault()
+              onMenu(track, { x: event.clientX, y: event.clientY })
+            }
+          : undefined
+      }
+    >
       <button
         type="button"
         className="album-card-main"
@@ -356,6 +376,22 @@ function TrackCard({ track, onPlay }: { track: Track; onPlay: (track: Track) => 
       >
         <PlayIcon size={16} />
       </button>
+      {onMenu ? (
+        <button
+          type="button"
+          className="card-overflow track-card-overflow"
+          onClick={(event) => {
+            // A keyboard activation has no pointer coordinates, so anchor the
+            // menu to the button itself.
+            const rect = event.currentTarget.getBoundingClientRect()
+            onMenu(track, { x: rect.left, y: rect.bottom + 4 })
+          }}
+          aria-label={`More actions for ${track.title}`}
+          title={`More actions for ${track.title}`}
+        >
+          <MoreIcon size={15} />
+        </button>
+      ) : null}
     </div>
   )
 }
@@ -713,6 +749,20 @@ export function HomeView(props: HomeViewProps) {
   const [albumDetails, setAlbumDetails] = useState<Track | null>(null)
   // The row menu can ask for the editor instead of the sheet.
   const [albumEditing, setAlbumEditing] = useState(false)
+  /**
+   * A right-click on a Home shelf card or an All tracks row. The shelf cards and
+   * the list have no selection, so the menu offers row actions only; `from`
+   * decides whether Play starts just this track or the list around it.
+   */
+  const [trackMenu, setTrackMenu] = useState<
+    { track: Track; at: { x: number; y: number }; from: 'shelf' | 'all' } | null
+  >(null)
+  /** A stream has no file, so its menu is the smaller RowMenu. */
+  const [streamMenu, setStreamMenu] = useState<{ track: Track; at: { x: number; y: number } } | null>(
+    null
+  )
+  const [trackDetails, setTrackDetails] = useState<Track | null>(null)
+  const [trackEditing, setTrackEditing] = useState(false)
 
   const scrollRef = useRef<HTMLElement | null>(null)
   const gridRef = useRef<HTMLElement | null>(null)
@@ -1004,6 +1054,32 @@ export function HomeView(props: HomeViewProps) {
     },
     [allTracks.rows, onPlayLocal, onPlayTrack]
   )
+
+  /**
+   * Right-click on a Home track. A local file gets the full row menu; a stream
+   * has no file to tag or reveal, so it gets the smaller one.
+   */
+  const openTrackMenu = useCallback(
+    (track: Track, at: { x: number; y: number }, from: 'shelf' | 'all') => {
+      if (track.sourceKind === 'youtube') setStreamMenu({ track, at })
+      else setTrackMenu({ track, at, from })
+    },
+    []
+  )
+
+  /** Play from the row menu: a shelf card plays itself, a list row plays its list. */
+  const playMenuTrack = useCallback((): void => {
+    if (!trackMenu) return
+    const track = trackMenu.track
+    if (trackMenu.from === 'all') {
+      const index = allTracks.rows.findIndex((row) => row.track.id === track.id)
+      if (index >= 0) playAllTracksRow(index)
+      else onPlayTrack(track)
+    } else {
+      onPlayTrack(track)
+    }
+    setTrackMenu(null)
+  }, [trackMenu, allTracks.rows, playAllTracksRow, onPlayTrack])
 
   /**
    * A shelf's More opens the full version of that shelf in the list below.
@@ -1547,6 +1623,7 @@ export function HomeView(props: HomeViewProps) {
                     key={shelfEntryKey(entry)}
                     track={entry.track}
                     onPlay={onPlayTrack}
+                    onMenu={(next, at) => openTrackMenu(next, at, 'shelf')}
                   />
                 )
               )}
@@ -1584,6 +1661,7 @@ export function HomeView(props: HomeViewProps) {
                     key={shelfEntryKey(entry)}
                     track={entry.track}
                     onPlay={onPlayTrack}
+                    onMenu={(next, at) => openTrackMenu(next, at, 'shelf')}
                   />
                 )
               )}
@@ -1739,6 +1817,7 @@ export function HomeView(props: HomeViewProps) {
                 onSelect={() => undefined}
                 onSelectAll={() => undefined}
                 onClearSelection={() => undefined}
+                onRowContextMenu={(track, _index, at) => openTrackMenu(track, at, 'all')}
                 onReveal={onReveal}
                 onRequestMore={allTracks.hasMore ? allTracks.loadMore : undefined}
                 // Home is a launch surface: a row starts playing on a click,
@@ -1829,6 +1908,83 @@ export function HomeView(props: HomeViewProps) {
                   }
                 ]
           }
+        />
+      ) : null}
+
+      {trackMenu ? (
+        <TrackContextMenu
+          track={trackMenu.track}
+          at={trackMenu.at}
+          playlists={playlists}
+          onAddTracks={onAddTracksToPlaylist}
+          onCreatePlaylist={onCreatePlaylist}
+          onPlay={playMenuTrack}
+          onDetails={() => {
+            setTrackEditing(false)
+            setTrackDetails(trackMenu.track)
+            setTrackMenu(null)
+          }}
+          onEditTags={
+            trackMenu.track.filePath
+              ? () => {
+                  setTrackEditing(true)
+                  setTrackDetails(trackMenu.track)
+                  setTrackMenu(null)
+                }
+              : undefined
+          }
+          onReveal={
+            trackMenu.track.filePath
+              ? () => {
+                  onReveal(trackMenu.track.id)
+                  setTrackMenu(null)
+                }
+              : undefined
+          }
+          showSelection={false}
+          isSelected={false}
+          onToggleSelection={() => undefined}
+          onPlaySelected={() => undefined}
+          onQueueSelected={() => undefined}
+          trackIds={[trackMenu.track.id]}
+          onClose={() => setTrackMenu(null)}
+        />
+      ) : null}
+
+      {streamMenu ? (
+        <RowMenu
+          at={streamMenu.at}
+          title={streamMenu.track.title}
+          onClose={() => setStreamMenu(null)}
+          items={[
+            {
+              id: 'play',
+              label: 'Play',
+              icon: <PlayIcon />,
+              onSelect: () => onPlayTrack(streamMenu.track)
+            },
+            {
+              id: 'details',
+              label: 'Details',
+              icon: <InfoIcon />,
+              onSelect: () => {
+                setTrackEditing(false)
+                setTrackDetails(streamMenu.track)
+              }
+            }
+          ]}
+        />
+      ) : null}
+
+      {trackDetails ? (
+        <TrackDetails
+          track={trackDetails}
+          initialEditing={trackEditing}
+          onReveal={trackDetails.sourceKind === 'local' ? onReveal : undefined}
+          onClose={() => {
+            setTrackDetails(null)
+            setTrackEditing(false)
+          }}
         />
       ) : null}
     </section>

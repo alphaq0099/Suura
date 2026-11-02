@@ -33,7 +33,9 @@ import type {
   LyricsCandidate,
   LyricsLookupResult,
   LyricsTarget,
+  LyricsWriteResult,
   OnlinePlaylist,
+  PendingWriteNotice,
   RelocateReport,
   OnlinePlaylistDetail,
   OnlineTrack,
@@ -56,6 +58,7 @@ import type {
   TagBatchSnapshot,
   TagBatchUndoResult,
   TagLookupResult,
+  TagWriteResult,
   Track,
   TrackLyrics,
   TrackPage,
@@ -193,7 +196,8 @@ export const IPC_EVENTS = {
   playerCommand: 'event:player-command',
   replayGainProgress: 'event:replay-gain-progress',
   lyricsBatchProgress: 'event:lyrics-batch-progress',
-  tagBatchProgress: 'event:tag-batch-progress'
+  tagBatchProgress: 'event:tag-batch-progress',
+  pendingWriteChanged: 'event:pending-write-changed'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -240,6 +244,8 @@ export interface PlayerEvents {
   lyricsBatchProgress: LyricsBatchProgress
   /** A batch tag scan advanced, or finished and is ready to review. */
   tagBatchProgress: TagBatchProgress
+  /** A write that was deferred during playback finished, or kept failing. */
+  pendingWriteChanged: PendingWriteNotice
 }
 
 export type PlayerEventName = keyof PlayerEvents
@@ -254,7 +260,8 @@ export const EVENT_CHANNELS: Record<PlayerEventName, IpcEventChannel> = {
   playerCommand: IPC_EVENTS.playerCommand,
   replayGainProgress: IPC_EVENTS.replayGainProgress,
   lyricsBatchProgress: IPC_EVENTS.lyricsBatchProgress,
-  tagBatchProgress: IPC_EVENTS.tagBatchProgress
+  tagBatchProgress: IPC_EVENTS.tagBatchProgress,
+  pendingWriteChanged: IPC_EVENTS.pendingWriteChanged
 }
 
 /**
@@ -342,6 +349,10 @@ export interface PlayerApi {
    * so this is not a "maybe it worked" operation: it either resolves with the
    * updated row or rejects with a message that says why nothing changed.
    *
+   * A track that is open for playback cannot be replaced on Windows. Its write
+   * is queued instead, and the result says `deferred` with the sentence to show;
+   * the queue runs once the track is no longer the one playing.
+   *
    * `artworkKey` is one of the cache keys `getArtworkChoices` handed out: the
    * bytes behind it are read here and embedded, so what was previewed is what
    * lands in the file. `null` removes the cover, and leaving it out keeps the
@@ -351,7 +362,7 @@ export interface PlayerApi {
     trackId: number,
     fields: TrackTagFields,
     artworkKey?: string | null
-  ): Promise<Track>
+  ): Promise<TagWriteResult>
   /**
    * Covers this file could use, from its own tags, its folder, its video and
    * any provider. Each is already cached, so the picker can show it at once.
@@ -414,11 +425,13 @@ export interface PlayerApi {
   /**
    * Writes the chosen fetch into the file's tag and removes the fetched copy.
    *
-   * Refused while the track is playing, and refused when a `.lrc` beside the
-   * file would keep winning over the tag that was just written. A streaming
-   * track has no file and is refused outright.
+   * A track that is open for playback is deferred rather than refused: the
+   * fetched copy stays until the queue can write the words after playback. A
+   * `.lrc` beside the file is still refused, because it would keep winning over
+   * the tag that was just written. A streaming track has no file and is refused
+   * outright.
    */
-  writeTrackLyricsToFile(target: LyricsTarget): Promise<TrackLyrics | null>
+  writeTrackLyricsToFile(target: LyricsTarget): Promise<LyricsWriteResult>
   /**
    * Starts a batch scan over local tracks.
    *

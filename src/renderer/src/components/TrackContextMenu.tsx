@@ -14,7 +14,13 @@ export interface TrackContextMenuProps {
   onDetails: () => void
   /** Absent for a stream: only a file can have its tags edited. */
   onEditTags?: () => void
-  onReveal: () => void
+  /** Absent for a stream: there is no file to show in a folder. */
+  onReveal?: () => void
+  /**
+   * False where the list has no selection at all (Home's shelves and All
+   * tracks): Select would be a button that does nothing.
+   */
+  showSelection?: boolean
   isSelected: boolean
   onToggleSelection: () => void
   onPlaySelected: () => void
@@ -49,6 +55,7 @@ export function TrackContextMenu(props: TrackContextMenuProps) {
     onDetails,
     onEditTags,
     onReveal,
+    showSelection = true,
     isSelected,
     onToggleSelection,
     onPlaySelected,
@@ -81,7 +88,12 @@ export function TrackContextMenu(props: TrackContextMenuProps) {
   }, [onClose])
 
   // Clamped so a right-click near the right or bottom edge stays on screen.
-  const height = BASE_HEIGHT + (isSelected ? SELECTED_ACTION_HEIGHT : 0) + (onEditTags ? EDIT_ITEM_HEIGHT : 0)
+  const height =
+    BASE_HEIGHT +
+    (showSelection ? 0 : -EDIT_ITEM_HEIGHT) +
+    (onReveal ? 0 : -EDIT_ITEM_HEIGHT) +
+    (showSelection && isSelected ? SELECTED_ACTION_HEIGHT : 0) +
+    (onEditTags ? EDIT_ITEM_HEIGHT : 0)
   const style = {
     left: Math.max(8, Math.min(at.x, window.innerWidth - WIDTH - 8)),
     top: Math.max(8, Math.min(at.y, window.innerHeight - height - 8))
@@ -106,7 +118,7 @@ export function TrackContextMenu(props: TrackContextMenuProps) {
             <PlayIcon size={14} />
             <span>Play</span>
           </button>
-          {isSelected ? (
+          {showSelection && isSelected ? (
             <>
               <button
                 type="button"
@@ -134,18 +146,20 @@ export function TrackContextMenu(props: TrackContextMenuProps) {
               </button>
             </>
           ) : null}
-          <button
-            type="button"
-            role="menuitem"
-            className="context-item"
-            onClick={() => {
-              onToggleSelection()
-              onClose()
-            }}
-          >
-            <CheckIcon size={14} />
-            <span>{isSelected ? 'Deselect' : 'Select'}</span>
-          </button>
+          {showSelection ? (
+            <button
+              type="button"
+              role="menuitem"
+              className="context-item"
+              onClick={() => {
+                onToggleSelection()
+                onClose()
+              }}
+            >
+              <CheckIcon size={14} />
+              <span>{isSelected ? 'Deselect' : 'Select'}</span>
+            </button>
+          ) : null}
           <button type="button" role="menuitem" className="context-item" onClick={() => setPage('playlists')}>
             <PlaylistIcon size={14} />
             <span>Add to playlist…</span>
@@ -176,18 +190,20 @@ export function TrackContextMenu(props: TrackContextMenuProps) {
               <span>Edit tags…</span>
             </button>
           ) : null}
-          <button
-            type="button"
-            role="menuitem"
-            className="context-item"
-            onClick={() => {
-              onReveal()
-              onClose()
-            }}
-          >
-            <RevealIcon size={14} />
-            <span>Show in folder</span>
-          </button>
+          {onReveal ? (
+            <button
+              type="button"
+              role="menuitem"
+              className="context-item"
+              onClick={() => {
+                onReveal()
+                onClose()
+              }}
+            >
+              <RevealIcon size={14} />
+              <span>Show in folder</span>
+            </button>
+          ) : null}
         </>
       ) : (
         <AddToPlaylistMenu

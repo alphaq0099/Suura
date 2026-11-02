@@ -1256,6 +1256,14 @@ input[type='radio'] {
   opacity: 1;
 }
 
+/* A track card's overflow sits opposite its play badge, so both stay reachable
+   and a right-click has a keyboard equivalent. */
+.track-card-overflow {
+  top: 7px;
+  right: auto;
+  left: 7px;
+}
+
 .album-card-title {
   display: block;
   overflow: hidden;
@@ -4246,6 +4254,15 @@ a.np-lyrics-meta:hover {
   border-right: 0;
 }
 
+/* A deferred write is not a failure: it says when the file will change. */
+.np-lyrics-action-notice {
+  margin: 0;
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+  border-color: var(--accent);
+}
+
 .np-lyrics-foot {
   display: flex;
   align-items: center;
@@ -6379,6 +6396,12 @@ button.online-jump:hover {
   margin: 0;
   color: var(--danger-text);
   font-size: calc(12px * var(--text-scale));
+}
+
+/* Queued, not failed: the tags land in the file once the track stops. */
+.tag-deferred {
+  margin: 0;
+  border-color: var(--accent);
 }
 
 .tag-foot {

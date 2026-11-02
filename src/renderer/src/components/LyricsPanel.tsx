@@ -83,6 +83,12 @@ export function LyricsPanel(props: LyricsPanelProps) {
   const [finderOpen, setFinderOpen] = useState(false)
   const [action, setAction] = useState<'use-file' | 'write' | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  /**
+   * A write that was queued because this track is open for playback. It is not
+   * an error: the fetched copy is still shown, and the file will receive it when
+   * the track is no longer the one playing.
+   */
+  const [actionNotice, setActionNotice] = useState<string | null>(null)
   // What the file itself holds, asked only while a fetched copy is on screen.
   // It decides whether the switch-back button is a way back or a discard.
   const [fileLyrics, setFileLyrics] = useState<TrackLyrics | null>(null)
@@ -99,6 +105,7 @@ export function LyricsPanel(props: LyricsPanelProps) {
     setError(null)
     setFinderOpen(false)
     setActionError(null)
+    setActionNotice(null)
     setFileLyrics(null)
     setFileChecked(false)
   }, [trackId])
@@ -130,6 +137,27 @@ export function LyricsPanel(props: LyricsPanelProps) {
         if (requestRef.current === request) setLoading(false)
       })
   }, [open, target])
+
+  // A deferred write finishes in the main process after playback, possibly
+  // while this panel is still open on the same track. Re-read the row then: the
+  // fetched copy has been cleared and the file's own lyrics are what is left.
+  useEffect(() => {
+    if (!open || trackId === null || !target) return
+    const token = api.on('pendingWriteChanged', (notice) => {
+      if (notice.kind !== 'lyrics' || notice.trackId !== trackId) return
+      if (!notice.ok) {
+        setActionError(notice.message ?? 'The lyrics could not be written to the file.')
+        return
+      }
+      setActionError(null)
+      setActionNotice('Lyrics were added to the file.')
+      void api
+        .getTrackLyrics(target)
+        .then((found) => setLyrics(found))
+        .catch(() => undefined)
+    })
+    return () => api.off(token)
+  }, [open, target, trackId])
 
   // Only a fetched row has the two file actions; the file's own lyrics have
   // nothing to switch back to. This is the same test the actions row uses,
@@ -218,6 +246,7 @@ export function LyricsPanel(props: LyricsPanelProps) {
     setLyrics(updated)
     setError(null)
     setActionError(null)
+    setActionNotice(null)
     setFinderOpen(false)
   }
 
@@ -225,12 +254,20 @@ export function LyricsPanel(props: LyricsPanelProps) {
     if (!target || action) return
     setAction(kind)
     setActionError(null)
+    setActionNotice(null)
     try {
-      const updated =
-        kind === 'use-file'
-          ? await api.useFileLyrics(target)
-          : await api.writeTrackLyricsToFile(target)
-      setLyrics(updated)
+      if (kind === 'use-file') {
+        setLyrics(await api.useFileLyrics(target))
+      } else {
+        const result = await api.writeTrackLyricsToFile(target)
+        setLyrics(result.lyrics)
+        if (result.deferred) {
+          setActionNotice(
+            result.message ??
+              'These lyrics will be written to the file after this track finishes playing.'
+          )
+        }
+      }
     } catch (cause) {
       setActionError(messageOf(cause))
     } finally {
@@ -357,6 +394,12 @@ export function LyricsPanel(props: LyricsPanelProps) {
       {!finderOpen && actionError ? (
         <p className="banner error np-lyrics-action-error" role="alert">
           {actionError}
+        </p>
+      ) : null}
+
+      {!finderOpen && actionNotice ? (
+        <p className="banner np-lyrics-action-notice" role="status">
+          {actionNotice}
         </p>
       ) : null}
 

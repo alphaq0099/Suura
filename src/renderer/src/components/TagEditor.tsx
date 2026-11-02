@@ -160,6 +160,12 @@ export function TagEditor(props: TagEditorProps) {
   const [removeLyrics, setRemoveLyrics] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /**
+   * Set when the save was queued because this file is open for playback. The
+   * row has not changed yet, so the dialog stays open with the sentence that
+   * says when the write will happen.
+   */
+  const [notice, setNotice] = useState<string | null>(null)
   const [findOpen, setFindOpen] = useState(false)
   /**
    * The cover the user chose: a cache key, `null` to remove it, or `undefined`
@@ -213,8 +219,14 @@ export function TagEditor(props: TagEditorProps) {
     }
   }, [track, draft, removeLyrics, loadedLyrics])
 
+  // A fresh edit after a deferred save is a new write, so the notice goes away
+  // and Save becomes available again.
+  useEffect(() => {
+    setNotice(null)
+  }, [draft, artwork])
+
   const dirty = Object.keys(patch).length > 0 || artwork !== undefined
-  const canSave = dirty && !problem && !saving
+  const canSave = dirty && !problem && !saving && !notice
 
   // A `.lrc` beside the file is what the player shows, so the box is a preview
   // there rather than a tag editor: writing the tag would change nothing the
@@ -262,8 +274,16 @@ export function TagEditor(props: TagEditorProps) {
     setSaving(true)
     setError(null)
     try {
-      const updated = await api.updateTrackTags(track.id, patch, artwork)
-      onSaved(updated)
+      const result = await api.updateTrackTags(track.id, patch, artwork)
+      if (result.deferred) {
+        // The row is unchanged until the file can be replaced. Keep the editor
+        // open so the sentence is read where the user pressed Save.
+        setNotice(
+          result.message ?? 'Tags will be written to this file after this track finishes playing.'
+        )
+        return
+      }
+      onSaved(result.track)
       onClose()
     } catch (cause) {
       setError(messageOf(cause))
@@ -360,6 +380,12 @@ export function TagEditor(props: TagEditorProps) {
         {error ? (
           <p className="banner error" role="alert">
             {error}
+          </p>
+        ) : null}
+
+        {notice ? (
+          <p className="banner tag-deferred" role="status">
+            {notice}
           </p>
         ) : null}
 

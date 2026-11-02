@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { app, BrowserWindow, clipboard, dialog, net } from 'electron'
 import { probeExecutable } from '@engine/sidecar/locate'
+import { extractMetadata } from '@core/library/metadata'
 import { IPC_EVENTS } from '@shared/ipc'
 import { mergeLibrarySearch } from '@shared/search'
 import type { ArtworkChoice, TagLookupQuery } from '@shared/types'
@@ -4615,6 +4616,214 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       }
     )
 
+    // ---- 12b. writes deferred while the file is playing ------------------
+    // Fetching lyrics only happens while listening, and Windows will not replace
+    // a file that is open for playback. Rather than ask the user to stop the
+    // song they are reading, the write is queued and the panel says when it will
+    // land. The renderer tells main which file is open through the same taskbar
+    // call playback already makes, so this drives that call directly and then
+    // takes the track off playback to drain the queue.
+    const deferredTrack = container.library
+      .list()
+      .tracks.find((track) => track.title === 'Selftest Silent')
+    if (!deferredTrack) throw new Error('the deferred-write fixture is missing')
+    await container.lyrics.use(deferredTrack.id, {
+      provider: 'lrclib',
+      providerId: 'selftest-deferred',
+      title: 'Selftest Silent',
+      artist: 'Zzz Uncovered',
+      album: 'Selftest Album',
+      durationMs: 2000,
+      synced: false,
+      text: 'deferred line one\ndeferred line two',
+      instrumental: false,
+      url: null,
+      score: 0.9,
+      confidence: 'strong'
+    })
+    const deferred = await evaluate<{
+      currentTitle: string
+      seeded: boolean
+      hasWriteButton: boolean
+      panelMeta: string
+      lyricsNotice: string
+      lyricsDeferred: boolean
+      tagNotice: string
+      tagDeferred: boolean
+      lyricsLanded: boolean
+      tagLanded: string
+      yearLanded: number | null
+    }>(
+      window,
+      `(async () => {
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const text = (el) => ((el || {}).textContent || '').trim()
+         const pick = (s) => document.querySelector(s)
+         const pickAll = (s) => [...document.querySelectorAll(s)]
+         const press = (el) => {
+           if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         }
+         const until = async (check, ms = 8000) => {
+           const deadline = Date.now() + ms
+           while (Date.now() < deadline) {
+             if (await check()) return true
+             await sleep(100)
+           }
+           return false
+         }
+         const out = {
+           currentTitle: '', seeded: false, hasWriteButton: false, panelMeta: '',
+           lyricsNotice: '', lyricsDeferred: false, tagNotice: '',
+           tagDeferred: false, lyricsLanded: false, tagLanded: '', yearLanded: null
+         }
+         const id = ${deferredTrack.id}
+         const nav = (label) =>
+           [...document.querySelectorAll('.nav-item')].find((el) => text(el).startsWith(label))
+         const barTitle = () => text(pick('.player-title'))
+         const barToggle = () => pick('.player-bar .icon-button.primary')
+         const pauseBar = () => {
+           if (barToggle() && barToggle().getAttribute('title') === 'Pause') press(barToggle())
+         }
+
+         // Make the fixture the current track even if the earlier probe left the
+         // other one playing: the panel reads whatever is current.
+         press(nav('Library'))
+         await sleep(300)
+         if (barTitle() !== 'Selftest Silent') {
+           const silentRow = pickAll('.track-row').find(
+             (el) => text(el.querySelector('.row-title-text')) === 'Selftest Silent'
+           )
+           if (silentRow) silentRow.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+           await until(() => barTitle() === 'Selftest Silent')
+         }
+         pauseBar()
+         await sleep(200)
+         out.currentTitle = barTitle()
+         out.seeded = Boolean(await window.player.getTrackLyrics(id))
+
+         // Tell main this file is open for playback, exactly as the renderer's
+         // effect does when the media element starts.
+         await window.player.setTaskbarState({ hasTrack: true, isPlaying: true, trackId: id })
+
+         // The lyrics panel lives in the full player window, so that has to be
+         // open before its toggle exists.
+         press(pick('.player-track'))
+         await until(() => Boolean(pick('.np-lyrics-panel')))
+         // The fetched copy seeded above is what the panel shows.
+         if (!pick('.np-lyrics-panel.open')) press(pick('.np-lyrics-button'))
+         out.hasWriteButton = await until(() => Boolean(pick('.np-lyrics-write-file')))
+         out.panelMeta = text(pick('.np-lyrics-meta'))
+         press(pick('.np-lyrics-write-file'))
+         await until(() => Boolean(pick('.np-lyrics-action-notice')))
+         out.lyricsNotice = text(pick('.np-lyrics-action-notice'))
+         out.lyricsDeferred = out.lyricsNotice.includes('after this track finishes playing')
+         // Nothing was written yet: the file still has no lyrics of its own.
+         const fileBefore = await window.player.getFileLyrics(id)
+         out.lyricsDeferred = out.lyricsDeferred && fileBefore === null
+         press(pick('.np-lyrics-button'))
+         await sleep(300)
+         press(pick('.np-close'))
+         await until(() => !pick('.np-stage'))
+         await sleep(300)
+
+         // The tag editor goes through the same queue. Change one field and save
+         // while main still believes the file is open.
+         press(nav('Library'))
+         await sleep(400)
+         const row = pickAll('.track-row').find(
+           (el) => text(el.querySelector('.row-title-text')) === 'Selftest Silent'
+         )
+         if (row) {
+           row.dispatchEvent(
+             new MouseEvent('contextmenu', { bubbles: true, clientX: 260, clientY: 260 })
+           )
+         }
+         await until(() => Boolean(pick('.context-menu')))
+         press(
+           pickAll('.context-menu .context-item').find((el) => text(el) === 'Edit tags…')
+         )
+         await until(() => Boolean(pick('.tag-dialog')))
+         const genreField = pickAll('.tag-dialog .tag-grid .field').find(
+           (field) => text(field.querySelector('span')) === 'Genre'
+         )
+         const genreInput = genreField ? genreField.querySelector('input') : null
+         if (genreInput) {
+           const setValue = Object.getOwnPropertyDescriptor(
+             HTMLInputElement.prototype,
+             'value'
+           ).set
+           setValue.call(genreInput, 'Deferred Genre')
+           genreInput.dispatchEvent(new Event('input', { bubbles: true }))
+         }
+         await sleep(200)
+         press(pick('.tag-foot button.primary'))
+         await until(() => Boolean(pick('.tag-deferred')))
+         out.tagNotice = text(pick('.tag-deferred'))
+         out.tagDeferred = out.tagNotice.includes('after this track finishes playing')
+         const rowBefore = (await window.player.getTracks([id]))[0]
+         out.tagDeferred = out.tagDeferred && rowBefore.genre !== 'Deferred Genre'
+         const dialog = pick('.tag-dialog')
+         if (dialog) {
+           dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+         }
+         await sleep(300)
+
+         // A second save while the first is still queued: it names only the
+         // year, so the queued genre has to survive the merge rather than be
+         // replaced by this smaller patch.
+         await window.player.updateTrackTags(id, { year: 2000 })
+
+         // Playback moves off the track, so its file is no longer open. The
+         // queue drains on that state change.
+         await window.player.setTaskbarState({ hasTrack: false, isPlaying: false, trackId: null })
+         out.lyricsLanded = await until(async () => {
+           const lyrics = await window.player.getFileLyrics(id)
+           return Boolean(lyrics && lyrics.text.includes('deferred line one'))
+         })
+         await until(async () => {
+           const rows = await window.player.getTracks([id])
+           return Boolean(
+             rows[0] && rows[0].genre === 'Deferred Genre' && rows[0].year === 2000
+           )
+         })
+         const rowsAfter = await window.player.getTracks([id])
+         out.tagLanded = rowsAfter[0] ? rowsAfter[0].genre || '' : ''
+         out.yearLanded = rowsAfter[0] ? rowsAfter[0].year : null
+         return out
+       })()`
+    )
+    record(
+      deferred.lyricsDeferred &&
+        deferred.lyricsNotice.includes('after this track finishes playing'),
+      'lyrics fetched while a track plays are queued, not refused, and the panel says when',
+      `current "${deferred.currentTitle}", seeded ${deferred.seeded}, button ${deferred.hasWriteButton}, meta "${deferred.panelMeta}", notice "${deferred.lyricsNotice}"`
+    )
+    record(
+      deferred.tagDeferred &&
+        deferred.tagNotice.includes('after this track finishes playing'),
+      'a tag edit on the playing file is queued too, and the editor says when',
+      `"${deferred.tagNotice}"`
+    )
+    record(
+      deferred.lyricsLanded &&
+        deferred.tagLanded === 'Deferred Genre' &&
+        deferred.yearLanded === 2000,
+      'once playback moves off the track, both queued writes land and a later save keeps the earlier field',
+      `lyrics ${deferred.lyricsLanded}, genre "${deferred.tagLanded}", year ${String(deferred.yearLanded)}`
+    )
+    const deferredFile = await extractMetadata(plainPath)
+    const deferredFileLyrics = await container.lyrics.readFile(deferredTrack.id)
+    record(
+      deferredFile.genre === 'Deferred Genre' &&
+        deferredFile.year === 2000 &&
+        (deferredFileLyrics?.text ?? '').includes('deferred line one'),
+      'the queued writes reached the bytes on disk, not only the library row',
+      `genre "${deferredFile.genre}", year ${String(deferredFile.year)}, lyrics ${deferredFileLyrics ? 'present' : 'missing'}`
+    )
+    // This fixture is shared with the batch sections below, which expect a file
+    // with no lyrics, genre or year. Put it back now that the write has landed.
+    await container.library.updateTags(deferredTrack.id, { genre: null, year: null, lyrics: null })
+
     // ---- 13. artwork size and click behaviour ---------------------------
     // Both preferences only matter for what they change on screen, so both are
     // driven through the real controls and then measured, rather than read back
@@ -7403,7 +7612,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       badgesInSource: number
       badgesInTitle: number
       streamSaveTitle: string
-      localSaveButton: boolean
+      localSaveTitle: string
+      localMenuButton: boolean
       playedHeading: string
       playedChip: string
       playedBadges: string
@@ -7446,7 +7656,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            onPlaylists: false, paneTitle: '', paneRows: 0,
            allTitles: '', allBadges: '', allPlaylistBadge: '', allLibraryBadge: '',
            allHasStreamBadge: false, sourceHeading: '', badgesInSource: -1,
-           badgesInTitle: -1, streamSaveTitle: '', localSaveButton: false,
+           badgesInTitle: -1, streamSaveTitle: '', localSaveTitle: '', localMenuButton: false,
            playedHeading: '', playedChip: '',
            playedBadges: '', playedHasPlaylistOnly: false, playedCleared: false,
            playedClearedHeading: ''
@@ -7553,9 +7763,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          const streamRow = rowFor('Shelf Test Stream')
          out.streamSaveTitle =
            streamRow?.querySelector('.col-actions button')?.getAttribute('title') || ''
-         out.localSaveButton = Boolean(
-           rowFor('Shelf Test Single')?.querySelector('.col-actions button')
-         )
+         const localActionTitles = [
+            ...(rowFor('Shelf Test Single')?.querySelectorAll('.col-actions button') || [])
+          ].map((button) => button.getAttribute('title') || '')
+          out.localSaveTitle = localActionTitles.find((title) => title.startsWith('Save ')) || ''
+          out.localMenuButton = localActionTitles.includes('More actions')
          out.allHasStreamBadge = rowEls().some(
            (row) => titleOf(row) === 'Shelf Test Stream' && badgeOf(row) === 'YouTube'
          )
@@ -7800,15 +8012,17 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         homeShelves.badgesInSource === homeShelves.allBadges.split('|').length &&
         homeShelves.badgesInTitle === 0 &&
         homeShelves.streamSaveTitle === 'Save to your library' &&
-        !homeShelves.localSaveButton,
-      'home: All tracks badges sit under Source and only stream rows offer a save',
+        homeShelves.localSaveTitle === '' &&
+        homeShelves.localMenuButton,
+      'home: All tracks badges sit under Source, only stream rows offer a save, and every row has its menu',
       {
         heading: homeShelves.sourceHeading,
         inSource: homeShelves.badgesInSource,
         inTitle: homeShelves.badgesInTitle,
         rows: homeShelves.allBadges.split('|').length,
         save: homeShelves.streamSaveTitle,
-        localSave: homeShelves.localSaveButton
+        localSave: homeShelves.localSaveTitle,
+        localMenu: homeShelves.localMenuButton
       }
     )
     record(
@@ -7835,6 +8049,139 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         homeShelves.artistAlbumColumn === 'show',
       'home: an artist with no albums opens their tracks instead of an empty grid',
       `${homeShelves.artistKicker || '?'} ${homeShelves.artistTitle || 'none'} · ${homeShelves.artistRows} rows · album column ${homeShelves.artistAlbumColumn || 'none'}`
+    )
+
+    // ---- 15c. right-click on Home ---------------------------------------
+    // The shelves and All tracks are a launch surface with no selection, so
+    // their menu is the row's own actions: Play, Add to playlist, Details and
+    // — for a file — Edit tags and Show in folder. A stream has no file and
+    // gets the smaller Play/Details menu. Select must never appear, because
+    // there is no selection for it to change.
+    const homeMenus = await evaluate<{
+      localCardItems: string
+      localCardHasSelect: boolean
+      streamCardItems: string
+      localRowItems: string
+      localRowHasSelect: boolean
+      streamRowItems: string
+      overflowItems: string
+      menusClosed: boolean
+    }>(
+      window,
+      `(async () => {
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const text = (el) => ((el || {}).textContent || '')
+         const nav = (label) =>
+           [...document.querySelectorAll('.nav-item')].find((el) =>
+             text(el).trim().startsWith(label)
+           )
+         const shelf = (title) =>
+           [...document.querySelectorAll('.home-section')].find(
+             (section) =>
+               text(section.querySelector('.home-section-head h2')).trim() === title
+           )
+         const trackCard = (title, name) =>
+           [...(shelf(title)?.querySelectorAll('.track-card') || [])].find(
+             (card) => text(card.querySelector('.album-card-title')).trim() === name
+           )
+         const rowFor = (title) =>
+           [...document.querySelectorAll('.all-tracks-list .track-row')].find(
+             (row) => text(row.querySelector('.row-title-text')).trim() === title
+           )
+         const items = (selector) =>
+           [...document.querySelectorAll(selector + ' .context-item')]
+             .map((el) => text(el).trim())
+             .join('|')
+         const rightClick = (el, x, y) =>
+           el?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: x, clientY: y }))
+         const close = async () => {
+           document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+           const deadline = Date.now() + 2000
+           while (Date.now() < deadline && document.querySelector('.context-menu')) await sleep(40)
+         }
+         const out = {
+           localCardItems: '', localCardHasSelect: false, streamCardItems: '',
+           localRowItems: '', localRowHasSelect: false, streamRowItems: '',
+           overflowItems: '', menusClosed: false
+         }
+
+         nav('Home')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         const ready = Date.now() + 8000
+         while (Date.now() < ready && !rowFor('Shelf Test Single')) await sleep(100)
+
+         const localCard = trackCard('Recently added', 'Shelf Test Single')
+         rightClick(localCard, 200, 220)
+         const cardDeadline = Date.now() + 3000
+         while (Date.now() < cardDeadline && !document.querySelector('.context-menu')) await sleep(40)
+         out.localCardItems = items('.context-menu')
+         out.localCardHasSelect = out.localCardItems.split('|').includes('Select')
+         await close()
+
+         const streamCard = trackCard('Recently played', 'Shelf Test Stream')
+         rightClick(streamCard, 240, 240)
+         const streamDeadline = Date.now() + 3000
+         while (Date.now() < streamDeadline && !document.querySelector('.row-menu')) await sleep(40)
+         out.streamCardItems = items('.row-menu')
+         await close()
+
+         rightClick(rowFor('Shelf Test Single'), 260, 300)
+         const rowDeadline = Date.now() + 3000
+         while (Date.now() < rowDeadline && !document.querySelector('.context-menu')) await sleep(40)
+         out.localRowItems = items('.context-menu')
+         out.localRowHasSelect = out.localRowItems.split('|').includes('Select')
+         await close()
+
+         rightClick(rowFor('Shelf Test Stream'), 280, 320)
+         const streamRowDeadline = Date.now() + 3000
+         while (Date.now() < streamRowDeadline && !document.querySelector('.row-menu')) await sleep(40)
+         out.streamRowItems = items('.row-menu')
+         await close()
+
+         // The same menu is reachable without a right mouse button: the card's
+         // overflow control opens it at its own corner.
+         const overflow = trackCard('Recently added', 'Shelf Test Single')?.querySelector(
+           '.track-card-overflow'
+         )
+         overflow?.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 180, clientY: 200 }))
+         const overflowDeadline = Date.now() + 3000
+         while (Date.now() < overflowDeadline && !document.querySelector('.context-menu')) await sleep(40)
+         out.overflowItems = items('.context-menu')
+         await close()
+         out.menusClosed = !document.querySelector('.context-menu') && !document.querySelector('.row-menu')
+         return out
+       })()`
+    )
+
+    record(
+      homeMenus.localCardItems.includes('Play') &&
+        homeMenus.localCardItems.includes('Add to playlist') &&
+        homeMenus.localCardItems.includes('Details') &&
+        !homeMenus.localCardHasSelect,
+      'home: right-clicking a local shelf card opens the row menu without Select',
+      homeMenus.localCardItems || 'no menu'
+    )
+    record(
+      homeMenus.streamCardItems === 'Play|Details',
+      'home: right-clicking a stream shelf card opens Play and Details only',
+      homeMenus.streamCardItems || 'no menu'
+    )
+    record(
+      homeMenus.localRowItems.includes('Play') &&
+        homeMenus.localRowItems.includes('Add to playlist') &&
+        homeMenus.localRowItems.includes('Details') &&
+        !homeMenus.localRowHasSelect,
+      'home: right-clicking an All tracks row opens the row menu without Select',
+      homeMenus.localRowItems || 'no menu'
+    )
+    record(
+      homeMenus.streamRowItems === 'Play|Details',
+      'home: right-clicking an All tracks stream row opens Play and Details only',
+      homeMenus.streamRowItems || 'no menu'
+    )
+    record(
+      homeMenus.overflowItems === homeMenus.localCardItems && homeMenus.menusClosed,
+      'home: a track card overflow button opens the same menu and both close',
+      `${homeMenus.overflowItems || 'no menu'} · closed ${homeMenus.menusClosed}`
     )
 
     container.library.removeTracks([shelfSingleId, shelfAlbumId, shelfMultiOneId, shelfMultiTwoId])

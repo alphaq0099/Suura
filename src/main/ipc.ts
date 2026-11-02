@@ -49,6 +49,7 @@ import type {
   LibrarySettings,
   ListAlbumsQuery,
   ListTracksQuery,
+  LyricsWriteResult,
   MotionPreference,
   PlaybackSnapshot,
   QualityTier,
@@ -60,8 +61,10 @@ import type {
   SaveToLibraryRequest,
   StreamLyricsTarget,
   SurfaceStyle,
+  TagWriteResult,
   TextSize,
   ThemeMode,
+  Track,
   TrackSortField,
   VisualSettings
 } from '@shared/types'
@@ -93,6 +96,7 @@ import {
 import type { AppContainer } from './services/container'
 import { listAllTracks } from './all-tracks'
 import { broadcast } from './broadcast'
+import { mergeDeferredTagWrite, PendingWrites, type DeferredTagWrite } from './pending-writes'
 import { readLogTail, sanitizeDiagnosticsSummary, writeDiagnosticsFile } from './diagnostics'
 import { LIBRARY_SEARCH_LIMIT, searchLibrary } from './library-search'
 import { isMiniPlayer, setMiniPlayer } from './window-mode'
@@ -645,6 +649,22 @@ export function registerIpcHandlers(container: AppContainer): void {
   // a write that fails after the user typed a page of lyrics is a bad trade, so
   // the id is kept here and checked before any tag write starts.
   let playingTrackId: number | null = null
+  let playbackIsPlaying = false
+
+  // A write aimed at the track that is open for playback is queued here rather
+  // than refused. Fetching lyrics only happens while listening, so refusing was
+  // asking the user to stop the song they were looking at. The queue drains as
+  // soon as the renderer says the track is no longer the one playing.
+  const pendingWrites = new PendingWrites({
+    log: log.child('pending-writes'),
+    onResult: (notice) => broadcast(IPC_EVENTS.pendingWriteChanged, notice)
+  })
+
+  // The tag fields each queued write still has to apply. A second save while
+  // the first is waiting is a patch against the same unchanged row, so it is
+  // folded into the queued one rather than replacing it: otherwise a field the
+  // second save did not touch would be lost with the first patch.
+  const deferredTags = new Map<number, DeferredTagWrite>()
 
   /**
    * Resolves a queue entry without recording a play. The local branch attaches
@@ -978,11 +998,6 @@ export function registerIpcHandlers(container: AppContainer): void {
       const wantsArtwork = artworkKey !== undefined
       const key = wantsArtwork ? sanitizeArtworkKey(artworkKey) : undefined
       const fields = sanitizeTagFields(input, { allowEmpty: wantsArtwork })
-      if (playingTrackId === id) {
-        throw new Error(
-          'Stop this track, or play something else, before editing its tags: the file is open for playback.'
-        )
-      }
 
       let artwork: TagArtworkWrite | undefined
       if (wantsArtwork) {
@@ -990,7 +1005,8 @@ export function registerIpcHandlers(container: AppContainer): void {
           artwork = { image: null, key: '' }
         } else if (key) {
           // Read the cached bytes the picker showed, so the written cover is
-          // exactly the previewed one rather than a second download.
+          // exactly the previewed one rather than a second download. This happens
+          // before the playback check so a queued write holds the same bytes.
           const cached = container.artwork.pathFor(key)
           if (!cached) throw new Error('That cover is no longer available. Choose it again.')
           const data = await readFile(cached)
@@ -1001,7 +1017,26 @@ export function registerIpcHandlers(container: AppContainer): void {
         }
       }
 
-      return library.updateTags(id, fields, artwork)
+      const write = (): Promise<Track> => library.updateTags(id, fields, artwork)
+      if (playingTrackId === id) {
+        const track = library.trackById(id)
+        if (!track) throw new Error('Unknown track.')
+        const merged = mergeDeferredTagWrite(deferredTags.get(id), { fields, artwork })
+        deferredTags.set(id, merged)
+        pendingWrites.enqueue(id, 'tags', async () => {
+          await library.updateTags(id, merged.fields, merged.artwork)
+          // Forget the fields only if no newer save folded itself in while
+          // this write was running.
+          if (deferredTags.get(id) === merged) deferredTags.delete(id)
+        })
+        return {
+          track,
+          deferred: true,
+          message: 'Tags will be written to this file after this track finishes playing.'
+        } satisfies TagWriteResult
+      }
+
+      return { track: await write(), deferred: false, message: null } satisfies TagWriteResult
     }
   )
 
@@ -1062,16 +1097,29 @@ export function registerIpcHandlers(container: AppContainer): void {
   )
 
   // Writing into the file has the same guard as any other tag write: Windows
-  // will not replace a file that is open for playback. A stream has no file to
-  // write into and is refused by the service with that sentence.
+  // will not replace a file that is open for playback. Fetching lyrics only
+  // happens while listening, so the write is queued for after the track instead
+  // of asking the user to stop it. A stream has no file to write into and is
+  // refused by the service with that sentence.
   ipcMain.handle(IPC.libraryLyricsWrite, async (_event, target: unknown) => {
     const lyricsTarget = toLyricsTarget(target)
     if (typeof lyricsTarget === 'number' && playingTrackId === lyricsTarget) {
-      throw new Error(
-        'Stop this track, or play something else, before writing its lyrics: the file is open for playback.'
+      pendingWrites.enqueue(lyricsTarget, 'lyrics', () =>
+        container.lyrics.writeToFile(lyricsTarget)
       )
+      return {
+        // The fetched copy is still stored, so the panel keeps showing exactly
+        // what the user chose until the file write can replace it.
+        lyrics: await container.lyrics.read(lyricsTarget),
+        deferred: true,
+        message: 'These lyrics will be written to the file after this track finishes playing.'
+      } satisfies LyricsWriteResult
     }
-    return container.lyrics.writeToFile(lyricsTarget)
+    return {
+      lyrics: await container.lyrics.writeToFile(lyricsTarget),
+      deferred: false,
+      message: null
+    } satisfies LyricsWriteResult
   })
 
   // The batch runs in two passes so the slow half can show progress and be
@@ -1605,7 +1653,15 @@ export function registerIpcHandlers(container: AppContainer): void {
     const state = sanitizeTaskbarState(input)
     if (!state) throw new Error('Malformed taskbar state.')
     playingTrackId = state.hasTrack ? state.trackId : null
+    playbackIsPlaying = state.isPlaying
     const window = BrowserWindow.fromWebContents(event.sender)
-    return window ? applyTaskbarControls(window, state, log.child('taskbar')) : false
+    const applied = window ? applyTaskbarControls(window, state, log.child('taskbar')) : false
+    // A deferred write can run once its file is no longer open. The queue is
+    // drained without blocking the toolbar: a write that still cannot open the
+    // file stays queued, and the next state change tries again.
+    void pendingWrites.flush(
+      (trackId) => trackId === playingTrackId && playbackIsPlaying
+    )
+    return applied
   })
 }

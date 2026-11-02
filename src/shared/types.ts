@@ -198,6 +198,31 @@ export interface TrackTagFields {
   lyrics?: string | null
 }
 
+/**
+ * What a tag write did.
+ *
+ * A file that is open for playback cannot be replaced on Windows, so the write
+ * is queued instead of refused. `deferred` says the row has not changed yet and
+ * `message` is the sentence the editor shows.
+ */
+export interface TagWriteResult {
+  track: Track
+  deferred: boolean
+  message: string | null
+}
+
+/** The two writes that can be postponed until a file is no longer playing. */
+export type PendingWriteKind = 'tags' | 'lyrics'
+
+/** One queued write finishing, pushed to the renderer. */
+export interface PendingWriteNotice {
+  trackId: number
+  kind: PendingWriteKind
+  ok: boolean
+  /** Why it failed, when it did. */
+  message: string | null
+}
+
 /** Where a cover the picker can offer came from. */
 export type ArtworkSourceKind = 'embedded' | 'folder' | 'video' | 'provider'
 
@@ -404,6 +429,19 @@ export interface TrackLyrics {
    */
   origin: string | null
   fetchedAt: number
+}
+
+/**
+ * What writing fetched lyrics into the file did.
+ *
+ * The fetched copy is only cleared once the words are actually in the file, so
+ * a deferred write leaves the panel showing the fetched lyrics until playback
+ * ends and the queue runs.
+ */
+export interface LyricsWriteResult {
+  lyrics: TrackLyrics | null
+  deferred: boolean
+  message: string | null
 }
 
 // ---- batch lyrics ---------------------------------------------------------

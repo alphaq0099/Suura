@@ -20,6 +20,7 @@ import type {
   LyricsCandidate,
   LyricsLookupResult,
   LyricsTarget,
+  LyricsWriteResult,
   PlaybackSnapshot,
   ResolvedSource,
   TagBatchApplyResult,
@@ -27,7 +28,7 @@ import type {
   TagBatchSnapshot,
   TagBatchUndoResult,
   TagLookupResult,
-  Track,
+  TagWriteResult,
   TrackLyrics,
   TrackTagFields
 } from '@shared/types'
@@ -89,7 +90,7 @@ const api: PlayerApi = {
   getStats: () => ipcRenderer.invoke(IPC.libraryStats),
 
   updateTrackTags: (trackId: number, fields: TrackTagFields, artworkKey?: string | null) =>
-    ipcRenderer.invoke(IPC.libraryUpdateTags, trackId, fields, artworkKey) as Promise<Track>,
+    ipcRenderer.invoke(IPC.libraryUpdateTags, trackId, fields, artworkKey) as Promise<TagWriteResult>,
 
   getArtworkChoices: (trackId: number) =>
     ipcRenderer.invoke(IPC.libraryArtworkChoices, trackId) as Promise<ArtworkChoice[]>,
@@ -119,7 +120,7 @@ const api: PlayerApi = {
     ipcRenderer.invoke(IPC.libraryLyricsUseFile, target) as Promise<TrackLyrics | null>,
 
   writeTrackLyricsToFile: (target: LyricsTarget) =>
-    ipcRenderer.invoke(IPC.libraryLyricsWrite, target) as Promise<TrackLyrics | null>,
+    ipcRenderer.invoke(IPC.libraryLyricsWrite, target) as Promise<LyricsWriteResult>,
 
   startLyricsBatch: (trackIds: number[]) =>
     ipcRenderer.invoke(IPC.libraryLyricsBatchStart, trackIds) as Promise<{ jobId: string }>,

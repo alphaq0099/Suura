@@ -403,6 +403,18 @@ export function App() {
       .catch(() => undefined)
   }, [player.current?.id, player.current?.sourceKind, player.isPlaying])
 
+  // A deferred tag write finishes after the editor has closed. A success is
+  // already announced by `libraryChanged`; a failure has no dialog left, so it
+  // goes to the same action banner the other background errors use.
+  useEffect(() => {
+    const token = api.on('pendingWriteChanged', (notice) => {
+      if (notice.kind === 'tags' && !notice.ok) {
+        setActionError(notice.message ?? 'The tags could not be written to the file.')
+      }
+    })
+    return () => api.off(token)
+  }, [])
+
   // Carries the queue across restarts. Bound to the player rather than to the
   // view, so it keeps working from any screen.
   usePlaybackPersistence(player, settings?.startup.resumePlayback)
