@@ -296,6 +296,10 @@ const api: PlayerApi = {
 
   getEngineStatus: (force?: boolean) => ipcRenderer.invoke(IPC.engineStatus, force === true),
 
+  installSidecars: () => ipcRenderer.invoke(IPC.sidecarInstall),
+
+  cancelSidecarInstall: () => ipcRenderer.invoke(IPC.sidecarCancel) as Promise<void>,
+
   getPoTokenStatus: () => ipcRenderer.invoke(IPC.poTokenStatus),
 
   startPoTokenProvider: () => ipcRenderer.invoke(IPC.poTokenStart),

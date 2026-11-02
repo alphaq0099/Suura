@@ -12,11 +12,18 @@ import { probeExecutable } from './locate'
  * missing, too old, or shadowed by a broken wrapper, the settings screen says so
  * instead of the first M3 playback attempt failing mysteriously.
  */
-export async function getEngineStatus(engine: EngineSettings): Promise<EngineStatus> {
+export async function getEngineStatus(
+  engine: EngineSettings,
+  options: { managedDir?: string | null } = {}
+): Promise<EngineStatus> {
   const [ytDlp, ffmpeg] = await Promise.all([
-    probeExecutable('yt-dlp', { configuredDir: engine.binDir }),
+    probeExecutable('yt-dlp', { configuredDir: engine.binDir, managedDir: options.managedDir }),
     // ffmpeg prints its banner to stdout and expects a flag, not --version alone.
-    probeExecutable('ffmpeg', { configuredDir: engine.binDir, versionArgs: ['-version'] })
+    probeExecutable('ffmpeg', {
+      configuredDir: engine.binDir,
+      managedDir: options.managedDir,
+      versionArgs: ['-version']
+    })
   ])
 
   return {
@@ -34,12 +41,14 @@ export async function getEngineStatus(engine: EngineSettings): Promise<EngineSta
  * making the user wait for two child processes.
  */
 const REFRESH_AFTER_MS = 5 * 60_000
-const CACHE_VERSION = 1
+const CACHE_VERSION = 2
 
 interface EngineStatusCacheEntry {
   version: number
   /** The engine folder the probe was taken with; a change invalidates it. */
   binDir: string | null
+  /** The managed folder known at probe time; installing there invalidates it. */
+  managedDir: string | null
   checkedAt: number
   status: EngineStatus
 }
@@ -48,6 +57,8 @@ export interface EngineStatusCacheOptions {
   /** Where the last probe is kept, normally `engine-status.json` in userData. */
   file: string
   log: Logger
+  /** The app-managed engine folder, probed after the configured one. */
+  managedDir?: string | null
   now?: () => number
   /** Overridable so the smoke test can count probes without spawning binaries. */
   probe?: (engine: EngineSettings) => Promise<EngineStatus>
@@ -64,6 +75,7 @@ function isCacheEntry(value: unknown): value is EngineStatusCacheEntry {
   const entry = value as Record<string, unknown>
   if (entry.version !== CACHE_VERSION) return false
   if (entry.binDir !== null && typeof entry.binDir !== 'string') return false
+  if (entry.managedDir !== null && typeof entry.managedDir !== 'string') return false
   if (typeof entry.checkedAt !== 'number' || !Number.isFinite(entry.checkedAt)) return false
   const status = entry.status as Record<string, unknown> | null
   if (!status || typeof status !== 'object') return false
@@ -116,6 +128,7 @@ export class EngineStatusCache {
     if (entry.version !== CACHE_VERSION) return null
     // The saved paths and versions belong to the folder they were found in.
     if (entry.binDir !== (engine.binDir ?? null)) return null
+    if (entry.managedDir !== (this.deps.managedDir ?? null)) return null
     return entry
   }
 
@@ -130,12 +143,16 @@ export class EngineStatusCache {
 
   private probe(engine: EngineSettings): Promise<EngineStatus> {
     if (this.inFlight) return this.inFlight
-    const probe = this.deps.probe ?? getEngineStatus
-    const work = probe(engine)
+    const work = (
+      this.deps.probe
+        ? this.deps.probe(engine)
+        : getEngineStatus(engine, { managedDir: this.deps.managedDir })
+    )
       .then((status) => {
         const entry: EngineStatusCacheEntry = {
           version: CACHE_VERSION,
           binDir: engine.binDir ?? null,
+          managedDir: this.deps.managedDir ?? null,
           checkedAt: this.now(),
           status
         }

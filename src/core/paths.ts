@@ -15,12 +15,20 @@ export function resolveAppPaths(userDataDir: string): AppPaths {
     logs: join(userDataDir, 'logs', 'suura.log'),
     cache: join(userDataDir, 'cache'),
     downloads: join(userDataDir, 'downloads'),
-    backups: join(userDataDir, 'backups')
+    backups: join(userDataDir, 'backups'),
+    engine: join(userDataDir, 'engine')
   }
 }
 
 export function ensureAppDirectories(paths: AppPaths): void {
-  const dirs = [paths.userData, dirname(paths.logs), paths.cache, paths.downloads, paths.backups]
+  const dirs = [
+    paths.userData,
+    dirname(paths.logs),
+    paths.cache,
+    paths.downloads,
+    paths.backups,
+    paths.engine
+  ]
   for (const dir of dirs) {
     mkdirSync(dir, { recursive: true })
   }

@@ -394,11 +394,14 @@ export function buildDownloadArgs(
   videoId: string,
   quality: QualityTier,
   format: string,
-  outputTemplate: string
+  outputTemplate: string,
+  /** Folder yt-dlp should use for ffmpeg, when the app manages one. */
+  ffmpegDir: string | null = null
 ): string[] {
   return [
     '--ignore-config',
     '--no-playlist',
+    ...(ffmpegDir ? ['--ffmpeg-location', ffmpegDir] : []),
     '--socket-timeout',
     '15',
     '--newline',
@@ -450,6 +453,8 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
       downloadScheduler?: RequestScheduler
       /** Injectable for tests; the real default is two seconds plus jitter. */
       transientRetryDelayMs?: number
+      /** The app-managed engine folder, used for the binary and ffmpeg. */
+      managedDir?: string | null
     }
   ) {
     this.gate = deps.gate ?? new YouTubeGate()
@@ -550,7 +555,9 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
       const fallback = engine.cookieFallback
       const useCookiesFirst = fallback === 'always' && browser !== null
       const baseArgs = withPoTokenProvider(
-        withNetworkTransport(buildDownloadArgs(videoId, options.quality, options.format, options.outputTemplate)),
+        withNetworkTransport(
+          buildDownloadArgs(videoId, options.quality, options.format, options.outputTemplate, this.ffmpegLocation())
+        ),
         engine
       )
       const binary = this.resolveBinary()
@@ -703,27 +710,37 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
   private resolveBinary(): string {
     if (this.binary) return this.binary
 
-    const configured = this.deps.engine().binDir
-    const extensions = process.platform === 'win32' ? ['.exe', ''] : ['']
-    if (configured) {
-      for (const extension of extensions) {
-        const candidate = join(configured, `yt-dlp${extension}`)
-        if (existsSync(candidate)) {
-          this.binary = candidate
-          return candidate
-        }
-      }
-    }
-
-    const located = locateExecutable('yt-dlp', wellKnownDirectories())
+    const located = locateExecutable('yt-dlp', {
+      configuredDir: this.deps.engine().binDir,
+      managedDir: this.deps.managedDir ?? null,
+      extraDirs: wellKnownDirectories()
+    })
     if (!located) {
       throw new YtDlpError(
-        'yt-dlp was not found. Install it and add it to PATH, or set its folder in Settings.',
+        'yt-dlp is not installed. Open Settings → Streaming and choose Download engine, or set its folder.',
         'missing-binary'
       )
     }
     this.binary = located.path
     return located.path
+  }
+
+  /**
+   * The folder holding the ffmpeg yt-dlp should use, when it is not on PATH.
+   *
+   * yt-dlp finds ffmpeg on PATH by itself. The copy the app downloads lives in
+   * its own folder, so it has to be named explicitly or a save fails at the
+   * conversion step after the download succeeded.
+   */
+  private ffmpegLocation(): string | null {
+    const configured = this.deps.engine().binDir
+    for (const dir of [configured, this.deps.managedDir]) {
+      if (!dir) continue
+      for (const file of process.platform === 'win32' ? ['ffmpeg.exe', 'ffmpeg'] : ['ffmpeg']) {
+        if (existsSync(join(dir, file))) return dir
+      }
+    }
+    return null
   }
 
   /** Updates the yt-dlp binary in place (`yt-dlp -U`). */

@@ -521,11 +521,11 @@ restore, migration guard, and id-preserving relocation were exercised in the smo
 **Goal:** a stranger can install, use and uninstall it without instructions.
 
 **Order of work.** CI first, because it is independent of the artifact and makes every later step verifiable. Then the
-sidecar delivery model (bundle the binaries, or fetch them on first use), then its implementation, then the update
-channel and engine rollback, then crash reporting and the compatibility/accessibility pass. Signing and release polish
-stay last. The installer is already done; what is open is what the installed app *contains* and how that is replaced,
-which is why the artifact's shape is settled before the work tested against it (updates, provenance, signing checks,
-compatibility, CI packaging).
+sidecar delivery model (settled: fetch on first use) and its implementation, then the update channel and engine
+rollback, then crash reporting and the compatibility/accessibility pass. Signing and release polish stay last. The
+installer is already done; what is open is what the installed app *contains* and how that is replaced, which is why the
+artifact's shape is settled before the work tested against it (updates, provenance, signing checks, compatibility, CI
+packaging).
 
 - [ ] CI on GitHub Actions: build (typecheck included), smoke and the self-test on `windows-latest`, plus `npm run perf`
       in its own job. The workflow exists at `.github/workflows/ci.yml`; it is unchecked until the first push runs green.
@@ -536,12 +536,14 @@ compatibility, CI packaging).
       variables, checksum publishing and the unsigned-build warning are in `docs/release/windows.md`. No certificate is
       configured on this machine.
 - [x] Daily yt-dlp self-update, throttled to once per 24 h and recorded in `engine.lastUpdateCheckAt`
-- [ ] Decide the sidecar delivery model: bundle pinned `yt-dlp`/`ffmpeg`/`fpcalc` in `extraResources`, or fetch them on
-      first use with a checksum and an offline story. This decides where the binaries live, so it comes before the
-      packaging implementation and the updater.
-- [ ] Sidecar packaging: the engine prefers the app's own copies and keeps today's `PATH`/configured-folder probes as
-      the fallback. Unblocks M13 Phase 6 (`fpcalc`).
-- [ ] App auto-update channel (stable/beta) and engine rollback, now that there are bundled bytes and a provenance rule
+- [x] Sidecar delivery model decided: **fetch on first use**, not bundling. Each asset is pinned by version, byte count
+      and SHA-256 in `src/engine/sidecar/manifest.ts`, downloaded into `%APPDATA%\Suura\engine`, verified before an
+      atomic rename, and recorded in `install-record.json`. The installer stays small and the app does not redistribute
+      ffmpeg; an offline machine keeps its existing `PATH`/configured-folder setup.
+- [x] Sidecar packaging: the engine prefers the configured folder, then the app-managed copies, then `PATH`, then the
+      usual install locations. Settings → Streaming shows each file, downloads missing ones with progress and Cancel,
+      and handles the optional `fpcalc` separately. Unblocks M13 Phase 6.
+- [ ] App auto-update channel (stable/beta) and engine rollback, now that there are managed bytes and a provenance rule
 - [x] Manual log export: Settings → About → Save diagnostics writes the app/path snapshot plus the last 256 KB of the
       log to a user-chosen text file. The renderer → preload → IPC → write path is covered by the self-test; nothing is
       uploaded.
@@ -556,9 +558,9 @@ compatibility, CI packaging).
 - [ ] Accessibility pass: keyboard-only navigation, screen-reader labels, contrast
 
 **Exit:** a stranger can install, use and uninstall it without instructions.
-**Status:** the installer, manual diagnostics export, renderer sandboxing, headless perf budgets and daily yt-dlp update
-are complete. CI, sidecar packaging, update/rollback, crash reporting, compatibility and accessibility remain; signing
-is documented but not configured.
+**Status:** the installer, manual diagnostics export, renderer sandboxing, headless perf budgets, daily yt-dlp update and
+the fetch-on-first-use sidecar installer are complete. CI, update/rollback, crash reporting, compatibility and
+accessibility remain; signing is documented but not configured.
 
 ### M9 — Android Port  *(~4–6 weeks)*
 **Goal:** reuse the core, replace the platform-specific layers.
@@ -675,8 +677,8 @@ port inherits the metadata core instead of reimplementing it. M12 set the same p
 - [ ] AI transcription: local, opt-in, labelled "generated"; only if the rest is done and asked for
 
 **Status:** Phases 1–5 are complete as written: a wrong tag can be fixed by hand or in a batch, a cover can be replaced,
-and lyrics can be read, found and written — each write reversible. Phase 6 is the open item, and it needs `fpcalc`
-bundled, which is the sidecar work still open in M8. Phase 7 stays deferred.
+and lyrics can be read, found and written — each write reversible. Phase 6 is the open item; its `fpcalc` dependency is
+now installable from M8's engine download (Settings → Streaming), so the phase can start. Phase 7 stays deferred.
 
 **Exit:** a wrong tag can be fixed and a lyric found from inside the app on MP3/FLAC/M4A/Ogg; every write is reversible
 and survives a kill between the temp write and the replace.
@@ -705,9 +707,9 @@ and survives a kill between the temp write and the replace.
 **Critical path:** M0 → M1 → M3 → M4 → M5 → M6 → M8 → M13 → M9. M2 can be interleaved, M7 is data-care hygiene, and M12 is
 complete (data layer plus manager and Downloads screens). M13 is numbered next because it was added last; it is scheduled
 after M8 and before M9 so the Android port inherits the metadata core. The visual revamp landed as Home plus the album
-grid, and **Windows release engineering (M8) is in progress**: the per-user NSIS installer, manual diagnostics export and
-renderer sandbox are built and verified; the update channel, crash reporting, compatibility pass and sidecar packaging
-are still open.
+grid, and **Windows release engineering (M8) is in progress**: the per-user NSIS installer, manual diagnostics export,
+renderer sandbox and fetch-on-first-use sidecar installer are built and verified; the update channel, crash reporting
+and compatibility pass are still open.
 
 ---
 
@@ -809,11 +811,10 @@ and a YouTube row saves through the same download queue as YouTube Links. A shel
 place with a removable chip. The hero art is at full strength in both themes, and its crossfade pace is a Settings
 slider (3–60 s) instead of a constant.
 **Windows release engineering (M8) is in progress**: the per-user NSIS installer, icon, uninstall data prompt, renderer
-sandbox and headless perf budgets are in place and the packaged app passes its self-test. The remaining work is
-sequenced around the artifact: CI first, then the sidecar delivery model and packaging, then the update channel and
-engine rollback, then crash reporting and the compatibility/accessibility pass, with signing last. A streaming UX
-redesign is independent of that sequence as long as it only changes the renderer; it must come before the sidecar work
-only if it changes what the engine must resolve, cache or download.
+sandbox, headless perf budgets and the fetch-on-first-use sidecar installer are in place, and the packaged app passes
+its self-test. The remaining work is sequenced around the artifact: CI first, then the update channel and engine
+rollback, then crash reporting and the compatibility/accessibility pass, with signing last. A streaming UX redesign is
+independent of that sequence as long as it only changes the renderer; it must come before the sidecar work only if it
+changes what the engine must resolve, cache or download.
 
-**Next:** add CI, then decide and implement sidecar delivery, then update/rollback; both the sidecar work and M13's
-Phase 6 (AcoustID needs `fpcalc`) unblock on that decision. Phases 1–5 of M13 are complete. Then M9.
+**Next:** add CI, then update/rollback, then M13 Phase 6 (AcoustID via the new `fpcalc` sidecar); then M9.

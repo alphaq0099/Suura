@@ -12,6 +12,7 @@ import type {
   ReplayGainStatus,
   RepeatMode,
   RuntimeInfo,
+  SidecarProgress,
   Track,
   YouTubeSearchResult
 } from '@shared/types'
@@ -106,6 +107,10 @@ export function App() {
   const [runtimeInfo, setRuntimeInfo] = useState<RuntimeInfo | null>(null)
   const [engineStatus, setEngineStatus] = useState<EngineStatus | null>(null)
   const [engineLoading, setEngineLoading] = useState(false)
+  const [sidecarProgress, setSidecarProgress] = useState<SidecarProgress | null>(null)
+  const [sidecarInstalling, setSidecarInstalling] = useState(false)
+  const [sidecarNote, setSidecarNote] = useState<string | null>(null)
+  const [sidecarError, setSidecarError] = useState<string | null>(null)
   const [replayGainStatus, setReplayGainStatus] = useState<ReplayGainStatus | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   /**
@@ -487,6 +492,51 @@ export function App() {
     }
   }, [])
 
+  /**
+   * Downloads the pinned engine once, then refreshes the probe.
+   *
+   * The result carries a sentence per failure instead of rejecting, so a
+   * blocked network leaves the reason next to the button rather than in the
+   * global banner.
+   */
+  const installSidecars = useCallback(async (): Promise<void> => {
+    setSidecarInstalling(true)
+    setSidecarNote(null)
+    setSidecarError(null)
+    try {
+      const result = await api.installSidecars()
+      if (result.failed.length > 0) {
+        const partial =
+          result.installed.length > 0 ? `Downloaded ${result.installed.join(', ')}. ` : ''
+        setSidecarError(`${partial}${result.failed.map((failure) => failure.message).join(' ')}`)
+      } else if (result.cancelled) {
+        setSidecarNote(
+          result.installed.length > 0
+            ? `Cancelled after installing ${result.installed.join(', ')}.`
+            : 'Download cancelled. Nothing was installed.'
+        )
+      } else if (result.installed.length === 0) {
+        setSidecarNote('The engine files are already current.')
+      } else {
+        setSidecarNote(`Downloaded ${result.installed.join(', ')}.`)
+      }
+      await refreshEngine(true)
+    } catch (cause) {
+      setSidecarError(messageOf(cause))
+    } finally {
+      setSidecarInstalling(false)
+      setSidecarProgress(null)
+    }
+  }, [refreshEngine])
+
+  const cancelSidecarInstall = useCallback(async (): Promise<void> => {
+    try {
+      await api.cancelSidecarInstall()
+    } catch (cause) {
+      setSidecarError(messageOf(cause))
+    }
+  }, [])
+
   const startPoToken = useCallback(async (): Promise<PoTokenStatus> => {
     setActionError(null)
     try {
@@ -523,6 +573,11 @@ export function App() {
   // means the progress bar is already current when Settings is reopened.
   useEffect(() => {
     const token = api.on('replayGainProgress', setReplayGainStatus)
+    return () => api.off(token)
+  }, [])
+
+  useEffect(() => {
+    const token = api.on('sidecarProgress', setSidecarProgress)
     return () => api.off(token)
   }, [])
 
@@ -1192,6 +1247,12 @@ export function App() {
           runtimeInfo={runtimeInfo}
           engineStatus={engineStatus}
           engineLoading={engineLoading}
+          sidecarProgress={sidecarProgress}
+          sidecarInstalling={sidecarInstalling}
+          sidecarNote={sidecarNote}
+          sidecarError={sidecarError}
+          onInstallSidecars={installSidecars}
+          onCancelSidecarInstall={cancelSidecarInstall}
           scanning={scanning}
           error={combinedError}
           onUpdate={updateSettings}

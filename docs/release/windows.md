@@ -30,6 +30,9 @@ drawing support.
 - Creates a Start-menu entry and a desktop shortcut.
 - Lets the user choose the installation directory.
 - Runs the app after a successful install unless the user clears that box.
+- Ships no engine binaries: `yt-dlp`, `ffmpeg` and the optional `fpcalc` are
+  downloaded from Settings → Streaming into `%APPDATA%\Suura\engine` on first
+  use.
 - Uninstalling asks, **defaulting to No**, whether to delete the app data
   directory (`%APPDATA%\Suura`). Choosing Yes removes the database, settings,
   logs, backups and caches. Music saved into `Music\Suura` is never deleted by
@@ -67,12 +70,31 @@ lines.
 
 ## Sidecars
 
-The packaged app does **not** bundle `yt-dlp` or `ffmpeg` yet. The engine probes
-`PATH`, the configured binary folder and a few well-known locations. A clean
-machine with neither binary can still use the local library, but YouTube
-playback and saving need both. Until sidecar packaging lands, the release notes
-must say so and Settings → Streaming must be pointed at the folder that holds
-them.
+The installer ships **no** engine binaries. `yt-dlp`, `ffmpeg` and the optional
+`fpcalc` are fetched on first use into `%APPDATA%\Suura\engine`, so the download
+stays small and the app does not redistribute ffmpeg.
+
+Each asset is pinned in `src/engine/sidecar/manifest.ts` by version, exact byte
+count and SHA-256. A download is written to a temporary file, checked against the
+pinned digest and size, then renamed into place; a mismatch is deleted and
+reported, never installed. `install-record.json` in that folder records what was
+installed. The versions and licences are:
+
+| Asset | Version | Licence |
+|---|---|---|
+| `yt-dlp` | 2026.10.26 | Unlicense |
+| `ffmpeg` (ffmpeg-static b6.1.1) | 6.1.1 | GPL-3.0-or-later |
+| `fpcalc` (optional) | 1.6.2 | LGPL-2.1-or-later |
+
+The engine probes the configured folder first, then `%APPDATA%\Suura\engine`,
+then `PATH` and the usual install locations. A machine with an existing copy
+keeps working offline; **Settings → Streaming** shows each file, downloads the
+missing ones with progress and Cancel, and treats `fpcalc` as optional because
+only fingerprinting needs it.
+
+When publishing, confirm the pinned URLs still resolve to the same bytes: the
+digests are the whole provenance story. If an upstream release is withdrawn,
+bump the version and digest in `manifest.ts` rather than loosening the check.
 
 ## Verification checklist
 
@@ -85,6 +107,11 @@ them.
   reviewing it.
 - Confirm the installer's uninstall entry resolves and that uninstall defaults
   to keeping app data.
+- On a clean profile with no `yt-dlp`/`ffmpeg` on `PATH`, open Settings →
+  Streaming, download the engine files, and confirm the progress bar, Cancel,
+  and that `%APPDATA%\Suura\engine` now holds `yt-dlp.exe` and `ffmpeg.exe`.
+  Then play a YouTube link and save one track. Remove the folder and confirm
+  the app reports the files as missing instead of crashing.
 - Run the packaged self-test and require exit code 0:
 
   ```powershell

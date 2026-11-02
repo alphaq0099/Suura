@@ -9,7 +9,7 @@ const execFileAsync = promisify(execFile)
 
 export interface LocatedExecutable {
   path: string
-  source: 'configured' | 'path' | 'well-known'
+  source: 'configured' | 'managed' | 'path' | 'well-known'
 }
 
 function candidateExtensions(): string[] {
@@ -38,22 +38,54 @@ export function wellKnownDirectories(): string[] {
   return dirs
 }
 
-export function locateExecutable(name: string, extraDirs: readonly string[] = []): LocatedExecutable | null {
-  const extensions = candidateExtensions()
+function findInDirectory(
+  dir: string,
+  name: string,
+  source: LocatedExecutable['source']
+): LocatedExecutable | null {
+  const base = isAbsolute(dir) ? dir : join(process.cwd(), dir)
+  for (const extension of candidateExtensions()) {
+    const candidate = join(base, `${name}${extension}`)
+    if (existsSync(candidate)) return { path: candidate, source }
+  }
+  return null
+}
 
-  for (const dir of (process.env.PATH ?? '').split(delimiter).filter(Boolean)) {
-    for (const extension of extensions) {
-      const candidate = join(dir, `${name}${extension}`)
-      if (existsSync(candidate)) return { path: candidate, source: 'path' }
-    }
+export interface LocateOptions {
+  /** Explicit folder from settings; wins over everything. */
+  configuredDir?: string | null
+  /** The app-managed engine folder, checked after the configured one. */
+  managedDir?: string | null
+  /** Folders checked after PATH. */
+  extraDirs?: readonly string[]
+}
+
+/**
+ * Finds a binary without running it.
+ *
+ * Order: the folder the user picked, then the folder the app manages, then
+ * PATH, then the usual install locations. A user override stays first so an
+ * existing setup keeps working, and the managed copy stays ahead of PATH so a
+ * stale sidecar on PATH cannot shadow the version the app pinned.
+ */
+export function locateExecutable(name: string, options: LocateOptions = {}): LocatedExecutable | null {
+  if (options.configuredDir) {
+    const found = findInDirectory(options.configuredDir, name, 'configured')
+    if (found) return found
+  }
+  if (options.managedDir) {
+    const found = findInDirectory(options.managedDir, name, 'managed')
+    if (found) return found
   }
 
-  for (const dir of extraDirs) {
-    const base = isAbsolute(dir) ? dir : join(process.cwd(), dir)
-    for (const extension of extensions) {
-      const candidate = join(base, `${name}${extension}`)
-      if (existsSync(candidate)) return { path: candidate, source: 'well-known' }
-    }
+  for (const dir of (process.env.PATH ?? '').split(delimiter).filter(Boolean)) {
+    const found = findInDirectory(dir, name, 'path')
+    if (found) return found
+  }
+
+  for (const dir of options.extraDirs ?? []) {
+    const found = findInDirectory(dir, name, 'well-known')
+    if (found) return found
   }
 
   return null
@@ -63,6 +95,8 @@ export interface ProbeOptions {
   versionArgs?: string[]
   /** Explicit folder from settings; wins over PATH. */
   configuredDir?: string | null
+  /** The app-managed engine folder. */
+  managedDir?: string | null
   timeoutMs?: number
 }
 
@@ -83,21 +117,17 @@ export async function probeExecutable(name: string, options: ProbeOptions = {}):
     error: null
   }
 
-  let located: LocatedExecutable | null = null
-
-  if (options.configuredDir) {
-    for (const extension of candidateExtensions()) {
-      const candidate = join(options.configuredDir, `${name}${extension}`)
-      if (existsSync(candidate)) {
-        located = { path: candidate, source: 'configured' }
-        break
-      }
-    }
-  }
-  located ??= locateExecutable(name, wellKnownDirectories())
+  const located = locateExecutable(name, {
+    configuredDir: options.configuredDir,
+    managedDir: options.managedDir,
+    extraDirs: wellKnownDirectories()
+  })
 
   if (!located) {
-    return { ...base, error: 'Not found on PATH or in any known location.' }
+    return {
+      ...base,
+      error: 'Not found in the engine folder, on PATH, or in any known location.'
+    }
   }
 
   try {

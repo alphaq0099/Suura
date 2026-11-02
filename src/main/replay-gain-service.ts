@@ -20,6 +20,8 @@ export interface ReplayGainServiceDeps {
   settings: SettingsService
   repo: TrackRepository
   log: Logger
+  /** The app-managed engine folder, which may hold ffmpeg. */
+  managedDir?: string | null
   onProgress?: (status: ReplayGainStatus) => void
 }
 
@@ -85,11 +87,13 @@ export class ReplayGainService {
     try {
       const ffmpeg = await probeExecutable('ffmpeg', {
         configuredDir: this.deps.settings.get().engine.binDir,
+        managedDir: this.deps.managedDir,
         versionArgs: ['-version']
       })
       if (!ffmpeg.found || !ffmpeg.path) {
         throw new Error(
-          ffmpeg.error ?? 'ffmpeg was not found. Install it, or point Settings at the folder that holds it.'
+          ffmpeg.error ??
+            'ffmpeg was not found. Download the engine in Settings, or point Settings at the folder that holds it.'
         )
       }
 

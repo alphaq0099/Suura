@@ -2639,6 +2639,23 @@ input[type='radio'] {
   margin-top: -2px;
 }
 
+.engine-download {
+  align-items: center;
+}
+
+.engine-progress {
+  display: grid;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: calc(12px * var(--text-scale));
+}
+
+.engine-progress progress {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--accent);
+}
+
 /* The About card spans both columns, so keep its prose at a readable line length. */
 .about-card .card-hint {
   max-width: 96ch;

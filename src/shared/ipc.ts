@@ -51,6 +51,8 @@ import type {
   SavedPlayback,
   SaveToLibraryRequest,
   ScanProgress,
+  SidecarInstallResult,
+  SidecarProgress,
   StreamPlay,
   TagBatchApplyResult,
   TagBatchMode,
@@ -178,6 +180,8 @@ export const IPC = {
   clipboardWrite: 'clipboard:write-text',
   mediaReportPlay: 'media:report-play',
   engineStatus: 'engine:status',
+  sidecarInstall: 'engine:install-sidecars',
+  sidecarCancel: 'engine:cancel-sidecar-install',
   poTokenStatus: 'engine:po-token-status',
   poTokenStart: 'engine:po-token-start',
   poTokenStop: 'engine:po-token-stop',
@@ -197,7 +201,8 @@ export const IPC_EVENTS = {
   replayGainProgress: 'event:replay-gain-progress',
   lyricsBatchProgress: 'event:lyrics-batch-progress',
   tagBatchProgress: 'event:tag-batch-progress',
-  pendingWriteChanged: 'event:pending-write-changed'
+  pendingWriteChanged: 'event:pending-write-changed',
+  sidecarProgress: 'event:sidecar-progress'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -246,6 +251,8 @@ export interface PlayerEvents {
   tagBatchProgress: TagBatchProgress
   /** A write that was deferred during playback finished, or kept failing. */
   pendingWriteChanged: PendingWriteNotice
+  /** A sidecar download advanced, or one finished and the next started. */
+  sidecarProgress: SidecarProgress
 }
 
 export type PlayerEventName = keyof PlayerEvents
@@ -261,7 +268,8 @@ export const EVENT_CHANNELS: Record<PlayerEventName, IpcEventChannel> = {
   replayGainProgress: IPC_EVENTS.replayGainProgress,
   lyricsBatchProgress: IPC_EVENTS.lyricsBatchProgress,
   tagBatchProgress: IPC_EVENTS.tagBatchProgress,
-  pendingWriteChanged: IPC_EVENTS.pendingWriteChanged
+  pendingWriteChanged: IPC_EVENTS.pendingWriteChanged,
+  sidecarProgress: IPC_EVENTS.sidecarProgress
 }
 
 /**
@@ -709,6 +717,16 @@ export interface PlayerApi {
    * executables again.
    */
   getEngineStatus(force?: boolean): Promise<EngineStatus>
+  /**
+   * Downloads any missing pinned sidecars into the app-managed engine folder.
+   *
+   * Resolves with what was installed and what failed; a failed download is not
+   * an IPC error, because Settings needs to show the sentence next to the
+   * button. Only a bug (such as an unreadable folder) rejects.
+   */
+  installSidecars(): Promise<SidecarInstallResult>
+  /** Stops the current sidecar download and removes its partial file. */
+  cancelSidecarInstall(): Promise<void>
   /** The provider switch, URL and whether its `/ping` endpoint answers. */
   getPoTokenStatus(): Promise<PoTokenStatus>
   /** Starts the configured provider command and waits until it answers. */

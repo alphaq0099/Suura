@@ -1395,6 +1395,8 @@ export interface AppPaths {
   downloads: string
   /** Automatic and pre-restore database copies. */
   backups: string
+  /** Pinned yt-dlp/ffmpeg/fpcalc binaries downloaded by the app. */
+  engine: string
 }
 
 export interface ListTracksQuery {
@@ -1563,7 +1565,7 @@ export interface ExecutableStatus {
   found: boolean
   path: string | null
   version: string | null
-  source: 'configured' | 'path' | 'well-known' | null
+  source: 'configured' | 'managed' | 'path' | 'well-known' | null
   error: string | null
 }
 
@@ -1585,6 +1587,44 @@ export interface EngineStatus {
   poToken?: PoTokenStatus
   /** True when every binary the engine needs was located. */
   ready: boolean
+  /**
+   * The pinned files the app manages itself. Optional so an older saved probe
+   * (or a probe-only test) still satisfies the type.
+   */
+  sidecars?: SidecarState[]
+}
+
+/** The headless tools the app downloads instead of bundling. */
+export type SidecarId = 'yt-dlp' | 'ffmpeg' | 'fpcalc'
+
+export interface SidecarState {
+  id: SidecarId
+  /** The pinned upstream version. */
+  version: string
+  /** Download size, for the UI's size hint. */
+  bytes: number
+  /** The pinned version is on disk and its digest was verified when saved. */
+  installed: boolean
+  /**
+   * Optional assets never block streaming. `fpcalc` is only needed for
+   * fingerprinting, which is a later milestone.
+   */
+  optional: boolean
+}
+
+/** One asset's download progress, pushed while Settings is open. */
+export interface SidecarProgress {
+  id: SidecarId
+  receivedBytes: number
+  totalBytes: number
+}
+
+export interface SidecarInstallResult {
+  /** Assets that were missing and are now on disk. */
+  installed: SidecarId[]
+  /** Assets that could not be installed, with a sentence for the user. */
+  failed: { id: SidecarId; message: string }[]
+  cancelled: boolean
 }
 
 export type DeepPartial<T> = {

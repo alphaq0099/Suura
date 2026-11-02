@@ -37,6 +37,7 @@ import { cleanupAbandonedDownloads, DownloadService } from '../download-service'
 import { StreamCache } from '../stream-cache'
 import { createOnlineService, type OnlineService } from '../online-service'
 import { ReplayGainService } from '../replay-gain-service'
+import { SidecarService } from '../sidecar-service'
 import { createTagLookup, type TagLookup } from '@core/library/tag-lookup'
 import { createLyricsFinder, createLyricsLookup } from '@core/library/lyrics-lookup'
 import { createGeniusProvider } from '@core/library/lyrics-genius'
@@ -86,6 +87,8 @@ export interface AppContainer {
   poToken: PoTokenProvider
   /** Saved yt-dlp/ffmpeg probe, so Settings opens without waiting. */
   engineStatus: EngineStatusCache
+  /** Downloads the pinned sidecars into `paths.engine` on first use. */
+  sidecars: SidecarService
   /** Measures ReplayGain for local files in the background. */
   replayGain: ReplayGainService
   /** The only writer that modifies a user's files; exposed for later phases. */
@@ -158,14 +161,24 @@ export function createContainer(): AppContainer {
 
   const artwork = createArtworkService({ repo, paths, log: log.child('artwork') })
 
+  // The engine is fetched on first use, so this owns the only writer in
+  // `paths/engine`. Progress is a push event: the download outlives Settings.
+  const sidecars = new SidecarService({
+    dir: paths.engine,
+    log: log.child('sidecars'),
+    onProgress: (progress) => broadcast(IPC_EVENTS.sidecarProgress, progress)
+  })
+
   const ytDlp = new YtDlpClient({
     engine: () => settings.get().engine,
+    managedDir: paths.engine,
     log: log.child('yt-dlp')
   })
   // The probe is saved between runs: opening Settings should not wait for two
   // child processes every time the app starts.
   const engineStatus = new EngineStatusCache({
     file: join(paths.userData, 'engine-status.json'),
+    managedDir: paths.engine,
     log: log.child('engine-status')
   })
   scheduleEngineAutoUpdate({ settings, ytDlp, log: log.child('yt-dlp-update') })
@@ -386,6 +399,7 @@ export function createContainer(): AppContainer {
   const replayGain = new ReplayGainService({
     settings,
     repo,
+    managedDir: paths.engine,
     log: log.child('replay-gain'),
     onProgress: (status) => broadcast(IPC_EVENTS.replayGainProgress, status)
   })
@@ -413,6 +427,7 @@ export function createContainer(): AppContainer {
     streamPlays,
     poToken,
     engineStatus,
+    sidecars,
     replayGain,
     tagWriter,
     lyrics,
@@ -425,6 +440,7 @@ export function createContainer(): AppContainer {
       unwatchTheme()
       unwatchBackupRetention()
       unwatchPoToken()
+      sidecars.cancel()
       poToken.dispose()
       replayGain.dispose()
       downloads.dispose()

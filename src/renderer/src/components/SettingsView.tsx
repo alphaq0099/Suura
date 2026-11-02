@@ -14,6 +14,7 @@ import {
   THEME_CHOICES
 } from '@shared/appearance'
 import { DEFAULT_PREFERENCE_PATCH, SECTION_PREFERENCE_PATCHES } from '@shared/settings-defaults'
+import { formatBytes, formatCount } from '@shared/format'
 import type {
   AccentName,
   AppPaths,
@@ -39,6 +40,7 @@ import type {
   ReplayGainStatus,
   RetentionMode,
   RuntimeInfo,
+  SidecarProgress,
   StartupView,
   SurfaceStyle,
   TextSize,
@@ -46,7 +48,7 @@ import type {
 } from '@shared/types'
 import { COOKIE_BROWSERS, normalizePoTokenProviderUrl } from '@shared/youtube'
 import { AudioSettingsPanel } from './AudioSettingsPanel'
-import { FolderIcon, InfoIcon, RefreshIcon, SpinnerIcon, TrashIcon } from './Icons'
+import { DownloadIcon, FolderIcon, InfoIcon, RefreshIcon, SpinnerIcon, TrashIcon } from './Icons'
 
 export interface SettingsViewProps {
   settings: AppSettings
@@ -54,6 +56,12 @@ export interface SettingsViewProps {
   runtimeInfo: RuntimeInfo | null
   engineStatus: EngineStatus | null
   engineLoading: boolean
+  sidecarProgress: SidecarProgress | null
+  sidecarInstalling: boolean
+  sidecarNote: string | null
+  sidecarError: string | null
+  onInstallSidecars: () => Promise<void>
+  onCancelSidecarInstall: () => Promise<void>
   scanning: boolean
   error: string | null
   onUpdate: (patch: DeepPartial<AppSettings>) => void
@@ -313,6 +321,12 @@ export function SettingsView(props: SettingsViewProps) {
     runtimeInfo,
     engineStatus,
     engineLoading,
+    sidecarProgress,
+    sidecarInstalling,
+    sidecarNote,
+    sidecarError,
+    onInstallSidecars,
+    onCancelSidecarInstall,
     scanning,
     error,
     onUpdate,
@@ -355,6 +369,11 @@ export function SettingsView(props: SettingsViewProps) {
   const [diagnosticsNote, setDiagnosticsNote] = useState<string | null>(null)
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
   const resetButtonRef = useRef<HTMLButtonElement | null>(null)
+  const sidecars = engineStatus?.sidecars ?? []
+  const missingSidecars = sidecars.filter((sidecar) => !sidecar.installed)
+  const requiredMissing = missingSidecars.filter((sidecar) => !sidecar.optional)
+  const requiredMissingBytes = requiredMissing.reduce((sum, sidecar) => sum + sidecar.bytes, 0)
+  const optionalMissing = missingSidecars.length - requiredMissing.length
 
   // A tab strip is one tab stop, not five. Arrow keys move between tabs, Home and
   // End jump to the edges, and the newly selected tab takes focus — the pattern
@@ -1190,7 +1209,10 @@ export function SettingsView(props: SettingsViewProps) {
                     <span>Check</span>
                   </button>
                 </header>
-                <p className="card-hint">Checks the two binaries playback and saving need.</p>
+                <p className="card-hint">
+                  Checks the binaries playback and saving need. Suura downloads them on first use rather than
+                  bundling them, and verifies each pinned SHA-256 before a file is installed.
+                </p>
 
                 {engineStatus ? (
                   <ul className="status-list">
@@ -1206,6 +1228,58 @@ export function SettingsView(props: SettingsViewProps) {
                 ) : (
                   <p className="card-hint">{engineLoading ? 'Checking…' : 'Not checked yet.'}</p>
                 )}
+
+                <div className="field-row engine-download">
+                  <button
+                    type="button"
+                    onClick={() => void onInstallSidecars()}
+                    disabled={sidecarInstalling}
+                  >
+                    {sidecarInstalling ? <SpinnerIcon /> : <DownloadIcon />}
+                    <span>
+                      {sidecarInstalling
+                        ? 'Downloading engine'
+                        : requiredMissing.length > 0
+                          ? `Download engine (${formatBytes(requiredMissingBytes)})`
+                          : 'Re-download engine'}
+                    </span>
+                  </button>
+                  {sidecarInstalling ? (
+                    <button type="button" onClick={() => void onCancelSidecarInstall()}>
+                      Cancel
+                    </button>
+                  ) : null}
+                </div>
+
+                {sidecarProgress ? (
+                  <div className="engine-progress" role="status">
+                    <progress
+                      value={sidecarProgress.receivedBytes}
+                      max={Math.max(1, sidecarProgress.totalBytes)}
+                    />
+                    <span>
+                      {sidecarProgress.id}: {formatBytes(sidecarProgress.receivedBytes)} of{' '}
+                      {formatBytes(sidecarProgress.totalBytes)}
+                    </span>
+                  </div>
+                ) : null}
+
+                {sidecars.length > 0 ? (
+                  <p className="card-hint">
+                    {requiredMissing.length === 0
+                      ? `Playback is ready. ${formatCount(sidecars.length)} engine files are current in ${
+                          paths?.engine ?? 'the engine folder'
+                        }.`
+                      : `${formatCount(requiredMissing.length)} of ${formatCount(
+                          sidecars.length
+                        )} engine files ${requiredMissing.length === 1 ? 'is' : 'are'} missing.`}
+                    {optionalMissing > 0
+                      ? ' Fingerprinting (fpcalc) is optional and not installed.'
+                      : ''}
+                  </p>
+                ) : null}
+                {sidecarNote ? <p className="card-hint">{sidecarNote}</p> : null}
+                {sidecarError ? <p className="card-hint status-error">{sidecarError}</p> : null}
 
                 <div className="field-grid">
                   <label className="field wide">

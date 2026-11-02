@@ -8,11 +8,13 @@
  */
 import { execFile } from 'node:child_process'
 import { copyFileSync, existsSync, readdirSync, statSync } from 'node:fs'
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rename, rm, stat, unlink, utimes, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, unlink, utimes, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { promisify } from 'node:util'
+import { deflateRawSync } from 'node:zlib'
 
 import {
   ACCENT_CHOICES,
@@ -56,7 +58,7 @@ import {
   tagBatchChanges,
   tagBatchFields
 } from '@shared/tag-batch'
-import type { AlbumSummary, EngineStatus, LyricsBatchSnapshot, LyricsCandidate, PendingWriteNotice, StreamLyricsTarget, TagBatchSnapshot, TagCandidate, TagLookupQuery, Track } from '@shared/types'
+import type { AlbumSummary, EngineStatus, LyricsBatchSnapshot, LyricsCandidate, PendingWriteNotice, SidecarId, SidecarProgress, StreamLyricsTarget, TagBatchSnapshot, TagCandidate, TagLookupQuery, Track } from '@shared/types'
 import { serializeDetails, silentLogger } from '@core/logging/logger'
 import {
   DIAGNOSTICS_SUMMARY_LIMIT,
@@ -140,6 +142,9 @@ import { LyricsService } from '@core/library/lyrics-service'
 import { LocalFileResolver } from '@engine/local-file-resolver'
 import { parseEbur128Summary } from '@engine/replay-gain'
 import { EngineStatusCache, getEngineStatus } from '@engine/sidecar/engine-status'
+import { installAsset, sidecarStates } from '@engine/sidecar/install'
+import { SIDECAR_ASSETS, sidecarAsset, type SidecarAsset } from '@engine/sidecar/manifest'
+import { isSafeEntryName, readZipEntry } from '@engine/sidecar/zip'
 import { RequestScheduler } from '@engine/sidecar/request-scheduler'
 import { retryAfterMs, retryWaitMs } from '@core/scheduling/provider-retry'
 import {
@@ -300,6 +305,64 @@ async function generateFlac(
     { timeout: 60_000 }
   )
   return target
+}
+
+interface ZipTestEntry {
+  name: string
+  data: Buffer
+  /** 0 = stored, 8 = deflated (the default). */
+  method?: 0 | 8
+}
+
+/**
+ * Builds the smallest valid ZIP the installer could meet.
+ *
+ * CRCs are left at zero because the reader does not verify them; it only trusts
+ * the sizes and the pinned archive digest. The point of this fixture is to
+ * exercise the central-directory walk and the deflate path without shipping an
+ * archive in the repository.
+ */
+function buildZip(entries: readonly ZipTestEntry[]): Buffer {
+  const locals: Buffer[] = []
+  const centrals: Buffer[] = []
+  let offset = 0
+
+  for (const entry of entries) {
+    const method = entry.method ?? 8
+    const compressed = method === 8 ? deflateRawSync(entry.data) : entry.data
+    const name = Buffer.from(entry.name, 'utf8')
+
+    const local = Buffer.alloc(30)
+    local.writeUInt32LE(0x04034b50, 0)
+    local.writeUInt16LE(20, 4)
+    local.writeUInt16LE(method, 8)
+    local.writeUInt32LE(compressed.length, 18)
+    local.writeUInt32LE(entry.data.length, 22)
+    local.writeUInt16LE(name.length, 26)
+    locals.push(local, name, compressed)
+
+    const central = Buffer.alloc(46)
+    central.writeUInt32LE(0x02014b50, 0)
+    central.writeUInt16LE(0x0314, 4)
+    central.writeUInt16LE(20, 6)
+    central.writeUInt16LE(method, 10)
+    central.writeUInt32LE(compressed.length, 20)
+    central.writeUInt32LE(entry.data.length, 24)
+    central.writeUInt16LE(name.length, 28)
+    central.writeUInt32LE(offset, 42)
+    centrals.push(central, name)
+
+    offset += local.length + name.length + compressed.length
+  }
+
+  const directory = Buffer.concat(centrals)
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0)
+  end.writeUInt16LE(entries.length, 8)
+  end.writeUInt16LE(entries.length, 10)
+  end.writeUInt32LE(directory.length, 12)
+  end.writeUInt32LE(offset, 16)
+  return Buffer.concat([...locals, directory, end])
 }
 
 async function main(): Promise<void> {
@@ -7422,6 +7485,260 @@ async function main(): Promise<void> {
     overDatabase.lines.some((line) => line.includes('core database') && line.includes('MB')),
     overDatabase.lines.join(' | ')
   )
+
+  // --- M8: fetch-on-first-use sidecars ------------------------------------
+  {
+    const engineRoot = await mkdtemp(join(tmpdir(), 'player-sidecars-'))
+
+    const ids = new Set(SIDECAR_ASSETS.map((asset) => asset.id))
+    checkEqual('sidecar: each id appears once', ids.size, SIDECAR_ASSETS.length)
+    check(
+      'sidecar: every pinned digest is a lower-case SHA-256',
+      SIDECAR_ASSETS.every((asset) => /^[0-9a-f]{64}$/.test(asset.sha256)),
+      SIDECAR_ASSETS.map((asset) => `${asset.id}=${asset.sha256}`).join(' ')
+    )
+    check(
+      'sidecar: every pinned size is positive',
+      SIDECAR_ASSETS.every((asset) => Number.isSafeInteger(asset.bytes) && asset.bytes > 0)
+    )
+    check(
+      'sidecar: every URL is an immutable https release',
+      SIDECAR_ASSETS.every(
+        (asset) => asset.url.startsWith('https://') && asset.url.includes('/releases/download/')
+      ),
+      SIDECAR_ASSETS.map((asset) => asset.url).join(' ')
+    )
+    check(
+      'sidecar: a zip asset names the exact member',
+      SIDECAR_ASSETS.every((asset) => asset.kind !== 'zip' || Boolean(asset.entry))
+    )
+    checkEqual(
+      'sidecar: only fpcalc is optional',
+      SIDECAR_ASSETS.filter((asset) => asset.optional)
+        .map((asset) => asset.id)
+        .join(','),
+      'fpcalc'
+    )
+    checkEqual('sidecar: lookup by id returns its row', sidecarAsset('yt-dlp').id, 'yt-dlp')
+    let unknownSidecar = ''
+    try {
+      sidecarAsset('nope' as SidecarId)
+    } catch (error) {
+      unknownSidecar = error instanceof Error ? error.message : String(error)
+    }
+    check('sidecar: an unknown id is refused', unknownSidecar.includes('No sidecar'), unknownSidecar)
+
+    // The archive reader.
+    const memberZip = buildZip([
+      { name: 'folder/', data: Buffer.alloc(0), method: 0 },
+      { name: 'folder/fpcalc.exe', data: Buffer.from('fake-binary') }
+    ])
+    check(
+      'sidecar: a deflated archive member is extracted',
+      readZipEntry(memberZip, 'folder/fpcalc.exe').toString() === 'fake-binary'
+    )
+    check(
+      'sidecar: a stored archive member is extracted',
+      readZipEntry(buildZip([{ name: 'a.exe', data: Buffer.from('plain'), method: 0 }]), 'a.exe').toString() ===
+        'plain'
+    )
+    check('sidecar: a safe nested member name is accepted', isSafeEntryName('vendor-1.6.2/fpcalc.exe'))
+    check('sidecar: a traversal member name is refused', !isSafeEntryName('../evil.exe'))
+    check('sidecar: an absolute member name is refused', !isSafeEntryName('/etc/passwd'))
+    check('sidecar: a drive-qualified member name is refused', !isSafeEntryName('C:/Windows/evil.exe'))
+    check('sidecar: a backslash member name is refused', !isSafeEntryName('folder\\evil.exe'))
+    check('sidecar: an empty member name is refused', !isSafeEntryName(''))
+
+    let traversal = ''
+    try {
+      readZipEntry(memberZip, '../evil.exe')
+    } catch (error) {
+      traversal = error instanceof Error ? error.message : String(error)
+    }
+    check('sidecar: extracting outside the folder is refused', traversal.includes('unsafe'), traversal)
+
+    let missingMember = ''
+    try {
+      readZipEntry(memberZip, 'folder/missing.exe')
+    } catch (error) {
+      missingMember = error instanceof Error ? error.message : String(error)
+    }
+    check(
+      'sidecar: a member that is not in the archive is refused',
+      missingMember.includes('does not contain'),
+      missingMember
+    )
+
+    // A local server stands in for GitHub: the installer only cares about bytes.
+    const payload = Buffer.from('pinned-sidecar-bytes-'.repeat(64))
+    const payloadDigest = createHash('sha256').update(payload).digest('hex')
+    const zipPayload = Buffer.from('fpcalc-binary')
+    const zipBuffer = buildZip([{ name: 'chromaprint-fpcalc-test/fpcalc.exe', data: zipPayload }])
+    const zipDigest = createHash('sha256').update(zipBuffer).digest('hex')
+    let fileRequests = 0
+
+    const server = createServer((request, response) => {
+      switch (request.url) {
+        case '/file':
+          fileRequests += 1
+          response.writeHead(200, { 'content-length': payload.length })
+          response.end(payload)
+          return
+        case '/wrong':
+          response.writeHead(200, { 'content-length': payload.length })
+          response.end(Buffer.from(payload).fill(9))
+          return
+        case '/short':
+          response.writeHead(200, { 'content-length': 4 })
+          response.end(payload.subarray(0, 4))
+          return
+        case '/oversize':
+          response.writeHead(200, { 'content-length': payload.length })
+          response.end(payload)
+          return
+        case '/zip':
+          response.writeHead(200, { 'content-length': zipBuffer.length })
+          response.end(zipBuffer)
+          return
+        case '/slow':
+          response.writeHead(200, { 'content-length': payload.length * 100 })
+          response.write(payload.subarray(0, 16))
+          return
+        default:
+          response.writeHead(404, { 'content-type': 'text/plain' })
+          response.end('missing')
+      }
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    const port = typeof address === 'object' && address ? address.port : 0
+    const base = `http://127.0.0.1:${port}`
+
+    const asset = (patch: Partial<SidecarAsset> & Pick<SidecarAsset, 'url'>): SidecarAsset => ({
+      id: 'fpcalc',
+      version: 'test-1',
+      sha256: payloadDigest,
+      bytes: payload.length,
+      file: 'fpcalc.exe',
+      kind: 'file',
+      license: 'test-only',
+      ...patch
+    })
+
+    try {
+      // A successful install, with progress and a record.
+      const okDir = join(engineRoot, 'ok')
+      const progress: SidecarProgress[] = []
+      const first = await installAsset(asset({ url: `${base}/file` }), {
+        dir: okDir,
+        log: silentLogger,
+        onProgress: (event) => progress.push(event)
+      })
+      check('sidecar: a valid download installs', first.installed)
+      checkEqual('sidecar: the installed file has the pinned bytes', (await readFile(join(okDir, 'fpcalc.exe'))).length, payload.length)
+      checkEqual('sidecar: the last progress event reports the whole file', progress.at(-1)?.receivedBytes, payload.length)
+      checkEqual('sidecar: progress names the asset', progress.at(-1)?.id, 'fpcalc')
+      const states = await sidecarStates(okDir, [asset({ url: `${base}/file` })])
+      check('sidecar: the record makes the file current', states[0]?.installed === true)
+
+      // A second press is harmless and makes no request.
+      const second = await installAsset(asset({ url: `${base}/file` }), { dir: okDir, log: silentLogger })
+      check('sidecar: a current file is not installed again', !second.installed)
+      checkEqual('sidecar: a current file is not downloaded again', fileRequests, 1)
+
+      // Forced re-install does download again.
+      const third = await installAsset(asset({ url: `${base}/file` }), {
+        dir: okDir,
+        log: silentLogger,
+        force: true
+      })
+      check('sidecar: a forced install replaces the file', third.installed)
+      checkEqual('sidecar: a forced install makes a request', fileRequests, 2)
+
+      // A digest mismatch is discarded.
+      const wrongDir = join(engineRoot, 'wrong')
+      let wrongMessage = ''
+      try {
+        await installAsset(asset({ url: `${base}/wrong` }), { dir: wrongDir, log: silentLogger })
+      } catch (error) {
+        wrongMessage = error instanceof Error ? error.message : String(error)
+      }
+      check('sidecar: a wrong checksum is refused', wrongMessage.includes('checksum'), wrongMessage)
+      check('sidecar: a refused download leaves no binary', !existsSync(join(wrongDir, 'fpcalc.exe')))
+      checkEqual('sidecar: a refused download leaves no temporary file', (await readdir(wrongDir)).length, 0)
+
+      // A truncated body fails the size check.
+      const shortDir = join(engineRoot, 'short')
+      let shortMessage = ''
+      try {
+        await installAsset(asset({ url: `${base}/short` }), { dir: shortDir, log: silentLogger })
+      } catch (error) {
+        shortMessage = error instanceof Error ? error.message : String(error)
+      }
+      check('sidecar: a short download is refused', shortMessage.includes('checksum'), shortMessage)
+
+      // A body larger than the pinned size is stopped early.
+      const overDir = join(engineRoot, 'over')
+      let overMessage = ''
+      try {
+        await installAsset(asset({ url: `${base}/oversize`, bytes: payload.length - 1 }), {
+          dir: overDir,
+          log: silentLogger
+        })
+      } catch (error) {
+        overMessage = error instanceof Error ? error.message : String(error)
+      }
+      check('sidecar: an oversized download is refused', overMessage.includes('larger than'), overMessage)
+
+      // A 404 says what happened instead of failing silently.
+      const missingDir = join(engineRoot, 'missing')
+      let missingMessage = ''
+      try {
+        await installAsset(asset({ url: `${base}/nope` }), { dir: missingDir, log: silentLogger })
+      } catch (error) {
+        missingMessage = error instanceof Error ? error.message : String(error)
+      }
+      check('sidecar: an unreachable release names the HTTP status', missingMessage.includes('HTTP 404'), missingMessage)
+
+      // A zip asset becomes the member it names.
+      const zipDir = join(engineRoot, 'zip')
+      const zipAsset = asset({
+        url: `${base}/zip`,
+        sha256: zipDigest,
+        bytes: zipBuffer.length,
+        kind: 'zip',
+        entry: 'chromaprint-fpcalc-test/fpcalc.exe'
+      })
+      const zipResult = await installAsset(zipAsset, { dir: zipDir, log: silentLogger })
+      check('sidecar: a zip asset installs', zipResult.installed)
+      check(
+        'sidecar: the zip member is the installed binary',
+        (await readFile(join(zipDir, 'fpcalc.exe'))).toString() === zipPayload.toString()
+      )
+
+      // Cancel stops the transfer and cleans up.
+      const cancelDir = join(engineRoot, 'cancel')
+      const controller = new AbortController()
+      let cancelError = ''
+      try {
+        await installAsset(asset({ url: `${base}/slow` }), {
+          dir: cancelDir,
+          log: silentLogger,
+          signal: controller.signal,
+          onProgress: () => controller.abort()
+        })
+      } catch (error) {
+        cancelError = error instanceof Error ? error.message : String(error)
+      }
+      check('sidecar: a cancelled download rejects', cancelError.length > 0)
+      check('sidecar: a cancelled download leaves no binary', !existsSync(join(cancelDir, 'fpcalc.exe')))
+      checkEqual('sidecar: a cancelled download removes its partial file', (await readdir(cancelDir)).length, 0)
+    } finally {
+      server.closeAllConnections()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+      await rm(engineRoot, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }
 
   const passed = results.length - failed
   console.log(`\n${passed}/${results.length} checks passed`)

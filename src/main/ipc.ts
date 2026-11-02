@@ -1445,12 +1445,31 @@ export function registerIpcHandlers(container: AppContainer): void {
   })
 
   ipcMain.handle(IPC.engineStatus, async (_event, force: unknown) => {
-    const [status, poToken] = await Promise.all([
+    const [status, poToken, sidecars] = await Promise.all([
       container.engineStatus.get(settings.get().engine, { force: force === true }),
-      container.poToken.status()
+      container.poToken.status(),
+      container.sidecars.states()
     ])
     log.debug('engine status probed', { ready: status.ready, poToken: poToken.serverReachable })
-    return { ...status, poToken }
+    return { ...status, poToken, sidecars }
+  })
+
+  ipcMain.handle(IPC.sidecarInstall, async () => {
+    const result = await container.sidecars.install()
+    log.info('sidecar install finished', {
+      installed: result.installed,
+      failed: result.failed.map((failure) => failure.id),
+      cancelled: result.cancelled
+    })
+    // The saved probe was taken before these files existed.
+    if (result.installed.length > 0) {
+      await container.engineStatus.get(settings.get().engine, { force: true })
+    }
+    return result
+  })
+
+  ipcMain.handle(IPC.sidecarCancel, () => {
+    container.sidecars.cancel()
   })
 
   ipcMain.handle(IPC.poTokenStatus, () => container.poToken.status())
