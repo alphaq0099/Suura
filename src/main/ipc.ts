@@ -1445,13 +1445,14 @@ export function registerIpcHandlers(container: AppContainer): void {
   })
 
   ipcMain.handle(IPC.engineStatus, async (_event, force: unknown) => {
-    const [status, poToken, sidecars] = await Promise.all([
+    const [status, poToken, sidecars, rollback] = await Promise.all([
       container.engineStatus.get(settings.get().engine, { force: force === true }),
       container.poToken.status(),
-      container.sidecars.states()
+      container.sidecars.states(),
+      container.ytDlp.rollbackStatus()
     ])
     log.debug('engine status probed', { ready: status.ready, poToken: poToken.serverReachable })
-    return { ...status, poToken, sidecars }
+    return { ...status, poToken, sidecars, rollback }
   })
 
   ipcMain.handle(IPC.sidecarInstall, async () => {
@@ -1475,6 +1476,22 @@ export function registerIpcHandlers(container: AppContainer): void {
   ipcMain.handle(IPC.poTokenStatus, () => container.poToken.status())
   ipcMain.handle(IPC.poTokenStart, () => container.poToken.start())
   ipcMain.handle(IPC.poTokenStop, () => container.poToken.stop())
+
+  ipcMain.handle(IPC.ytDlpRestore, async () => {
+    const status = await container.ytDlp.restorePrevious('manual')
+    // The saved probe now names the previous version.
+    await container.engineStatus.get(settings.get().engine, { force: true })
+    return status
+  })
+
+  // ---- app updates ------------------------------------------------------
+  // The service owns every state transition; these handlers only ask it and
+  // return the resulting snapshot. A check is package-only and dormant until a
+  // feed URL is configured, so none of these reaches the network by accident.
+  ipcMain.handle(IPC.updateStatus, () => container.updates.statusSnapshot())
+  ipcMain.handle(IPC.updateCheck, () => container.updates.checkNow())
+  ipcMain.handle(IPC.updateDownload, () => container.updates.downloadNow())
+  ipcMain.handle(IPC.updateInstall, () => container.updates.installNow())
 
   // ---- playlists --------------------------------------------------------
   // Every mutation answers with the playlist as it now stands. A hand-ordered

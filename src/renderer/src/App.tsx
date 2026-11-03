@@ -14,6 +14,7 @@ import type {
   RuntimeInfo,
   SidecarProgress,
   Track,
+  UpdateStatus,
   YouTubeSearchResult
 } from '@shared/types'
 import { onlineEntryToTrack, type PlayingList } from '@shared/online'
@@ -111,6 +112,7 @@ export function App() {
   const [sidecarInstalling, setSidecarInstalling] = useState(false)
   const [sidecarNote, setSidecarNote] = useState<string | null>(null)
   const [sidecarError, setSidecarError] = useState<string | null>(null)
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null)
   const [replayGainStatus, setReplayGainStatus] = useState<ReplayGainStatus | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   /**
@@ -561,6 +563,53 @@ export function App() {
     }
   }, [])
 
+  const restoreYtDlp = useCallback(async (): Promise<void> => {
+    setSidecarNote(null)
+    setSidecarError(null)
+    try {
+      const status = await api.restoreYtDlp()
+      setSidecarNote(
+        status.version
+          ? `Restored the previous yt-dlp (${status.version}).`
+          : 'Restored the previous yt-dlp.'
+      )
+      await refreshEngine(true)
+    } catch (cause) {
+      setSidecarError(messageOf(cause))
+    }
+  }, [refreshEngine])
+
+  const checkForUpdates = useCallback(async (): Promise<void> => {
+    setActionError(null)
+    try {
+      setUpdateStatus(await api.checkForUpdates())
+    } catch (cause) {
+      setActionError(messageOf(cause))
+      // Re-read so a failed check does not leave About on "checking".
+      void api
+        .getUpdateStatus()
+        .then(setUpdateStatus)
+        .catch(() => undefined)
+    }
+  }, [])
+
+  const downloadUpdate = useCallback(async (): Promise<void> => {
+    setActionError(null)
+    try {
+      setUpdateStatus(await api.downloadUpdate())
+    } catch (cause) {
+      setActionError(messageOf(cause))
+    }
+  }, [])
+
+  const installUpdate = useCallback(async (): Promise<void> => {
+    try {
+      await api.installUpdate()
+    } catch (cause) {
+      setActionError(messageOf(cause))
+    }
+  }, [])
+
   // The first open reads the saved probe; the Refresh button is the only path
   // that insists on spawning the binaries again.
   useEffect(() => {
@@ -580,6 +629,20 @@ export function App() {
     const token = api.on('sidecarProgress', setSidecarProgress)
     return () => api.off(token)
   }, [])
+
+  useEffect(() => {
+    const token = api.on('updateChanged', setUpdateStatus)
+    return () => api.off(token)
+  }, [])
+
+  useEffect(() => {
+    if (view !== 'settings') return
+    if (updateStatus) return
+    void api
+      .getUpdateStatus()
+      .then(setUpdateStatus)
+      .catch(() => undefined)
+  }, [view, updateStatus])
 
   useEffect(() => {
     if (view !== 'settings') return
@@ -1253,6 +1316,11 @@ export function App() {
           sidecarError={sidecarError}
           onInstallSidecars={installSidecars}
           onCancelSidecarInstall={cancelSidecarInstall}
+          updateStatus={updateStatus}
+          onCheckForUpdates={checkForUpdates}
+          onDownloadUpdate={downloadUpdate}
+          onInstallUpdate={installUpdate}
+          onRestoreYtDlp={restoreYtDlp}
           scanning={scanning}
           error={combinedError}
           onUpdate={updateSettings}

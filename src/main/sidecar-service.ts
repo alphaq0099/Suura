@@ -7,6 +7,7 @@ import type {
 } from '@shared/types'
 import { installAsset, sidecarStates } from '@engine/sidecar/install'
 import { SIDECAR_ASSETS, type SidecarAsset } from '@engine/sidecar/manifest'
+import { clearLastKnownGood } from '@engine/sidecar/rollback'
 
 /**
  * Owns the one engine download at a time.
@@ -78,7 +79,16 @@ export class SidecarService {
           signal,
           onProgress: this.deps.onProgress
         })
-        if (outcome.installed) installed.push(asset.id)
+        if (outcome.installed) {
+          installed.push(asset.id)
+          // A fresh pinned binary replaces whatever was there, so the saved
+          // fallback belongs to a file that no longer exists.
+          if (asset.id === 'yt-dlp') {
+            await clearLastKnownGood(this.deps.dir).catch((error) =>
+              this.deps.log.warn('could not clear the yt-dlp fallback', error)
+            )
+          }
+        }
       } catch (error) {
         if (signal.aborted) return { installed, failed, cancelled: true }
         const message = error instanceof Error ? error.message : String(error)

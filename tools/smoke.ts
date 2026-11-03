@@ -78,7 +78,7 @@ import {
   type ScaleSummary
 } from '../src/main/scale-check'
 import { resolveAppPaths, ensureAppDirectories } from '@core/paths'
-import { DEFAULT_SETTINGS, mergeSettings, normalizeRetention, SettingsService } from '@core/settings/settings-service'
+import { DEFAULT_SETTINGS, mergeSettings, normalizeRetention, normalizeUpdate, normalizeUpdateFeedUrl, SettingsService } from '@core/settings/settings-service'
 import { DatabaseSchemaTooNewError, latestVersion, openLibraryDatabase } from '@core/db/database'
 import {
   applyPendingRestore,
@@ -144,6 +144,14 @@ import { parseEbur128Summary } from '@engine/replay-gain'
 import { EngineStatusCache, getEngineStatus } from '@engine/sidecar/engine-status'
 import { installAsset, sidecarStates } from '@engine/sidecar/install'
 import { SIDECAR_ASSETS, sidecarAsset, type SidecarAsset } from '@engine/sidecar/manifest'
+import {
+  clearLastKnownGood,
+  isManagedBinary,
+  restoreLastKnownGood,
+  saveLastKnownGood,
+  ytDlpRollbackStatus
+} from '@engine/sidecar/rollback'
+import { resolveUpdateFeedUrl } from '@shared/update'
 import { isSafeEntryName, readZipEntry } from '@engine/sidecar/zip'
 import { RequestScheduler } from '@engine/sidecar/request-scheduler'
 import { retryAfterMs, retryWaitMs } from '@core/scheduling/provider-retry'
@@ -3201,6 +3209,46 @@ async function main(): Promise<void> {
     )
 
     check('settings: prefetch is on by default', DEFAULT_SETTINGS.engine.prefetchNext)
+
+    // --- app update channel ------------------------------------------------
+    checkEqual('update: the stable channel is the default', DEFAULT_SETTINGS.update.channel, 'stable')
+    check('update: no feed is configured by default', DEFAULT_SETTINGS.update.feedUrl === null)
+    check('update: background checks are on by default', DEFAULT_SETTINGS.update.autoCheck)
+    checkEqual(
+      'update: a stable feed resolves to latest.yml',
+      resolveUpdateFeedUrl('https://updates.example.com/suura', 'stable'),
+      'https://updates.example.com/suura/latest.yml'
+    )
+    checkEqual(
+      'update: a beta feed resolves to beta.yml',
+      resolveUpdateFeedUrl('https://updates.example.com/suura/', 'beta'),
+      'https://updates.example.com/suura/beta.yml'
+    )
+    checkEqual(
+      'update: normalisation trims trailing slashes',
+      normalizeUpdateFeedUrl('https://updates.example.com/suura///'),
+      'https://updates.example.com/suura'
+    )
+    checkEqual(
+      'update: a pasted channel file becomes its folder',
+      normalizeUpdateFeedUrl('https://updates.example.com/suura/latest.yml'),
+      'https://updates.example.com/suura'
+    )
+    check(
+      'update: plain HTTP is refused outside loopback',
+      normalizeUpdateFeedUrl('http://updates.example.com/suura') === null
+    )
+    checkEqual(
+      'update: loopback HTTP is allowed for a local feed',
+      normalizeUpdateFeedUrl('http://localhost:8080/suura'),
+      'http://localhost:8080/suura'
+    )
+    check('update: a URL with credentials is refused', normalizeUpdateFeedUrl('https://user:secret@example.com/suura') === null)
+    checkEqual('update: an unknown channel falls back to stable', normalizeUpdate({ channel: 'nightly' }).channel, 'stable')
+    check('update: an invalid feed URL is stored as null', normalizeUpdate({ feedUrl: 'not a url' }).feedUrl === null)
+    checkEqual('update: a check timestamp is rounded', normalizeUpdate({ lastCheckAt: 1234.6 }).lastCheckAt, 1235)
+    checkEqual('update: an unset check timestamp stays null', normalizeUpdate({ lastCheckAt: -5 }).lastCheckAt, null)
+
     check('settings: closing the window quits by default', !DEFAULT_SETTINGS.desktop.closeToTray)
     check('settings: browser cookies are off by default', DEFAULT_SETTINGS.engine.cookiesFromBrowser === null)
     checkEqual('settings: cookie fallback is off by default', DEFAULT_SETTINGS.engine.cookieFallback, 'off')
@@ -7737,6 +7785,48 @@ async function main(): Promise<void> {
       server.closeAllConnections()
       await new Promise<void>((resolve) => server.close(() => resolve()))
       await rm(engineRoot, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }
+
+  // --- M8: yt-dlp last-known-good rollback --------------------------------
+  {
+    const root = await mkdtemp(join(tmpdir(), 'player-rollback-'))
+    try {
+      const dir = join(root, 'engine')
+      await mkdir(dir, { recursive: true })
+      const binaryName = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp'
+      const target = join(dir, binaryName)
+      await writeFile(target, 'version-1')
+
+      check('rollback: no fallback exists before an update', !(await ytDlpRollbackStatus(dir)).available)
+
+      await saveLastKnownGood(dir, target, '2026.10.26', () => 1_000)
+      const saved = await ytDlpRollbackStatus(dir)
+      check('rollback: saving makes a fallback available', saved.available)
+      checkEqual('rollback: the saved version is reported', saved.version, '2026.10.26')
+      checkEqual('rollback: the saved time is reported', saved.savedAt, 1_000)
+      check('rollback: the managed binary is recognised', isManagedBinary(dir, target))
+      check('rollback: a PATH binary is not managed', !isManagedBinary(dir, join(root, 'other', binaryName)))
+
+      // Simulate an update that replaced the binary with something that cannot start.
+      await writeFile(target, 'broken')
+      const restored = await restoreLastKnownGood(dir, target, () => 2_000)
+      check('rollback: the previous binary is restored', restored.restored)
+      checkEqual('rollback: the restored bytes are the saved ones', (await readFile(target)).toString(), 'version-1')
+      const afterRestore = await ytDlpRollbackStatus(dir)
+      check('rollback: a restore consumes the fallback', !afterRestore.available)
+      checkEqual('rollback: the restore time is recorded', afterRestore.lastRestoredAt, 2_000)
+
+      const again = await restoreLastKnownGood(dir, target)
+      check('rollback: restoring twice does nothing', !again.restored)
+
+      // A fresh engine download clears the fallback.
+      await saveLastKnownGood(dir, target, '2026.11.01', () => 3_000)
+      checkEqual('rollback: a new save replaces the fallback', (await ytDlpRollbackStatus(dir)).version, '2026.11.01')
+      await clearLastKnownGood(dir)
+      check('rollback: a fresh install clears the fallback', !(await ytDlpRollbackStatus(dir)).available)
+    } finally {
+      await rm(root, { recursive: true, force: true }).catch(() => undefined)
     }
   }
 

@@ -19,6 +19,13 @@ import {
 import { locateExecutable, wellKnownDirectories } from './locate'
 import { killTree } from './process-tree'
 import { RequestScheduler } from './request-scheduler'
+import {
+  describeSavedRollback,
+  isManagedBinary,
+  restoreLastKnownGood as restoreSavedBinary,
+  saveLastKnownGood,
+  ytDlpRollbackStatus
+} from './rollback'
 import { YouTubeGate } from './youtube-gate'
 
 /**
@@ -61,6 +68,18 @@ const DOWNLOAD_JITTER_MS = 500
 const TRANSIENT_RETRY_DELAY_MS = 2_000
 const TRANSIENT_RETRY_JITTER_MS = 1_000
 const UPDATE_TIMEOUT_MS = 90_000
+const VERSION_TIMEOUT_MS = 15_000
+
+/**
+ * Repeated extractor failures that look like a broken release trigger one
+ * automatic restore. Three inside ten minutes is not a flaky network, and the
+ * previous binary is exactly the thing that was working before the update.
+ */
+const EXTRACTOR_FAILURE_WINDOW_MS = 10 * 60_000
+const EXTRACTOR_FAILURE_LIMIT = 3
+const ROLLBACK_COOLDOWN_MS = 30 * 60_000
+const EXTRACTOR_BREAKAGE_PATTERN =
+  /unable to extract|no video formats found|requested format is not available|nsig extraction failed|signature extraction failed|failed to parse json|unsupported url/i
 
 /**
  * Keep yt-dlp on IPv4.
@@ -438,6 +457,8 @@ export function buildDownloadArgs(
 export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearchProvider {
   private binary: string | null = null
   private updateInFlight: Promise<string> | null = null
+  private rollbackAttemptedAt = 0
+  private extractorFailures: number[] = []
   readonly gate: YouTubeGate
 
   private readonly metadataScheduler: RequestScheduler
@@ -743,7 +764,7 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
     return null
   }
 
-  /** Updates the yt-dlp binary in place (`yt-dlp -U`). */
+  /** Updates the yt-dlp binary in place (`yt-dlp -U`), keeping the last good copy. */
   update(signal?: AbortSignal): Promise<string> {
     if (this.updateInFlight) return this.updateInFlight
 
@@ -754,35 +775,145 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
       return Promise.reject(error)
     }
 
-    const work = this.spawnBuffered(
-      binary,
-      withNetworkTransport(['--ignore-config', '-U']),
-      signal,
-      UPDATE_TIMEOUT_MS,
-      'Updating yt-dlp was cancelled.',
-      // `-U` talks to GitHub, not YouTube. The generic resolve message sent
-      // users looking at the wrong service when this timed out.
-      'Updating yt-dlp took too long. Check the connection and try again.'
-    )
-      .then(({ stdout, stderr }) => {
-        const output = [stdout, stderr]
-          .map((part) => part.trim())
-          .filter(Boolean)
-          .join('\n')
-          .trim()
-        this.deps.log.info('yt-dlp update finished', { output: output.slice(-1000) })
-        return output || 'yt-dlp is up to date.'
-      })
-      .catch((error) => {
-        this.deps.log.warn('yt-dlp update failed', error)
-        throw error
-      })
-      .finally(() => {
-        this.updateInFlight = null
-      })
+    const work = this.runUpdate(binary, signal).finally(() => {
+      this.updateInFlight = null
+    })
 
     this.updateInFlight = work
     return work
+  }
+
+  /**
+   * Whether a previous managed binary is saved, and when it was last used.
+   * Cheap: one stat and one small read, no process spawn.
+   */
+  rollbackStatus(): Promise<Awaited<ReturnType<typeof ytDlpRollbackStatus>>> {
+    return ytDlpRollbackStatus(this.deps.managedDir)
+  }
+
+  /**
+   * Puts the saved binary back. Used by the Settings button and by the
+   * automatic path after a bad update or repeated extractor failures.
+   */
+  async restorePrevious(versionReason: 'manual' | 'automatic' = 'manual'): Promise<
+    Awaited<ReturnType<typeof ytDlpRollbackStatus>>
+  > {
+    const dir = this.deps.managedDir
+    const target = this.managedBinaryPath()
+    if (!dir || !target) {
+      throw new YtDlpError('The app does not manage a yt-dlp binary to restore.', 'no-managed-engine')
+    }
+    if (!existsSync(target)) {
+      throw new YtDlpError('The managed yt-dlp binary is missing; download the engine again.', 'missing-binary')
+    }
+    const result = await restoreSavedBinary(dir, target)
+    if (!result.restored) {
+      throw new YtDlpError('There is no previous yt-dlp binary to restore.', 'no-rollback')
+    }
+    this.binary = null
+    this.deps.log.info('restored the previous yt-dlp binary', {
+      reason: versionReason,
+      version: result.version
+    })
+    return this.rollbackStatus()
+  }
+
+  private async runUpdate(binary: string, signal?: AbortSignal): Promise<string> {
+    const managedDir = this.deps.managedDir
+    const managed = isManagedBinary(managedDir, binary)
+    let saved = false
+
+    if (managed && managedDir) {
+      // Only back up a binary that answers `--version`. A broken file must never
+      // overwrite the fallback that was working.
+      const version = await this.binaryVersion(binary).catch(() => null)
+      if (version) {
+        try {
+          describeSavedRollback(this.deps.log, await saveLastKnownGood(managedDir, binary, version))
+          saved = true
+        } catch (error) {
+          this.deps.log.warn('could not save the previous yt-dlp binary', error)
+        }
+      }
+    }
+
+    try {
+      const { stdout, stderr } = await this.spawnBuffered(
+        binary,
+        withNetworkTransport(['--ignore-config', '-U']),
+        signal,
+        UPDATE_TIMEOUT_MS,
+        'Updating yt-dlp was cancelled.',
+        // `-U` talks to GitHub, not YouTube. The generic resolve message sent
+        // users looking at the wrong service when this timed out.
+        'Updating yt-dlp took too long. Check the connection and try again.'
+      )
+
+      const output = [stdout, stderr]
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .join('\n')
+        .trim()
+
+      if (managed) {
+        const version = await this.binaryVersion(binary).catch(() => null)
+        if (!version) {
+          if (saved && managedDir) await this.tryRestore(managedDir, binary, 'broken-update')
+          throw new YtDlpError(
+            saved
+              ? 'The updated yt-dlp did not start. The previous version was restored.'
+              : 'The updated yt-dlp did not start. Download the engine again from Settings.',
+            'update-broken'
+          )
+        }
+      }
+
+      this.deps.log.info('yt-dlp update finished', { output: output.slice(-1000) })
+      return output || 'yt-dlp is up to date.'
+    } catch (error) {
+      // `-U` can fail after replacing part of the file. If what remains no
+      // longer starts, the backup is the difference between a working engine
+      // and a user who has to find yt-dlp themselves.
+      if (managed && managedDir) {
+        const version = await this.binaryVersion(binary).catch(() => null)
+        if (!version && saved) await this.tryRestore(managedDir, binary, 'failed-update')
+      }
+      this.deps.log.warn('yt-dlp update failed', error)
+      throw error
+    }
+  }
+
+  private managedBinaryPath(): string | null {
+    const dir = this.deps.managedDir
+    if (!dir) return null
+    return join(dir, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp')
+  }
+
+  /** Reads the version of a binary without touching the network. */
+  private async binaryVersion(binary: string): Promise<string | null> {
+    const { stdout } = await this.spawnBuffered(
+      binary,
+      ['--ignore-config', '--version'],
+      undefined,
+      VERSION_TIMEOUT_MS,
+      'Checking the yt-dlp binary was cancelled.',
+      'Timed out checking the yt-dlp binary.'
+    )
+    const line = stdout.trim().split(/\r?\n/)[0]?.trim() ?? ''
+    return line.length > 0 ? line : null
+  }
+
+  private async tryRestore(dir: string, binary: string, reason: string): Promise<boolean> {
+    try {
+      const result = await restoreSavedBinary(dir, binary)
+      if (!result.restored) return false
+      this.binary = null
+      this.deps.log.warn('restored the previous yt-dlp binary', { reason, version: result.version })
+      return true
+    } catch (error) {
+      this.deps.log.warn('could not restore the previous yt-dlp binary', error)
+      return false
+    }
   }
 
   /**
@@ -794,6 +925,42 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
    * check is still never retried without cookies.
    */
   private async runWithRetry(
+    args: string[],
+    signal?: AbortSignal,
+    timeoutOverrideMs?: number
+  ): Promise<{ stdout: string; stderr: string }> {
+    try {
+      return await this.runWithRetryInner(args, signal, timeoutOverrideMs)
+    } catch (error) {
+      // A failed request is the only place extractor breakage is visible. One
+      // or two can be a flaky video; three in ten minutes means the release
+      // itself is the problem.
+      if (!signal?.aborted) void this.noteExtractorFailure(error)
+      throw error
+    }
+  }
+
+  private async noteExtractorFailure(error: unknown): Promise<void> {
+    if (!isExtractorBreakage(error)) return
+    const now = Date.now()
+    this.extractorFailures = this.extractorFailures.filter(
+      (at) => now - at < EXTRACTOR_FAILURE_WINDOW_MS
+    )
+    this.extractorFailures.push(now)
+    if (this.extractorFailures.length < EXTRACTOR_FAILURE_LIMIT) return
+
+    const dir = this.deps.managedDir
+    const managed = this.managedBinaryPath()
+    if (!dir || !managed || !existsSync(managed)) return
+    if (now - this.rollbackAttemptedAt < ROLLBACK_COOLDOWN_MS) return
+
+    this.rollbackAttemptedAt = now
+    this.extractorFailures = []
+    const restored = await this.tryRestore(dir, managed, 'repeated-extractor-failure')
+    if (restored) this.deps.log.warn('yt-dlp extractor failures triggered a rollback')
+  }
+
+  private async runWithRetryInner(
     args: string[],
     signal?: AbortSignal,
     timeoutOverrideMs?: number
@@ -1016,6 +1183,19 @@ function isBotCheckError(error: unknown): boolean {
   if (!(error instanceof Error)) return false
   const detail = (error as Error & { detail?: unknown }).detail
   return isYouTubeBotCheck(`${error.message}\n${typeof detail === 'string' ? detail : ''}`)
+}
+
+/**
+ * A failure that points at yt-dlp's extractor rather than the network or the
+ * user's setup. Timeouts and missing binaries are excluded on purpose: those
+ * are exactly the cases where swapping the binary would not help.
+ */
+function isExtractorBreakage(error: unknown): boolean {
+  if (!(error instanceof YtDlpError)) return false
+  if (error.detail === 'timeout' || error.detail === 'missing-binary' || error.detail === 'update-broken') {
+    return false
+  }
+  return EXTRACTOR_BREAKAGE_PATTERN.test(`${error.message}\n${error.detail}`)
 }
 
 function delayWithSignal(ms: number, signal: AbortSignal | undefined, message: string): Promise<void> {

@@ -14,7 +14,8 @@ import {
   DEFAULT_SETTINGS,
   DOWNLOAD_FORMATS,
   QUALITY_TIERS,
-  RETENTION_MODES
+  RETENTION_MODES,
+  UPDATE_CHANNELS
 } from '@shared/settings-defaults'
 import {
   isStartupView,
@@ -27,7 +28,9 @@ import {
   type QualityTier,
   type RetentionMode,
   type RetentionSettings,
-  type TextSize
+  type TextSize,
+  type UpdateChannel,
+  type UpdateSettings
 } from '@shared/types'
 import {
   DEFAULT_PO_TOKEN_PROVIDER_URL,
@@ -72,6 +75,57 @@ function clampInt(value: number, min: number, max: number): number {
  * machine, or written by a build that had a different set of modes. Reading it
  * defensively here means no caller needs a second guard.
  */
+/**
+ * Accepts only a static-feed base URL the updater can append a channel file to.
+ *
+ * HTTPS is required because installers travel over this URL. Loopback HTTP is
+ * allowed so a developer can serve `latest.yml` locally; that is the only
+ * exception. A pasted `latest.yml`/`beta.yml` is trimmed back to its folder,
+ * because the updater adds the filename itself.
+ */
+export function normalizeUpdateFeedUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (trimmed.length === 0) return null
+
+  let parsed: URL
+  try {
+    parsed = new URL(trimmed)
+  } catch {
+    return null
+  }
+
+  const loopback =
+    parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '::1'
+  if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && loopback)) return null
+  if (parsed.username || parsed.password) return null
+
+  const path = parsed.pathname.replace(/\/+$/, '').replace(/\/(latest|beta)\.yml$/i, '')
+  parsed.pathname = path.length === 0 ? '/' : path
+  parsed.search = ''
+  parsed.hash = ''
+  return parsed.toString().replace(/\/$/, '')
+}
+
+/** Keeps the update block in the shape the updater and Settings rely on. */
+export function normalizeUpdate(input: unknown): UpdateSettings {
+  const source = isPlainObject(input) ? input : {}
+  const defaults = DEFAULT_SETTINGS.update
+  const channel = UPDATE_CHANNELS.includes(source.channel as UpdateChannel)
+    ? (source.channel as UpdateChannel)
+    : defaults.channel
+  const lastCheckAt =
+    typeof source.lastCheckAt === 'number' && Number.isFinite(source.lastCheckAt) && source.lastCheckAt > 0
+      ? Math.round(source.lastCheckAt)
+      : null
+  return {
+    channel,
+    feedUrl: normalizeUpdateFeedUrl(source.feedUrl),
+    autoCheck: source.autoCheck !== false,
+    lastCheckAt
+  }
+}
+
 export function normalizeRetention(input: unknown): RetentionSettings {
   const source = isPlainObject(input) ? input : {}
   const defaults = DEFAULT_SETTINGS.retention
@@ -169,6 +223,7 @@ export class SettingsService {
     // written before a mode existed, must not reach the downloader or cache
     // with a value outside the contract.
     settings = { ...settings, retention: normalizeRetention(settings.retention) }
+    settings = { ...settings, update: normalizeUpdate(settings.update) }
 
     // The old surface value described the CSS blur as "frosted", but it is an
     // accent tint rather than an album-art frost. Accept the old spelling from

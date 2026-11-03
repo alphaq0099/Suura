@@ -38,6 +38,7 @@ import { StreamCache } from '../stream-cache'
 import { createOnlineService, type OnlineService } from '../online-service'
 import { ReplayGainService } from '../replay-gain-service'
 import { SidecarService } from '../sidecar-service'
+import { UpdateService } from '../update-service'
 import { createTagLookup, type TagLookup } from '@core/library/tag-lookup'
 import { createLyricsFinder, createLyricsLookup } from '@core/library/lyrics-lookup'
 import { createGeniusProvider } from '@core/library/lyrics-genius'
@@ -85,10 +86,14 @@ export interface AppContainer {
   streamPlays: StreamPlayRepository
   /** Starts/stops an external PO Token provider when the user asks. */
   poToken: PoTokenProvider
-  /** Saved yt-dlp/ffmpeg probe, so Settings opens without waiting. */
+  /** The saved yt-dlp probe, so Settings opens without waiting. */
   engineStatus: EngineStatusCache
+  /** Owns the yt-dlp self-update and the last-known-good binary. */
+  ytDlp: YtDlpClient
   /** Downloads the pinned sidecars into `paths.engine` on first use. */
   sidecars: SidecarService
+  /** The app update channel (dormant until a feed URL is configured). */
+  updates: UpdateService
   /** Measures ReplayGain for local files in the background. */
   replayGain: ReplayGainService
   /** The only writer that modifies a user's files; exposed for later phases. */
@@ -182,6 +187,15 @@ export function createContainer(): AppContainer {
     log: log.child('engine-status')
   })
   scheduleEngineAutoUpdate({ settings, ytDlp, log: log.child('yt-dlp-update') })
+
+  // The update feed is a setting, so the service reads it live. Until a host
+  // is configured it stays dormant and says so in About.
+  const updates = new UpdateService({
+    settings,
+    log: log.child('updates'),
+    onChange: (status) => broadcast(IPC_EVENTS.updateChanged, status)
+  })
+  updates.scheduleAutoCheck()
   const youtube = createYoutubeService(
     new YouTubeResolver({
       info: ytDlp,
@@ -427,7 +441,9 @@ export function createContainer(): AppContainer {
     streamPlays,
     poToken,
     engineStatus,
+    ytDlp,
     sidecars,
+    updates,
     replayGain,
     tagWriter,
     lyrics,
@@ -440,6 +456,7 @@ export function createContainer(): AppContainer {
       unwatchTheme()
       unwatchBackupRetention()
       unwatchPoToken()
+      updates.dispose()
       sidecars.cancel()
       poToken.dispose()
       replayGain.dispose()

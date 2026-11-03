@@ -1187,6 +1187,56 @@ export interface EngineSettings {
   mixLimit: number
 }
 
+/** Which feed the app reads: `latest.yml` on stable, `beta.yml` on beta. */
+export type UpdateChannel = 'stable' | 'beta'
+
+export interface UpdateSettings {
+  channel: UpdateChannel
+  /**
+   * Base HTTPS URL of the static update feed. Null means updates are not
+   * configured: the app never contacts a host and Settings says so.
+   */
+  feedUrl: string | null
+  /** Check once a day after launch, and only in an installed build. */
+  autoCheck: boolean
+  /** Epoch ms of the last check attempt, successful or not. Null means never. */
+  lastCheckAt: number | null
+}
+
+/**
+ * What About shows about the app update channel.
+ *
+ * `disabled` covers both "this is a dev/unpacked build" and "no feed URL is
+ * configured"; `supported` and `feedUrl` tell the UI which one it is.
+ */
+export interface UpdateStatus {
+  state: 'disabled' | 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'up-to-date' | 'error'
+  currentVersion: string
+  availableVersion: string | null
+  /** 0-100 while downloading; null otherwise. */
+  percent: number | null
+  /** The resolved channel file, or null when no feed is configured. */
+  feedUrl: string | null
+  /** A sentence to show beside the buttons. */
+  message: string | null
+  /** True when this build can install an update (an installed, packaged app). */
+  supported: boolean
+  /** True once an update has downloaded and can be installed. */
+  canInstall: boolean
+  lastCheckAt: number | null
+}
+
+/** The saved previous yt-dlp binary, and whether it can be restored. */
+export interface YtDlpRollbackStatus {
+  available: boolean
+  /** The version recorded when the binary was saved, when the probe knew it. */
+  version: string | null
+  /** Epoch ms the previous binary was saved. */
+  savedAt: number | null
+  /** Epoch ms of the last automatic or manual restore. */
+  lastRestoredAt: number | null
+}
+
 /**
  * A named equaliser curve. `custom` means the bands no longer match a preset:
  * the UI switches to it as soon as a slider is moved.
@@ -1383,6 +1433,7 @@ export interface AppSettings {
   backups: BackupSettings
   retention: RetentionSettings
   engine: EngineSettings
+  update: UpdateSettings
 }
 
 /** Absolute locations the app reads and writes. Surfaced in Settings for debugging. */
@@ -1592,6 +1643,11 @@ export interface EngineStatus {
    * (or a probe-only test) still satisfies the type.
    */
   sidecars?: SidecarState[]
+  /**
+   * The previous yt-dlp binary saved before an update. Filled by the IPC
+   * handler rather than the saved probe, because it changes independently.
+   */
+  rollback?: YtDlpRollbackStatus
 }
 
 /** The headless tools the app downloads instead of bundling. */

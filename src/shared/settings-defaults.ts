@@ -6,7 +6,8 @@ import type {
   DeepPartial,
   DownloadFormat,
   QualityTier,
-  RetentionMode
+  RetentionMode,
+  UpdateChannel
 } from './types'
 import { DEFAULT_PO_TOKEN_PROVIDER_URL } from './youtube'
 
@@ -14,6 +15,7 @@ import { DEFAULT_PO_TOKEN_PROVIDER_URL } from './youtube'
 export const RETENTION_MODES: readonly RetentionMode[] = ['stream', 'cache', 'keep']
 export const QUALITY_TIERS: readonly QualityTier[] = ['best', 'high', 'balanced', 'data-saver']
 export const DOWNLOAD_FORMATS: readonly DownloadFormat[] = ['opus', 'mp3', 'm4a']
+export const UPDATE_CHANNELS: readonly UpdateChannel[] = ['stable', 'beta']
 
 /**
  * Defaults matter more than they look: `retention.mode: 'stream'` and a bounded
@@ -116,6 +118,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
     importLimit: 200,
     // A mix never ends, so its "length" is whatever this says.
     mixLimit: 50
+  },
+  // Updates are dormant until a feed host exists: no URL means the app never
+  // contacts an update server. Stable is the safe default for a first release.
+  update: {
+    channel: 'stable',
+    feedUrl: null,
+    autoCheck: true,
+    lastCheckAt: null
   }
 }
 

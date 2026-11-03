@@ -18,6 +18,15 @@ directories:
   output: release
   buildResources: build
 
+# A generic provider makes electron-builder write the channel file
+# (latest.yml, or beta.yml for a prerelease version) beside the installer.
+# The URL here is a placeholder: the app reads the real feed folder from
+# Settings, and stays dormant until one is configured. Nothing is uploaded
+# unless `--publish` is passed explicitly.
+publish:
+  provider: generic
+  url: https://updates.suura.invalid/suura
+
 files:
   - out/**/*
   - package.json

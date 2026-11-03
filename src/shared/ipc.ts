@@ -65,8 +65,10 @@ import type {
   TrackLyrics,
   TrackPage,
   TrackTagFields,
+  UpdateStatus,
   YouTubeChannel,
-  YouTubeSearchResult
+  YouTubeSearchResult,
+  YtDlpRollbackStatus
 } from './types'
 
 /**
@@ -185,6 +187,11 @@ export const IPC = {
   poTokenStatus: 'engine:po-token-status',
   poTokenStart: 'engine:po-token-start',
   poTokenStop: 'engine:po-token-stop',
+  ytDlpRestore: 'engine:restore-yt-dlp',
+  updateStatus: 'update:status',
+  updateCheck: 'update:check',
+  updateDownload: 'update:download',
+  updateInstall: 'update:install',
   windowGetMini: 'window:get-mini',
   windowSetMini: 'window:set-mini',
   windowSetTaskbarState: 'window:set-taskbar-state'
@@ -202,7 +209,8 @@ export const IPC_EVENTS = {
   lyricsBatchProgress: 'event:lyrics-batch-progress',
   tagBatchProgress: 'event:tag-batch-progress',
   pendingWriteChanged: 'event:pending-write-changed',
-  sidecarProgress: 'event:sidecar-progress'
+  sidecarProgress: 'event:sidecar-progress',
+  updateChanged: 'event:update-changed'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -253,6 +261,8 @@ export interface PlayerEvents {
   pendingWriteChanged: PendingWriteNotice
   /** A sidecar download advanced, or one finished and the next started. */
   sidecarProgress: SidecarProgress
+  /** The app update channel changed state (checking, download progress, ready). */
+  updateChanged: UpdateStatus
 }
 
 export type PlayerEventName = keyof PlayerEvents
@@ -269,7 +279,8 @@ export const EVENT_CHANNELS: Record<PlayerEventName, IpcEventChannel> = {
   lyricsBatchProgress: IPC_EVENTS.lyricsBatchProgress,
   tagBatchProgress: IPC_EVENTS.tagBatchProgress,
   pendingWriteChanged: IPC_EVENTS.pendingWriteChanged,
-  sidecarProgress: IPC_EVENTS.sidecarProgress
+  sidecarProgress: IPC_EVENTS.sidecarProgress,
+  updateChanged: IPC_EVENTS.updateChanged
 }
 
 /**
@@ -733,6 +744,16 @@ export interface PlayerApi {
   startPoTokenProvider(): Promise<PoTokenStatus>
   /** Stops only a provider this app started; external servers are untouched. */
   stopPoTokenProvider(): Promise<PoTokenStatus>
+  /** Puts the previous yt-dlp binary back after a bad update. */
+  restoreYtDlp(): Promise<YtDlpRollbackStatus>
+  /** The current app update channel state. Never touches the network. */
+  getUpdateStatus(): Promise<UpdateStatus>
+  /** Asks the configured feed once. Resolves with the resulting state. */
+  checkForUpdates(): Promise<UpdateStatus>
+  /** Downloads the version a check found. Resolves when it is ready. */
+  downloadUpdate(): Promise<UpdateStatus>
+  /** Quits and runs the downloaded installer. Resolves false when not ready. */
+  installUpdate(): Promise<boolean>
   /** True when the window is currently in its compact layout. */
   isMiniPlayer(): Promise<boolean>
   /**

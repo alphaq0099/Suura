@@ -9,7 +9,7 @@ installing and using the app, read the [README](../README.md) instead. The full 
 
 ---
 
-## Status: M1–M7 and M12 complete, including the visual revamp (Home dashboard, merged **All tracks**, album/artist detail, playlist hero). M8 Windows release engineering is in progress: the per-user installer, local diagnostics export, renderer sandbox, headless performance gate, fetch-on-first-use sidecar installer and the CI workflow are done; signing, auto-update, opt-in crash reporting and the compatibility/accessibility pass remain. The GitHub Actions workflow (`.github/workflows/ci.yml`) runs the build, smoke, self-test and perf gates on `windows-latest` and is green.
+## Status: M1–M7 and M12 complete, including the visual revamp (Home dashboard, merged **All tracks**, album/artist detail, playlist hero). M8 Windows release engineering is in progress: the per-user installer, local diagnostics export, renderer sandbox, headless performance gate, fetch-on-first-use sidecar installer, CI workflow, app update channel and yt-dlp rollback are done; signing, opt-in crash reporting and the compatibility/accessibility pass remain. The GitHub Actions workflow (`.github/workflows/ci.yml`) runs the build, smoke, self-test and perf gates on `windows-latest` and is green.
 
 Working today:
 
@@ -237,17 +237,22 @@ Working today:
   can also forget chosen rows without touching their files.
 - The engine layer reports whether `yt-dlp` and `ffmpeg` are present and runnable, and the resolver uses them. A missing
   binary is downloaded on first use into `<userData>/engine` and verified by pinned SHA-256 and size; the configured
-  folder, the managed folder, `PATH` and the well-known locations are probed in that order.
+  folder, the managed folder, `PATH` and the well-known locations are probed in that order. Before `yt-dlp -U`, the
+  working binary is copied aside; a broken update, a failed update, or repeated extractor failures restore it.
+- The app updates from a static HTTPS feed configured in **Settings → About** (`latest.yml` for Stable, `beta.yml` for
+  Beta). It never downloads or installs without an explicit press, and a missing feed is a clear "not configured" state.
 
-Not built yet (deliberately): optional crossfade, app auto-update, opt-in crash reporting and saved smart playlists (the
-Library's fixed chips are views, not user-defined lists). Tag writing remains deferred: removing a download or clearing
-the cache deletes files but never rewrites tags. Windows release engineering (M8) is in progress; the installer,
-manual log export and the sidecar downloader are the completed slices, and the rest is listed in [Next steps](#next-steps).
+Not built yet (deliberately): optional crossfade, opt-in crash reporting and saved smart playlists (the Library's fixed
+chips are views, not user-defined lists). Tag writing remains deferred: removing a download or clearing the cache
+deletes files but never rewrites tags. Windows release engineering (M8) is in progress; the installer, manual log export,
+the sidecar downloader, the update channel and engine rollback are the completed slices, and the rest is listed in
+[Next steps](#next-steps).
 
 ## Windows build
 
 `npm run package:dir` produces an unpacked app under `release/win-unpacked/`; `npm run package:win` produces the NSIS
-installer `release/Suura-<version>-Setup.exe`. Both run the full TypeScript check and production build first. The
+installer `release/Suura-<version>-Setup.exe` and the update channel file (`latest.yml`, or `beta.yml` for a pre-release
+version) beside it. Both run the full TypeScript check and production build first. The
 installer is **per-user**: no administrator prompt, no machine-wide install. Uninstalling asks before deleting
 `%APPDATA%\Suura` (default **No**) and never deletes music saved into `Music\Suura`.
 
@@ -646,6 +651,69 @@ not on every start (which also lets `yt-dlp -U` update its own binary in place).
 Uninstalling the app removes `%APPDATA%\Suura`, including the engine folder, if the user chooses that; the binaries are
 not part of the installed program. A machine with an existing copy keeps working offline.
 
+### How the app updates
+
+The updater is `electron-updater` pointed at a **generic HTTPS feed** — a static folder, not a server with an API.
+
+```
+Settings → About: feed folder ──▶ resolveUpdateFeedUrl(base, channel) ──▶ base/latest.yml (Stable)
+                                                                          base/beta.yml   (Beta)
+                                               │ electron-updater reads the channel file
+                                               ▼
+                         check ──▶ available ──▶ [Download update] ──▶ ready ──▶ [Restart and install]
+                          │                        progress %             │
+                          └── up-to-date / error                          └── quitAndInstall
+```
+
+`src/shared/update.ts` owns the one mapping that matters (`UPDATE_CHANNEL_FILES`) and validates the base URL, so
+Settings, the updater and the release docs cannot disagree about the filename. `src/main/update-service.ts` wraps the
+library: it sets `autoDownload = false` and `autoInstallOnAppQuit = false`, turns events into one `UpdateStatus` for the
+renderer, and translates failures into sentences ("The update feed has no beta.yml. Check the feed URL and channel.").
+
+Two rules keep it quiet:
+
+- **Nothing runs until a feed is configured.** With no URL the service reports `disabled` with a "not configured"
+  message; it does not ask the network on every launch. The feed URL is a setting so a private mirror needs no rebuild.
+- **A check never installs.** The daily background check (`scheduleAutoCheck`) is package-only, runs at most once per
+  24 h (`update.lastCheckAt` is recorded even on failure), and starts 30 s after launch so the window and first scan
+  come first. Only **Restart and install** calls `quitAndInstall`.
+
+`electron-builder.yml` declares a generic publish provider with an inert placeholder URL, so `npm run package:win`
+writes `latest.yml` (or `beta.yml` for a pre-release version) beside the installer; nothing is uploaded unless
+`--publish` is passed explicitly. Signing applies to updates too: an installer signed at packaging time is the one the
+updater verifies.
+
+### How yt-dlp is rolled back
+
+`yt-dlp -U` fixes extraction often, but a release can also be the thing that breaks it. `src/engine/sidecar/rollback.ts`
+keeps the last known-good managed binary:
+
+```
+daily update ──▶ binary answers --version? ──▶ copy to yt-dlp.previous.exe (+ .json record)
+                                             │ run -U
+                                             ▼
+                                    new binary answers --version?
+                                        │ yes              │ no
+                                        ▼                  ▼
+                                    keep it          restore the copy
+                                    └ update itself failed → restore too
+```
+
+- Before `-U`, the current managed binary must answer `--version`, then it is copied aside. A broken file can therefore
+  never replace a good fallback.
+- After `-U`, a binary that will not start is rolled back immediately; a failed update does the same if the binary is
+  left unusable.
+- Three extractor failures inside 10 minutes (matching patterns like “Unable to extract”, “Requested format is not
+  available”, “nsig extraction failed”) trigger one automatic restore, with a 30-minute cooldown so a genuinely broken
+  network does not loop. Timeouts and missing binaries are excluded: swapping the binary would not help them.
+- **Settings → Streaming → Previous yt-dlp → Restore previous** is the manual path. A restore consumes the copy — the
+  next update starts a new backup from whatever works then.
+- A fresh pinned engine download clears `yt-dlp.previous.exe`/`.json`, because an old fallback must not outlive the
+  install it came from.
+
+The copy lives in the engine folder rather than `userData` so uninstall takes it too, and it is a plain file rather than
+an archive so a restore works even when the new binary cannot start.
+
 ### Storage
 
 | What | Where |
@@ -658,6 +726,7 @@ not part of the installed program. A machine with an existing copy keeps working
 | Temp downloads | `<userData>/downloads` (per-save working folder, cleared after the move) |
 | Saved tracks | `Music\Suura\<Artist>\<Album>\<Title>.<ext>` by default (set the folder under Settings → Streaming) |
 | Engine binaries | `<userData>/engine` (fetched on first use; `install-record.json` records the pinned versions) |
+| yt-dlp fallback | `<userData>/engine/yt-dlp.previous.exe` + `yt-dlp.previous.json` (last known-good copy and its record) |
 
 `<userData>` is `%APPDATA%\Suura` on Windows. All of these paths are shown in **Settings → Misc**, and the versions
 behind them are on **About**. `library.db` also holds the cache ledger (`cache_entries`) and the save ledger
@@ -695,6 +764,7 @@ src/
     online-service.ts   link history, imports, YouTube search and channel listings
     download-service.ts save-to-library queue: yt-dlp → tags → move → scan, pause/resume, remove-download, startup sweep
     youtube-service.ts  resolver + stream proxy, registered with the registry
+    update-service.ts   electron-updater wrapper: feed, status, daily check, no silent install
     broadcast.ts        main → renderer event fan-out
     services/container.ts   the whole dependency graph in one place
   preload/index.ts      contextBridge surface (the only way to reach main)
@@ -710,13 +780,13 @@ src/
     youtube-resolver.ts link validation, resolve + session cache
     stream-proxy.ts     token registry, range/header forwarding, one-shot re-resolve
     innertube.ts        search/channel metadata over YouTube's web API
-    sidecar/            locating and version-probing yt-dlp / ffmpeg; the yt-dlp client
+    sidecar/            locating and version-probing yt-dlp / ffmpeg; the yt-dlp client; manifest.ts pins; rollback.ts keeps the last known-good binary
   renderer/src/
     App.tsx             composition root
     components/         Sidebar, LibraryView, TrackList, SearchView, OnlineView, PlaylistsView, DownloadsView, QueueView, SettingsView, SavesPanel, PlayerBar, NowPlayingView, SeekBar, ArtworkImage, Icons
     hooks/              useSettings, useLibrary, useOnline, useDownloads (save queue, pause/resume, remove, retry, reveal), usePlayer, useMediaSession, useArtwork, useKeyboardShortcuts
     audio/              playback-chain (EQ, ReplayGain, volume), playback-deck (two-element gapless handoff)
-  shared/               types, the IPC contract and pure helpers (queue rules, taskbar controls, URLs, ranges, formatting, file names)
+  shared/               types, the IPC contract and pure helpers (queue rules, taskbar controls, URLs, ranges, formatting, file names, update channel files)
 tools/
   smoke.ts              core smoke test (real files, no Electron)
   measure-streams.mjs   the 50-link M3 timing harness (network + yt-dlp)
@@ -943,8 +1013,9 @@ docs/notes/             spike and measurement records, with raw JSON
   scan (adding a folder, or Rescan). A folder that is missing when watching starts — an unmounted drive — is watched only
   after the folder list changes or the app is restarted; `fs.watch` needs the directory to exist.
 - Search is prefix-AND only; no fuzzy matching or field-scoped queries.
-- The installer is unsigned unless the build environment sets `CSC_LINK`; SmartScreen may warn. There is no app
-  auto-update yet, so every release is a fresh install over the previous one.
+- The installer is unsigned unless the build environment sets `CSC_LINK`; SmartScreen may warn. App updates exist but
+  stay dormant until a feed folder is entered in Settings → About, so a build with no configured host still upgrades by
+  a fresh install over the previous one.
 - The packaged app ships no `yt-dlp` or `ffmpeg`. A clean machine can use the local library but must download both from
   Settings → Streaming (or install them on `PATH`) before streaming or saving; the packaged selftest uses the copy
   already on this machine.
@@ -959,8 +1030,9 @@ Everything below is release work, not product work; M1–M7 and M12 are built.
    Streaming downloads the pinned engine files there; the installer itself now ships no binaries.
 2. **Sign the installer** with a real certificate (`CSC_LINK` / `CSC_KEY_PASSWORD`) and document the SmartScreen
    workaround for the unsigned case; the checklist is in [`docs/release/windows.md`](./release/windows.md).
-3. **Add the auto-update channel** (stable/beta) with an update endpoint, rollback and engine rollback, so a release no
-   longer means a manual install over the previous one.
+3. **Host the update feed** and publish `latest.yml`/`beta.yml` beside each installer. The app side is built: a static
+   HTTPS folder set in Settings → About, channel mapping, download/install consent and yt-dlp rollback. What is missing
+   is the host and the publishing step.
 4. **Decide crash reporting**: keep the local, export-only diagnostics bundle, or add an opt-in remote service. Nothing
    is uploaded today.
 5. **Compatibility and accessibility pass**: Windows 10/11 at 100–200% scaling, multi-monitor and HiDPI, plus
@@ -970,5 +1042,5 @@ Everything below is release work, not product work; M1–M7 and M12 are built.
    playback stay manual.
 7. **M2 gap**: optional crossfade.
 
-The update endpoint, crash-reporting service and signing certificate are decisions rather than code, so they come
+The update-feed host, crash-reporting service and signing certificate are decisions rather than code, so they come
 before the steps that depend on them.

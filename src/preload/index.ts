@@ -30,7 +30,9 @@ import type {
   TagLookupResult,
   TagWriteResult,
   TrackLyrics,
-  TrackTagFields
+  TrackTagFields,
+  UpdateStatus,
+  YtDlpRollbackStatus
 } from '@shared/types'
 
 /**
@@ -305,6 +307,16 @@ const api: PlayerApi = {
   startPoTokenProvider: () => ipcRenderer.invoke(IPC.poTokenStart),
 
   stopPoTokenProvider: () => ipcRenderer.invoke(IPC.poTokenStop),
+
+  restoreYtDlp: () => ipcRenderer.invoke(IPC.ytDlpRestore) as Promise<YtDlpRollbackStatus>,
+
+  getUpdateStatus: () => ipcRenderer.invoke(IPC.updateStatus) as Promise<UpdateStatus>,
+
+  checkForUpdates: () => ipcRenderer.invoke(IPC.updateCheck) as Promise<UpdateStatus>,
+
+  downloadUpdate: () => ipcRenderer.invoke(IPC.updateDownload) as Promise<UpdateStatus>,
+
+  installUpdate: () => ipcRenderer.invoke(IPC.updateInstall) as Promise<boolean>,
 
   isMiniPlayer: () => ipcRenderer.invoke(IPC.windowGetMini) as Promise<boolean>,
 

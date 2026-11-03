@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { useId, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
   ACCENT_CHOICES,
@@ -14,7 +14,7 @@ import {
   THEME_CHOICES
 } from '@shared/appearance'
 import { DEFAULT_PREFERENCE_PATCH, SECTION_PREFERENCE_PATCHES } from '@shared/settings-defaults'
-import { formatBytes, formatCount } from '@shared/format'
+import { formatBytes, formatCount, formatTimestamp } from '@shared/format'
 import type {
   AccentName,
   AppPaths,
@@ -44,9 +44,11 @@ import type {
   StartupView,
   SurfaceStyle,
   TextSize,
-  ThemeMode
+  ThemeMode,
+  UpdateStatus
 } from '@shared/types'
 import { COOKIE_BROWSERS, normalizePoTokenProviderUrl } from '@shared/youtube'
+import { resolveUpdateFeedUrl } from '@shared/update'
 import { AudioSettingsPanel } from './AudioSettingsPanel'
 import { DownloadIcon, FolderIcon, InfoIcon, RefreshIcon, SpinnerIcon, TrashIcon } from './Icons'
 
@@ -62,6 +64,11 @@ export interface SettingsViewProps {
   sidecarError: string | null
   onInstallSidecars: () => Promise<void>
   onCancelSidecarInstall: () => Promise<void>
+  updateStatus: UpdateStatus | null
+  onCheckForUpdates: () => Promise<void>
+  onDownloadUpdate: () => Promise<void>
+  onInstallUpdate: () => Promise<void>
+  onRestoreYtDlp: () => Promise<void>
   scanning: boolean
   error: string | null
   onUpdate: (patch: DeepPartial<AppSettings>) => void
@@ -306,6 +313,29 @@ function describeExecutable(status: ExecutableStatus): string {
   return `${status.version ?? 'version unknown'} · via ${origin}`
 }
 
+/** One sentence for the update state, so About never shows a bare code. */
+function describeUpdateStatus(status: UpdateStatus | null): string {
+  if (!status) return 'loading…'
+  switch (status.state) {
+    case 'disabled':
+      return status.feedUrl ? 'Not available in this build' : 'Not configured'
+    case 'idle':
+      return `Ready · ${status.currentVersion}`
+    case 'checking':
+      return 'Checking…'
+    case 'available':
+      return `Available · ${status.availableVersion ?? 'newer version'}`
+    case 'downloading':
+      return `Downloading · ${status.percent ?? 0}%`
+    case 'ready':
+      return `Ready to install · ${status.availableVersion ?? 'newer version'}`
+    case 'up-to-date':
+      return `Up to date · ${status.currentVersion}`
+    case 'error':
+      return 'Check failed'
+  }
+}
+
 /**
  * Settings, grouped into tabs.
  *
@@ -327,6 +357,11 @@ export function SettingsView(props: SettingsViewProps) {
     sidecarError,
     onInstallSidecars,
     onCancelSidecarInstall,
+    updateStatus,
+    onCheckForUpdates,
+    onDownloadUpdate,
+    onInstallUpdate,
+    onRestoreYtDlp,
     scanning,
     error,
     onUpdate,
@@ -367,6 +402,18 @@ export function SettingsView(props: SettingsViewProps) {
   const [providerError, setProviderError] = useState<string | null>(null)
   const [diagnosticsBusy, setDiagnosticsBusy] = useState<'copy' | 'save' | null>(null)
   const [diagnosticsNote, setDiagnosticsNote] = useState<string | null>(null)
+  const [updateFeedDraft, setUpdateFeedDraft] = useState(settings.update.feedUrl ?? '')
+  useEffect(() => {
+    setUpdateFeedDraft(settings.update.feedUrl ?? '')
+  }, [settings.update.feedUrl])
+  const updateFeedDraftValid =
+    updateFeedDraft.trim().length === 0 ||
+    resolveUpdateFeedUrl(updateFeedDraft.trim(), settings.update.channel) !== null
+  const commitUpdateFeed = (): void => {
+    const trimmed = updateFeedDraft.trim()
+    if (!updateFeedDraftValid || trimmed === (settings.update.feedUrl ?? '')) return
+    onUpdate({ update: { feedUrl: trimmed.length > 0 ? trimmed : null } })
+  }
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
   const resetButtonRef = useRef<HTMLButtonElement | null>(null)
   const sidecars = engineStatus?.sidecars ?? []
@@ -1310,10 +1357,39 @@ export function SettingsView(props: SettingsViewProps) {
                     <span>
                       Keep yt-dlp up to date automatically
                       <InfoHint label="About automatic updates">
-                        Checks daily; a failed self-update is only logged.
+                        Checks daily and keeps the previous binary, in case the new one breaks.
                       </InfoHint>
                     </span>
                   </label>
+                </div>
+
+                <div className="field-grid">
+                  <div className="field wide">
+                    <span>
+                      Previous yt-dlp
+                      <InfoHint label="About the last-known-good binary">
+                        The yt-dlp that worked before the last update. Restoring it is safe.
+                      </InfoHint>
+                    </span>
+                    <div className="field-row">
+                      <span className="status-value">
+                        {engineStatus?.rollback?.available
+                          ? `Saved ${formatTimestamp(engineStatus.rollback.savedAt)}${
+                              engineStatus.rollback.version ? ` · ${engineStatus.rollback.version}` : ''
+                            }`
+                          : engineStatus?.rollback?.lastRestoredAt
+                            ? `Restored ${formatTimestamp(engineStatus.rollback.lastRestoredAt)}; no fallback is saved now.`
+                            : 'No previous binary saved yet.'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void onRestoreYtDlp()}
+                        disabled={!engineStatus?.rollback?.available || sidecarInstalling}
+                      >
+                        Restore previous
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </article>
 
@@ -2035,7 +2111,7 @@ export function SettingsView(props: SettingsViewProps) {
                     Search, channels, cache and Downloads are in; M8 is in progress.
                   </InfoHint>
                 </h2>
-                <span className="badge">M8 · diagnostics</span>
+                <span className="badge">M8 · release</span>
               </header>
               <p className="card-hint">
                 Local library, playlists, queue and YouTube playback. Streams can be saved with tags and cover.
@@ -2070,6 +2146,138 @@ export function SettingsView(props: SettingsViewProps) {
                   </span>
                 </li>
               </ul>
+
+              <div className="about-updates">
+                <h3>Updates</h3>
+                <ul className="status-list">
+                  <li
+                    className={
+                      updateStatus?.state === 'error'
+                        ? 'bad'
+                        : updateStatus?.canInstall || updateStatus?.state === 'up-to-date'
+                          ? 'ok'
+                          : ''
+                    }
+                  >
+                    <span className="status-name">Channel</span>
+                    <span className="status-value">{describeUpdateStatus(updateStatus)}</span>
+                  </li>
+                  <li>
+                    <span className="status-name">Last checked</span>
+                    <span className="status-value">
+                      {formatTimestamp(updateStatus?.lastCheckAt ?? settings.update.lastCheckAt)}
+                    </span>
+                  </li>
+                </ul>
+                {updateStatus?.message ? (
+                  <p className="card-hint" role="status">
+                    {updateStatus.message}
+                  </p>
+                ) : null}
+                {updateStatus?.state === 'downloading' && updateStatus.percent !== null ? (
+                  <div className="engine-progress" role="status">
+                    <progress value={updateStatus.percent} max={100} />
+                    <span>{updateStatus.percent}%</span>
+                  </div>
+                ) : null}
+
+                <div className="field-grid">
+                  <label className="field">
+                    <span>
+                      Channel
+                      <InfoHint label="About update channels">
+                        Stable reads latest.yml. Beta reads beta.yml and may receive a release before it is promoted.
+                      </InfoHint>
+                    </span>
+                    <select
+                      value={settings.update.channel}
+                      onChange={(event) =>
+                        onUpdate({
+                          update: { channel: event.target.value === 'beta' ? 'beta' : 'stable' }
+                        })
+                      }
+                    >
+                      <option value="stable">Stable (latest.yml)</option>
+                      <option value="beta">Beta (beta.yml)</option>
+                    </select>
+                  </label>
+                  <label className="field wide">
+                    <span>
+                      Feed folder
+                      <InfoHint label="About the update feed">
+                        A static HTTPS folder holding the channel file, installer and blockmap.
+                      </InfoHint>
+                    </span>
+                    <input
+                      type="url"
+                      value={updateFeedDraft}
+                      placeholder="https://updates.example.com/suura"
+                      aria-invalid={!updateFeedDraftValid}
+                      onChange={(event) => setUpdateFeedDraft(event.target.value)}
+                      onBlur={commitUpdateFeed}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter') return
+                        event.preventDefault()
+                        commitUpdateFeed()
+                      }}
+                    />
+                  </label>
+                </div>
+                {!updateFeedDraftValid ? (
+                  <p className="card-hint status-error">
+                    Enter an https:// folder URL. HTTP is accepted only for localhost.
+                  </p>
+                ) : null}
+
+                <label className="field checkbox">
+                  <input
+                    type="checkbox"
+                    checked={settings.update.autoCheck}
+                    onChange={(event) => onUpdate({ update: { autoCheck: event.target.checked } })}
+                  />
+                  <span>
+                    Check once a day in the background
+                    <InfoHint label="About automatic update checks">
+                      Installed builds only. A found update still waits for your go-ahead.
+                    </InfoHint>
+                  </span>
+                </label>
+
+                <p className="card-hint">
+                  Nothing is downloaded until you press Check now. The feed is a static folder serving{' '}
+                  {settings.update.channel === 'beta' ? 'beta.yml' : 'latest.yml'}, the installer and its blockmap.
+                </p>
+
+                <div className="field-row">
+                  <button
+                    type="button"
+                    onClick={() => void onCheckForUpdates()}
+                    disabled={
+                      !updateStatus?.supported ||
+                      !updateStatus?.feedUrl ||
+                      updateStatus?.state === 'checking' ||
+                      updateStatus?.state === 'downloading' ||
+                      updateStatus?.state === 'ready'
+                    }
+                  >
+                    {updateStatus?.state === 'checking' ? <SpinnerIcon /> : <RefreshIcon />}
+                    <span>Check now</span>
+                  </button>
+                  {updateStatus?.state === 'available' ? (
+                    <button type="button" onClick={() => void onDownloadUpdate()}>
+                      <DownloadIcon />
+                      <span>Download update</span>
+                    </button>
+                  ) : null}
+                  {updateStatus?.canInstall ? (
+                    <button type="button" onClick={() => void onInstallUpdate()}>
+                      <DownloadIcon />
+                      <span>Restart and install</span>
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
               <p className="card-hint">
                 Save diagnostics writes this snapshot and the recent log to a text file you choose. Review it before
                 sharing: log lines can contain local file paths.

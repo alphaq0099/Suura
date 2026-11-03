@@ -544,7 +544,13 @@ packaging).
 - [x] Sidecar packaging: the engine prefers the configured folder, then the app-managed copies, then `PATH`, then the
       usual install locations. Settings → Streaming shows each file, downloads missing ones with progress and Cancel,
       and handles the optional `fpcalc` separately. Unblocks M13 Phase 6.
-- [ ] App auto-update channel (stable/beta) and engine rollback, now that there are managed bytes and a provenance rule
+- [x] App auto-update through a generic HTTPS feed, plus engine rollback now that there are managed bytes and a
+      provenance rule. `electron-updater` reads `latest.yml` on **Stable** and `beta.yml` on **Beta** from a static feed
+      folder set in Settings → About; a missing feed is a clear "not configured" state, and nothing is downloaded or
+      installed without pressing Download then Restart and install. A daily package-only check runs once per 24 h after
+      a 30 s settle. Before `yt-dlp -U`, the working binary is copied to `yt-dlp.previous.exe` (+ a small JSON record);
+      a broken update, a failed update, or three extractor failures in ten minutes restores it (30 min cooldown), and
+      Settings → Streaming can restore it by hand. A fresh pinned install clears the old fallback.
 - [x] Manual log export: Settings → About → Save diagnostics writes the app/path snapshot plus the last 256 KB of the
       log to a user-chosen text file. The renderer → preload → IPC → write path is covered by the self-test; nothing is
       uploaded.
@@ -561,8 +567,9 @@ packaging).
 
 **Exit:** a stranger can install, use and uninstall it without instructions.
 **Status:** the installer, manual diagnostics export, renderer sandboxing, headless perf budgets, daily yt-dlp update,
-the fetch-on-first-use sidecar installer and the CI workflow are complete. Update/rollback, crash reporting,
-compatibility and accessibility remain; signing is documented but not configured.
+the fetch-on-first-use sidecar installer, the CI workflow, the app update channel and yt-dlp rollback are complete.
+Crash reporting, compatibility and accessibility remain; signing is documented but not configured. The update feed
+itself has no host yet: the feature stays dormant until a URL is entered in Settings → About.
 
 ### M9 — Android Port  *(~4–6 weeks)*
 **Goal:** reuse the core, replace the platform-specific layers.
@@ -813,10 +820,12 @@ and a YouTube row saves through the same download queue as YouTube Links. A shel
 place with a removable chip. The hero art is at full strength in both themes, and its crossfade pace is a Settings
 slider (3–60 s) instead of a constant.
 **Windows release engineering (M8) is in progress**: the per-user NSIS installer, icon, uninstall data prompt, renderer
-sandbox, headless perf budgets, fetch-on-first-use sidecar installer and the CI workflow are in place, and the packaged
-app passes its self-test. The remaining work is the update channel and engine rollback, then crash reporting and the
-compatibility/accessibility pass, with signing last. A streaming UX redesign is independent of that sequence as long as
-it only changes the renderer; it must come before the sidecar work only if it changes what the engine must resolve,
-cache or download.
+sandbox, headless perf budgets, fetch-on-first-use sidecar installer, CI workflow, app update channel and yt-dlp
+rollback are in place, and the packaged app passes its self-test. Updates read `latest.yml`/`beta.yml` from a static
+HTTPS folder set in Settings → About and never install without a press; the previous yt-dlp is kept and restored when a
+new one breaks. The remaining work is crash reporting and the compatibility/accessibility pass, with signing last. A
+streaming UX redesign is independent of that sequence as long as it only changes the renderer; it must come before the
+sidecar work only if it changes what the engine must resolve, cache or download.
 
-**Next:** update/rollback, then M13 Phase 6 (AcoustID via the new `fpcalc` sidecar); then M9.
+**Next:** crash reporting and the compatibility/accessibility pass, with signing last; then M13 Phase 6 (AcoustID via
+the new `fpcalc` sidecar); then M9.
