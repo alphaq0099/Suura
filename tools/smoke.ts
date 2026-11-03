@@ -43,6 +43,7 @@ import { isLocalLibraryFilter, recentlyAddedCutoff, streamFallbackFor } from '@s
 import { PLAY_COUNT_THRESHOLD_MS, PlaySession, countsAsPlay } from '@shared/play-count'
 import { mergeAddedShelf, mergePlayedShelf } from '@shared/played-shelf'
 import {
+  candidateFromAcoustidRecording,
   candidatesFromItunes,
   candidatesFromMusicBrainz,
   durationScore,
@@ -52,6 +53,14 @@ import {
   textSimilarity,
   titleVariants
 } from '@shared/auto-tag'
+import {
+  AcoustidError,
+  acoustidLookupUrl,
+  describeAcoustidFailure,
+  normalizeAcoustidKey,
+  parseAcoustidLookup
+} from '@shared/acoustid'
+import { fpcalcArgs, parseFpcalcOutput } from '@engine/sidecar/fpcalc'
 import {
   describeTagBatchChange,
   positionText,
@@ -3249,6 +3258,8 @@ async function main(): Promise<void> {
     checkEqual('update: a check timestamp is rounded', normalizeUpdate({ lastCheckAt: 1234.6 }).lastCheckAt, 1235)
     checkEqual('update: an unset check timestamp stays null', normalizeUpdate({ lastCheckAt: -5 }).lastCheckAt, null)
 
+    check('settings: fingerprint matching is off until a key is supplied', DEFAULT_SETTINGS.metadata.acoustidKey === null)
+
     // The About panel sends a patch; it has to survive validation, and the one
     // field the renderer must not control is the check timestamp.
     const updatePatch = sanitizeUpdateSettingsPatch({
@@ -3303,6 +3314,23 @@ async function main(): Promise<void> {
       'settings: an explicit off cookie fallback is not overwritten by migration',
       explicitOff.engine.cookieFallback,
       'off'
+    )
+
+    // A key is pasted, so it can carry spaces or the wrong thing entirely. The
+    // read path keeps a real key and turns anything else into "not configured".
+    const badKeyFile = join(settingsRoot, 'bad-acoustid.json')
+    await writeFile(badKeyFile, JSON.stringify({ metadata: { acoustidKey: 'not a key!' } }), 'utf8')
+    checkEqual(
+      'settings: an invalid AcoustID key is stored as not configured',
+      new SettingsService(badKeyFile, silentLogger).get().metadata.acoustidKey,
+      null
+    )
+    const goodKeyFile = join(settingsRoot, 'good-acoustid.json')
+    await writeFile(goodKeyFile, JSON.stringify({ metadata: { acoustidKey: ' cSpUJKpD ' } }), 'utf8')
+    checkEqual(
+      'settings: a valid AcoustID key survives a read',
+      new SettingsService(goodKeyFile, silentLogger).get().metadata.acoustidKey,
+      'cSpUJKpD'
     )
     // The provider manager is worth exercising for real: a command is split
     // without a shell, the child is started, `/ping` is read, and stopping kills
@@ -5292,6 +5320,139 @@ async function main(): Promise<void> {
       ranked.every((candidate) => ['strong', 'likely', 'weak'].includes(candidate.confidence))
     )
 
+    // --- AcoustID fingerprint fallback ------------------------------------
+    checkEqual('fingerprint: a valid key is kept', normalizeAcoustidKey(' cSpUJKpD '), 'cSpUJKpD')
+    check('fingerprint: a key with punctuation is refused', normalizeAcoustidKey('not a key!') === null)
+    check('fingerprint: a blank key means not configured', normalizeAcoustidKey('  ') === null)
+    const acoustidUrl = new URL(acoustidLookupUrl('cSpUJKpD', 212.6, 'AQADt'))
+    checkEqual('fingerprint: the lookup carries the key', acoustidUrl.searchParams.get('client'), 'cSpUJKpD')
+    checkEqual('fingerprint: the duration is rounded', acoustidUrl.searchParams.get('duration'), '213')
+    checkEqual(
+      'fingerprint: the lookup asks for recordings and releases',
+      acoustidUrl.searchParams.get('meta'),
+      'recordings+releases'
+    )
+
+    const acoustidPayload = {
+      status: 'ok',
+      results: [
+        {
+          score: 0.8,
+          recordings: [
+            { id: 'rec-1', title: 'Kesariya', artists: [{ name: 'Arijit Singh' }] }
+          ]
+        },
+        {
+          score: 0.95,
+          recordings: [
+            { id: 'rec-1', title: 'Kesariya', artists: [{ name: 'Arijit Singh' }] },
+            { id: 'rec-2', title: 'Kesariya (Reprise)', artists: [{ name: 'Arijit Singh' }] }
+          ]
+        }
+      ]
+    }
+    const acoustidMatches = parseAcoustidLookup(acoustidPayload)
+    checkEqual('fingerprint: a recording appears once, at its best score', acoustidMatches.length, 2)
+    checkEqual('fingerprint: the best score wins', acoustidMatches[0]?.recordingId, 'rec-1')
+    checkEqual('fingerprint: the score is preserved', acoustidMatches[0]?.score, 0.95)
+    checkEqual('fingerprint: artist names are read', acoustidMatches[0]?.artists.join(', '), 'Arijit Singh')
+
+    let refusedKey: unknown = null
+    try {
+      parseAcoustidLookup({ status: 'error', error: { code: 4, message: 'invalid API key' } })
+    } catch (error) {
+      refusedKey = error
+    }
+    check(
+      'fingerprint: an error payload is an AcoustID failure',
+      refusedKey instanceof AcoustidError && refusedKey.code === 4
+    )
+    check(
+      'fingerprint: a refused key points at Settings',
+      refusedKey instanceof AcoustidError &&
+        describeAcoustidFailure(refusedKey).includes('Settings \u2192 Metadata'),
+      refusedKey instanceof AcoustidError ? describeAcoustidFailure(refusedKey) : String(refusedKey)
+    )
+
+    const recordingPayload = {
+      id: 'rec-1',
+      title: 'Kesariya',
+      length: 268_000,
+      'artist-credit': [{ name: 'Arijit Singh', joinphrase: '' }],
+      genres: [{ name: 'Bollywood' }],
+      releases: [
+        {
+          id: 'rel-comp',
+          title: 'Compilation',
+          date: '2023',
+          media: [
+            {
+              position: 1,
+              'track-count': 10,
+              track: [{ number: '2', recording: { id: 'other-recording' } }]
+            }
+          ]
+        },
+        {
+          id: 'rel-real',
+          title: 'Brahmastra',
+          date: '2022-09-09',
+          media: [
+            {
+              position: 1,
+              'track-count': 12,
+              track: [{ number: '3', recording: { id: 'rec-1' } }]
+            }
+          ]
+        }
+      ]
+    }
+    const fingerprintCandidate = candidateFromAcoustidRecording(recordingPayload, 0.91)
+    checkEqual('fingerprint: the provider is acoustid', fingerprintCandidate?.provider, 'acoustid')
+    checkEqual('fingerprint: the release that lists the recording wins', fingerprintCandidate?.album, 'Brahmastra')
+    checkEqual('fingerprint: the track number comes from that release', fingerprintCandidate?.trackNo, 3)
+    checkEqual('fingerprint: the track total comes from the medium', fingerprintCandidate?.trackTotal, 12)
+    checkEqual('fingerprint: the release year is read', fingerprintCandidate?.year, 2022)
+    checkEqual(
+      'fingerprint: the cover is the release front image',
+      fingerprintCandidate?.artworkUrl,
+      'https://coverartarchive.org/release/rel-real/front-500'
+    )
+    checkEqual('fingerprint: the AcoustID score is kept', fingerprintCandidate?.score, 0.91)
+
+    // The whole point of a fingerprint is that the text tags were useless, so
+    // ranking must not rescore the answer against those tags.
+    const fingerprintRanked = rankCandidates(
+      { title: 'track01', artist: 'Unknown', album: null, durationMs: null },
+      fingerprintCandidate ? [fingerprintCandidate] : []
+    )
+    checkEqual('fingerprint: a match survives unusable tags', fingerprintRanked.length, 1)
+    checkEqual('fingerprint: ranking keeps the audio score', fingerprintRanked[0]?.score, 0.91)
+
+    checkEqual(
+      'fpcalc: the arguments ask for JSON and the standard window',
+      fpcalcArgs('C:\\music\\a.flac').join(' '),
+      '-json -length 120 C:\\music\\a.flac'
+    )
+    const print = parseFpcalcOutput('{"duration": 212.6, "fingerprint": "AQADt"}')
+    checkEqual('fpcalc: the whole-file duration is read', print.durationSeconds, 212.6)
+    checkEqual('fpcalc: the fingerprint is read', print.fingerprint, 'AQADt')
+    let badPrint: unknown = null
+    try {
+      parseFpcalcOutput('{"duration": 0, "fingerprint": ""}')
+    } catch (error) {
+      badPrint = error
+    }
+    check('fpcalc: an empty answer is a sentence, not a lookup', badPrint instanceof Error)
+    let brokenPrint: unknown = null
+    try {
+      parseFpcalcOutput('not json')
+    } catch (error) {
+      brokenPrint = error
+    }
+    check('fpcalc: unreadable output is refused', brokenPrint instanceof Error)
+
+
     // --- provider payloads -------------------------------------------------
     const itunesPayload = {
       resultCount: 1,
@@ -5551,6 +5712,78 @@ async function main(): Promise<void> {
     })
     checkEqual('auto-tag: a blank title makes no request', calls.length, 0)
     checkEqual('auto-tag: a blank title comes back empty', blank.candidates.length, 0)
+
+    // --- fingerprint lookup wiring -----------------------------------------
+    const fingerprintCalls: string[] = []
+    const fingerprintFetch = (async (input: unknown) => {
+      const url = String(input)
+      fingerprintCalls.push(url)
+      if (url.startsWith('https://api.acoustid.org')) {
+        return new Response(
+          JSON.stringify({
+            status: 'ok',
+            results: [
+              {
+                score: 0.93,
+                recordings: [
+                  { id: 'rec-1', title: 'Kesariya', artists: [{ name: 'Arijit Singh' }] }
+                ]
+              }
+            ]
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      }
+      if (url.startsWith('https://musicbrainz.org/ws/2/recording/rec-1')) {
+        return new Response(JSON.stringify(recordingPayload), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      }
+      return new Response(null, { status: 404 })
+    }) as unknown as typeof fetch
+
+    const fingerprintLookup = await createTagLookup({
+      log: silentLogger,
+      fetch: fingerprintFetch,
+      schedule: (work) => work(),
+      getAcoustidKey: () => 'cSpUJKpD',
+      fingerprint: async () => ({ durationSeconds: 268, fingerprint: 'AQADt' })
+    }).lookupFingerprint(exactQuery, 'C:\\music\\a.flac')
+    checkEqual('fingerprint: the lookup returns the recording', fingerprintLookup.candidates.length, 1)
+    checkEqual(
+      'fingerprint: the candidate is labelled AcoustID',
+      fingerprintLookup.candidates[0]?.provider,
+      'acoustid'
+    )
+    checkEqual(
+      'fingerprint: the AcoustID score survives the lookup',
+      fingerprintLookup.candidates[0]?.score,
+      0.93
+    )
+    check(
+      'fingerprint: the request used the key and the fingerprint',
+      fingerprintCalls.some((url) => url.includes('client=cSpUJKpD') && url.includes('fingerprint=AQADt')),
+      fingerprintCalls.join(' | ')
+    )
+
+    let noKeyCalls = 0
+    const noKeyLookup = await createTagLookup({
+      log: silentLogger,
+      fetch: (async () => {
+        noKeyCalls += 1
+        return new Response(null, { status: 500 })
+      }) as unknown as typeof fetch,
+      getAcoustidKey: () => null,
+      fingerprint: async () => ({ durationSeconds: 268, fingerprint: 'AQADt' })
+    }).lookupFingerprint(exactQuery, 'C:\\music\\a.flac')
+    checkEqual('fingerprint: no key makes no request', noKeyCalls, 0)
+    checkEqual('fingerprint: no key is a sentence', noKeyLookup.providers[0]?.ok, false)
+    check(
+      'fingerprint: the sentence points at the Metadata tab',
+      (noKeyLookup.providers[0]?.message ?? '').includes('Metadata'),
+      noKeyLookup.providers[0]?.message ?? ''
+    )
   }
 
   // --- lyrics --------------------------------------------------------------
@@ -7067,6 +7300,11 @@ async function main(): Promise<void> {
         })
 
         const batchLookup: TagLookup = {
+          lookupFingerprint: async (query) => ({
+            query,
+            candidates: [],
+            providers: [{ provider: 'acoustid', ok: true, message: null, count: 0 }]
+          }),
           lookup: async (query) => {
             if (query.title === 'Tag Broken') throw new Error('The tag lookup exploded.')
             if (query.title === 'Tag None') {
@@ -7314,6 +7552,11 @@ async function main(): Promise<void> {
 
         // Cancelling stops before the next track and leaves no review behind.
         const slowLookup: TagLookup = {
+          lookupFingerprint: async (query) => ({
+            query,
+            candidates: [],
+            providers: [{ provider: 'acoustid', ok: true, message: null, count: 0 }]
+          }),
           lookup: (query) =>
             new Promise((resolve) =>
               setTimeout(

@@ -48,6 +48,7 @@ import type {
   UpdateStatus
 } from '@shared/types'
 import { COOKIE_BROWSERS, normalizePoTokenProviderUrl } from '@shared/youtube'
+import { normalizeAcoustidKey } from '@shared/acoustid'
 import { resolveUpdateFeedUrl } from '@shared/update'
 import { AudioSettingsPanel } from './AudioSettingsPanel'
 import { DownloadIcon, FolderIcon, InfoIcon, RefreshIcon, SpinnerIcon, TrashIcon } from './Icons'
@@ -194,6 +195,7 @@ const TABS = [
   { id: 'general', label: 'General' },
   { id: 'appearance', label: 'Appearance' },
   { id: 'streaming', label: 'Streaming' },
+  { id: 'metadata', label: 'Metadata' },
   { id: 'misc', label: 'Misc' },
   { id: 'about', label: 'About' }
 ] as const
@@ -414,9 +416,22 @@ export function SettingsView(props: SettingsViewProps) {
     if (!updateFeedDraftValid || trimmed === (settings.update.feedUrl ?? '')) return
     onUpdate({ update: { feedUrl: trimmed.length > 0 ? trimmed : null } })
   }
+  const [acoustidKeyDraft, setAcoustidKeyDraft] = useState(settings.metadata.acoustidKey ?? '')
+  useEffect(() => {
+    setAcoustidKeyDraft(settings.metadata.acoustidKey ?? '')
+  }, [settings.metadata.acoustidKey])
+  const acoustidKeyValid =
+    acoustidKeyDraft.trim().length === 0 || normalizeAcoustidKey(acoustidKeyDraft) !== null
+  const commitAcoustidKey = (): void => {
+    if (!acoustidKeyValid) return
+    const key = normalizeAcoustidKey(acoustidKeyDraft)
+    if (key === settings.metadata.acoustidKey) return
+    onUpdate({ metadata: { acoustidKey: key } })
+  }
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
   const resetButtonRef = useRef<HTMLButtonElement | null>(null)
   const sidecars = engineStatus?.sidecars ?? []
+  const fpcalcState = sidecars.find((sidecar) => sidecar.id === 'fpcalc') ?? null
   const missingSidecars = sidecars.filter((sidecar) => !sidecar.installed)
   const requiredMissing = missingSidecars.filter((sidecar) => !sidecar.optional)
   const requiredMissingBytes = requiredMissing.reduce((sum, sidecar) => sum + sidecar.bytes, 0)
@@ -1853,6 +1868,88 @@ export function SettingsView(props: SettingsViewProps) {
                 </div>
               </article>
             </div>
+          </div>
+        </section>
+
+        <section
+          className="settings-panel"
+          role="tabpanel"
+          id="settings-panel-metadata"
+          aria-labelledby="settings-tab-metadata"
+          tabIndex={0}
+          hidden={tab !== 'metadata'}
+        >
+          <div className="cards">
+            <article className="card">
+              <header className="card-header">
+                <h2>
+                  Fingerprint lookup
+                  <InfoHint label="About fingerprint lookup">
+                    Names a file from its audio when its tags are too wrong to search with.
+                  </InfoHint>
+                </h2>
+              </header>
+              <p className="card-hint">
+                AcoustID matches a Chromaprint fingerprint to a MusicBrainz recording. It needs
+                fpcalc and your own AcoustID application key; the text search works without either.
+              </p>
+              <div className="field-grid">
+                <label className="field wide">
+                  <span>
+                    AcoustID key
+                    <InfoHint label="About the AcoustID key">
+                      Create a free application key at acoustid.org and paste it here.
+                    </InfoHint>
+                  </span>
+                  <input
+                    type="text"
+                    value={acoustidKeyDraft}
+                    placeholder="Your AcoustID application key"
+                    aria-invalid={!acoustidKeyValid}
+                    onChange={(event) => setAcoustidKeyDraft(event.target.value)}
+                    onBlur={commitAcoustidKey}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter') return
+                      event.preventDefault()
+                      commitAcoustidKey()
+                    }}
+                  />
+                </label>
+              </div>
+              {!acoustidKeyValid ? (
+                <p className="card-hint status-error">
+                  A key is 8 to 64 letters and digits. Clear the field to turn fingerprint matching
+                  off.
+                </p>
+              ) : null}
+
+              <ul className="status-list">
+                <li className={fpcalcState?.installed ? 'ok' : ''}>
+                  <span className="status-name">fpcalc</span>
+                  <span className="status-value">
+                    {fpcalcState
+                      ? fpcalcState.installed
+                        ? `${fpcalcState.version} installed`
+                        : 'not installed'
+                      : 'not checked'}
+                  </span>
+                </li>
+              </ul>
+              {fpcalcState && !fpcalcState.installed ? (
+                <div className="field-row">
+                  <button type="button" onClick={() => void onInstallSidecars()} disabled={sidecarInstalling}>
+                    {sidecarInstalling ? <SpinnerIcon /> : <DownloadIcon />}
+                    <span>Download engine</span>
+                  </button>
+                  <span className="card-hint">fpcalc is optional: streaming works without it.</span>
+                </div>
+              ) : null}
+
+              <p className="card-hint">
+                Matching by fingerprint is a separate action in the tag finder. It reads the whole
+                file, so it is never part of a batch.
+              </p>
+            </article>
           </div>
         </section>
 

@@ -4,7 +4,7 @@ import { mimeForExtension } from '@core/library/artwork'
 import type { TagLookup } from '@core/library/tag-lookup'
 import type { TrackRepository } from '@core/library/track-repository'
 import type { Logger } from '@core/logging/logger'
-import type { ArtworkChoice, TagProvider, Track } from '@shared/types'
+import type { ArtworkChoice, TagCandidate, TagProvider, Track } from '@shared/types'
 import { isYouTubeVideoId, youtubeThumbnailCandidates } from '@shared/youtube'
 import type { ArtworkService } from './artwork-service'
 
@@ -31,7 +31,9 @@ const MAX_COVER_BYTES = 8 * 1024 * 1024
 
 const PROVIDER_LABEL: Record<TagProvider, string> = {
   itunes: 'iTunes',
-  musicbrainz: 'MusicBrainz'
+  musicbrainz: 'MusicBrainz',
+  // The acoustid candidate's cover is the Cover Art Archive's front image.
+  acoustid: 'Cover Art Archive'
 }
 
 export interface ArtworkChoicesService {
@@ -144,14 +146,34 @@ export function createArtworkChoices(options: ArtworkChoicesOptions): ArtworkCho
       })
 
       const seen = new Set<string>()
-      for (const candidate of result.candidates) {
-        const url = candidate.artworkUrl
-        if (!url || seen.has(url)) continue
-        seen.add(url)
-        const key = await fetchImage(url)
-        push(key, 'provider', PROVIDER_LABEL[candidate.provider])
-        // A handful is a choice; a hundred is a second search.
-        if (choices.length >= 6) break
+      const pushCandidateCovers = async (candidates: TagCandidate[]): Promise<void> => {
+        for (const candidate of candidates) {
+          const url = candidate.artworkUrl
+          if (!url || seen.has(url)) continue
+          seen.add(url)
+          const key = await fetchImage(url)
+          push(key, 'provider', PROVIDER_LABEL[candidate.provider])
+          // A handful is a choice; a hundred is a second search.
+          if (choices.length >= 6) break
+        }
+      }
+
+      await pushCandidateCovers(result.candidates)
+
+      // A file with unusable tags can still have a findable cover: the audio
+      // itself names the release. Only spend an fpcalc run when the text search
+      // found nothing to show.
+      if (choices.length === 0 && track.filePath) {
+        const fingerprint = await options.tagLookup.lookupFingerprint(
+          {
+            title: track.title,
+            artist: track.artist,
+            album: track.album,
+            durationMs: track.durationMs
+          },
+          track.filePath
+        )
+        await pushCandidateCovers(fingerprint.candidates)
       }
 
       return choices

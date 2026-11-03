@@ -1,4 +1,11 @@
-import { candidatesFromItunes, candidatesFromMusicBrainz, rankCandidates } from '@shared/auto-tag'
+import { candidatesFromItunes, candidatesFromMusicBrainz, candidateFromAcoustidRecording, rankCandidates } from '@shared/auto-tag'
+import {
+  AcoustidError,
+  acoustidLookupUrl,
+  describeAcoustidFailure,
+  parseAcoustidLookup,
+  type AudioFingerprint
+} from '@shared/acoustid'
 import type { TagCandidate, TagLookupQuery, TagLookupResult, TagProviderReport } from '@shared/types'
 import type { Logger } from '@core/logging/logger'
 import { RequestScheduler } from '@core/scheduling/request-scheduler'
@@ -33,8 +40,23 @@ const MUSICBRAINZ_GAP_MS = 1_100
 const LOOKUP_TIMEOUT_MS = 8_000
 const LOOKUP_LIMIT = 12
 
+/**
+ * Below this an AcoustID answer is noise. The service's score measures the
+ * fingerprint, so this is not the weight of a text match; 0.4 is the same
+ * floor the review dialog uses and only saves MusicBrainz requests.
+ */
+const MIN_FINGERPRINT_SCORE = 0.4
+
 export interface TagLookup {
   lookup(query: TagLookupQuery): Promise<TagLookupResult>
+  /**
+   * Reads the file's audio fingerprint and asks AcoustID what it is.
+   *
+   * Separate from `lookup` on purpose: a batch must stay on the keyless text
+   * services, and a fingerprint costs one fpcalc run plus a key the user may
+   * not have configured. It is the fallback for a file whose tags are useless.
+   */
+  lookupFingerprint(query: TagLookupQuery, filePath: string): Promise<TagLookupResult>
 }
 
 export interface TagLookupOptions {
@@ -44,6 +66,10 @@ export interface TagLookupOptions {
   timeoutMs?: number
   /** Replaces the iTunes pacing; the smoke tests pass a pass-through. */
   schedule?: TagSchedule
+  /** The user's AcoustID key, or null when fingerprint lookup is unconfigured. */
+  getAcoustidKey?: () => string | null
+  /** Runs fpcalc; supplied by the main process so this module stays network-only. */
+  fingerprint?: (filePath: string) => Promise<AudioFingerprint>
 }
 
 /**
@@ -101,6 +127,19 @@ export function musicBrainzUrl(query: TagLookupQuery): string {
   return url.toString()
 }
 
+/**
+ * One recording by id, with the release and media facts a track number needs.
+ *
+ * AcoustID names a recording, not a release, so this second lookup is what
+ * turns "this is the right song" into "it is track 4 of 12 on disc 1".
+ */
+export function musicBrainzRecordingUrl(recordingId: string): string {
+  const url = new URL(`${MUSICBRAINZ_RECORDING_URL}/${encodeURIComponent(recordingId)}`)
+  url.searchParams.set('fmt', 'json')
+  url.searchParams.set('inc', 'artist-credits releases release-groups genres media')
+  return url.toString()
+}
+
 function report(
   provider: TagProviderReport['provider'],
   count: number,
@@ -119,6 +158,8 @@ export class TagHttpError extends Error {
 
 /** A user-facing sentence: the URL and the status live in the log. */
 function describeFailure(error: unknown, name: string): string {
+  if (error instanceof AcoustidError) return describeAcoustidFailure(error)
+  if (error instanceof Error && error.name === 'FpcalcError') return error.message
   if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
     return `${name} took too long to answer.`
   }
@@ -214,7 +255,90 @@ export function createTagLookup(options: TagLookupOptions): TagLookup {
     }
   }
 
+  const lookupFingerprint = async (
+    query: TagLookupQuery,
+    filePath: string
+  ): Promise<TagLookupResult> => {
+    const empty = (message: string | null, ok = message === null): TagLookupResult => ({
+      query,
+      candidates: [],
+      providers: [report('acoustid', 0, ok ? null : message)]
+    })
+
+    const key = options.getAcoustidKey?.() ?? null
+    if (!key) {
+      return empty(
+        'Add your AcoustID key in Settings \u2192 Metadata to match a file by its fingerprint.'
+      )
+    }
+    if (!options.fingerprint) {
+      return empty('Fingerprint lookup is not available in this build.')
+    }
+
+    let fingerprint: AudioFingerprint
+    try {
+      fingerprint = await options.fingerprint(filePath)
+    } catch (error) {
+      options.log.debug('fingerprint failed', { error })
+      return empty(describeFailure(error, 'fpcalc'))
+    }
+
+    try {
+      const matches = parseAcoustidLookup(
+        await getJson(acoustidLookupUrl(key, fingerprint.durationSeconds, fingerprint.fingerprint))
+      )
+      // Three is enough to cover a compilation and a single edit without
+      // turning a fingerprint into a MusicBrainz crawl.
+      const chosen = matches.filter((match) => match.score >= MIN_FINGERPRINT_SCORE).slice(0, 3)
+      const candidates: TagCandidate[] = []
+      let lastFailure: unknown = null
+
+      for (const match of chosen) {
+        try {
+          const recording = await musicBrainzJson(
+            musicBrainzRecordingUrl(match.recordingId)
+          )
+          const candidate = candidateFromAcoustidRecording(recording, match.score)
+          if (candidate) candidates.push(candidate)
+        } catch (error) {
+          lastFailure = error
+          options.log.debug('musicbrainz recording lookup failed', {
+            recordingId: match.recordingId,
+            error
+          })
+        }
+      }
+
+      if (chosen.length > 0 && candidates.length === 0 && lastFailure !== null) {
+        return {
+          query,
+          candidates: [],
+          providers: [report('acoustid', 0, describeFailure(lastFailure, 'MusicBrainz'))]
+        }
+      }
+
+      options.log.debug('fingerprint lookup answered', {
+        matches: matches.length,
+        chosen: chosen.length,
+        candidates: candidates.length
+      })
+      return {
+        query,
+        candidates: rankCandidates(query, candidates),
+        providers: [report('acoustid', candidates.length)]
+      }
+    } catch (error) {
+      options.log.debug('acoustid lookup failed', { error })
+      return {
+        query,
+        candidates: [],
+        providers: [report('acoustid', 0, describeFailure(error, 'AcoustID'))]
+      }
+    }
+  }
+
   return {
+    lookupFingerprint,
     async lookup(query) {
       if (query.title.trim().length === 0) {
         return {

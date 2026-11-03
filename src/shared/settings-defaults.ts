@@ -119,6 +119,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
     // A mix never ends, so its "length" is whatever this says.
     mixLimit: 50
   },
+  // Fingerprint matching is dormant until the user supplies their own AcoustID
+  // application key. The text search works without any setup.
+  metadata: {
+    acoustidKey: null
+  },
   // Updates are dormant until a feed host exists: no URL means the app never
   // contacts an update server. Stable is the safe default for a first release.
   update: {

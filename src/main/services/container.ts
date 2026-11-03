@@ -40,6 +40,7 @@ import { ReplayGainService } from '../replay-gain-service'
 import { SidecarService } from '../sidecar-service'
 import { UpdateService } from '../update-service'
 import { createTagLookup, type TagLookup } from '@core/library/tag-lookup'
+import { computeFingerprint } from '@engine/sidecar/fpcalc'
 import { createLyricsFinder, createLyricsLookup } from '@core/library/lyrics-lookup'
 import { createGeniusProvider } from '@core/library/lyrics-genius'
 import { createArtworkChoices, type ArtworkChoicesService } from '../artwork-choices'
@@ -297,8 +298,18 @@ export function createContainer(): AppContainer {
 
   // Keyless public services, asked in parallel when a file's tags are wrong.
   // The client owns its own timeouts and never throws: a provider being down is
-  // a sentence in the review dialog, not a failed request.
-  const tagLookup = createTagLookup({ log: log.child('tag-lookup') })
+  // a sentence in the review dialog, not a failed request. Fingerprinting is
+  // the fallback and needs the user's acoustID key plus fpcalc on disk.
+  const tagLookup = createTagLookup({
+    log: log.child('tag-lookup'),
+    getAcoustidKey: () => settings.get().metadata.acoustidKey,
+    fingerprint: (filePath) =>
+      computeFingerprint(filePath, {
+        configuredDir: settings.get().engine.binDir,
+        managedDir: paths.engine,
+        log: log.child('fpcalc')
+      })
+  })
 
   // The same two-pass shape as the lyrics batch: the scan keeps the candidates
   // here, and only the accepted ones are written. Every write keeps its backup

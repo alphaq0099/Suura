@@ -257,10 +257,12 @@ export type LyricsProvider = 'lrclib' | 'genius'
 /**
  * A metadata service the tag finder can ask.
  *
- * Both are public and need no key, which is why they are the first two: the
- * finder has to work on a fresh install with nothing to configure.
+ * iTunes and MusicBrainz are public and need no key, which is why they are the
+ * first two: the finder has to work on a fresh install with nothing to
+ * configure. `acoustid` is the fingerprint fallback: it needs `fpcalc` and a
+ * user-supplied key, and it is only asked when the user presses it.
  */
-export type TagProvider = 'itunes' | 'musicbrainz'
+export type TagProvider = 'itunes' | 'musicbrainz' | 'acoustid'
 
 /** What the finder searches with: the row's own values. */
 export interface TagLookupQuery {
@@ -1187,6 +1189,17 @@ export interface EngineSettings {
   mixLimit: number
 }
 
+/**
+ * Fingerprint lookup settings.
+ *
+ * The key is the user's own AcoustID application key: the service expects each
+ * client to register, and a shipped key would be shared by every install.
+ */
+export interface MetadataSettings {
+  /** Null means fingerprint matching is not configured. */
+  acoustidKey: string | null
+}
+
 /** Which feed the app reads: `latest.yml` on stable, `beta.yml` on beta. */
 export type UpdateChannel = 'stable' | 'beta'
 
@@ -1433,6 +1446,7 @@ export interface AppSettings {
   backups: BackupSettings
   retention: RetentionSettings
   engine: EngineSettings
+  metadata: MetadataSettings
   update: UpdateSettings
 }
 

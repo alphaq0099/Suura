@@ -13,7 +13,8 @@ const CONFIDENCE_LABEL: Record<TagBatchMatch['confidence'], string> = {
 
 const PROVIDER_LABEL: Record<TagBatchMatch['provider'], string> = {
   itunes: 'iTunes',
-  musicbrainz: 'MusicBrainz'
+  musicbrainz: 'MusicBrainz',
+  acoustid: 'AcoustID'
 }
 
 /** How many field changes a review row spells out before counting the rest. */

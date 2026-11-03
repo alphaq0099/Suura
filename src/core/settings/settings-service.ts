@@ -10,6 +10,7 @@ import {
   TEXT_SIZES
 } from '@shared/appearance'
 import { normalizeAudioSettings } from '@shared/audio'
+import { normalizeAcoustidKey } from '@shared/acoustid'
 import {
   DEFAULT_SETTINGS,
   DOWNLOAD_FORMATS,
@@ -199,6 +200,16 @@ export class SettingsService {
     // with a value outside the contract.
     settings = { ...settings, retention: normalizeRetention(settings.retention) }
     settings = { ...settings, update: normalizeUpdate(settings.update) }
+    settings = {
+      ...settings,
+      metadata: {
+        // A key is external input like any other field; an invalid paste is
+        // stored as "not configured" rather than reaching the service.
+        acoustidKey: normalizeAcoustidKey(
+          isPlainObject(settings.metadata) ? settings.metadata.acoustidKey : null
+        )
+      }
+    }
 
     // The old surface value described the CSS blur as "frosted", but it is an
     // accent tint rather than an album-art frost. Accept the old spelling from

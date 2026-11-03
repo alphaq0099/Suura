@@ -103,6 +103,7 @@ export const IPC = {
   libraryStats: 'library:stats',
   libraryUpdateTags: 'library:update-tags',
   libraryAutoTag: 'library:auto-tag',
+  libraryAutoTagFingerprint: 'library:auto-tag-fingerprint',
   libraryLyrics: 'library:lyrics',
   libraryFileLyrics: 'library:file-lyrics',
   libraryLyricsOffset: 'library:lyrics-offset',
@@ -401,6 +402,15 @@ export interface PlayerApi {
    * Both providers are best effort, so a partial or empty answer is normal.
    */
   findTrackTags(trackId: number): Promise<TagLookupResult>
+  /**
+   * Names a file from its audio fingerprint: fpcalc, AcoustID, then a
+   * MusicBrainz recording lookup for release and track numbers.
+   *
+   * Deliberately a separate action from `findTrackTags`. It reads the whole
+   * file, needs the user's AcoustID key, and is the fallback for tags too wrong
+   * to search with, so it is never folded into a batch or a text lookup.
+   */
+  findTrackTagsByFingerprint(trackId: number): Promise<TagLookupResult>
   /**
    * The lyrics already on disk for a local track, or null when it has none.
    *

@@ -103,6 +103,9 @@ const api: PlayerApi = {
   findTrackTags: (trackId: number) =>
     ipcRenderer.invoke(IPC.libraryAutoTag, trackId) as Promise<TagLookupResult>,
 
+  findTrackTagsByFingerprint: (trackId: number) =>
+    ipcRenderer.invoke(IPC.libraryAutoTagFingerprint, trackId) as Promise<TagLookupResult>,
+
   getTrackLyrics: (target: LyricsTarget) =>
     ipcRenderer.invoke(IPC.libraryLyrics, target) as Promise<TrackLyrics | null>,
 

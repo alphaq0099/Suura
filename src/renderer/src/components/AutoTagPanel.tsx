@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { TagCandidate, TagLookupResult, Track, TrackTagFields } from '@shared/types'
 import { formatDuration } from '@shared/format'
 import { api, messageOf } from '../api'
-import { CloseIcon, SpinnerIcon } from './Icons'
+import { CloseIcon, SearchIcon, SpinnerIcon } from './Icons'
 
 /**
  * The review half of the tag finder.
@@ -58,7 +58,8 @@ const GROUPS: readonly FieldGroup[] = [
 
 const PROVIDER_LABEL: Record<TagCandidate['provider'], string> = {
   itunes: 'iTunes',
-  musicbrainz: 'MusicBrainz'
+  musicbrainz: 'MusicBrainz',
+  acoustid: 'AcoustID'
 }
 
 const CONFIDENCE_LABEL: Record<TagCandidate['confidence'], string> = {
@@ -127,6 +128,8 @@ export function AutoTagPanel(props: AutoTagPanelProps) {
   const [result, setResult] = useState<TagLookupResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [fingerprinting, setFingerprinting] = useState(false)
+  const [mode, setMode] = useState<'text' | 'fingerprint'>('text')
   const [selected, setSelected] = useState(0)
   const [chosen, setChosen] = useState<Set<GroupKey>>(new Set())
 
@@ -167,6 +170,27 @@ export function AutoTagPanel(props: AutoTagPanelProps) {
   }, [proposed])
 
   const failedProviders = (result?.providers ?? []).filter((provider) => !provider.ok)
+
+  /**
+   * The fingerprint fallback: a deliberate second attempt for a file whose
+   * title and artist are too wrong to search with. It replaces the list rather
+   * than merging, because the two answers were measured differently and a
+   * fingerprint match is not a worse text match.
+   */
+  const findFingerprint = async (): Promise<void> => {
+    setFingerprinting(true)
+    setError(null)
+    try {
+      const found = await api.findTrackTagsByFingerprint(track.id)
+      setResult(found)
+      setSelected(0)
+      setMode('fingerprint')
+    } catch (cause) {
+      setError(messageOf(cause))
+    } finally {
+      setFingerprinting(false)
+    }
+  }
 
   const toggle = (key: GroupKey): void => {
     setChosen((existing) => {
@@ -221,11 +245,27 @@ export function AutoTagPanel(props: AutoTagPanelProps) {
           <p className="subtitle">
             {loading
               ? 'Asking iTunes and MusicBrainz…'
-              : candidates.length === 0
-                ? 'No match came back.'
-                : `${candidates.length} ${candidates.length === 1 ? 'match' : 'matches'}, best first.`}
+              : fingerprinting
+                ? 'Reading this file\u2019s audio fingerprint\u2026'
+                : mode === 'fingerprint'
+                  ? candidates.length === 0
+                    ? 'The fingerprint did not name this file.'
+                    : `${candidates.length} ${candidates.length === 1 ? 'match' : 'matches'} from the audio fingerprint, best first.`
+                  : candidates.length === 0
+                    ? 'No match came back.'
+                    : `${candidates.length} ${candidates.length === 1 ? 'match' : 'matches'}, best first.`}
           </p>
         </div>
+        <button
+          type="button"
+          className="tag-find auto-tag-fingerprint"
+          disabled={loading || fingerprinting}
+          title="Read the audio and ask AcoustID what this file is"
+          onClick={() => void findFingerprint()}
+        >
+          {fingerprinting ? <SpinnerIcon size={14} /> : <SearchIcon size={14} />}
+          <span>{fingerprinting ? 'Reading fingerprint…' : 'Match by fingerprint'}</span>
+        </button>
         <button
           type="button"
           className="icon-button subtle"

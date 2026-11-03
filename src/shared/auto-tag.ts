@@ -187,6 +187,9 @@ export function confidenceOf(score: number): TagCandidate['confidence'] {
 }
 
 function providerOrder(provider: TagProvider): number {
+  // A fingerprint match outranks a text match on a tie: the audio itself is
+  // stronger evidence than a title that may have been typed by a uploader.
+  if (provider === 'acoustid') return -1
   return provider === 'itunes' ? 0 : 1
 }
 
@@ -204,7 +207,13 @@ export function rankCandidates(
 ): TagCandidate[] {
   const scored = candidates
     .map((candidate) => {
-      const score = scoreCandidate(query, candidate)
+      // An AcoustID answer carries its own score, measured against the audio.
+      // Re-scoring it against the (probably wrong) text tags would throw away
+      // the one signal that made the fingerprint lookup worth doing.
+      const score =
+        candidate.provider === 'acoustid'
+          ? Math.max(0, Math.min(1, candidate.score))
+          : scoreCandidate(query, candidate)
       return { ...candidate, score, confidence: confidenceOf(score) }
     })
     .filter((candidate) => candidate.score >= MIN_SCORE)
@@ -400,4 +409,99 @@ export function candidatesFromMusicBrainz(payload: unknown): TagCandidate[] {
   return recordings
     .map(candidateFromMusicBrainz)
     .filter((candidate): candidate is TagCandidate => candidate !== null)
+}
+
+// ---- fingerprint (AcoustID → MusicBrainz) ---------------------------------
+
+/** The first genre name in a MusicBrainz genre list. */
+function firstGenre(value: unknown): string | null {
+  for (const entry of Array.isArray(value) ? value : []) {
+    const name = asString(asRecord(entry)?.name)
+    if (name) return name
+  }
+  return null
+}
+
+/**
+ * One MusicBrainz recording that AcoustID named, with AcoustID's score.
+ *
+ * A recording lookup returns every release it appears on, each with its own
+ * media and tracks. The release whose medium actually lists this recording is
+ * the one that can supply a track number; the first release is the fallback
+ * when MusicBrainz did not inline the track list. `score` stays AcoustID's own,
+ * because it measured the audio rather than comparing text.
+ */
+export function candidateFromAcoustidRecording(
+  value: unknown,
+  score: number
+): TagCandidate | null {
+  const recording = asRecord(value)
+  if (!recording) return null
+
+  const title = asString(recording.title)
+  const artist = creditName(recording['artist-credit'])
+  if (!title || !artist) return null
+
+  const recordingId = asString(recording.id)
+  const releases = Array.isArray(recording.releases) ? recording.releases : []
+  let release: Record<string, unknown> | null = null
+  let medium: Record<string, unknown> | null = null
+  let track: Record<string, unknown> | null = null
+  let mediaCount = 0
+
+  for (const entry of releases) {
+    const candidate = asRecord(entry)
+    if (!candidate) continue
+    const media = Array.isArray(candidate.media) ? candidate.media : []
+    for (const mediumEntry of media) {
+      const candidateMedium = asRecord(mediumEntry)
+      if (!candidateMedium) continue
+      const tracks = Array.isArray(candidateMedium.track) ? candidateMedium.track : []
+      for (const trackEntry of tracks) {
+        const candidateTrack = asRecord(trackEntry)
+        const trackRecordingId = asString(asRecord(candidateTrack?.recording)?.id)
+        if (!candidateTrack || !recordingId || trackRecordingId !== recordingId) continue
+        release = candidate
+        medium = candidateMedium
+        track = candidateTrack
+        break
+      }
+      if (track) break
+    }
+    if (track) break
+  }
+
+  if (!release) {
+    release = asRecord(releases[0])
+    const media = Array.isArray(release?.media) ? release.media : []
+    mediaCount = media.length
+    medium = asRecord(media[0])
+    const tracks = Array.isArray(medium?.track) ? medium.track : []
+    track = asRecord(tracks[0])
+  } else {
+    mediaCount = Array.isArray(release.media) ? release.media.length : 0
+  }
+
+  const releaseGroup = asRecord(release?.['release-group'])
+  const clamped = Math.max(0, Math.min(1, score))
+
+  return {
+    provider: 'acoustid',
+    providerId: recordingId ?? `${artist}\u0000${title}`,
+    title,
+    artist,
+    albumArtist: artist,
+    album: asString(release?.title),
+    year: yearOf(asString(release?.date)),
+    genre: firstGenre(recording.genres) ?? firstGenre(releaseGroup?.genres),
+    trackNo: trackNumber(track?.number) ?? positiveInteger(track?.position),
+    trackTotal:
+      positiveInteger(medium?.['track-count']) ?? positiveInteger(release?.['track-count']),
+    discNo: positiveInteger(medium?.position),
+    discTotal: mediaCount > 0 ? mediaCount : null,
+    durationMs: positiveInteger(recording.length),
+    artworkUrl: releaseArtwork(asString(release?.id)),
+    score: clamped,
+    confidence: confidenceOf(clamped)
+  }
 }

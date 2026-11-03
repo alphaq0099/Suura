@@ -1739,6 +1739,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         count: number
         labels: string
         appearanceVisible: boolean
+        metadataField: boolean
         onePanel: boolean
         restored: boolean
       }>(
@@ -1752,6 +1753,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            const visible = [...document.querySelectorAll('.settings-panel')].filter((el) => !el.hidden)
            const appearanceVisible = visible.some((el) => el.id === 'settings-panel-appearance')
            const onePanel = visible.length === 1
+           byLabel('Metadata')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+           await sleep(160)
+           const metadataField = Boolean(
+             document.querySelector('#settings-panel-metadata input[placeholder*="AcoustID"]')
+           )
            byLabel('General')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
            await sleep(120)
            const general = document.querySelector('#settings-panel-general')
@@ -1759,18 +1765,20 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
              count: tabs.length,
              labels: tabs.map((el) => (el.textContent || '').trim()).join('|'),
              appearanceVisible,
+             metadataField,
              onePanel,
              restored: Boolean(general) && !general.hidden
            }
          })()`
       )
       record(
-        settingsTabs.count === 5 &&
-          settingsTabs.labels === 'General|Appearance|Streaming|Misc|About' &&
+        settingsTabs.count === 6 &&
+          settingsTabs.labels === 'General|Appearance|Streaming|Metadata|Misc|About' &&
           settingsTabs.appearanceVisible &&
+          settingsTabs.metadataField &&
           settingsTabs.onePanel &&
           settingsTabs.restored,
-        `settings has five tabs and shows one panel at a time at ${width}x${height}`,
+        `settings has six tabs and shows one panel at a time at ${width}x${height}`,
         settingsTabs
       )
 
@@ -5840,7 +5848,6 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          return out
        })()`
     )
-    container.tagLookup.lookup = originalLookup
     // The stub runs inside the renderer's IPC round trip, so the assignment is
     // invisible to the compiler's flow analysis; the cast is only for that.
     const capturedQuery = autoTagQuery as TagLookupQuery | null
@@ -5882,6 +5889,105 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         capturedQuery.durationMs === 3000,
       'the finder searches with the row title, artist and length',
       JSON.stringify(capturedQuery)
+    )
+
+    // ---- 13e-2. the fingerprint fallback is an explicit second attempt -----
+    // The network is replaced again. What matters is that it is a separate
+    // button rather than an automatic retry: the review list only changes when
+    // the user asks for the audio to be read.
+    const originalFingerprintLookup = container.tagLookup.lookupFingerprint
+    container.tagLookup.lookupFingerprint = async (query) => ({
+      query,
+      candidates: [
+        {
+          provider: 'acoustid',
+          providerId: 'rec-selftest',
+          title: 'Fingerprint Tone',
+          artist: 'Audio Only',
+          albumArtist: 'Audio Only',
+          album: 'Audio Album',
+          year: 2001,
+          genre: null,
+          trackNo: 2,
+          trackTotal: 8,
+          discNo: 1,
+          discTotal: 1,
+          durationMs: 3000,
+          artworkUrl: null,
+          score: 0.92,
+          confidence: 'strong'
+        }
+      ],
+      providers: [{ provider: 'acoustid', ok: true, message: null, count: 1 }]
+    })
+    const fingerprintTags = await evaluate<{
+      button: boolean
+      match: string
+      score: string
+      editorClosed: boolean
+      sheetClosed: boolean
+    }>(
+      window,
+      `(async () => {
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const pick = (selector) => document.querySelector(selector)
+         const pickAll = (selector) => [...document.querySelectorAll(selector)]
+         const text = (element) => (element ? (element.textContent || '').trim() : '')
+         const press = (element) => {
+           if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         }
+         const out = { button: false, match: '', score: '', editorClosed: false, sheetClosed: false }
+         const row = pickAll('.track-row').find(
+           (el) => text(el.querySelector('.row-title-text')) === 'Selftest Tone'
+         )
+         if (row) {
+           row.dispatchEvent(
+             new MouseEvent('contextmenu', { bubbles: true, clientX: 240, clientY: 240 })
+           )
+         }
+         await sleep(300)
+         press(pickAll('.context-menu .context-item').find((el) => text(el) === 'Edit tags…'))
+         await sleep(600)
+         const findTagsButton = () =>
+           pickAll('.tag-head-actions .tag-find').find((el) => text(el) === 'Find tags')
+         press(findTagsButton())
+         await sleep(500)
+         out.button = Boolean(pick('.auto-tag-fingerprint'))
+         press(pick('.auto-tag-fingerprint'))
+         await sleep(500)
+         out.match = pick('.auto-tag-match strong') ? text(pick('.auto-tag-match strong')) : ''
+         out.score = pick('.auto-tag-score .subtitle') ? text(pick('.auto-tag-score .subtitle')) : ''
+         const dialog = pick('.tag-dialog')
+         if (dialog) {
+           dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+         }
+         await sleep(300)
+         const stillDialog = pick('.tag-dialog')
+         if (stillDialog) {
+           stillDialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+         }
+         await sleep(300)
+         out.editorClosed = !pick('.tag-dialog')
+         press(pick('.details-close'))
+         await sleep(300)
+         out.sheetClosed = !pick('.details-backdrop')
+         return out
+       })()`
+    )
+    container.tagLookup.lookupFingerprint = originalFingerprintLookup
+    container.tagLookup.lookup = originalLookup
+    record(
+      fingerprintTags.button &&
+        fingerprintTags.match === 'Fingerprint Tone' &&
+        fingerprintTags.score.includes('AcoustID') &&
+        fingerprintTags.score.includes('92%'),
+      'Match by fingerprint replaces the text answer with the AcoustID one',
+      `${fingerprintTags.button} | ${fingerprintTags.match} | ${fingerprintTags.score}`
+    )
+    record(
+      fingerprintTags.editorClosed && fingerprintTags.sheetClosed,
+      'the fingerprint lookup leaves the editor and its sheet closed cleanly',
+      `editor ${fingerprintTags.editorClosed}, sheet ${fingerprintTags.sheetClosed}`
     )
 
     // ---- 13f. the cover picker offers pictures, the editor still writes --

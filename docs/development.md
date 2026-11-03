@@ -9,7 +9,7 @@ installing and using the app, read the [README](../README.md) instead. The full 
 
 ---
 
-## Status: M1–M7 and M12 complete, including the visual revamp (Home dashboard, merged **All tracks**, album/artist detail, playlist hero). M8 Windows release engineering is in progress: the per-user installer, local diagnostics export, renderer sandbox, headless performance gate, fetch-on-first-use sidecar installer, CI workflow, app update channel and yt-dlp rollback are done; signing, opt-in crash reporting and the compatibility/accessibility pass remain. The GitHub Actions workflow (`.github/workflows/ci.yml`) runs the build, smoke, self-test and perf gates on `windows-latest` and is green.
+## Status: M1–M7 and M12 complete, including the visual revamp (Home dashboard, merged **All tracks**, album/artist detail, playlist hero). M8 Windows release engineering is in progress: the per-user installer, local diagnostics export, renderer sandbox, headless performance gate, fetch-on-first-use sidecar installer, CI workflow, app update channel and yt-dlp rollback are done; signing, opt-in crash reporting and the compatibility/accessibility pass remain. M13 Library Metadata & Lyrics is complete through Phase 6 — the tag write path and manual editor, lyrics reading, single-track auto-tag, the artwork picker, the lyrics finder, batch lyrics and tags, and the AcoustID fingerprint fallback — with Phase 7 (local AI transcription) deferred. The GitHub Actions workflow (`.github/workflows/ci.yml`) runs the build, smoke, self-test and perf gates on `windows-latest` and is green.
 
 Working today:
 
@@ -49,6 +49,14 @@ Working today:
   YouTube Links always show Channel (plus Artist when YouTube reports a separate one), and imported playlists always keep
   Album. Extra Large text stays usable because the fixed columns scale with the text preset instead of pinning to a pixel
   width.
+- **Metadata and lyrics** (M13): right-click a row to **Edit tags** — title, artist, album, album artist, year, genre,
+  track/disc and lyrics, plus a cover picked from the file, its folder, the source video or a provider. Writes are atomic
+  and only touch the fields the user changed. **Find tags** asks iTunes and MusicBrainz, scores the answers against the
+  row's title, artist and length, and shows them for review rather than writing them; a file whose tags are too wrong to
+  search with can be matched by its audio fingerprint instead (AcoustID, with the user's own key in Settings → Metadata).
+  The lyrics panel shows embedded `USLT`/`SYLT` or a `.lrc` sidecar, follows the sung line with a manual-scroll pause and an
+  offset, and **Find lyrics** fetches from LRCLIB or Genius. A selection can be batch-scanned for missing lyrics or wrong
+  tags, reviewed row by row, applied, and undone once.
 - A player bar with play/pause, previous/next, seek, volume, and a **queue** you can open, jump around, remove from and
   clear. The Queue view carries the same **#, Title, Artist, Album / playlist, Duration, Action** header as the library,
   aligned with its rows.
@@ -600,6 +608,43 @@ hand.
 resource from must be listed in that CSP** — a missing entry blocks the request before it ever reaches the protocol
 handler, which then looks like a broken handler rather than a policy problem.
 
+### How a file is named from its audio
+
+Text search needs something to search with. A file called `track01.mp3` with an artist of `Unknown` gives iTunes and
+MusicBrainz nothing, so the tag finder has a second, deliberate path: read the audio itself.
+
+```
+[Match by fingerprint] ──▶ main: library:auto-tag-fingerprint
+                              │
+                              ▼
+                    fpcalc -json -length 120 <file>   (20 s cap, killed as a tree)
+                              │ { duration, fingerprint }
+                              ▼
+              api.acoustid.org/v2/lookup?client=<key>&duration=…&fingerprint=…
+                              │ one match per recording, best score wins
+                              ▼
+           musicbrainz.org/ws/2/recording/<id>?inc=…releases release-groups genres media
+                              │ the release whose medium lists the recording supplies
+                              ▼ album, track/disc numbers, year, Cover Art Archive URL
+```
+
+- The fingerprint is only read when the user presses **Match by fingerprint**. It is never folded into a text lookup, a
+  batch or a scan: it costs an `fpcalc` run and spends the user's own AcoustID quota, which is why the button is separate.
+- `src/shared/acoustid.ts` owns the key shape, the request URL and the payload parser; `src/engine/sidecar/fpcalc.ts` owns
+  locating and running `fpcalc`; `src/core/library/tag-lookup.ts` chains the two services and turns every failure into a
+  sentence.
+- `fpcalc` is optional in the engine manifest. Streaming works without it and the Metadata tab reports "not installed"
+  instead of failing the lookup — the message says to download the engine from Settings.
+- The **AcoustID key** is the user's own application key, stored in Settings → Metadata. It is validated as 8–64 letters
+  and digits on write and on read; blank or invalid is stored as `null`, meaning "not configured", and the lookup then
+  answers with a pointer to the Metadata tab instead of calling the service.
+- AcoustID's score is **kept**, not re-scored against the tags: the whole point is that those tags were wrong.
+  `rankCandidates` has an `acoustid` case for exactly this. Candidates are labelled `AcoustID` in the review dialog, and
+  the candidate's release front image is labelled `Cover Art Archive` in the artwork picker.
+- When the text lookup finds no cover, `src/main/artwork-choices.ts` retries through the fingerprint path and offers the
+  Cover Art Archive image through the same picker. A fingerprint candidate itself never writes anything; it goes through
+  the normal review dialog and `updateTrackTags` like any other match.
+
 ### How artwork reaches the screen
 
 Cover art takes the same route, with one difference: it is *derived* data, so it is produced on demand and cached.
@@ -754,6 +799,7 @@ src/
     media-protocol.ts   player-media:// handler (range requests, allowlist)
     artwork-protocol.ts player-art:// handler (content-addressed cache)
     artwork-service.ts  extract → resize → cache covers, deduped per album
+    artwork-choices.ts  the cover picker's answers: file, folder, video, providers, Cover Art Archive
     media-keys.ts       global media-key shortcuts → playerCommand events
     tray.ts             tray icon and its transport menu
     window-mode.ts      native bounds and state for the mini-player layout
@@ -765,12 +811,15 @@ src/
     download-service.ts save-to-library queue: yt-dlp → tags → move → scan, pause/resume, remove-download, startup sweep
     youtube-service.ts  resolver + stream proxy, registered with the registry
     update-service.ts   electron-updater wrapper: feed, status, daily check, no silent install
+    tag-batch-service.ts    batch tag scan and its review snapshot
+    lyrics-batch-service.ts batch lyric scan and its review snapshot
     broadcast.ts        main → renderer event fan-out
     services/container.ts   the whole dependency graph in one place
   preload/index.ts      contextBridge surface (the only way to reach main)
   core/
     db/                 driver (the only node:sqlite import), schema, migrations
-    library/            scanner, tag reading, artwork extraction, repository, library service
+    library/            scanner, tag reading and writing, artwork extraction, repository, library service,
+                        tag lookup (iTunes, MusicBrainz, AcoustID) and lyrics lookup
     settings/           defaults, deep merge, atomic writes
     logging/            file logger with rotation
     paths.ts            all app-owned locations, derived from one root
@@ -780,13 +829,13 @@ src/
     youtube-resolver.ts link validation, resolve + session cache
     stream-proxy.ts     token registry, range/header forwarding, one-shot re-resolve
     innertube.ts        search/channel metadata over YouTube's web API
-    sidecar/            locating and version-probing yt-dlp / ffmpeg; the yt-dlp client; manifest.ts pins; rollback.ts keeps the last known-good binary
+    sidecar/            locating and version-probing yt-dlp / ffmpeg / fpcalc; the yt-dlp client; manifest.ts pins; rollback.ts keeps the last known-good binary; fpcalc.ts runs a fingerprint
   renderer/src/
     App.tsx             composition root
-    components/         Sidebar, LibraryView, TrackList, SearchView, OnlineView, PlaylistsView, DownloadsView, QueueView, SettingsView, SavesPanel, PlayerBar, NowPlayingView, SeekBar, ArtworkImage, Icons
+    components/         Sidebar, LibraryView, TrackList, SearchView, OnlineView, PlaylistsView, DownloadsView, QueueView, SettingsView, SavesPanel, PlayerBar, NowPlayingView, SeekBar, ArtworkImage, Icons, TagEditor, AutoTagPanel, ArtworkPicker, TagBatchDialog, LyricsPanel, LyricsFinder, LyricsBatchDialog
     hooks/              useSettings, useLibrary, useOnline, useDownloads (save queue, pause/resume, remove, retry, reveal), usePlayer, useMediaSession, useArtwork, useKeyboardShortcuts
     audio/              playback-chain (EQ, ReplayGain, volume), playback-deck (two-element gapless handoff)
-  shared/               types, the IPC contract and pure helpers (queue rules, taskbar controls, URLs, ranges, formatting, file names, update channel files)
+  shared/               types, the IPC contract and pure helpers (queue rules, taskbar controls, URLs, ranges, formatting, file names, update channel files, tag scoring, AcoustID requests, tag batches)
 tools/
   smoke.ts              core smoke test (real files, no Electron)
   measure-streams.mjs   the 50-link M3 timing harness (network + yt-dlp)
@@ -1016,15 +1065,18 @@ docs/notes/             spike and measurement records, with raw JSON
 - The installer is unsigned unless the build environment sets `CSC_LINK`; SmartScreen may warn. App updates exist but
   stay dormant until a feed folder is entered in Settings → About, so a build with no configured host still upgrades by
   a fresh install over the previous one.
-- The packaged app ships no `yt-dlp` or `ffmpeg`. A clean machine can use the local library but must download both from
-  Settings → Streaming (or install them on `PATH`) before streaming or saving; the packaged selftest uses the copy
-  already on this machine.
+- The packaged app ships no `yt-dlp`, `ffmpeg` or `fpcalc`. A clean machine can use the local library but must download
+  the engine from Settings → Streaming (or install them on `PATH`) before streaming, saving, or fingerprint matching.
+  `fpcalc` is optional: everything else works without it. The packaged selftest uses the copy already on this machine.
+- **Fingerprint matching needs the user's own AcoustID key**, entered in Settings → Metadata. Without it the button
+  answers with a pointer to that tab and never contacts the service. It is a separate button in the tag finder, not part
+  of a batch, because it reads the whole file and spends that key's quota. Phase 7 (local transcription) is not built.
 - **Copy diagnostics** is clipboard-only, but **Save diagnostics** writes a local text bundle with the recent log. There
   is no opt-in crash reporting and nothing is uploaded automatically.
 
 ## Next steps
 
-Everything below is release work, not product work; M1–M7 and M12 are built.
+Everything below is release work, not product work; M1–M7, M12 and M13 (through Phase 6) are built.
 
 1. **Re-run the packaged `--selftest` on a clean Windows machine** (the M0 clean-machine pass) and confirm Settings →
    Streaming downloads the pinned engine files there; the installer itself now ships no binaries.

@@ -80,6 +80,7 @@ import { mimeForExtension } from '@core/library/artwork'
 import type { TagArtworkWrite } from '@core/library/library-service'
 import { libraryCsv } from '@core/library/library-csv'
 import { sanitizeTaskbarState } from '@shared/taskbar'
+import { normalizeAcoustidKey } from '@shared/acoustid'
 import { sanitizeUpdateSettingsPatch } from '@shared/update'
 import { applyTaskbarControls } from './taskbar'
 import { DEFAULT_SETTINGS, mergeSettings } from '@core/settings/settings-service'
@@ -549,6 +550,15 @@ export function sanitizeSettingsPatch(input: unknown): DeepPartial<AppSettings> 
     const source = input.playlists
     if (typeof source.indexWidth === 'number' && Number.isFinite(source.indexWidth)) {
       patch.playlists = { indexWidth: clampPlaylistIndexWidth(source.indexWidth) }
+    }
+  }
+
+  // The AcoustID key is a credential-like setting, so it is normalised here as
+  // well as on read: a paste with whitespace or punctuation becomes null.
+  if (isPlainObject(input.metadata)) {
+    const source = input.metadata
+    if (typeof source.acoustidKey === 'string' || source.acoustidKey === null) {
+      patch.metadata = { acoustidKey: normalizeAcoustidKey(source.acoustidKey) }
     }
   }
 
@@ -1070,6 +1080,24 @@ export function registerIpcHandlers(container: AppContainer): void {
       album: track.album,
       durationMs: track.durationMs
     })
+  })
+
+  // The fallback for tags too wrong to search with: read the audio itself.
+  // Only an explicit press reaches this, because it runs fpcalc and spends the
+  // user's AcoustID quota rather than a free text-search request.
+  ipcMain.handle(IPC.libraryAutoTagFingerprint, async (_event, trackId: unknown) => {
+    const id = toTrackId(trackId)
+    const track = library.trackById(id)
+    if (!track?.filePath) throw new Error('Only files in your library can be fingerprinted.')
+    return container.tagLookup.lookupFingerprint(
+      {
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        durationMs: track.durationMs
+      },
+      track.filePath
+    )
   })
 
   // Reading is safe while the track plays: it opens the file for a moment and

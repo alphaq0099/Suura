@@ -643,7 +643,7 @@ and its tabs.
 
 ---
 
-### M13 — Library Metadata & Lyrics  *(~6 weeks; Phases 1–5 complete, Phase 6 after M8's sidecar work)*
+### M13 — Library Metadata & Lyrics  *(~6 weeks; Phases 1–6 complete, Phase 7 deferred)*
 **Goal:** fix the tags YouTube got wrong, and show the lyrics a file already has, without leaving the player.
 
 The number is next because the milestone was added last; the **schedule** is after M8 and before M9, so the Android
@@ -680,14 +680,26 @@ port inherits the metadata core instead of reimplementing it. M12 set the same p
       backoff otherwise, capped so the batch stays cancellable — before the answer becomes the dialog's sentence
 
 **Phase 6 — fingerprint fallback**
-- [ ] `fpcalc` sidecar, AcoustID key, MusicBrainz lookup, Cover Art Archive
+- [x] `fpcalc` sidecar: located like the other engine binaries, spawned with a timeout and killed as a tree, `-json` output
+      parsed into a whole-file duration and a Chromaprint fingerprint; optional in the engine manifest, so streaming still
+      works without it
+- [x] AcoustID key in Settings → Metadata: 8–64 letters and digits, normalised on write and on read, blank or invalid stored
+      as "not configured" so nothing unconfigured reaches the service
+- [x] MusicBrainz lookup: the AcoustID recording id is re-fetched with its releases, release groups, genres and media, and
+      the release whose medium actually lists the recording supplies album, track/disc numbers and the release year
+- [x] Cover Art Archive: a fingerprint candidate's release front image is offered through the existing artwork picker when
+      the text lookup found no cover
+- [x] **Match by fingerprint** is its own button in the tag finder, never part of a lookup, a batch or a scan: it reads the
+      whole file and spends the user's key. The AcoustID score is preserved rather than re-scored against the wrong text
+      tags, so a `track01` / `Unknown` row can still be named.
 
 **Phase 7 — deferred**
 - [ ] AI transcription: local, opt-in, labelled "generated"; only if the rest is done and asked for
 
-**Status:** Phases 1–5 are complete as written: a wrong tag can be fixed by hand or in a batch, a cover can be replaced,
-and lyrics can be read, found and written — each write reversible. Phase 6 is the open item; its `fpcalc` dependency is
-now installable from M8's engine download (Settings → Streaming), so the phase can start. Phase 7 stays deferred.
+**Status:** Phases 1–6 are complete as written: a wrong tag can be fixed by hand or in a batch, a cover can be replaced,
+lyrics can be read, found and written, and a file whose tags are unusable can be named from its audio fingerprint. Every
+write is reversible. Phase 6 is dormant until the user supplies their own AcoustID key in Settings → Metadata; it needs
+`fpcalc`, which M8's engine download installs separately from the rest. Phase 7 stays deferred.
 
 **Exit:** a wrong tag can be fixed and a lyric found from inside the app on MP3/FLAC/M4A/Ogg; every write is reversible
 and survives a kill between the temp write and the replace.
@@ -711,14 +723,14 @@ and survives a kill between the temp write and the replace.
 | M10 | Two-Device Continuity *(optional)* | LAN companion server | 2–4 w | M9 |
 | M11 | Long-term extras | Scrobbling, hi-res, plugins, visualiser | continuous | — |
 | M12 | Offline Cache & Downloads *(complete)* | Cache engine, offline replay, history; manager and Downloads screens | 2–3 w | M4, M6 |
-| M13 | Library Metadata & Lyrics *(Phases 1–5 done; Phase 6 open)* | Tag writing, auto-tag, artwork, lyrics | 6 w | M1, M7 |
+| M13 | Library Metadata & Lyrics *(Phases 1–6 complete; Phase 7 deferred)* | Tag writing, auto-tag, artwork, lyrics, fingerprint | 6 w | M1, M7 |
 
 **Critical path:** M0 → M1 → M3 → M4 → M5 → M6 → M8 → M13 → M9. M2 can be interleaved, M7 is data-care hygiene, and M12 is
 complete (data layer plus manager and Downloads screens). M13 is numbered next because it was added last; it is scheduled
 after M8 and before M9 so the Android port inherits the metadata core. The visual revamp landed as Home plus the album
 grid, and **Windows release engineering (M8) is in progress**: the per-user NSIS installer, manual diagnostics export,
-renderer sandbox and fetch-on-first-use sidecar installer are built and verified; the update channel, crash reporting
-and compatibility pass are still open.
+renderer sandbox, fetch-on-first-use sidecar installer, CI workflow, app update channel and yt-dlp rollback are built and
+verified; crash reporting and the compatibility/accessibility pass are still open, with signing last.
 
 ---
 
@@ -827,5 +839,7 @@ new one breaks. The remaining work is crash reporting and the compatibility/acce
 streaming UX redesign is independent of that sequence as long as it only changes the renderer; it must come before the
 sidecar work only if it changes what the engine must resolve, cache or download.
 
-**Next:** crash reporting and the compatibility/accessibility pass, with signing last; then M13 Phase 6 (AcoustID via
-the new `fpcalc` sidecar); then M9.
+**Next:** crash reporting and the compatibility/accessibility pass, with signing last; then M9. M13 is complete through
+Phase 6, and its Phase 7 (local AI transcription) stays deferred until asked for. M13's fingerprint fallback needs nothing
+more than the user's own AcoustID key: `fpcalc` arrives with the M8 engine download, and the text search keeps working
+without either.
