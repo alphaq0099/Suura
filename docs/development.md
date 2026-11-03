@@ -1084,7 +1084,7 @@ docs/notes/             spike and measurement records, with raw JSON
   `fpcalc` is optional: everything else works without it. The packaged selftest uses the copy already on this machine.
 - **Fingerprint matching needs the user's own AcoustID key**, entered in Settings → Metadata. Without it the button
   answers with a pointer to that tab and never contacts the service. It is a separate button in the tag finder, not part
-  of a batch, because it reads the whole file and spends that key's quota. Phase 7 (local transcription) is not built.
+  of a batch, because it reads up to two minutes of audio and spends that key's quota. Phase 7 (local transcription) is not built.
 - **Copy diagnostics** is clipboard-only, but **Save diagnostics** writes a local text bundle with the recent log. There
   is no opt-in crash reporting and nothing is uploaded automatically.
 

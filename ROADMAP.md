@@ -691,8 +691,8 @@ port inherits the metadata core instead of reimplementing it. M12 set the same p
       the release whose medium actually lists the recording supplies album, track/disc numbers and the release year
 - [x] Cover Art Archive: a fingerprint candidate's release front image is offered through the existing artwork picker when
       the text lookup found no cover
-- [x] **Match by fingerprint** is its own button in the tag finder, never part of a lookup, a batch or a scan: it reads the
-      whole file and spends the user's key. The AcoustID score is preserved rather than re-scored against the wrong text
+- [x] **Match by fingerprint** is its own button in the tag finder, never part of a lookup, a batch or a scan: it reads up to
+      two minutes of audio and spends the user's key. The AcoustID score is preserved rather than re-scored against the wrong text
       tags, so a `track01` / `Unknown` row can still be named.
 
 **Phase 7 — deferred**

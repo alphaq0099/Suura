@@ -1971,8 +1971,8 @@ export function SettingsView(props: SettingsViewProps) {
               ) : null}
 
               <p className="card-hint">
-                Matching by fingerprint is a separate action in the tag finder. It reads the whole
-                file, so it is never part of a batch.
+                Matching by fingerprint is a separate action in the tag finder. It reads up to two
+                minutes of audio, so it is never part of a batch.
               </p>
             </article>
           </div>
