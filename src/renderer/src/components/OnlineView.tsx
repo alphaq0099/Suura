@@ -545,6 +545,24 @@ export function OnlineView(props: OnlineViewProps) {
           <p className="subtitle">{subtitle}</p>
         </div>
         <div className="online-header-tools">
+          {tab === 'links' && entries.length > 0 ? (
+            <div className="header-actions">
+              <button
+                type="button"
+                className={confirmClear ? 'link-button danger' : 'link-button'}
+                onClick={() => {
+                  if (!confirmClear) {
+                    setConfirmClear(true)
+                    return
+                  }
+                  setConfirmClear(false)
+                  void onClear()
+                }}
+              >
+                {confirmClear ? 'Clear history?' : 'Clear history'}
+              </button>
+            </div>
+          ) : null}
           <div className="downloads-tabs" role="tablist" aria-label="YouTube sections">
             <button
               type="button"
@@ -574,24 +592,6 @@ export function OnlineView(props: OnlineViewProps) {
               <DiscIcon size={15} /> Cache
             </button>
           </div>
-          {tab === 'links' && entries.length > 0 ? (
-            <div className="header-actions">
-              <button
-                type="button"
-                className={confirmClear ? 'link-button danger' : 'link-button'}
-                onClick={() => {
-                  if (!confirmClear) {
-                    setConfirmClear(true)
-                    return
-                  }
-                  setConfirmClear(false)
-                  void onClear()
-                }}
-              >
-                {confirmClear ? 'Clear history?' : 'Clear history'}
-              </button>
-            </div>
-          ) : null}
         </div>
       </header>
 
