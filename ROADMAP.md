@@ -4,7 +4,7 @@ A music player that manages a **local music library** and can also **search, str
 
 - **Platform order:** Windows desktop first → Android later
 - **Streaming first:** play immediately, no waiting for a full download
-- **User's choice:** decide per-track / per-playlist whether downloaded audio is kept on disk, cached temporarily, or never written to disk at all. **The bounded cache, offline replay and the full Downloads screen are complete in M12a + M12b.**
+- **User's choice:** decide per-track / per-playlist whether downloaded audio is kept on disk, cached temporarily, or never written to disk at all. **The bounded cache, offline replay and the Saved/Cache tabs inside YouTube are complete in M12a + M12b.**
 - **Status of this document:** the plan. Implementation has started — see [`README.md`](./README.md) for what actually
   works today, and the milestone checkboxes below for progress.
 
@@ -39,9 +39,9 @@ A single app where a user's music lives in one place:
 - Playing a local file: < 300 ms to first audio
 - Playing a YouTube track already resolved this session (or prefetched): < 3 s to first audio; a cold paste has a
   ≤ 10 s median display target while it resolves
-- Cache/download manager never exceeds the configured disk budget *(enforced in M12a, with the manager screen and
-  per-entry controls in M12b; explicit saves are bounded by the queue and reported in the Saves dock and Downloads
-  screen)*
+- Cache/download manager never exceeds the configured disk budget *(enforced in M12a, with the manager surface and
+  per-entry controls in M12b; explicit saves are bounded by the queue and reported in the Saves dock and YouTube's Saved
+  tab)*
 - Crash-free sessions > 99%; no orphaned yt-dlp processes after exit
 
 ---
@@ -52,7 +52,7 @@ A single app where a user's music lives in one place:
 ┌──────────────────────────────────────────────────────────────┐
 │  UI LAYER                                                    │
 │  Library · Search · Now Playing · Queue · Playlists ·        │
-│  Downloads · Cache Manager · Settings                        │
+│  YouTube (Links · Saved · Cache) · Settings                  │
 └───────────────┬──────────────────────────────────────────────┘
                 │  commands / state (typed IPC)
 ┌───────────────▼──────────────────────────────────────────────┐
@@ -261,7 +261,7 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
 - [x] Choose the stack (§3) and record it in an ADR (Architecture Decision Record)
 - [x] Decide the player engine and the primary streaming approach (A/B/C above)
 - [x] Wireframe the 6 core screens: Library, Now Playing, Queue, Search, Downloads, Settings — all six are built;
-      the full Downloads screen arrived with M12b
+      the saved-files and cache manager arrived with M12b and now live as YouTube's Saved and Cache tabs
 - [x] Write the `IMediaResolver` interface and the IPC event schema (as a spec, not code) — built, not just specified:
       `src/engine/resolver.ts` and `src/shared/ipc.ts`
 - [ ] Verify yt-dlp + ffmpeg work as sidecars on a clean Windows machine; measure resolve latency and success rate on 20
@@ -385,15 +385,15 @@ separate layer with its own budget, and the two never pretend to be the same thi
 - [x] Startup sweep: a crash or force-quit never runs the per-save cleanup, so the next start removes its own UUID temp
       folders and orphaned `.part` files. Unrelated folders in `downloads/` are left alone.
 - [x] **Saves dock**: one compact panel mounted by the app, visible from every view, with pause/resume, live speed/ETA,
-      cancel while running, retry after a failure or cancel, and reveal-in-Explorer once the row is indexed. The full
-      Downloads screen arrived with M12b.
+      cancel while running, retry after a failure or cancel, and reveal-in-Explorer once the row is indexed. It links
+      to YouTube's Saved tab, where the durable ledger lives.
 - [x] Settings honest (M12a): **Stream only**, **Save played tracks** and **Keep after play** are all real modes; the
       cache budget and max-age fields appear only when the cache is selected, and disk pre-flight plus the download
       history are implemented behind them.
-- [x] **Remove download**, per-item pin/retention UI, pause/resume, speed + ETA and the full Downloads screen — the
-      remaining half of the old M12 scope, delivered as **M12b**.
+- [x] **Remove download**, per-item pin/retention UI, pause/resume, speed + ETA and the durable saved-files manager — the
+      remaining half of the old M12 scope, delivered as **M12b** and merged into YouTube's Saved and Cache tabs.
 **Exit:** saving a history row or imported entry round-trips into an ordinary tagged library track; a killed process
-leaves no temp folder; pause/resume, cancel, retry and remove work from the dock and the Downloads screen. **Met.**
+leaves no temp folder; pause/resume, cancel, retry and remove work from the dock and the Saved/Cache tabs. **Met.**
 
 ### M5 — Discovery & YouTube Library Surface  *(complete)*
 - [x] Unified search: **On this device**, **Imported** and **YouTube** as three shelves in one view. Typing filters
@@ -603,15 +603,15 @@ planned desktop work with a schema change, not continuous extras.
 
 ### M12 — Offline Cache & Downloads *(complete)*
 **Goal:** the other half of the original M4: a bounded cache that writes while a stream plays, an honest retention
-setting, and one Downloads screen for saved files and cached streams. M12a landed the data layer and offline playback;
-M12b landed the manager and the full Downloads UI.
+setting, and one place for saved files and cached streams. M12a landed the data layer and offline playback; M12b
+landed the manager, which now lives as YouTube's **Saved** and **Cache** tabs.
 
 **M12a — data layer and offline playback (done)**
 - [x] Cache engine: background full fetch of the resolved URL into `cache/stream/<videoId>.<ext>.part`, rename on
       completion, one shared download per video, janitor, LRU eviction and size/age budgets. Manual `clear()` and
-      per-entry reveal/removal are exposed through IPC and used by the Downloads screen.
+      per-entry reveal/removal are exposed through IPC and used by YouTube's Cache tab.
 - [x] Pinning: `pinned` entries count toward the budget but are never evicted automatically; the IPC can pin/unpin, and
-      the Downloads screen exposes the per-entry control.
+      the Cache tab exposes the per-entry control.
 - [x] Offline detection: a cached track resolves to `player-media://` and plays with no network; an uncached YouTube
       track fails up front with "not available offline" instead of a spinner. Local files and saved library tracks are
       never blocked.
@@ -621,15 +621,16 @@ M12b landed the manager and the full Downloads UI.
       checks both the temp and target volumes against the resolver's size hint (or a conservative fallback) plus the
       save reserve.
 - [x] Download history: `download_history` persists status, progress, error and request metadata; startup marks
-      interrupted rows failed; the Downloads screen and Saves dock read it, and either can dismiss one.
+      interrupted rows failed; YouTube's Saved tab and the Saves dock read it, and either can dismiss one.
 - [x] Startup integrity: `reconcile()` deletes orphan files and `.part` leftovers, and a stale row is never offered as
       a cached source. File deletion is restricted to the cache root.
 
-**M12b — manager and Downloads screens (done)**
-- [x] Cache manager screen: real usage against the budget, entries with size and last use, pin/unpin, reveal, single
+**M12b — manager and merged YouTube tabs (done)**
+- [x] Cache manager tab: real usage against the budget, entries with size and last use, pin/unpin, reveal, single
       removal, multi-select removal and Clear cache
-- [x] Full Downloads screen over `download_history`: Saved and Offline cache tabs, active/completed/failed/paused/removed
-      rows, live speed + ETA, pause/resume, cancel, retry, reveal and dismiss
+- [x] Saved tab over `download_history`: active/completed/failed/paused/removed rows, live speed + ETA, pause/resume,
+      cancel, retry, reveal and dismiss. It shares the YouTube header with Links and Cache instead of owning a sidebar
+      entry.
 - [x] Remove download: delete only a file inside a configured library folder, mark the track missing without deleting
       its row, record history as `removed`, keep playlist/queue identity, and fall back to the YouTube stream
 - [x] Per-item retention and bulk actions: pinned cache entries count toward the budget and are never auto-evicted;
@@ -640,8 +641,8 @@ M12b landed the manager and the full Downloads UI.
 **Exit:** disk usage never exceeds a budget; killing the app mid-cache leaves no corruption; offline replay works for
 cached tracks; "keep" ↔ "remove" round-trips cleanly. **Met:** M12a's smoke checks cover the cache budget, eviction,
 offline resolution and startup cleanup; M12b adds pause/resume temp reuse, remove-download with playlist fallback,
-history status, single-entry cache reveal/removal, and live progress parsing. The selftest drives the Downloads screen
-and its tabs.
+history status, single-entry cache reveal/removal, and live progress parsing. The selftest drives YouTube's Saved and
+Cache tabs through the header toggles.
 
 ---
 
@@ -724,11 +725,11 @@ and survives a kill between the temp write and the replace.
 | M9 | Android Port | New engine + player + UI | 4–6 w | M8 |
 | M10 | Two-Device Continuity *(optional)* | LAN companion server | 2–4 w | M9 |
 | M11 | Long-term extras | Scrobbling, hi-res, plugins, visualiser | continuous | — |
-| M12 | Offline Cache & Downloads *(complete)* | Cache engine, offline replay, history; manager and Downloads screens | 2–3 w | M4, M6 |
+| M12 | Offline Cache & Downloads *(complete)* | Cache engine, offline replay, history; manager surface inside YouTube's Saved/Cache tabs | 2–3 w | M4, M6 |
 | M13 | Library Metadata & Lyrics *(Phases 1–6 complete; Phase 7 deferred)* | Tag writing, auto-tag, artwork, lyrics, fingerprint | 6 w | M1, M7 |
 
 **Critical path:** M0 → M1 → M3 → M4 → M5 → M6 → M8 → M13 → M9. M2 can be interleaved, M7 is data-care hygiene, and M12 is
-complete (data layer plus manager and Downloads screens). M13 is numbered next because it was added last; it is scheduled
+complete (data layer plus the manager inside YouTube's Saved/Cache tabs). M13 is numbered next because it was added last; it is scheduled
 after M8 and before M9 so the Android port inherits the metadata core. The visual revamp landed as Home plus the album
 grid, and **Windows release engineering (M8) is in progress**: the per-user NSIS installer, manual diagnostics export,
 renderer sandbox, fetch-on-first-use sidecar installer, CI workflow, app update channel and yt-dlp rollback are built and
@@ -805,7 +806,7 @@ player/
    measurement in `docs/notes/yt-dlp-50.md`. yt-dlp + ffmpeg resolve, seek, download and tag on this machine.
 2. ~~**Decide the stack** (§3) once the spike has told you what the engine actually needs. Write it down as an ADR.~~ Done: `docs/adr/0001-stack-and-storage.md` (Electron + TypeScript + React, `node:sqlite`, no native build tools).
 3. ~~**Wireframe the 6 core screens**~~ Done, and built: Library, YouTube, Search, Playlists, Queue, Settings, Now
-   Playing and the full Downloads screen all exist.
+   Playing and the Saved/Cache manager inside YouTube all exist.
 4. ~~**Write the two specs**~~ Done: `IMediaResolver` is `src/engine/resolver.ts`; the IPC event schema is `src/shared/ipc.ts`.
 5. ~~**Pick the retention defaults**~~ Done: stream-only is the default; all three modes are now accepted, the cache
    defaults to 5 GB / 30 days, and saving remains explicit unless *Keep after play* is chosen.
@@ -816,8 +817,8 @@ album and mix import stores a snapshot that the Playlists view can play, queue, 
 per-import track count for mixes and radios. **Saving to the library works**: a history row, a search result or an
 imported entry downloads once, is tagged with embedded artwork, moves into the music folder and is indexed as an
 ordinary local track that remembers its video id. A compact **Saves** dock shows running, failed and finished saves
-from every view, with pause/resume, live speed/ETA, cancel, retry and reveal; the **Downloads** view adds the durable
-Saved and Offline cache ledgers, per-entry keep/reveal/remove and bulk actions. **M3 is measured** at 50/50 links, a 8.3 s median cold resolve and a
+from every view, with pause/resume, live speed/ETA, cancel, retry and reveal; YouTube's **Saved** tab adds the durable
+saved-files ledger and its **Cache** tab the offline copies, both with per-entry keep/reveal/remove and bulk actions. **M3 is measured** at 50/50 links, a 8.3 s median cold resolve and a
 0.46 s median to the CDN's first bytes, so `< 3 s` is adopted for warm/prefetched playback and cold paste has a 10 s
 display target. **M5's core is in**: a unified **Search** view over the local library and YouTube, channel pages, and
 title/artist cleanup. Every track list shares the same **#, Title, …metadata, Duration, Action** priorities, with
@@ -825,7 +826,8 @@ Format in a row's **Details** sheet, and the Queue has a header aligned with its
 keeps Title as the only flexible track, gives Artist/Album equal bounded widths, removes Album from YouTube Links in
 favour of Channel plus an optional Artist, and keeps Duration/Actions fixed when a column is hidden. **M12 is done**:
 the bounded stream cache, offline replay, retention modes, download history, disk pre-flight, the cache manager and the
-full Downloads screen are in place, including pause/resume, remove-download with stream fallback, and per-entry keep.
+saved-files ledger are in place inside YouTube's Saved/Cache tabs, including pause/resume, remove-download with stream
+fallback, and per-entry keep.
 **The visual revamp is done**: Home opens on a cover-led dashboard with the library totals under its heading, recently
 played/added shelves, artist and playlist cards, and one merged **All tracks** list below them. That list spans local
 files, counted stream listens, imported playlist entries and remembered links, deduped by video id and newest activity

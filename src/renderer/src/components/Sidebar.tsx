@@ -3,7 +3,6 @@ import { formatCount } from '@shared/format'
 import {
   BrandMarkIcon,
   CogIcon,
-  DownloadIcon,
   HomeIcon,
   LibraryIcon,
   LinkIcon,
@@ -23,7 +22,6 @@ export type ViewName =
   | 'search'
   | 'online'
   | 'playlists'
-  | 'downloads'
   | 'queue'
   | 'settings'
 
@@ -85,7 +83,7 @@ export function Sidebar({
         type="button"
         className={view === 'online' ? 'nav-item active' : 'nav-item'}
         onClick={() => onSelect('online')}
-        title="Links you have pasted, playing from YouTube"
+        title="Pasted links, saved downloads and the offline cache"
       >
         {modern ? <YouTubeIcon /> : <LinkIcon />}
         <span>YouTube</span>
@@ -110,16 +108,6 @@ export function Sidebar({
         {modern ? <ListMusicIcon /> : <PlaylistIcon />}
         <span>Playlists</span>
         {playlistCount > 0 ? <span className="nav-count">{formatCount(playlistCount)}</span> : null}
-      </button>
-
-      <button
-        type="button"
-        className={view === 'downloads' ? 'nav-item active' : 'nav-item'}
-        onClick={() => onSelect('downloads')}
-        title="Saved downloads and the offline cache"
-      >
-        <DownloadIcon />
-        <span>Downloads</span>
       </button>
 
       <button

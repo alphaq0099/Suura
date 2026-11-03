@@ -132,8 +132,9 @@ Working today:
   downloaded twice. A compact **Saves** dock sits above the player bar from every view: it lists running, failed and
   just-finished saves, shows live speed and time remaining while a transfer runs, offers **Pause** and **Resume**
   (the paused job keeps its partial file), **Cancel** while a save is queued, downloading or paused, **Retry** after a
-  failure or a cancellation, and **Reveal** once the file is in the library. The full **Downloads** screen is the
-  durable view: it lists saved, failed, cancelled and removed saves from `download_history` alongside the offline cache.
+  failure or a cancellation, and **Reveal** once the file is in the library. The **Saved** and **Cache** tabs inside
+  YouTube are the durable view: Saved lists saved, failed, cancelled and removed saves from `download_history`, and
+  Cache lists the stream copies the player can replay offline.
   A crash or force-quit leaves no temp folder behind: the next start sweeps the downloads directory for this service's
   own UUID folders and `.part` files.
 - **Search** (M5): the sidebar's **Search** view asks the local library and YouTube at the same time and puts both
@@ -189,17 +190,18 @@ Working today:
   so cached tracks replay with no network at all; an uncached YouTube track played offline fails with a clear "not
   available offline" message instead of an endless spinner. A free-space check skips a cache copy and refuses a save
   rather than filling the disk.
-  The **Downloads** view has two ledgers. **Saved** shows every save in `download_history` — queued, downloading,
-  paused, finishing, indexed, saved, failed, cancelled or removed — with live speed/ETA, Pause/Resume, Cancel, Retry and
-  Reveal. It supports multi-select removal and bulk actions. **Offline cache** shows real usage against the budget, each
-  entry's size and last use, per-entry **Keep** (pin), **Reveal** and **Remove**, multi-select removal and **Clear cache**.
+  The **YouTube** view has three small tabs in its header. **Links** is the pasted-link history, **Saved** shows every
+  save in `download_history` — queued, downloading, paused, finishing, indexed, saved, failed, cancelled or removed —
+  with live speed/ETA, Pause/Resume, Cancel, Retry and Reveal, plus multi-select removal and bulk actions, and **Cache**
+  shows real usage against the budget, each entry's size and last use, per-entry **Keep** (pin), **Reveal** and
+  **Remove**, multi-select removal and **Clear cache**.
   Pausing aborts the sidecar but keeps the UUID folder; Resume reuses that same folder with `--continue`, so the work
   already done is not thrown away. Removing a saved file deletes only a file inside a configured library folder, marks
   the library row missing, records the history row as `removed`, and keeps its playlist/queue identity. That row then
   plays from its YouTube origin instead of reporting a missing file. A cache file held open by the player cannot be
   deleted on Windows; its row stays and the UI reports that it could not be removed. Every save's progress is also
-  written to `download_history`, so a failed or cancelled save survives a restart and can be retried from the Downloads
-  screen or the Saves dock; a paused row is reported as failed at startup, because its abandoned temp folder is swept
+  written to `download_history`, so a failed or cancelled save survives a restart and can be retried from the Saved
+  tab or the Saves dock; a paused row is reported as failed at startup, because its abandoned temp folder is swept
   rather than trusted across restarts.
 - Settings persist to `config.json`. The engine settings drive the resolver (binary folder, quality tier); the saving
   settings choose where saved files go (default `Music\Suura`) and in what container (Opus, MP3 or M4A), while the
@@ -213,8 +215,8 @@ Working today:
   cover-art shape, and independent switches for the player's large cover and its cover-colour ambience. Accented adds an
   accent wash and a CSS blur over the app's own background rather than native acrylic/Mica, so it behaves the same on
   every Windows build; it deliberately does not claim to be an album-art frost. Reset appearance restores every choice on
-  the tab. **General** chooses the launch view (last used by default, or Home, Library, YouTube, Search, Playlists,
-  Downloads or Queue; a fresh install opens on Home; Settings itself is never restored), whether a full scan runs at launch, what a single or
+  the tab. **General** chooses the launch view (last used by default, or Home, Library, YouTube, Search, Playlists or
+  Queue; a fresh install opens on Home; Settings itself is never restored), whether a full scan runs at launch, what a single or
   double click does, the volume-wheel step (5% by default, configurable 1–15, with Shift still 1%) and whether the
   restored local queue starts automatically; with that off, restored playback stays paused. Misc has a separate **Reset preferences** action: it
   restores playback, appearance, click behaviour, startup, backup retention, import limits, retention mode,
@@ -593,8 +595,8 @@ that will not take Opus.
 
 Before a sidecar starts, the save checks free space on both the per-save temp volume and the target volume against the
 resolver's reported file size (or a conservative fallback when there is no hint) plus a reserve. Every progress change
-is mirrored into `download_history`; startup marks any row still queued, downloading or paused as failed, and the
-Downloads screen reads that ledger while the Saves dock hydrates only unfinished, failed or cancelled rows, so a
+is mirrored into `download_history`; startup marks any row still queued, downloading or paused as failed, and YouTube's
+Saved tab reads that ledger while the Saves dock hydrates only unfinished, failed or cancelled rows, so a
 successful save from months ago does not come back as a card. **Remove download** deletes the file only after checking
 that it is inside a configured library folder. It then marks the row missing instead of deleting it: playlist and queue
 foreign keys survive, and the row's YouTube origin lets playback fall back to the stream. The history row becomes
@@ -848,7 +850,7 @@ src/
     sidecar/            locating and version-probing yt-dlp / ffmpeg / fpcalc; the yt-dlp client; manifest.ts pins; rollback.ts keeps the last known-good binary; fpcalc.ts runs a fingerprint
   renderer/src/
     App.tsx             composition root
-    components/         Sidebar, LibraryView, TrackList, SearchView, OnlineView, PlaylistsView, DownloadsView, QueueView, SettingsView, SavesPanel, PlayerBar, NowPlayingView, SeekBar, ArtworkImage, Icons, TagEditor, AutoTagPanel, ArtworkPicker, TagBatchDialog, LyricsPanel, LyricsFinder, LyricsBatchDialog
+    components/         Sidebar, LibraryView, TrackList, SearchView, OnlineView, PlaylistsView, DownloadsView (Saved/Cache sections), QueueView, SettingsView, SavesPanel, PlayerBar, NowPlayingView, SeekBar, ArtworkImage, Icons, TagEditor, AutoTagPanel, ArtworkPicker, TagBatchDialog, LyricsPanel, LyricsFinder, LyricsBatchDialog
     hooks/              useSettings, useLibrary, useOnline, useDownloads (save queue, pause/resume, remove, retry, reveal), usePlayer, useMediaSession, useArtwork, useKeyboardShortcuts
     audio/              playback-chain (EQ, ReplayGain, volume), playback-deck (two-element gapless handoff)
   shared/               types, the IPC contract and pure helpers (queue rules, taskbar controls, URLs, ranges, formatting, file names, update channel files, tag scoring, AcoustID requests, tag batches)
@@ -1055,12 +1057,12 @@ docs/notes/             spike and measurement records, with raw JSON
 - Imported playlists live outside the library. Played links appear in the Library under the **YouTube** chip rather than
   among local tracks, and **Remove from history** forgets the link without touching a saved copy.
 - A stream play leaves the last local queue in the resume slot rather than a queue that cannot be rebuilt.
-- The Downloads screen is not a live scheduler. It renders the `download_history` ledger plus whatever the Saves dock is
+- YouTube's Saved tab is not a live scheduler. It renders the `download_history` ledger plus whatever the Saves dock is
   doing; a row completed long ago stays until it is dismissed, and cache entries are keyed by video id because the
   cache itself stores no tags.
 - Removing a saved file while it is open in the player can fail on Windows with a sharing violation. The row stays
   saved and the file is untouched; stop playback and remove it again.
-- Bulk cache removal and bulk saved-file removal are available in Downloads, but clearing the whole cache is all-or-
+- Bulk cache removal and bulk saved-file removal are available in YouTube's Saved and Cache tabs, but clearing the whole cache is all-or-
   nothing: there is no per-folder or per-playlist cache budget.
 - Resolving has no Cancel button. Dismissing the *Resolving…* row discards the result, but the sidecar finishes in the
   background and warms the cache, so retrying the same link is instant.

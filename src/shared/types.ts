@@ -1363,7 +1363,6 @@ export const STARTUP_VIEWS = [
   'search',
   'online',
   'playlists',
-  'downloads',
   'queue'
 ] as const
 export type StartupView = (typeof STARTUP_VIEWS)[number]

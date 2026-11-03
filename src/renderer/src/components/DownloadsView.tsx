@@ -24,9 +24,11 @@ import {
   TrashIcon
 } from './Icons'
 
-type Tab = 'downloads' | 'cache'
+export type DownloadsTab = 'saved' | 'cache'
 
-export interface DownloadsViewProps {
+export interface DownloadsSectionProps {
+  /** Which of the two ledgers to show; YouTube owns the tab strip above it. */
+  tab: DownloadsTab
   downloads: UseDownloadsResult
   onRevealTrack: (trackId: number) => void
   onPlayTracks: (tracks: Track[], index: number) => void
@@ -111,14 +113,15 @@ function rowFromHistory(row: DownloadHistoryItem): DownloadRow {
 }
 
 /**
- * The full Downloads surface.
+ * Saved downloads and the offline cache, shown inside the YouTube view.
  *
  * Two ledgers that are deliberately separate: saved files the user asked to
  * keep, and the best-effort offline cache. Merging them would make Clear cache
- * look like it deletes library tracks; showing them in one view, with explicit
+ * look like it deletes library tracks; showing them under explicit tabs, with
  * Keep/Remove controls, is what the M12b split was for.
  */
-export function DownloadsView({
+export function DownloadsSection({
+  tab,
   downloads,
   onRevealTrack,
   onPlayTracks,
@@ -126,12 +129,10 @@ export function DownloadsView({
   onOpenLibrary,
   onOpenSettings,
   onError
-}: DownloadsViewProps) {
-  const [tab, setTab] = useState<Tab>('downloads')
-
+}: DownloadsSectionProps) {
   // `useDownloads` loads history once for the whole app. Loading it again when
-  // this screen mounts makes the list honest after a relaunch or after a row was
-  // written while this view was closed, instead of relying on one early request.
+  // this section mounts makes the list honest after a relaunch or after a row
+  // was written while it was closed, instead of relying on one early request.
   const { refreshHistory } = downloads
   useEffect(() => {
     void refreshHistory()
@@ -285,58 +286,25 @@ export function DownloadsView({
     [downloads, onError]
   )
 
-  return (
-    <section className="main-view downloads-view">
-      <header className="view-header downloads-header">
-        <div className="view-heading">
-          <span className="downloads-kicker">Library &amp; offline</span>
-          <h1>Downloads</h1>
-          <p>Saved files you keep, and stream copies the player can play without a connection.</p>
-        </div>
-        <div className="downloads-tabs" role="tablist" aria-label="Downloads sections">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'downloads'}
-            className={tab === 'downloads' ? 'downloads-tab active' : 'downloads-tab'}
-            onClick={() => setTab('downloads')}
-          >
-            <DownloadIcon size={15} /> Saved
-            {rows.length > 0 ? <span className="downloads-tab-count">{rows.length}</span> : null}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'cache'}
-            className={tab === 'cache' ? 'downloads-tab active' : 'downloads-tab'}
-            onClick={() => setTab('cache')}
-          >
-            <DiscIcon size={15} /> Offline cache
-          </button>
-        </div>
-      </header>
-
-      {tab === 'downloads' ? (
-        <SavedDownloads
-          rows={rows}
-          selected={selected}
-          allSelected={allSelected}
-          working={working}
-          onToggle={toggleSelected}
-          onToggleAll={toggleAll}
-          onPlay={playRows}
-          onQueue={queueRows}
-          onForget={forgetRows}
-          onDelete={deleteRows}
-          onRevealTrack={onRevealTrack}
-          onOpenLibrary={onOpenLibrary}
-          downloads={downloads}
-          onError={onError}
-        />
-      ) : (
-        <CacheManager onError={onError} onOpenSettings={onOpenSettings} />
-      )}
-    </section>
+  return tab === 'saved' ? (
+    <SavedDownloads
+      rows={rows}
+      selected={selected}
+      allSelected={allSelected}
+      working={working}
+      onToggle={toggleSelected}
+      onToggleAll={toggleAll}
+      onPlay={playRows}
+      onQueue={queueRows}
+      onForget={forgetRows}
+      onDelete={deleteRows}
+      onRevealTrack={onRevealTrack}
+      onOpenLibrary={onOpenLibrary}
+      downloads={downloads}
+      onError={onError}
+    />
+  ) : (
+    <CacheManager onError={onError} onOpenSettings={onOpenSettings} />
   )
 }
 

@@ -27,12 +27,11 @@ import {
 import { youtubeWatchUrl } from '@shared/youtube'
 import { api, messageOf } from './api'
 import { FolderIcon } from './components/Icons'
-import { DownloadsView } from './components/DownloadsView'
 import { HomeView } from './components/HomeView'
 import { LibraryView } from './components/LibraryView'
 import { MiniPlayer } from './components/MiniPlayer'
 import { NowPlayingView } from './components/NowPlayingView'
-import { OnlineView } from './components/OnlineView'
+import { OnlineView, type OnlineTab } from './components/OnlineView'
 import { PlayerBar } from './components/PlayerBar'
 import { PlaylistsView } from './components/PlaylistsView'
 import { QueueView } from './components/QueueView'
@@ -60,10 +59,12 @@ const NOW_PLAYING_EXIT_MS = 180
 
 /** Settings is deliberately not a restorable "last view". */
 const LAST_VIEW_KEY = 'player:last-view'
+/** YouTube remembers which of Links, Saved and Cache was open. */
+const LAST_ONLINE_TAB_KEY = 'player:last-online-tab'
 const SAVED_VIEWS: ViewName[] = ['home', 'library', 'search', 'online', 'playlists', 'queue']
 
-function isSavedView(value: string | null): value is ViewName {
-  return value !== null && SAVED_VIEWS.includes(value as ViewName)
+function savedView(value: string | null): ViewName | null {
+  return value !== null && SAVED_VIEWS.includes(value as ViewName) ? (value as ViewName) : null
 }
 
 /**
@@ -94,6 +95,8 @@ function diagnosticsSummary(
 
 export function App() {
   const [view, setView] = useState<ViewName>('home')
+  /** Which YouTube surface is showing: link history, saved files or cache. */
+  const [onlineTab, setOnlineTab] = useState<OnlineTab>('links')
   /** Whether the full-window player is covering the app. */
   const [nowPlaying, setNowPlaying] = useState(false)
   /** Set while the player window's exit animation plays, before it unmounts. */
@@ -135,7 +138,23 @@ export function App() {
     if (settings.startup.view === 'last') {
       try {
         const saved = localStorage.getItem(LAST_VIEW_KEY)
-        if (isSavedView(saved)) setView(saved)
+        // Builds before the merge stored the now-retired Downloads screen. It
+        // has no view any more, so land on the surface that replaced it.
+        if (saved === 'downloads') {
+          setView('online')
+          setOnlineTab('saved')
+        } else {
+          const remembered = savedView(saved)
+          if (remembered) {
+            setView(remembered)
+            if (remembered === 'online') {
+              const rememberedTab = localStorage.getItem(LAST_ONLINE_TAB_KEY)
+              if (rememberedTab === 'links' || rememberedTab === 'saved' || rememberedTab === 'cache') {
+                setOnlineTab(rememberedTab)
+              }
+            }
+          }
+        }
       } catch {
         // A disabled localStorage simply means no remembered view.
       }
@@ -152,10 +171,11 @@ export function App() {
     if (view === 'settings') return
     try {
       localStorage.setItem(LAST_VIEW_KEY, view)
+      if (view === 'online') localStorage.setItem(LAST_ONLINE_TAB_KEY, onlineTab)
     } catch {
       // A full or disabled localStorage must not break navigation.
     }
-  }, [view])
+  }, [view, onlineTab])
 
   // Theme is applied as data attributes on <html> rather than on `.app` so the
   // page background, native scrollbars and `color-scheme` change with it. The
@@ -1121,7 +1141,12 @@ export function App() {
         playlistCount={playlists.playlists.length + playlists.onlinePlaylists.length}
         onlineCount={online.entries.length}
         iconSet={settings.visuals.iconSet}
-        onSelect={setView}
+        onSelect={(next) => {
+          // The sidebar entry is the way back to the primary surface; Saved and
+          // Cache stay reachable from the header and the Saves dock.
+          if (next === 'online') setOnlineTab('links')
+          setView(next)
+        }}
       />
 
       {view === 'home' ? (
@@ -1230,6 +1255,14 @@ export function App() {
             setView('playlists')
           }}
           downloads={downloads}
+          tab={onlineTab}
+          onTabChange={setOnlineTab}
+          onRevealTrack={(trackId) => void revealTrack(trackId)}
+          onPlaySavedTracks={playLocalTracks}
+          onQueueSavedTracks={queueLocalTracks}
+          onOpenLibrary={() => setView('library')}
+          onOpenSettings={() => setView('settings')}
+          onError={setActionError}
         />
       ) : view === 'playlists' ? (
         <PlaylistsView
@@ -1270,16 +1303,6 @@ export function App() {
           onPlayingListChange={setPlayingList}
           onReveal={(trackId) => void revealTrack(trackId)}
           downloads={downloads}
-        />
-      ) : view === 'downloads' ? (
-        <DownloadsView
-          downloads={downloads}
-          onRevealTrack={(trackId) => void revealTrack(trackId)}
-          onPlayTracks={playLocalTracks}
-          onQueueTracks={queueLocalTracks}
-          onOpenLibrary={() => setView('library')}
-          onOpenSettings={() => setView('settings')}
-          onError={setActionError}
         />
       ) : view === 'queue' ? (
         <QueueView
@@ -1368,7 +1391,14 @@ export function App() {
         prefetchEnabled={settings?.engine.prefetchNext ?? true}
       />
 
-      <SavesPanel downloads={downloads} onReveal={(trackId) => void revealTrack(trackId)} />
+      <SavesPanel
+        downloads={downloads}
+        onReveal={(trackId) => void revealTrack(trackId)}
+        onManage={() => {
+          setOnlineTab('saved')
+          setView('online')
+        }}
+      />
 
       <PlayerBar
         current={player.current}

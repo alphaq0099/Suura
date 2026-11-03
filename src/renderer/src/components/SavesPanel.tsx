@@ -14,6 +14,8 @@ import {
 export interface SavesPanelProps {
   downloads: UseDownloadsResult
   onReveal: (trackId: number) => void
+  /** Opens YouTube → Saved, where a finished or failed save can be managed. */
+  onManage: () => void
 }
 
 function isActive(item: SaveItem): boolean {
@@ -70,7 +72,7 @@ function statusText(item: SaveItem): string {
  * from every screen, and each row carries the only three actions a save needs —
  * cancel while it runs, retry when it failed, reveal once it is in the library.
  */
-export function SavesPanel({ downloads, onReveal }: SavesPanelProps) {
+export function SavesPanel({ downloads, onReveal, onManage }: SavesPanelProps) {
   const { items, cancel, retry, dismiss } = downloads
   if (items.length === 0) return null
 
@@ -85,6 +87,9 @@ export function SavesPanel({ downloads, onReveal }: SavesPanelProps) {
         <span className="saves-count">
           {active > 0 ? `${active} running` : `${finished} finished`}
         </span>
+        <button type="button" className="link-button" onClick={onManage} title="Open saved downloads in YouTube">
+          Manage
+        </button>
         {finished > 0 ? (
           <button
             type="button"

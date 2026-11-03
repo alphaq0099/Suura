@@ -8,6 +8,7 @@ import { describeYouTubeRefusal, parseYouTubeLink, youtubeListUrl } from '@share
 import { api, messageOf } from '../api'
 import type { UseDownloadsResult } from '../hooks/useDownloads'
 import { ArtworkImage } from './ArtworkImage'
+import { DownloadsSection, type DownloadsTab } from './DownloadsView'
 import { FieldContextMenu } from './FieldContextMenu'
 import { ScrollingText } from './ScrollingText'
 import { TrackDetails } from './TrackDetails'
@@ -17,6 +18,7 @@ import {
   CloseIcon,
   CopyIcon,
   DownloadIcon,
+  DiscIcon,
   InfoIcon,
   LinkIcon,
   MoreIcon,
@@ -26,6 +28,9 @@ import {
   SpinnerIcon,
   TrashIcon
 } from './Icons'
+
+/** The three surfaces YouTube owns: link history, saved files, offline cache. */
+export type OnlineTab = 'links' | DownloadsTab
 
 export interface OnlineViewProps {
   entries: OnlineTrack[]
@@ -53,6 +58,15 @@ export interface OnlineViewProps {
   onOpenOnlinePlaylist: (playlistId: number) => void
   /** Saving streams into the library, shared with the Playlists view. */
   downloads: UseDownloadsResult
+  /** Which of Links, Saved and Cache is showing. */
+  tab: OnlineTab
+  onTabChange: (tab: OnlineTab) => void
+  onRevealTrack: (trackId: number) => void
+  onPlaySavedTracks: (tracks: Track[], index: number) => void
+  onQueueSavedTracks: (tracks: Track[]) => void
+  onOpenLibrary: () => void
+  onOpenSettings: () => void
+  onError: (message: string) => void
 }
 
 /** A link that has been submitted but not resolved yet, or that failed. */
@@ -114,7 +128,15 @@ export function OnlineView(props: OnlineViewProps) {
     onPlay,
     onQueue,
     onOpenOnlinePlaylist,
-    downloads
+    downloads,
+    tab,
+    onTabChange,
+    onRevealTrack,
+    onPlaySavedTracks,
+    onQueueSavedTracks,
+    onOpenLibrary,
+    onOpenSettings,
+    onError
   } = props
 
   const [url, setUrl] = useState('')
@@ -498,12 +520,18 @@ export function OnlineView(props: OnlineViewProps) {
     [onPlay, onPlayingListChange, playingImport]
   )
 
-  const subtitle =
+  const linkSubtitle =
     entries.length > 0
       ? `${formatCount(entries.length)} link${entries.length === 1 ? '' : 's'} · newest first · nothing is saved until you ask`
       : onlinePlaylists.length > 0
         ? `${formatCount(onlinePlaylists.length)} imported playlist${onlinePlaylists.length === 1 ? '' : 's'} · one row per list; its tracks never fill the history`
         : 'Paste a video, playlist, album or mix link — playlists stay in the Playlists view and stream like the rest'
+  const subtitle =
+    tab === 'saved'
+      ? 'Files you kept. A save adds a row here and a normal track to your library.'
+      : tab === 'cache'
+        ? 'Stream copies the player can replay without a connection.'
+        : linkSubtitle
 
   const parsed = url.trim().length > 0 ? parseYouTubeLink(url.trim()) : null
   const listInput = parsed?.kind === 'list'
@@ -511,32 +539,65 @@ export function OnlineView(props: OnlineViewProps) {
 
   return (
     <section className="main-view online-view">
-      <header className="view-header">
+      <header className="view-header online-header">
         <div className="view-heading">
           <h1>YouTube</h1>
           <p className="subtitle">{subtitle}</p>
         </div>
-        {entries.length > 0 ? (
-          <div className="header-actions">
+        <div className="online-header-tools">
+          <div className="downloads-tabs" role="tablist" aria-label="YouTube sections">
             <button
               type="button"
-              className={confirmClear ? 'link-button danger' : 'link-button'}
-              onClick={() => {
-                if (!confirmClear) {
-                  setConfirmClear(true)
-                  return
-                }
-                setConfirmClear(false)
-                void onClear()
-              }}
+              role="tab"
+              aria-selected={tab === 'links'}
+              className={tab === 'links' ? 'downloads-tab active' : 'downloads-tab'}
+              onClick={() => onTabChange('links')}
             >
-              {confirmClear ? 'Clear history?' : 'Clear history'}
+              <LinkIcon size={15} /> Links
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'saved'}
+              className={tab === 'saved' ? 'downloads-tab active' : 'downloads-tab'}
+              onClick={() => onTabChange('saved')}
+            >
+              <DownloadIcon size={15} /> Saved
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'cache'}
+              className={tab === 'cache' ? 'downloads-tab active' : 'downloads-tab'}
+              onClick={() => onTabChange('cache')}
+            >
+              <DiscIcon size={15} /> Cache
             </button>
           </div>
-        ) : null}
+          {tab === 'links' && entries.length > 0 ? (
+            <div className="header-actions">
+              <button
+                type="button"
+                className={confirmClear ? 'link-button danger' : 'link-button'}
+                onClick={() => {
+                  if (!confirmClear) {
+                    setConfirmClear(true)
+                    return
+                  }
+                  setConfirmClear(false)
+                  void onClear()
+                }}
+              >
+                {confirmClear ? 'Clear history?' : 'Clear history'}
+              </button>
+            </div>
+          ) : null}
+        </div>
       </header>
 
-      <form className="online-bar" onSubmit={submit}>
+      {tab === 'links' ? (
+        <>
+          <form className="online-bar" onSubmit={submit}>
         <div className="online-input" data-field-menu onContextMenu={openFieldMenu}>
           <LinkIcon />
           <input
@@ -1004,6 +1065,19 @@ export function OnlineView(props: OnlineViewProps) {
       {detailsTrack ? (
         <TrackDetails track={detailsTrack} onClose={() => setDetailsTrack(null)} />
       ) : null}
+        </>
+      ) : (
+        <DownloadsSection
+          tab={tab}
+          downloads={downloads}
+          onRevealTrack={onRevealTrack}
+          onPlayTracks={onPlaySavedTracks}
+          onQueueTracks={onQueueSavedTracks}
+          onOpenLibrary={onOpenLibrary}
+          onOpenSettings={onOpenSettings}
+          onError={onError}
+        />
+      )}
     </section>
   )
 }

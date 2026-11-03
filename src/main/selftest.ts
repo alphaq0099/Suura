@@ -3194,10 +3194,10 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       cacheApi
     )
 
-    // The Downloads view merges live progress with the persisted history. A
-    // direct history write in this test does not produce a download event, so
-    // announce the same failure the service would. This checks the real route:
-    // nav -> Downloads -> failed row -> cache tab, not just the IPC contract.
+    // YouTube owns the two ledgers now. A direct history write in this test does
+    // not produce a download event, so announce the same failure the service
+    // would. This checks the real route: sidebar -> YouTube -> Saved -> failed
+    // row -> Cache tab, not just the IPC contract.
     broadcast(IPC_EVENTS.downloadChanged, {
       videoId: 'selftestvid',
       status: 'failed',
@@ -3210,6 +3210,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     const downloadsUi = await evaluate<{
       opened: boolean
       activeNav: string
+      downloadsNav: boolean
       tabs: string
       rows: number
       failedTitle: string
@@ -3221,25 +3222,32 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       window,
       `(async () => {
          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-         const nav = [...document.querySelectorAll('.nav-item')].find((el) =>
-           (el.textContent || '').trim().startsWith('Downloads')
+         const text = (element) => ((element && element.textContent) || '').trim()
+         const nav = (label) =>
+           [...document.querySelectorAll('.nav-item')].find((el) => text(el).startsWith(label))
+         const downloadsNav = Boolean(nav('Downloads'))
+         nav('YouTube')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await sleep(600)
+         const savedTab = [...document.querySelectorAll('.downloads-tab')].find((el) =>
+           text(el).includes('Saved')
          )
-         nav?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         savedTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
          await sleep(500)
-         const view = document.querySelector('.downloads-view')
+         const view = document.querySelector('.online-view')
          const rows = [...document.querySelectorAll('.download-item')]
          const failed = rows.find((row) =>
            (row.textContent || '').includes('Selftest failed save')
          )
          const out = {
-           opened: Boolean(view) && Boolean(nav),
-           activeNav: (document.querySelector('.nav-item.active')?.textContent || '').trim(),
+           opened: Boolean(view) && Boolean(savedTab),
+           activeNav: text(document.querySelector('.nav-item.active')),
+           downloadsNav,
            tabs: [...document.querySelectorAll('.downloads-tab')]
-             .map((el) => (el.textContent || '').trim())
+             .map((el) => text(el))
              .join('|'),
            rows: rows.length,
-           failedTitle: (failed?.querySelector('.download-title')?.textContent || '').trim(),
-           failedStatus: (failed?.querySelector('.download-status')?.textContent || '').trim(),
+           failedTitle: text(failed?.querySelector('.download-title')),
+           failedStatus: text(failed?.querySelector('.download-status')),
            retry: Boolean(
              failed &&
                [...failed.querySelectorAll('button')].some(
@@ -3250,10 +3258,10 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            cacheEmpty: ''
          }
          const cacheTab = [...document.querySelectorAll('.downloads-tab')].find((el) =>
-           (el.textContent || '').includes('Offline cache')
+           text(el).includes('Cache')
          )
          cacheTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-         await sleep(400)
+         await sleep(500)
          out.cacheTabActive = cacheTab?.getAttribute('aria-selected') === 'true'
          out.cacheEmpty =
            (document.querySelector('.cache-panel .downloads-empty')?.textContent || '').trim()
@@ -3261,13 +3269,18 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
        })()`
     )
     record(
-      downloadsUi.opened && downloadsUi.activeNav.startsWith('Downloads'),
-      'downloads: the sidebar opens the Downloads screen',
+      downloadsUi.opened && downloadsUi.activeNav.startsWith('YouTube'),
+      'downloads: YouTube in the sidebar opens the Saved downloads tab',
       downloadsUi
     )
     record(
-      downloadsUi.tabs.includes('Saved') && downloadsUi.tabs.includes('Offline cache'),
-      'downloads: the screen offers Saved and Offline cache tabs',
+      !downloadsUi.downloadsNav,
+      'downloads: the sidebar no longer has its own Downloads item',
+      downloadsUi
+    )
+    record(
+      downloadsUi.tabs === 'Links|Saved|Cache',
+      'downloads: the YouTube header offers Links, Saved and Cache toggles',
       downloadsUi
     )
     record(
@@ -3284,10 +3297,38 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       downloadsUi
     )
 
+    // The dock is the way a failed save stays findable after leaving the tab.
+    // Its Manage link must land on the ledgers, not merely open YouTube.
+    const manageLink = await evaluate<{ found: boolean; opened: boolean; tab: string }>(
+      window,
+      `(async () => {
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const text = (element) => ((element && element.textContent) || '').trim()
+         const manage = [...document.querySelectorAll('.saves-panel button')].find(
+           (button) => text(button) === 'Manage'
+         )
+         manage?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await sleep(600)
+         const activeTab = [...document.querySelectorAll('.downloads-tab')].find(
+           (el) => el.getAttribute('aria-selected') === 'true'
+         )
+         return {
+           found: Boolean(manage),
+           opened: Boolean(document.querySelector('.online-view')),
+           tab: text(activeTab)
+         }
+       })()`
+    )
+    record(
+      manageLink.found && manageLink.opened && manageLink.tab === 'Saved',
+      'downloads: the Saves dock opens YouTube on the Saved tab',
+      manageLink
+    )
+
     // Re-entering the view must read persisted history, not the slice that
     // happened to be loaded when the app started. This is the relaunch symptom
-    // reduced to a remount, plus the layout regression: Downloads scrolls like
-    // every other main view and keeps its top padding.
+    // reduced to a remount, plus the layout regression: YouTube's Saved tab
+    // scrolls like every other main view and keeps its top padding.
     container.downloadHistory.record(
       {
         videoId: 'selftest002',
@@ -3321,9 +3362,14 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            )
          nav('Home')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
          await sleep(250)
-         nav('Downloads')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         nav('YouTube')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await sleep(300)
+         const savedTab = [...document.querySelectorAll('.downloads-tab')].find((el) =>
+           (el.textContent || '').trim().includes('Saved')
+         )
+         savedTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
          await sleep(500)
-         const view = document.querySelector('.downloads-view')
+         const view = document.querySelector('.online-view')
          const saved = [...document.querySelectorAll('.download-item')].find((row) =>
            (row.textContent || '').includes('Selftest saved track')
          )
@@ -3341,7 +3387,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     )
     record(
       persistedLayout.mainView && persistedLayout.topPadding >= 16,
-      'downloads: the view uses the shared main-view scroll container and top padding',
+      'downloads: the Saved tab uses the shared main-view scroll container and top padding',
       persistedLayout
     )
 
@@ -3429,7 +3475,12 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          }
          nav('Home')?.click()
          await sleep(200)
-         nav('Downloads')?.click()
+         nav('YouTube')?.click()
+         await sleep(300)
+         const savedTab = [...document.querySelectorAll('.downloads-tab')].find((el) =>
+           text(el).includes('Saved')
+         )
+         press(savedTab)
          await sleep(700)
 
          const row = rowBy('Selftest Saved Song')
@@ -3578,10 +3629,10 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          }
          nav('Home')?.click()
          await sleep(200)
-         nav('Downloads')?.click()
-         await sleep(600)
+         nav('YouTube')?.click()
+         await sleep(300)
          const cacheTab = [...document.querySelectorAll('.downloads-tab')].find((el) =>
-           text(el).includes('Offline cache')
+           text(el).includes('Cache')
          )
          press(cacheTab)
          await sleep(1000)

@@ -278,7 +278,14 @@ export class SettingsService {
             : DEFAULT_SETTINGS.interaction.volumeWheelStep
       },
       startup: {
-        view: isStartupView(startup.view) ? startup.view : DEFAULT_SETTINGS.startup.view,
+        // Builds before the merge offered Downloads as a launch view. It is now
+        // the Saved tab inside YouTube, so an old choice opens YouTube.
+        view:
+          (startup.view as string | undefined) === 'downloads'
+            ? 'online'
+            : isStartupView(startup.view)
+              ? startup.view
+              : DEFAULT_SETTINGS.startup.view,
         scanOnLaunch: startup.scanOnLaunch !== false,
         resumePlayback: startup.resumePlayback === true
       },

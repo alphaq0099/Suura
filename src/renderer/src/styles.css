@@ -8107,6 +8107,21 @@ button.online-jump:hover {
   align-items: flex-end;
 }
 
+/* YouTube's three surfaces sit in the header as one small pill strip, not as
+   sidebar entries: link history, saved files and the offline cache are states
+   of the same streaming surface. */
+.online-header {
+  align-items: flex-end;
+}
+
+.online-header-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
 .downloads-kicker {
   display: block;
   margin-bottom: 5px;

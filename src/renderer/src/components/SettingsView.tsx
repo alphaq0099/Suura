@@ -172,7 +172,6 @@ const STARTUP_VIEW_CHOICES: Array<{ value: StartupView; label: string }> = [
   { value: 'online', label: 'YouTube' },
   { value: 'search', label: 'Search' },
   { value: 'playlists', label: 'Playlists' },
-  { value: 'downloads', label: 'Downloads' },
   { value: 'queue', label: 'Queue' }
 ]
 
