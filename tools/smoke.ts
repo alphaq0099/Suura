@@ -151,7 +151,7 @@ import {
   saveLastKnownGood,
   ytDlpRollbackStatus
 } from '@engine/sidecar/rollback'
-import { resolveUpdateFeedUrl } from '@shared/update'
+import { resolveUpdateFeedUrl, sanitizeUpdateSettingsPatch } from '@shared/update'
 import { isSafeEntryName, readZipEntry } from '@engine/sidecar/zip'
 import { RequestScheduler } from '@engine/sidecar/request-scheduler'
 import { retryAfterMs, retryWaitMs } from '@core/scheduling/provider-retry'
@@ -3248,6 +3248,33 @@ async function main(): Promise<void> {
     check('update: an invalid feed URL is stored as null', normalizeUpdate({ feedUrl: 'not a url' }).feedUrl === null)
     checkEqual('update: a check timestamp is rounded', normalizeUpdate({ lastCheckAt: 1234.6 }).lastCheckAt, 1235)
     checkEqual('update: an unset check timestamp stays null', normalizeUpdate({ lastCheckAt: -5 }).lastCheckAt, null)
+
+    // The About panel sends a patch; it has to survive validation, and the one
+    // field the renderer must not control is the check timestamp.
+    const updatePatch = sanitizeUpdateSettingsPatch({
+      channel: 'beta',
+      feedUrl: 'https://updates.example.com/suura/latest.yml',
+      autoCheck: false,
+      lastCheckAt: 999
+    })
+    checkEqual('update: a renderer patch keeps its channel', updatePatch.channel, 'beta')
+    checkEqual(
+      'update: a renderer patch normalises the feed URL',
+      updatePatch.feedUrl,
+      'https://updates.example.com/suura'
+    )
+    checkEqual('update: a renderer patch keeps auto-check off', updatePatch.autoCheck, false)
+    check('update: a renderer patch cannot set the check timestamp', updatePatch.lastCheckAt === undefined)
+    checkEqual(
+      'update: an unknown channel is dropped from a patch',
+      sanitizeUpdateSettingsPatch({ channel: 'nightly' }).channel,
+      undefined
+    )
+    checkEqual(
+      'update: clearing the feed is an explicit null',
+      sanitizeUpdateSettingsPatch({ feedUrl: null }).feedUrl,
+      null
+    )
 
     check('settings: closing the window quits by default', !DEFAULT_SETTINGS.desktop.closeToTray)
     check('settings: browser cookies are off by default', DEFAULT_SETTINGS.engine.cookiesFromBrowser === null)

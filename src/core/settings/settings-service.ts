@@ -38,9 +38,14 @@ import {
   isSupportedCookieBrowser,
   normalizeCookieBrowserProfile
 } from '@shared/youtube'
+import { normalizeUpdateFeedUrl } from '@shared/update'
 import type { Logger } from '../logging/logger'
 
 export { DEFAULT_SETTINGS } from '@shared/settings-defaults'
+
+// Kept here so existing callers (and the smoke harness) can import it beside
+// the rest of the settings normalisers.
+export { normalizeUpdateFeedUrl } from '@shared/update'
 
 /** Deep merge limited to plain objects; arrays and primitives replace wholesale. */
 export function mergeSettings(base: AppSettings, patch: DeepPartial<AppSettings>): AppSettings {
@@ -69,45 +74,8 @@ function clampInt(value: number, min: number, max: number): number {
 }
 
 /**
- * Keeps the retention block in the shape the downloader and cache rely on.
- *
- * A config file is external input: it can be hand-edited, brought from another
- * machine, or written by a build that had a different set of modes. Reading it
- * defensively here means no caller needs a second guard.
+ * Keeps the update block in the shape the updater and Settings rely on.
  */
-/**
- * Accepts only a static-feed base URL the updater can append a channel file to.
- *
- * HTTPS is required because installers travel over this URL. Loopback HTTP is
- * allowed so a developer can serve `latest.yml` locally; that is the only
- * exception. A pasted `latest.yml`/`beta.yml` is trimmed back to its folder,
- * because the updater adds the filename itself.
- */
-export function normalizeUpdateFeedUrl(value: unknown): string | null {
-  if (typeof value !== 'string') return null
-  const trimmed = value.trim()
-  if (trimmed.length === 0) return null
-
-  let parsed: URL
-  try {
-    parsed = new URL(trimmed)
-  } catch {
-    return null
-  }
-
-  const loopback =
-    parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '::1'
-  if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && loopback)) return null
-  if (parsed.username || parsed.password) return null
-
-  const path = parsed.pathname.replace(/\/+$/, '').replace(/\/(latest|beta)\.yml$/i, '')
-  parsed.pathname = path.length === 0 ? '/' : path
-  parsed.search = ''
-  parsed.hash = ''
-  return parsed.toString().replace(/\/$/, '')
-}
-
-/** Keeps the update block in the shape the updater and Settings rely on. */
 export function normalizeUpdate(input: unknown): UpdateSettings {
   const source = isPlainObject(input) ? input : {}
   const defaults = DEFAULT_SETTINGS.update
@@ -126,6 +94,13 @@ export function normalizeUpdate(input: unknown): UpdateSettings {
   }
 }
 
+/**
+ * Keeps the retention block in the shape the downloader and cache rely on.
+ *
+ * A config file is external input: it can be hand-edited, brought from another
+ * machine, or written by a build that had a different set of modes. Reading it
+ * defensively here means no caller needs a second guard.
+ */
 export function normalizeRetention(input: unknown): RetentionSettings {
   const source = isPlainObject(input) ? input : {}
   const defaults = DEFAULT_SETTINGS.retention

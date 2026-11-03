@@ -80,6 +80,7 @@ import { mimeForExtension } from '@core/library/artwork'
 import type { TagArtworkWrite } from '@core/library/library-service'
 import { libraryCsv } from '@core/library/library-csv'
 import { sanitizeTaskbarState } from '@shared/taskbar'
+import { sanitizeUpdateSettingsPatch } from '@shared/update'
 import { applyTaskbarControls } from './taskbar'
 import { DEFAULT_SETTINGS, mergeSettings } from '@core/settings/settings-service'
 import {
@@ -549,6 +550,13 @@ export function sanitizeSettingsPatch(input: unknown): DeepPartial<AppSettings> 
     if (typeof source.indexWidth === 'number' && Number.isFinite(source.indexWidth)) {
       patch.playlists = { indexWidth: clampPlaylistIndexWidth(source.indexWidth) }
     }
+  }
+
+  // Only the settings the About panel shows are accepted. `lastCheckAt` is
+  // written by the updater itself, so a renderer patch cannot reset the daily
+  // throttle.
+  if (isPlainObject(input.update)) {
+    patch.update = sanitizeUpdateSettingsPatch(input.update)
   }
 
   return patch
