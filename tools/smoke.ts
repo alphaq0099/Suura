@@ -5767,6 +5767,30 @@ async function main(): Promise<void> {
       fingerprintCalls.join(' | ')
     )
 
+    // AcoustID answers a refused key with HTTP 400 and an error body. The dialog
+    // must point at Settings instead of calling the service unreachable.
+    const refusedLookup = await createTagLookup({
+      log: silentLogger,
+      fetch: (async () =>
+        new Response(
+          JSON.stringify({ status: 'error', error: { code: 4, message: 'invalid API key' } }),
+          { status: 400, headers: { 'content-type': 'application/json' } }
+        )) as unknown as typeof fetch,
+      schedule: (work) => work(),
+      getAcoustidKey: () => 'cSpUJKpD',
+      fingerprint: async () => ({ durationSeconds: 268, fingerprint: 'AQADt' })
+    }).lookupFingerprint(exactQuery, 'C:\\music\\a.flac')
+    checkEqual(
+      'fingerprint: a 400 key refusal is a failed provider',
+      refusedLookup.providers[0]?.ok,
+      false
+    )
+    check(
+      'fingerprint: a 400 key refusal points at Settings',
+      (refusedLookup.providers[0]?.message ?? '').includes('Settings \u2192 Metadata'),
+      refusedLookup.providers[0]?.message ?? ''
+    )
+
     let noKeyCalls = 0
     const noKeyLookup = await createTagLookup({
       log: silentLogger,

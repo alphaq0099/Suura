@@ -633,6 +633,8 @@ MusicBrainz nothing, so the tag finder has a second, deliberate path: read the a
 - `src/shared/acoustid.ts` owns the key shape, the request URL and the payload parser; `src/engine/sidecar/fpcalc.ts` owns
   locating and running `fpcalc`; `src/core/library/tag-lookup.ts` chains the two services and turns every failure into a
   sentence.
+- A refused request arrives as HTTP 400 with a JSON body. The body is read, so a wrong or expired key says to check
+  Settings → Metadata instead of being reported as an outage — the bare status alone cannot tell the two apart.
 - `fpcalc` is optional in the engine manifest. Streaming works without it. The Metadata tab distinguishes the three
   cases honestly: the pinned copy installed in the engine folder, a usable copy found elsewhere (and where), or nothing
   at all — a copy on `PATH` is never called "not installed".

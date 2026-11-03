@@ -90,6 +90,22 @@ export class AcoustidError extends Error {
   }
 }
 
+/**
+ * Reads the error object AcoustID puts in a refused response.
+ *
+ * The service answers a bad key with HTTP 400 and a JSON body, not only with an
+ * error status, so the caller has to read the body to tell "your key is wrong"
+ * apart from "the service is down".
+ */
+export function parseAcoustidError(payload: unknown): AcoustidError | null {
+  const body = asRecord(payload)
+  if (asString(body?.status) !== 'error') return null
+  const detail = asRecord(body?.error)
+  const code = typeof detail?.code === 'number' && Number.isFinite(detail.code) ? detail.code : null
+  const message = asString(detail?.message) ?? 'AcoustID returned an error.'
+  return new AcoustidError(code, message)
+}
+
 /** A sentence for the review dialog, never the raw service code. */
 export function describeAcoustidFailure(error: AcoustidError): string {
   if (error.code === ACOUSTID_INVALID_API_KEY) {
@@ -112,9 +128,7 @@ export function parseAcoustidLookup(payload: unknown): AcoustidMatch[] {
   const body = asRecord(payload)
   const status = asString(body?.status)
   if (status !== null && status !== 'ok') {
-    const detail = asRecord(body?.error)
-    const code = typeof detail?.code === 'number' && Number.isFinite(detail.code) ? detail.code : null
-    throw new AcoustidError(code, 'AcoustID returned an error.')
+    throw parseAcoustidError(payload) ?? new AcoustidError(null, 'AcoustID returned an error.')
   }
 
   const results = Array.isArray(body?.results) ? body.results : []

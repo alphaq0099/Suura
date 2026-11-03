@@ -3,6 +3,7 @@ import {
   AcoustidError,
   acoustidLookupUrl,
   describeAcoustidFailure,
+  parseAcoustidError,
   parseAcoustidLookup,
   type AudioFingerprint
 } from '@shared/acoustid'
@@ -194,7 +195,22 @@ export function createTagLookup(options: TagLookupOptions): TagLookup {
         }),
       { onCooldown: cooldown }
     )
-    if (!response.ok) throw new TagHttpError(response.status)
+    if (!response.ok) {
+      // AcoustID explains a refused request in the body even when the status is
+      // 400. Reading it lets a wrong key say "check the key" instead of the
+      // generic "could not be reached" a bare status would produce.
+      if (response.status === 400) {
+        let body: unknown = null
+        try {
+          body = await response.json()
+        } catch {
+          // A plain-text or empty 400 keeps the status-only failure below.
+        }
+        const detail = parseAcoustidError(body)
+        if (detail) throw detail
+      }
+      throw new TagHttpError(response.status)
+    }
     return (await response.json()) as unknown
   }
 
