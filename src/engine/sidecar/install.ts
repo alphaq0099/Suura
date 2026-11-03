@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { Logger } from '@core/logging/logger'
 import type { SidecarId, SidecarProgress, SidecarState } from '@shared/types'
 import { SIDECAR_ASSETS, type SidecarAsset } from './manifest'
+import { locateExecutable } from './locate'
 import { readZipEntry } from './zip'
 
 /**
@@ -42,6 +43,11 @@ interface InstallRecordEntry {
   version: string
   sha256: string
   bytes: number
+  /**
+   * Size of the file that was actually installed. For a zip this differs from
+   * `bytes`, which is the size of the archive that was downloaded.
+   */
+  fileBytes?: number
   installedAt: number
 }
 
@@ -113,25 +119,54 @@ export async function sidecarIsCurrent(dir: string, asset: SidecarAsset): Promis
   if (!entry || entry.version !== asset.version || entry.sha256 !== asset.sha256) return false
   try {
     const info = await stat(join(dir, asset.file))
-    return info.isFile() && info.size === asset.bytes
+    if (!info.isFile() || info.size <= 0) return false
+    // Older records only knew the download size. That is the installed size for
+    // a plain file, but not for a zip member, which is why records written by
+    // this build also store `fileBytes`. An old zip record still proves the
+    // archive was verified, so an existing non-empty member is accepted rather
+    // than making the user download it again.
+    const expected = entry.fileBytes ?? (asset.kind === 'file' ? asset.bytes : null)
+    return expected === null || info.size === expected
   } catch {
     return false
   }
 }
 
+export interface SidecarLocateOptions {
+  /** The folder the user chose in Settings, checked before the managed one. */
+  configuredDir?: string | null
+  /** Extra folders worth checking, such as yt-dlp's usual install locations. */
+  extraDirs?: readonly string[]
+}
+
 /** What Settings shows. Cheap: one read of the record and one stat per asset. */
 export async function sidecarStates(
   dir: string,
-  assets: readonly SidecarAsset[] = SIDECAR_ASSETS
+  assets: readonly SidecarAsset[] = SIDECAR_ASSETS,
+  locate: SidecarLocateOptions = {}
 ): Promise<SidecarState[]> {
   return Promise.all(
-    assets.map(async (asset) => ({
-      id: asset.id,
-      version: asset.version,
-      bytes: asset.bytes,
-      installed: await sidecarIsCurrent(dir, asset),
-      optional: asset.optional === true
-    }))
+    assets.map(async (asset) => {
+      const installed = await sidecarIsCurrent(dir, asset)
+      // `installed` is about the pinned copy the app owns. A binary on PATH is
+      // still usable, and saying "not installed" for it would be wrong.
+      const found = installed
+        ? { source: 'managed' as const }
+        : locateExecutable(asset.id, {
+            configuredDir: locate.configuredDir ?? null,
+            managedDir: dir,
+            extraDirs: locate.extraDirs
+          })
+      return {
+        id: asset.id,
+        version: asset.version,
+        bytes: asset.bytes,
+        installed,
+        available: found !== null,
+        source: found?.source ?? null,
+        optional: asset.optional === true
+      }
+    })
   )
 }
 
@@ -249,11 +284,13 @@ export async function installAsset(
 
     await replaceFile(extractPath, target)
 
+    const installedInfo = await stat(target)
     const record = await readRecord(options.dir)
     record.files[asset.id] = {
       version: asset.version,
       sha256: asset.sha256,
       bytes: asset.bytes,
+      fileBytes: installedInfo.size,
       installedAt: (options.now ?? Date.now)()
     }
     await writeRecord(options.dir, record)

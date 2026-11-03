@@ -543,7 +543,9 @@ packaging).
       ffmpeg; an offline machine keeps its existing `PATH`/configured-folder setup.
 - [x] Sidecar packaging: the engine prefers the configured folder, then the app-managed copies, then `PATH`, then the
       usual install locations. Settings → Streaming shows each file, downloads missing ones with progress and Cancel,
-      and handles the optional `fpcalc` separately. Unblocks M13 Phase 6.
+      and handles the optional `fpcalc` separately. A usable copy outside the engine folder is reported as *available*
+      (and where it came from), never as "missing", and the install record stores the installed file's size so a zip
+      member is not compared against the archive size. Unblocks M13 Phase 6.
 - [x] App auto-update through a generic HTTPS feed, plus engine rollback now that there are managed bytes and a
       provenance rule. `electron-updater` reads `latest.yml` on **Stable** and `beta.yml` on **Beta** from a static feed
       folder set in Settings → About; a missing feed is a clear "not configured" state, and nothing is downloaded or

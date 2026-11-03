@@ -1676,6 +1676,14 @@ export interface SidecarState {
   /** The pinned version is on disk and its digest was verified when saved. */
   installed: boolean
   /**
+   * True when the app can run this binary at all: the pinned copy is current,
+   * or a copy was found in the configured folder, on PATH, or in a well-known
+   * location. `installed` is about the app-managed copy only.
+   */
+  available: boolean
+  /** Where that usable copy was found. Null when there is none. */
+  source: 'managed' | 'configured' | 'path' | 'well-known' | null
+  /**
    * Optional assets never block streaming. `fpcalc` is only needed for
    * fingerprinting, which is a later milestone.
    */

@@ -8033,6 +8033,53 @@ async function main(): Promise<void> {
         'sidecar: the zip member is the installed binary',
         (await readFile(join(zipDir, 'fpcalc.exe'))).toString() === zipPayload.toString()
       )
+      const zipStates = await sidecarStates(zipDir, [zipAsset])
+      check('sidecar: a zip asset is current after install', zipStates[0]?.installed === true)
+      checkEqual('sidecar: a current zip names the engine folder', zipStates[0]?.source, 'managed')
+      const zipAgain = await installAsset(zipAsset, { dir: zipDir, log: silentLogger })
+      check('sidecar: a current zip asset is not installed again', !zipAgain.installed)
+
+      // A record written by the build that compared the extracted file with the
+      // archive's size must not force a second download.
+      await writeFile(
+        join(zipDir, 'install-record.json'),
+        JSON.stringify({
+          version: 1,
+          files: {
+            fpcalc: {
+              version: 'test-1',
+              sha256: zipDigest,
+              bytes: zipBuffer.length,
+              installedAt: 1
+            }
+          }
+        }),
+        'utf8'
+      )
+      const legacyZipStates = await sidecarStates(zipDir, [zipAsset])
+      check('sidecar: a legacy zip record still counts as current', legacyZipStates[0]?.installed === true)
+
+      // A binary outside the engine folder is usable, so Settings must not call
+      // it missing just because the app-managed copy was never downloaded.
+      const externalDir = join(engineRoot, 'external')
+      await mkdir(externalDir, { recursive: true })
+      await writeFile(join(externalDir, 'yt-dlp.exe'), 'external-yt-dlp', 'utf8')
+      const externalAsset = asset({
+        id: 'yt-dlp',
+        file: 'yt-dlp.exe',
+        url: `${base}/file`
+      })
+      const originalPath = process.env.PATH
+      process.env.PATH = ''
+      try {
+        const externalStates = await sidecarStates(join(engineRoot, 'empty'), [externalAsset], {
+          extraDirs: [externalDir]
+        })
+        check('sidecar: a binary outside the engine folder is available', externalStates[0]?.available === true)
+        checkEqual('sidecar: the external source is named', externalStates[0]?.source, 'well-known')
+      } finally {
+        process.env.PATH = originalPath
+      }
 
       // Cancel stops the transfer and cleans up.
       const cancelDir = join(engineRoot, 'cancel')

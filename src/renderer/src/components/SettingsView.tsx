@@ -309,10 +309,17 @@ function InfoHint(props: { label: string; children: ReactNode }) {
   )
 }
 
+function sourceLabel(source: 'configured' | 'managed' | 'path' | 'well-known' | null): string {
+  if (source === 'configured') return 'configured folder'
+  if (source === 'managed') return 'engine folder'
+  if (source === 'path') return 'PATH'
+  if (source === 'well-known') return 'known location'
+  return 'unknown location'
+}
+
 function describeExecutable(status: ExecutableStatus): string {
   if (!status.found) return status.error ?? 'Not found.'
-  const origin = status.source === 'configured' ? 'configured folder' : status.source === 'path' ? 'PATH' : 'known location'
-  return `${status.version ?? 'version unknown'} · via ${origin}`
+  return `${status.version ?? 'version unknown'} · via ${sourceLabel(status.source)}`
 }
 
 /** One sentence for the update state, so About never shows a bare code. */
@@ -433,9 +440,13 @@ export function SettingsView(props: SettingsViewProps) {
   const sidecars = engineStatus?.sidecars ?? []
   const fpcalcState = sidecars.find((sidecar) => sidecar.id === 'fpcalc') ?? null
   const missingSidecars = sidecars.filter((sidecar) => !sidecar.installed)
-  const requiredMissing = missingSidecars.filter((sidecar) => !sidecar.optional)
+  const requiredSidecars = sidecars.filter((sidecar) => !sidecar.optional)
+  const requiredMissing = requiredSidecars.filter((sidecar) => !sidecar.installed)
+  const requiredUnavailable = requiredSidecars.filter((sidecar) => !sidecar.available)
   const requiredMissingBytes = requiredMissing.reduce((sum, sidecar) => sum + sidecar.bytes, 0)
-  const optionalMissing = missingSidecars.length - requiredMissing.length
+  const requiredUnavailableBytes = requiredUnavailable.reduce((sum, sidecar) => sum + sidecar.bytes, 0)
+  const optionalMissing = sidecars.filter((sidecar) => sidecar.optional && !sidecar.available).length
+  const playbackReady = engineStatus?.ready === true
 
   // A tab strip is one tab stop, not five. Arrow keys move between tabs, Home and
   // End jump to the edges, and the newly selected tab takes focus — the pattern
@@ -1301,9 +1312,11 @@ export function SettingsView(props: SettingsViewProps) {
                     <span>
                       {sidecarInstalling
                         ? 'Downloading engine'
-                        : requiredMissing.length > 0
-                          ? `Download engine (${formatBytes(requiredMissingBytes)})`
-                          : 'Re-download engine'}
+                        : requiredUnavailable.length > 0
+                          ? `Download engine (${formatBytes(requiredUnavailableBytes)})`
+                          : requiredMissing.length > 0
+                            ? `Download pinned engine (${formatBytes(requiredMissingBytes)})`
+                            : 'Re-download engine'}
                     </span>
                   </button>
                   {sidecarInstalling ? (
@@ -1328,15 +1341,21 @@ export function SettingsView(props: SettingsViewProps) {
 
                 {sidecars.length > 0 ? (
                   <p className="card-hint">
-                    {requiredMissing.length === 0
-                      ? `Playback is ready. ${formatCount(sidecars.length)} engine files are current in ${
-                          paths?.engine ?? 'the engine folder'
-                        }.`
-                      : `${formatCount(requiredMissing.length)} of ${formatCount(
-                          sidecars.length
-                        )} engine files ${requiredMissing.length === 1 ? 'is' : 'are'} missing.`}
+                    {playbackReady
+                      ? requiredMissing.length === 0
+                        ? `Playback is ready. ${formatCount(
+                            sidecars.length - missingSidecars.length
+                          )} of ${formatCount(sidecars.length)} pinned engine files are current in ${
+                            paths?.engine ?? 'the engine folder'
+                          }.`
+                        : `Playback is ready using copies found outside the engine folder. ${formatCount(
+                            requiredMissing.length
+                          )} pinned engine ${requiredMissing.length === 1 ? 'file is' : 'files are'} not downloaded.`
+                      : `${formatCount(requiredUnavailable.length)} of ${formatCount(
+                          requiredSidecars.length
+                        )} required engine files ${requiredUnavailable.length === 1 ? 'is' : 'are'} missing.`}
                     {optionalMissing > 0
-                      ? ' Fingerprinting (fpcalc) is optional and not installed.'
+                      ? ' Fingerprinting (fpcalc) is not installed.'
                       : ''}
                   </p>
                 ) : null}
@@ -1924,13 +1943,15 @@ export function SettingsView(props: SettingsViewProps) {
               ) : null}
 
               <ul className="status-list">
-                <li className={fpcalcState?.installed ? 'ok' : ''}>
+                <li className={fpcalcState?.available ? 'ok' : ''}>
                   <span className="status-name">fpcalc</span>
                   <span className="status-value">
                     {fpcalcState
                       ? fpcalcState.installed
                         ? `${fpcalcState.version} installed`
-                        : 'not installed'
+                        : fpcalcState.available
+                          ? `found via ${sourceLabel(fpcalcState.source)}`
+                          : 'not installed'
                       : 'not checked'}
                   </span>
                 </li>
@@ -1939,9 +1960,13 @@ export function SettingsView(props: SettingsViewProps) {
                 <div className="field-row">
                   <button type="button" onClick={() => void onInstallSidecars()} disabled={sidecarInstalling}>
                     {sidecarInstalling ? <SpinnerIcon /> : <DownloadIcon />}
-                    <span>Download engine</span>
+                    <span>Download pinned engine</span>
                   </button>
-                  <span className="card-hint">fpcalc is optional: streaming works without it.</span>
+                  <span className="card-hint">
+                    {fpcalcState.available
+                      ? 'The copy above works; this also puts a pinned copy in the engine folder.'
+                      : 'fpcalc is optional: streaming works without it.'}
+                  </span>
                 </div>
               ) : null}
 

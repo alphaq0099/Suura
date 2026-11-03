@@ -27,6 +27,10 @@ export class SidecarService {
       log: Logger
       onProgress?: (progress: SidecarProgress) => void
       assets?: readonly SidecarAsset[]
+      /** The user's configured engine folder, checked before the managed one. */
+      configuredDir?: () => string | null
+      /** Extra folders worth checking, such as yt-dlp's usual install locations. */
+      extraDirs?: readonly string[]
     }
   ) {}
 
@@ -39,13 +43,16 @@ export class SidecarService {
   }
 
   states(): Promise<SidecarState[]> {
-    return sidecarStates(this.deps.dir, this.assets)
+    return sidecarStates(this.deps.dir, this.assets, {
+      configuredDir: this.deps.configuredDir?.() ?? null,
+      extraDirs: this.deps.extraDirs
+    })
   }
 
-  /** True when every asset that streaming needs is on disk. */
+  /** True when every asset streaming needs can be run from somewhere. */
   async ready(): Promise<boolean> {
     const states = await this.states()
-    return states.filter((state) => !state.optional).every((state) => state.installed)
+    return states.filter((state) => !state.optional).every((state) => state.available)
   }
 
   install(): Promise<SidecarInstallResult> {

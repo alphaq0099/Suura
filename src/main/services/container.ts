@@ -41,6 +41,7 @@ import { SidecarService } from '../sidecar-service'
 import { UpdateService } from '../update-service'
 import { createTagLookup, type TagLookup } from '@core/library/tag-lookup'
 import { computeFingerprint } from '@engine/sidecar/fpcalc'
+import { wellKnownDirectories } from '@engine/sidecar/locate'
 import { createLyricsFinder, createLyricsLookup } from '@core/library/lyrics-lookup'
 import { createGeniusProvider } from '@core/library/lyrics-genius'
 import { createArtworkChoices, type ArtworkChoicesService } from '../artwork-choices'
@@ -172,7 +173,9 @@ export function createContainer(): AppContainer {
   const sidecars = new SidecarService({
     dir: paths.engine,
     log: log.child('sidecars'),
-    onProgress: (progress) => broadcast(IPC_EVENTS.sidecarProgress, progress)
+    onProgress: (progress) => broadcast(IPC_EVENTS.sidecarProgress, progress),
+    configuredDir: () => settings.get().engine.binDir,
+    extraDirs: wellKnownDirectories()
   })
 
   const ytDlp = new YtDlpClient({
