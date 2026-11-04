@@ -563,7 +563,11 @@ packaging).
       or a Chromium child-process crash. The card shows the count, newest time, folder and size, exports the reports as a
       text bundle the user chooses, and clears them after confirmation. No remote service is configured and nothing is
       uploaded; turning the switch off stops new files and leaves existing ones for inspection.
-- [ ] Windows 10/11 compatibility matrix, HiDPI, multi-monitor, 4K scaling
+- [ ] Windows 10/11 compatibility matrix, HiDPI, multi-monitor, 4K scaling. The code side is in: covers are cached
+      at up to 1280px (schema migration 18 re-extracts the old 512px ones), the self-test repeats every fit check at
+      940x580 with extra-large text, closing the mini player clamps bounds from an unplugged monitor back on screen,
+      and `docs/release/windows.md` carries the hardware checklist. The box stays open until that checklist has been
+      run on real Windows 10 and 11 machines.
 - [x] Performance budgets enforced headlessly (`npm run perf`): 10,000-file scan, incremental rescan, first page,
       search, database size and main-process memory, with a non-zero exit and the missed metric named on a regression
 - [x] The same budgets on a CI runner: `npm run perf` runs in its own job and passed there, so the scan, rescan, paging,

@@ -1,4 +1,5 @@
 import { BrowserWindow, screen, type Rectangle } from 'electron'
+import { clampToWorkArea } from '@shared/window-bounds'
 
 /**
  * A compact mode for the one real window.
@@ -90,7 +91,13 @@ export function setMiniPlayer(window: BrowserWindow, enabled: boolean): boolean 
     window.setAlwaysOnTop(state?.wasAlwaysOnTop ?? false)
     window.setMaximizable(true)
     window.setMinimumSize(NORMAL_MIN_WIDTH, NORMAL_MIN_HEIGHT)
-    if (state) window.setBounds(state.normalBounds, true)
+    if (state) {
+      // The saved rectangle may belong to a monitor that has been unplugged
+      // while the mini player was up. Anchor to the display nearest it and pull
+      // it back into that work area instead of restoring it off-screen.
+      const display = screen.getDisplayMatching(state.normalBounds)
+      window.setBounds(clampToWorkArea(state.normalBounds, display.workArea), true)
+    }
     if (state?.wasMaximized) window.maximize()
     if (state?.wasFullScreen) window.setFullScreen(true)
     return false

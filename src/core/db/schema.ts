@@ -524,6 +524,27 @@ export const MIGRATIONS: readonly Migration[] = [
         );
       `)
     }
+  },
+  {
+    version: 18,
+    name: 'sharper artwork cache',
+    up: (db) => {
+      // Cached covers used to be capped at 512px. The full-window player can
+      // draw a cover at more than twice that on a high-DPI display, so the cap
+      // moved to 1280px. Keys are content hashes of the stored bytes, which
+      // means the old 512px files still look valid and would never be replaced
+      // on their own. Forgetting the recorded keys makes each cover extract
+      // again at the new cap the first time it is shown; extraction is already
+      // lazy, so this costs one parse per album the user looks at, not a
+      // library-wide rebuild. The old files are left on disk because nothing
+      // references them any more; deleting the artwork folder frees them.
+      //
+      // `''` ("this file has no cover") is cleared too: a file may have gained
+      // one since the verdict was written, and the migration is the right
+      // moment to ask again.
+      db.exec(`UPDATE tracks SET artwork_key = NULL`)
+      db.exec(`UPDATE online_tracks SET artwork_key = NULL`)
+    }
   }
 ]
 

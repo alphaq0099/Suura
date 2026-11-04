@@ -7,8 +7,17 @@ import type { TrackRepository } from '@core/library/track-repository'
 import type { Logger } from '@core/logging/logger'
 import type { AppPaths } from '@shared/types'
 
-/** Longest edge of a cached cover. Album art is displayed at 44-56px. */
-const MAX_ARTWORK_PX = 512
+/**
+ * Longest edge of a cached cover.
+ *
+ * Most covers are drawn at 44-220px, but the full-window player is different:
+ * its artwork is `min(50vh, 42vw, 480px)` times the size preset, which reaches
+ * 624 CSS px at the extra-large preset. On a 200%-scaled 4K display that is
+ * 1248 device pixels, so a 512px cache was visibly soft there. 1280 covers that
+ * worst case with a little headroom. The fit never enlarges a smaller source,
+ * so the cap only bounds what one file may cost, not what every file costs.
+ */
+const MAX_ARTWORK_PX = 1280
 
 /** Shape of a key this service will hand back to the protocol handler. */
 const ARTWORK_FILE = /^[0-9a-f]{40}\.(jpg|png|webp|gif|bmp)$/

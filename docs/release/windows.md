@@ -162,6 +162,45 @@ When publishing, confirm the pinned URLs still resolve to the same bytes: the
 digests are the whole provenance story. If an upstream release is withdrawn,
 bump the version and digest in `manifest.ts` rather than loosening the check.
 
+## Display and scaling
+
+Windows sizes windows in device-independent pixels, so scaling does not change
+the CSS viewport: a 4K panel at 200% reports roughly the same 1920x1080 CSS
+pixels as a 1080p panel at 100%. What changes is how many device pixels sit
+behind each CSS pixel. Layout and sharpness are therefore separate checks.
+
+**Layout.** The window opens at 1200x780 and cannot be narrowed below 940x580.
+Every view must fit at that minimum, including the `Extra large` text setting
+(`--text-scale: 1.3`), which multiplies every label and caption by 1.3. The
+responsive breakpoints (1120, 1150 and 900 px) fold card grids to one column and
+drop table columns; they are CSS pixels, so they behave identically at every
+scaling level. `npm run selftest` now repeats the fit checks for all six views
+and the full-window player at 940x580 with extra-large text.
+
+**Sharpness.** Cached covers are capped at 1280px on their longest edge. The
+largest cover the UI draws is the full-window player's artwork, up to 624 CSS px
+at the extra-large artwork preset; at 200% scaling that needs 1248 device
+pixels, which the cap covers. Smaller embedded covers are stored at their own
+size and never enlarged. The cache key is a content hash, so a cover cached at
+the old 512px cap would otherwise live forever: schema migration 18 clears the
+recorded keys, and the first view of each album re-extracts it at the new cap.
+Old files stay in `%APPDATA%\Suura\cache\artwork` until that folder is cleaned
+up by hand; deleting them is safe, since the keys point at the new files.
+YouTube thumbnails go through the same cap; imported playlist covers keep the
+size they were cached at until the playlist is imported again, which is invisible
+at the list-card size they are drawn at.
+
+**Multiple monitors.** The window is created on the primary display and
+Chromium follows per-monitor DPI changes while it is dragged. The mini player
+centres on the display that owns the current window bounds, and when it closes
+it restores the saved normal rectangle through `clampToWorkArea`, so a monitor
+unplugged while the mini player was up cannot strand the window off-screen.
+Normal bounds are not persisted across restarts, so a relaunch after unplugging
+a display opens on the remaining one.
+
+Check this on real hardware; the automated pass cannot change the device pixel
+ratio or emulate unplugging a monitor.
+
 ## Verification checklist
 
 - Install as a standard user with no UAC prompt; launch from the shortcut.
@@ -189,6 +228,24 @@ bump the version and digest in `manifest.ts` rather than loosening the check.
   and that `%APPDATA%\Suura\engine` now holds `yt-dlp.exe` and `ffmpeg.exe`.
   Then play a YouTube link and save one track. Remove the folder and confirm
   the app reports the files as missing instead of crashing.
+- **Windows 10 and Windows 11**, each at 100%, 125%, 150% and 200%: resize the
+  window down to 940x580 and confirm no view gains a horizontal scrollbar;
+  switch to **Extra large** text and repeat Home, Library, Search, Settings,
+  Queue, YouTube and the full-window player.
+- **4K at 150% and 200%**: open an album's largest cover in the full-window
+  player at the **Extra large** artwork preset and confirm it is sharp. The
+  matching file in `%APPDATA%\Suura\cache\artwork` should be up to 1280px on its
+  long edge, or match a smaller embedded source; a 512px file means the
+  migration did not run or the cache was not regenerated.
+- **Two monitors with different scaling**: drag the window between them and
+  confirm text, dialogs and the full-window player stay legible and on-screen;
+  enter the mini player on the secondary display, close it, and confirm the
+  normal window returns to the same place. Unplug the secondary display while
+  the mini player is up, then close it: the window must appear on the remaining
+  display.
+- **High contrast**: with a Windows high-contrast theme, confirm the current
+  sidebar row, selected list rows and focused controls use the system
+  `Highlight` and `ButtonText` colours and remain readable.
 - Run the packaged self-test and require exit code 0:
 
   ```powershell

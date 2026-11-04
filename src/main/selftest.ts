@@ -2065,6 +2065,148 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       )
     }
 
+    // ---- 10b. layout at the largest text size -----------------------------
+    // Windows scaling does not change the CSS viewport: a 4K panel at 200%
+    // reports the same 1920x1080 CSS pixels as a 1080p panel at 100%, and only
+    // the device pixel ratio differs. What does change the layout is the
+    // extra-large text setting, which multiplies every label by 1.3. The
+    // combination that breaks such layouts is the minimum window with the
+    // largest text, so this pass repeats the fit checks there. Cover sharpness
+    // at 2x is the separate half of the same problem, handled by the artwork
+    // cache cap and written down in docs/release/windows.md.
+    window.setSize(940, 580)
+    await delay(250)
+    const previousTextSize = await evaluate<string>(
+      window,
+      `document.documentElement.dataset.textSize || 'medium'`
+    )
+    const xlargeScale = await evaluate<string>(
+      window,
+      `(async () => {
+         document.documentElement.dataset.textSize = 'xlarge'
+         await new Promise((resolve) => setTimeout(resolve, 250))
+         return getComputedStyle(document.documentElement).getPropertyValue('--text-scale').trim()
+       })()`
+    )
+    record(
+      xlargeScale === '1.3',
+      'the extra-large text setting scales the layout sweep by 1.3',
+      xlargeScale
+    )
+
+    const xlargeChecks: Array<{
+      label: 'Home' | 'Library' | 'Search' | 'Settings' | 'Queue' | 'YouTube'
+      fits: (probe: LayoutProbe) => boolean
+    }> = [
+      {
+        label: 'Home',
+        fits: (probe) =>
+          probe.hasHome &&
+          probe.homeStatsInside &&
+          probe.home === 0 &&
+          probe.main === 0 &&
+          probe.bar === 0 &&
+          probe.page === 0
+      },
+      {
+        label: 'Library',
+        fits: (probe) =>
+          probe.hasTable && probe.table === 0 && probe.main === 0 && probe.bar === 0 && probe.page === 0
+      },
+      {
+        label: 'Search',
+        fits: (probe) =>
+          probe.hasDiscover &&
+          probe.discoverShrink === '0' &&
+          probe.discover === 0 &&
+          probe.main === 0 &&
+          probe.bar === 0 &&
+          probe.page === 0
+      },
+      {
+        label: 'Settings',
+        fits: (probe) =>
+          probe.hasCards && probe.cards === 0 && probe.main === 0 && probe.bar === 0 && probe.page === 0
+      },
+      {
+        label: 'Queue',
+        fits: (probe) => probe.hasQueue && probe.main === 0 && probe.bar === 0 && probe.page === 0
+      },
+      {
+        label: 'YouTube',
+        fits: (probe) =>
+          probe.hasOnline && probe.online === 0 && probe.main === 0 && probe.bar === 0 && probe.page === 0
+      }
+    ]
+    for (const { label, fits } of xlargeChecks) {
+      await evaluate(
+        window,
+        `(async () => {
+           const button = [...document.querySelectorAll('.nav-item')].find((el) => (el.textContent || '').trim().startsWith(${JSON.stringify(label)}))
+           if (button) button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+           await new Promise((resolve) => setTimeout(resolve, 300))
+           return Boolean(button)
+         })()`
+      )
+      const probe = await evaluate<LayoutProbe>(window, LAYOUT_PROBE)
+      record(fits(probe), `${label} fits at 940x580 with extra-large text`, probe)
+    }
+
+    // The full-window player grows its captions with the text scale while its
+    // cover is sized from the viewport, so the cover must still land inside the
+    // window rather than under an edge.
+    const xlargePlayer = await evaluate<{
+      hasNowPlaying: boolean
+      nowPlaying: number
+      page: number
+      artWidth: number
+      artInside: boolean
+    }>(
+      window,
+      `(async () => {
+         const open = document.querySelector('.player-track')
+         if (open) open.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await new Promise((resolve) => setTimeout(resolve, 450))
+         const overflow = (selector) => {
+           const el = document.querySelector(selector)
+           return el ? Math.max(0, el.scrollWidth - el.clientWidth) : 0
+         }
+         const art = document.querySelector('.np-art')
+         const box = art ? art.getBoundingClientRect() : null
+         return {
+           hasNowPlaying: Boolean(document.querySelector('.now-playing')),
+           nowPlaying: overflow('.now-playing'),
+           page: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
+           artWidth: box ? Math.round(box.width) : -1,
+           artInside: Boolean(
+             box &&
+               box.left >= -0.5 &&
+               box.top >= -0.5 &&
+               box.right <= window.innerWidth + 0.5 &&
+               box.bottom <= window.innerHeight + 0.5
+           )
+         }
+       })()`
+    )
+    record(
+      xlargePlayer.hasNowPlaying &&
+        xlargePlayer.nowPlaying === 0 &&
+        xlargePlayer.page === 0 &&
+        xlargePlayer.artInside,
+      'the full-window player and its cover fit at 940x580 with extra-large text',
+      xlargePlayer
+    )
+    await evaluate(
+      window,
+      `(async () => {
+         const close = document.querySelector('.np-close')
+         if (close) close.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await new Promise((resolve) => setTimeout(resolve, 450))
+         document.documentElement.dataset.textSize = ${JSON.stringify(previousTextSize)}
+         return true
+       })()`
+    )
+
     // ---- 11. appearance: theme, accent, density, surface, motion --------
     // These are applied as data attributes on <html>, so the checks have to go
     // through the real controls and then read the computed result. Reading the

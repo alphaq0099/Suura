@@ -1111,7 +1111,10 @@ Everything below is release work, not product work; M1–M7, M12 and M13 (throug
    explicit consent screen and a privacy note; nothing is uploaded today.
 5. **Windows compatibility pass**: Windows 10/11 at 100–200% scaling, multi-monitor and HiDPI. The accessibility side is
    done: landmarks, `aria-current`, tab-key navigation, field labels, slider value text, modal focus trapping and
-   restoration, measured contrast, and forced-colors fallbacks, all covered by the self-test.
+   restoration, measured contrast, and forced-colors fallbacks, all covered by the self-test. The display side has its
+   code and a hardware checklist in [`docs/release/windows.md`](./release/windows.md): 1280px artwork cache with a
+   regenerating migration, an extra-large-text layout sweep at the minimum window, and off-screen clamp on the mini
+   player. What remains is running that checklist on real Windows 10/11 hardware.
 6. **Extend the performance gate**: `npm run perf` already runs in CI and passed there, enforcing the 10 000-file scan,
    rescan, paging, search, database size and main-process memory budgets. Cold start, first audio and memory under
    playback stay manual.

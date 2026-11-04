@@ -198,6 +198,7 @@ import { ResolverRegistry } from '@engine/resolver'
 import { YouTubeResolver } from '@engine/youtube-resolver'
 import { StreamCache } from '../src/main/stream-cache'
 import { PLAYLIST_INDEX_MAX, PLAYLIST_INDEX_MIN, clampPlaylistIndexWidth } from '@shared/playlists'
+import { clampToWorkArea } from '@shared/window-bounds'
 import { parseMediaUrl } from '@shared/media-url'
 import { buildStreamUrl, parseStreamUrl } from '@shared/stream-url'
 import {
@@ -1656,6 +1657,33 @@ async function main(): Promise<void> {
     checkEqual('the playlist index width survives a reload', reread.get().playlists.indexWidth, 321)
     checkEqual('a width below the minimum is clamped', clampPlaylistIndexWidth(10), PLAYLIST_INDEX_MIN)
     checkEqual('a width above the maximum is clamped', clampPlaylistIndexWidth(9999), PLAYLIST_INDEX_MAX)
+
+    // --- window bounds when a monitor is gone ------------------------------
+    // The mini player remembers the normal window rectangle. If the monitor
+    // that held it was unplugged, restoring the rectangle verbatim would put
+    // the window off-screen, where it cannot be grabbed or moved back.
+    const workArea = { x: 0, y: 0, width: 1920, height: 1040 }
+    const inPlace = clampToWorkArea({ x: 100, y: 80, width: 1200, height: 780 }, workArea)
+    check(
+      'a window already inside a work area keeps its bounds',
+      inPlace.x === 100 && inPlace.y === 80 && inPlace.width === 1200 && inPlace.height === 780,
+      JSON.stringify(inPlace)
+    )
+    const pulled = clampToWorkArea({ x: 2500, y: 900, width: 1200, height: 780 }, workArea)
+    check(
+      'a window remembered off-screen is pulled back into the work area',
+      pulled.x >= 0 &&
+        pulled.y >= 0 &&
+        pulled.x + pulled.width <= workArea.width &&
+        pulled.y + pulled.height <= workArea.height,
+      JSON.stringify(pulled)
+    )
+    const oversized = clampToWorkArea({ x: -50, y: -50, width: 2500, height: 1400 }, workArea)
+    check(
+      'a window larger than the work area shrinks to fit it',
+      oversized.x === 0 && oversized.y === 0 && oversized.width === 1920 && oversized.height === 1040,
+      JSON.stringify(oversized)
+    )
 
     // Import limits are settings, not constants: an album may be worth 200 rows
     // and a radio mix is a snapshot whose length the user picks.
