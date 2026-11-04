@@ -15,6 +15,7 @@ import { formatCount, formatDuration } from '@shared/format'
 import type { QueueTrack } from '@shared/queue'
 import type { UseDownloadsResult } from '../hooks/useDownloads'
 import { useArtwork } from '../hooks/useArtwork'
+import { useDialogFocus } from '../hooks/useDialogFocus'
 import { useWheelVolume } from '../hooks/useWheelVolume'
 import { ArtworkImage } from './ArtworkImage'
 import { LyricsPanel } from './LyricsPanel'
@@ -152,6 +153,7 @@ export function NowPlayingView(props: NowPlayingViewProps) {
 
   const artworkKey = useArtwork(current)
   const containerRef = useRef<HTMLDivElement | null>(null)
+  useDialogFocus(containerRef)
   const currentRowRef = useRef<HTMLButtonElement | null>(null)
   const queueListRef = useRef<HTMLOListElement | null>(null)
   const [queueOpen, setQueueOpen] = useState(false)
@@ -594,6 +596,7 @@ export function NowPlayingView(props: NowPlayingViewProps) {
                   value={volume}
                   onChange={(event) => onVolume(Number(event.target.value))}
                   aria-label="Volume level"
+                  aria-valuetext={`${Math.round(volume * 100)}%`}
                   // Published so the track can paint its filled portion without
                   // React re-rendering on every pointer move.
                   style={{ '--volume-progress': `${volume * 100}%` } as CSSProperties}

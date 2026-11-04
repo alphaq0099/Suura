@@ -286,6 +286,7 @@ export function PlayerBar(props: PlayerBarProps) {
               value={volume}
               onChange={(event) => onVolume(Number(event.target.value))}
               aria-label="Volume level"
+              aria-valuetext={`${Math.round(volume * 100)}%`}
               // Published so the fill can paint without a re-render per pointer move.
               style={{ '--volume-progress': `${volume * 100}%` } as CSSProperties}
             />

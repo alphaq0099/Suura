@@ -53,7 +53,7 @@ export function Sidebar({
   const totalTracks = stats ? stats.tracks + onlineCount : null
 
   return (
-    <nav className="sidebar" data-icon-set={iconSet}>
+    <nav className="sidebar" aria-label="Main" data-icon-set={iconSet}>
       <div className="brand">
         {modern ? <BrandMarkIcon size={20} /> : <MusicIcon size={18} />}
         <span>Suura</span>
@@ -62,6 +62,7 @@ export function Sidebar({
       <button
         type="button"
         className={view === 'home' ? 'nav-item active' : 'nav-item'}
+        aria-current={view === 'home' ? 'page' : undefined}
         onClick={() => onSelect('home')}
         title="Recently added albums, artists and your whole collection"
       >
@@ -72,6 +73,7 @@ export function Sidebar({
       <button
         type="button"
         className={view === 'library' ? 'nav-item active' : 'nav-item'}
+        aria-current={view === 'library' ? 'page' : undefined}
         onClick={() => onSelect('library')}
       >
         {modern ? <LibraryIcon /> : <MusicIcon />}
@@ -82,6 +84,7 @@ export function Sidebar({
       <button
         type="button"
         className={view === 'online' ? 'nav-item active' : 'nav-item'}
+        aria-current={view === 'online' ? 'page' : undefined}
         onClick={() => onSelect('online')}
         title="Pasted links, saved downloads and the offline cache"
       >
@@ -93,6 +96,7 @@ export function Sidebar({
       <button
         type="button"
         className={view === 'search' ? 'nav-item active' : 'nav-item'}
+        aria-current={view === 'search' ? 'page' : undefined}
         onClick={() => onSelect('search')}
         title="Search your library and YouTube together"
       >
@@ -103,6 +107,7 @@ export function Sidebar({
       <button
         type="button"
         className={view === 'playlists' ? 'nav-item active' : 'nav-item'}
+        aria-current={view === 'playlists' ? 'page' : undefined}
         onClick={() => onSelect('playlists')}
       >
         {modern ? <ListMusicIcon /> : <PlaylistIcon />}
@@ -113,6 +118,7 @@ export function Sidebar({
       <button
         type="button"
         className={view === 'queue' ? 'nav-item active' : 'nav-item'}
+        aria-current={view === 'queue' ? 'page' : undefined}
         onClick={() => onSelect('queue')}
       >
         {modern ? <QueueModernIcon /> : <QueueIcon />}
@@ -123,6 +129,7 @@ export function Sidebar({
       <button
         type="button"
         className={view === 'settings' ? 'nav-item active' : 'nav-item'}
+        aria-current={view === 'settings' ? 'page' : undefined}
         onClick={() => onSelect('settings')}
       >
         {modern ? <SlidersIcon /> : <CogIcon />}

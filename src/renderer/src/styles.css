@@ -28,7 +28,7 @@
   --text: #e8eaf2;
   --text-rgb: 232 234 242;
   --text-dim: #9aa1b8;
-  --text-faint: #7f87a7;
+  --text-faint: #858dab;
 
   --accent: #6c8cff;
   --accent-rgb: 108 140 255;
@@ -145,7 +145,7 @@
   --text: #2b2620;
   --text-rgb: 43 38 32;
   --text-dim: #625a4e;
-  --text-faint: #716657;
+  --text-faint: #6d6254;
 
   --accent: #3b5ccc;
   --accent-rgb: 59 92 204;
@@ -1866,6 +1866,13 @@ input[type='radio'] {
   overflow-y: auto;
   overflow-x: hidden;
   outline-offset: -2px;
+}
+
+/* The grid itself takes focus, so it needs to say so even though the active
+   row also carries the accent bar. Without this, tabbing into an empty list
+   left no visible focus anywhere. */
+.list-scroll:focus-visible {
+  outline: 2px solid var(--accent);
 }
 
 .list-rows {
@@ -8795,4 +8802,39 @@ button.danger-quiet:disabled {
 .tag-batch-changes.quiet {
   color: var(--text-faint);
   font-style: italic;
+}
+
+/* ---------------------------------------------------------------------------
+   Windows high-contrast mode
+   --------------------------------------------------------------------------- */
+
+/* Forced colours replace every custom background, so the accent wash can no
+   longer say "current" or "selected". These borders carry the same information
+   with the user's own system colours. */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 2px solid Highlight;
+  }
+
+  .nav-item.active,
+  .downloads-tab.active,
+  .settings-tab.active,
+  .filter-chip[aria-pressed='true'] {
+    border: 1px solid Highlight;
+  }
+
+  .track-row.active,
+  .track-row.current,
+  .track-row.selected,
+  .online-item.current,
+  .online-item.selected,
+  .discover-item.current,
+  .discover-item.selected {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
+  }
+
+  .info-hint-trigger {
+    border: 1px solid ButtonText;
+  }
 }

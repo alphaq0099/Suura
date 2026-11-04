@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Track, TrackLyrics } from '@shared/types'
 import type { LyricLine } from '@shared/lyrics'
 import { buildArtworkUrl } from '@shared/artwork-url'
+import { useDialogFocus } from '../hooks/useDialogFocus'
 import { CloseIcon } from './Icons'
 import { LyricsBody } from './LyricsLines'
 
@@ -48,6 +49,7 @@ export function LyricsStage(props: LyricsStageProps) {
   const { track, artworkKey, loading, error, lyrics, lines, onSeek, onClose } = props
   const { positionMs, offsetMs, durationMs, readPositionMs } = props
   const rootRef = useRef<HTMLDivElement | null>(null)
+  useDialogFocus(rootRef)
   const closeTimer = useRef<number | null>(null)
   const [closing, setClosing] = useState(false)
 

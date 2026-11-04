@@ -161,6 +161,7 @@ export function AddToPlaylistMenu(props: AddToPlaylistMenuProps) {
               value={name}
               autoFocus
               placeholder="New playlist name"
+              aria-label="New playlist name"
               maxLength={120}
               onChange={(event) => setName(event.target.value)}
               onKeyDown={(event) => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import type { DownloadProgress, OnlinePlaylist, OnlinePlaylistDetail, OnlineTrack, Track } from '@shared/types'
 import { formatCount, formatDuration } from '@shared/format'
 import { YOUTUBE_QUEUE_SOURCE, tagQueueTracks } from '@shared/queue'
@@ -31,6 +31,9 @@ import {
 
 /** The three surfaces YouTube owns: link history, saved files, offline cache. */
 export type OnlineTab = 'links' | DownloadsTab
+
+/** Tab order for the arrow keys; kept next to the type so the two cannot drift. */
+const ONLINE_TABS: readonly OnlineTab[] = ['links', 'saved', 'cache']
 
 export interface OnlineViewProps {
   entries: OnlineTrack[]
@@ -152,11 +155,31 @@ export function OnlineView(props: OnlineViewProps) {
   const [fieldMenu, setFieldMenu] = useState<{ x: number; y: number } | null>(null)
 
   const inputRef = useRef<HTMLInputElement | null>(null)
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
   const playingCardRef = useRef<HTMLDivElement | null>(null)
   const selectionAnchorRef = useRef<number | null>(null)
   const focusIndexRef = useRef<number | null>(null)
   // Bumped per submit so an answer that arrives after a newer paste is ignored.
   const submitTokenRef = useRef(0)
+
+  // The three section tabs are one stop in the Tab order, as expected for a
+  // tablist. Arrow keys move between them and change the panel in one press,
+  // so a keyboard user does not have to Tab through Links and Saved to reach
+  // Cache.
+  const moveTab = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number): void => {
+    const last = ONLINE_TABS.length - 1
+    let next: number | null = null
+    if (event.key === 'ArrowRight') next = index === last ? 0 : index + 1
+    else if (event.key === 'ArrowLeft') next = index === 0 ? last : index - 1
+    else if (event.key === 'Home') next = 0
+    else if (event.key === 'End') next = last
+    if (next === null) return
+    event.preventDefault()
+    const target = ONLINE_TABS[next]
+    if (!target) return
+    tabRefs.current[next]?.focus()
+    onTabChange(target)
+  }
 
   // The list can be replaced by a refresh at any moment; the play queue is built
   // from whatever is on screen when the button is pressed, so a ref keeps the
@@ -538,7 +561,7 @@ export function OnlineView(props: OnlineViewProps) {
   const busyLabel = pending?.kind === 'list' ? 'Importing…' : 'Resolving…'
 
   return (
-    <section className="main-view online-view">
+    <main className="main-view online-view">
       <header className="view-header online-header">
         <div className="view-heading">
           <h1>YouTube</h1>
@@ -567,27 +590,42 @@ export function OnlineView(props: OnlineViewProps) {
             <button
               type="button"
               role="tab"
+              ref={(node) => {
+                tabRefs.current[0] = node
+              }}
               aria-selected={tab === 'links'}
+              tabIndex={tab === 'links' ? 0 : -1}
               className={tab === 'links' ? 'downloads-tab active' : 'downloads-tab'}
               onClick={() => onTabChange('links')}
+              onKeyDown={(event) => moveTab(event, 0)}
             >
               <LinkIcon size={15} /> Links
             </button>
             <button
               type="button"
               role="tab"
+              ref={(node) => {
+                tabRefs.current[1] = node
+              }}
               aria-selected={tab === 'saved'}
+              tabIndex={tab === 'saved' ? 0 : -1}
               className={tab === 'saved' ? 'downloads-tab active' : 'downloads-tab'}
               onClick={() => onTabChange('saved')}
+              onKeyDown={(event) => moveTab(event, 1)}
             >
               <DownloadIcon size={15} /> Saved
             </button>
             <button
               type="button"
               role="tab"
+              ref={(node) => {
+                tabRefs.current[2] = node
+              }}
               aria-selected={tab === 'cache'}
+              tabIndex={tab === 'cache' ? 0 : -1}
               className={tab === 'cache' ? 'downloads-tab active' : 'downloads-tab'}
               onClick={() => onTabChange('cache')}
+              onKeyDown={(event) => moveTab(event, 2)}
             >
               <DiscIcon size={15} /> Cache
             </button>
@@ -1078,7 +1116,7 @@ export function OnlineView(props: OnlineViewProps) {
           onError={onError}
         />
       )}
-    </section>
+    </main>
   )
 }
 

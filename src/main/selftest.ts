@@ -2825,6 +2825,143 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       'settings: About offers a local log-bundle save',
       `button ${settingsSafety.saveDiagnosticsButton ? 'enabled' : 'missing'}`
     )
+    // ---- 11a. keyboard and screen-reader surface ------------------------
+    // The app is usable without a mouse: one main landmark, the current page
+    // marked, the YouTube tabs on arrow keys, and a dialog that keeps Tab inside
+    // itself and hands focus back to the row that opened it.
+    const accessibility = await evaluate<{
+      navLabel: string
+      currentPage: boolean
+      mainCount: number
+      tabArrow: boolean
+      tabHome: boolean
+      rovingTabIndex: boolean
+      seekText: string
+      volumeText: string
+      dialogOpened: boolean
+      dialogFocusInside: boolean
+      tabWrapped: boolean
+      dialogClosed: boolean
+      focusReturned: boolean
+    }>(
+      window,
+      `(async () => {
+         const out = {
+           navLabel: '', currentPage: false, mainCount: 0, tabArrow: false, tabHome: false,
+           rovingTabIndex: false, seekText: '', volumeText: '', dialogOpened: false,
+           dialogFocusInside: false, tabWrapped: false, dialogClosed: false, focusReturned: false
+         }
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const press = (element) => { if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
+         const key = (element, key, extra = {}) => {
+           if (element) element.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...extra }))
+         }
+         const nav = (label) => {
+           const button = [...document.querySelectorAll('.nav-item')].find((el) => (el.textContent || '').trim().startsWith(label))
+           if (button) press(button)
+         }
+
+         out.navLabel = document.querySelector('nav.sidebar')?.getAttribute('aria-label') || ''
+         out.currentPage =
+           document.querySelector('nav.sidebar .nav-item[aria-current="page"]')?.textContent?.trim().startsWith('Settings') === true
+         out.mainCount = [...document.querySelectorAll('main')].filter(
+           (el) => el.getClientRects().length > 0
+         ).length
+
+         nav('YouTube')
+         await sleep(500)
+         const tab = (label) =>
+           [...document.querySelectorAll('.downloads-tab')].find((el) => (el.textContent || '').trim() === label)
+         const links = tab('Links')
+         links?.focus()
+         key(links, 'ArrowRight')
+         await sleep(350)
+         const saved = tab('Saved')
+         out.tabArrow =
+           saved?.getAttribute('aria-selected') === 'true' &&
+           document.activeElement === saved
+         key(saved, 'End')
+         await sleep(300)
+         const cache = tab('Cache')
+         key(cache, 'Home')
+         await sleep(300)
+         out.tabHome =
+           tab('Links')?.getAttribute('aria-selected') === 'true' &&
+           document.activeElement === tab('Links')
+         out.rovingTabIndex =
+           tab('Links')?.tabIndex === 0 &&
+           tab('Saved')?.tabIndex === -1 &&
+           tab('Cache')?.tabIndex === -1
+
+         out.seekText = document.querySelector('.seek-bar input')?.getAttribute('aria-valuetext') || ''
+         out.volumeText =
+           document.querySelector('input[aria-label="Volume level"]')?.getAttribute('aria-valuetext') || ''
+
+         nav('Library')
+         await sleep(600)
+         // The library row has no Details button of its own: that action lives
+         // in the row menu. Open the menu from the row, then take Details from
+         // it, which is also the path whose focus restore matters most.
+         const opener = [...document.querySelectorAll('.track-row button')].find((el) =>
+           (el.getAttribute('aria-label') || '').startsWith('More actions for ')
+         )
+         opener?.focus()
+         press(opener)
+         await sleep(400)
+         const detailsItem = [...document.querySelectorAll('.context-item')].find(
+           (el) => (el.textContent || '').trim() === 'Details…'
+         )
+         press(detailsItem)
+         await sleep(600)
+         const dialog = document.querySelector('.details-dialog')
+         out.dialogOpened = Boolean(dialog)
+         out.dialogFocusInside = Boolean(dialog && dialog.contains(document.activeElement))
+         if (dialog) {
+           const items = [...dialog.querySelectorAll(
+             'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+           )].filter((el) => el.getClientRects().length > 0)
+           const first = items[0]
+           const last = items[items.length - 1]
+           last?.focus()
+           key(last, 'Tab')
+           out.tabWrapped = document.activeElement === first
+           key(document.activeElement, 'Escape')
+           await sleep(500)
+         }
+         out.dialogClosed = !document.querySelector('.details-dialog')
+         out.focusReturned = document.activeElement === opener && Boolean(opener?.isConnected)
+         return out
+       })()`
+    )
+    record(
+      accessibility.navLabel === 'Main' &&
+        accessibility.currentPage &&
+        accessibility.mainCount === 1,
+      'accessibility: the shell has one main landmark and marks the current page',
+      accessibility
+    )
+    record(
+      accessibility.tabArrow &&
+        accessibility.tabHome &&
+        accessibility.rovingTabIndex,
+      'accessibility: YouTube tabs move with arrow, Home and End keys',
+      accessibility
+    )
+    record(
+      / of /.test(accessibility.seekText) && /%$/.test(accessibility.volumeText),
+      'accessibility: seek and volume sliders announce time and percent',
+      accessibility
+    )
+    record(
+      accessibility.dialogOpened &&
+        accessibility.dialogFocusInside &&
+        accessibility.tabWrapped &&
+        accessibility.dialogClosed &&
+        accessibility.focusReturned,
+      'accessibility: a dialog traps Tab, closes on Escape and restores focus',
+      accessibility
+    )
+
     const diagnosticsTarget = join(app.getPath('userData'), 'diagnostics-selftest.txt')
     const originalShowSaveDialog = dialog.showSaveDialog
     let diagnosticsSaved = false

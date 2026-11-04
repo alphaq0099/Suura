@@ -151,6 +151,7 @@ export function EqualizerPanel({ audio, open, onUpdate, onClose }: EqualizerPane
             value={equalizer.preampDb}
             disabled={!equalizer.enabled}
             aria-label="Preamp"
+            aria-valuetext={formatDb(equalizer.preampDb)}
             onChange={(event) => updateEqualizer({ preampDb: Number(event.target.value) })}
           />
           <span className="eq-readout">{formatDb(equalizer.preampDb)}</span>
@@ -173,6 +174,7 @@ export function EqualizerPanel({ audio, open, onUpdate, onClose }: EqualizerPane
                   value={gain}
                   disabled={!equalizer.enabled}
                   aria-label={`${formatFrequency(frequency)} gain`}
+                  aria-valuetext={formatBandDb(gain)}
                   onChange={(event) => setBand(index, Number(event.target.value))}
                 />
                 <span className="eq-readout">{formatBandDb(gain)}</span>

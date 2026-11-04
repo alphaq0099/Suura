@@ -690,7 +690,7 @@ export function SettingsView(props: SettingsViewProps) {
   }
 
   return (
-    <section className="main-view settings-view">
+    <main className="main-view settings-view">
       <header className="view-header">
         <div className="view-heading">
           <h1>Settings</h1>
@@ -2603,6 +2603,6 @@ export function SettingsView(props: SettingsViewProps) {
           </div>
         </section>
       </div>
-    </section>
+    </main>
   )
 }

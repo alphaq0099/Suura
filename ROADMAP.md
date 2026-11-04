@@ -569,13 +569,18 @@ packaging).
 - [x] The same budgets on a CI runner: `npm run perf` runs in its own job and passed there, so the scan, rescan, paging,
       search, database size and main-process memory gates now guard every push. Cold start, first audio and memory under
       playback stay manual.
-- [ ] Accessibility pass: keyboard-only navigation, screen-reader labels, contrast
+- [x] Accessibility and keyboard pass: one `<main>` landmark per active view, `aria-current` on the sidebar, YouTube
+      tabs on arrow/Home/End keys with a roving tab index, labels for the unlabelled fields, meaningful slider value
+      text, a modal Tab trap that restores focus to its opener, faint text measured above 4.5:1 on every surface it
+      uses, and `forced-colors` fallbacks for current and selected states. The self-test checks the landmarks, tab
+      keys, slider text and dialog focus.
 
 **Exit:** a stranger can install, use and uninstall it without instructions.
 **Status:** the installer, manual diagnostics export, opt-in local crash reports, renderer sandboxing, headless perf
-budgets, daily yt-dlp update, the fetch-on-first-use sidecar installer, the CI workflow, the app update channel and
-yt-dlp rollback are complete. Compatibility and accessibility remain; signing is documented but not configured. The
-update feed itself has no host yet: the feature stays dormant until a URL is entered in Settings → About.
+budgets, daily yt-dlp update, the fetch-on-first-use sidecar installer, the CI workflow, the app update channel,
+yt-dlp rollback and the accessibility pass are complete. The Windows 10/11 HiDPI, multi-monitor and 4K check remains;
+signing is documented but not configured. The update feed itself has no host yet: the feature stays dormant until a URL
+is entered in Settings → About.
 
 ### M9 — Android Port  *(~4–6 weeks)*
 **Goal:** reuse the core, replace the platform-specific layers.
@@ -737,7 +742,8 @@ complete (data layer plus the manager inside YouTube's Saved/Cache tabs). M13 is
 after M8 and before M9 so the Android port inherits the metadata core. The visual revamp landed as Home plus the album
 grid, and **Windows release engineering (M8) is in progress**: the per-user NSIS installer, manual diagnostics export,
 opt-in local crash reports, renderer sandbox, fetch-on-first-use sidecar installer, CI workflow, app update channel and
-yt-dlp rollback are built and verified; the compatibility/accessibility pass is still open, with signing last.
+yt-dlp rollback are built and verified, as is the accessibility pass; the Windows 10/11 HiDPI, multi-monitor and 4K check
+is still open, with signing last.
 
 ---
 
@@ -843,10 +849,12 @@ slider (3–60 s) instead of a constant.
 sandbox, headless perf budgets, fetch-on-first-use sidecar installer, CI workflow, app update channel, yt-dlp rollback
 and opt-in local crash reports are in place, and the packaged app passes its self-test. Updates read `latest.yml`/`beta.yml`
 from a static HTTPS folder set in Settings → About and never install without a press; the previous yt-dlp is kept and
-restored when a new one breaks. The remaining work is the compatibility/accessibility pass, with signing last. A
-streaming UX redesign is independent of that sequence as long as it only changes the renderer; it must come before the
-sidecar work only if it changes what the engine must resolve, cache or download.
+restored when a new one breaks. The accessibility and keyboard pass is done; the remaining work is the Windows 10/11
+HiDPI, multi-monitor and 4K check, with signing last. A streaming UX redesign is independent of that sequence as long as
+it only changes the renderer; it must come before the sidecar work only if it changes what the engine must resolve,
+cache or download.
 
-**Next:** the compatibility/accessibility pass, with signing last; then M9. M13 is complete through Phase 6, and its
-Phase 7 (local AI transcription) stays deferred until asked for. M13's fingerprint fallback needs nothing more than the
-user's own AcoustID key: `fpcalc` arrives with the M8 engine download, and the text search keeps working without either.
+**Next:** the Windows 10/11 HiDPI, multi-monitor and 4K check, with signing last; then M9. M13 is complete through
+Phase 6, and its Phase 7 (local AI transcription) stays deferred until asked for. M13's fingerprint fallback needs
+nothing more than the user's own AcoustID key: `fpcalc` arrives with the M8 engine download, and the text search keeps
+working without either.

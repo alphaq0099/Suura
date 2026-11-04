@@ -606,7 +606,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
     onlineDetail.playlist.totalCount > onlineDetail.playlist.trackCount
 
   return (
-    <section className="main-view playlists-view">
+    <main className="main-view playlists-view">
       <header className="view-header">
         <div className="view-heading">
           <h1>Playlists</h1>
@@ -1269,6 +1269,6 @@ export function PlaylistsView(props: PlaylistsViewProps) {
           onClose={() => setDetailsTrack(null)}
         />
       ) : null}
-    </section>
+    </main>
   )
 }

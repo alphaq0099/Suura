@@ -9,7 +9,7 @@ installing and using the app, read the [README](../README.md) instead. The full 
 
 ---
 
-## Status: M1–M7 and M12 complete, including the visual revamp (Home dashboard, merged **All tracks**, album/artist detail, playlist hero). M8 Windows release engineering is in progress: the per-user installer, local diagnostics export, opt-in local crash reports, renderer sandbox, headless performance gate, fetch-on-first-use sidecar installer, CI workflow, app update channel and yt-dlp rollback are done; signing and the compatibility/accessibility pass remain. M13 Library Metadata & Lyrics is complete through Phase 6 — the tag write path and manual editor, lyrics reading, single-track auto-tag, the artwork picker, the lyrics finder, batch lyrics and tags, and the AcoustID fingerprint fallback — with Phase 7 (local AI transcription) deferred. The GitHub Actions workflow (`.github/workflows/ci.yml`) runs the build, smoke, self-test and perf gates on `windows-latest` and is green.
+## Status: M1–M7 and M12 complete, including the visual revamp (Home dashboard, merged **All tracks**, album/artist detail, playlist hero). M8 Windows release engineering is in progress: the per-user installer, local diagnostics export, opt-in local crash reports, renderer sandbox, headless performance gate, fetch-on-first-use sidecar installer, CI workflow, app update channel and yt-dlp rollback are done, along with the accessibility and keyboard pass; the Windows 10/11 HiDPI, multi-monitor and 4K check, and signing, remain. M13 Library Metadata & Lyrics is complete through Phase 6 — the tag write path and manual editor, lyrics reading, single-track auto-tag, the artwork picker, the lyrics finder, batch lyrics and tags, and the AcoustID fingerprint fallback — with Phase 7 (local AI transcription) deferred. The GitHub Actions workflow (`.github/workflows/ci.yml`) runs the build, smoke, self-test and perf gates on `windows-latest` and is green.
 
 Working today:
 
@@ -1109,8 +1109,9 @@ Everything below is release work, not product work; M1–M7, M12 and M13 (throug
    is the host and the publishing step.
 4. **Crash reporting is local and opt-in.** The remaining choice, if a hosted error service is ever wanted, is an
    explicit consent screen and a privacy note; nothing is uploaded today.
-5. **Compatibility and accessibility pass**: Windows 10/11 at 100–200% scaling, multi-monitor and HiDPI, plus
-   keyboard-only navigation, screen-reader labels and contrast.
+5. **Windows compatibility pass**: Windows 10/11 at 100–200% scaling, multi-monitor and HiDPI. The accessibility side is
+   done: landmarks, `aria-current`, tab-key navigation, field labels, slider value text, modal focus trapping and
+   restoration, measured contrast, and forced-colors fallbacks, all covered by the self-test.
 6. **Extend the performance gate**: `npm run perf` already runs in CI and passed there, enforcing the 10 000-file scan,
    rescan, paging, search, database size and main-process memory budgets. Cold start, first audio and memory under
    playback stay manual.

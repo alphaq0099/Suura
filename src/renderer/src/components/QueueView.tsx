@@ -181,7 +181,7 @@ export function QueueView(props: QueueViewProps) {
   const totalMs = queue.reduce((sum, track) => sum + (track.durationMs ?? 0), 0)
 
   return (
-    <section className="main-view">
+    <main className="main-view">
       <header className="view-header">
         <div className="view-heading">
           <h1>Queue</h1>
@@ -468,6 +468,6 @@ export function QueueView(props: QueueViewProps) {
           onClose={() => setRowMenu(null)}
         />
       ) : null}
-    </section>
+    </main>
   )
 }

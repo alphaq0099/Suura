@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import type { LyricsBatchItem, LyricsBatchMatch } from '@shared/types'
 import { formatDuration } from '@shared/format'
 import { useLyricsBatch } from '../hooks/useLyricsBatch'
+import { useDialogFocus } from '../hooks/useDialogFocus'
 import { CloseIcon, LyricsIcon, SpinnerIcon } from './Icons'
 
 const CONFIDENCE_LABEL: Record<LyricsBatchMatch['confidence'], string> = {
@@ -38,6 +39,7 @@ function summaryLine(item: LyricsBatchItem): string {
 export function LyricsBatchDialog(props: LyricsBatchDialogProps) {
   const { trackIds, onClose } = props
   const dialogRef = useRef<HTMLDivElement | null>(null)
+  useDialogFocus(dialogRef)
   const batch = useLyricsBatch(trackIds)
   const { phase, progress, snapshot, selected, result, undoResult } = batch
 

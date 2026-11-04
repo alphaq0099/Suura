@@ -4,6 +4,7 @@ import type { Track, TrackLyrics, TrackTagFields } from '@shared/types'
 import { lyricsTargetOf } from '@shared/lyrics'
 import { TAG_POSITION_MAX, TAG_YEAR_MAX, TAG_YEAR_MIN } from '@shared/tags'
 import { api, messageOf } from '../api'
+import { useDialogFocus } from '../hooks/useDialogFocus'
 import { ArtworkImage } from './ArtworkImage'
 import { ArtworkPicker } from './ArtworkPicker'
 import { AutoTagPanel, type AutoTagValues } from './AutoTagPanel'
@@ -175,6 +176,7 @@ export function TagEditor(props: TagEditorProps) {
   const [artworkOpen, setArtworkOpen] = useState(false)
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const titleRef = useRef<HTMLInputElement | null>(null)
+  useDialogFocus(dialogRef)
   // Once the user has typed in the box, a slow read must not overwrite it.
   const lyricsTouchedRef = useRef(false)
 

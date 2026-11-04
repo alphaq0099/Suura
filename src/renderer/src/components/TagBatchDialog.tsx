@@ -3,6 +3,7 @@ import type { TagBatchItem, TagBatchMatch, TagBatchMode } from '@shared/types'
 import { formatDuration } from '@shared/format'
 import { describeTagBatchChange, tagBatchActionable } from '@shared/tag-batch'
 import { useTagBatch } from '../hooks/useTagBatch'
+import { useDialogFocus } from '../hooks/useDialogFocus'
 import { CloseIcon, SpinnerIcon, TagIcon } from './Icons'
 
 const CONFIDENCE_LABEL: Record<TagBatchMatch['confidence'], string> = {
@@ -57,6 +58,7 @@ function summaryLine(item: TagBatchItem): string {
 export function TagBatchDialog(props: TagBatchDialogProps) {
   const { trackIds, onClose } = props
   const dialogRef = useRef<HTMLDivElement | null>(null)
+  useDialogFocus(dialogRef)
   const batch = useTagBatch(trackIds)
   const { phase, progress, snapshot, selected, mode, result, undoResult } = batch
 

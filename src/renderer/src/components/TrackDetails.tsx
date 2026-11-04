@@ -10,6 +10,7 @@ import {
   formatTimestamp
 } from '@shared/format'
 import { ArtworkImage } from './ArtworkImage'
+import { useDialogFocus } from '../hooks/useDialogFocus'
 import { CloseIcon, FolderIcon, PencilIcon } from './Icons'
 import { TagEditor } from './TagEditor'
 
@@ -53,6 +54,7 @@ function youtubeIdOf(track: Track): string | null {
 export function TrackDetails(props: TrackDetailsProps) {
   const { track, onReveal, initialEditing = false, onClose } = props
   const dialogRef = useRef<HTMLDivElement | null>(null)
+  useDialogFocus(dialogRef)
   // A tag edit replaces the row, and the sheet has to show the new one without
   // waiting for the parent's list to refresh.
   const [current, setCurrent] = useState(track)

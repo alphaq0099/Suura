@@ -162,6 +162,7 @@ export function MiniPlayer(props: MiniPlayerProps) {
               value={volume}
               onChange={(event) => onVolume(Number(event.target.value))}
               aria-label="Volume"
+              aria-valuetext={`${Math.round(volume * 100)}%`}
             />
           </span>
           {hasQueue ? (

@@ -1069,7 +1069,7 @@ export function SearchView(props: SearchViewProps) {
   }
 
   return (
-    <section className="main-view discover-view" hidden={!active}>
+    <main className="main-view discover-view" hidden={!active}>
       <header className="view-header">
         <div className="view-heading">
           <h1>{channel ? channel.name : 'Search'}</h1>
@@ -1441,7 +1441,7 @@ export function SearchView(props: SearchViewProps) {
       {detailsTrack ? (
         <TrackDetails track={detailsTrack} onClose={() => setDetailsTrack(null)} />
       ) : null}
-    </section>
+    </main>
   )
 }
 

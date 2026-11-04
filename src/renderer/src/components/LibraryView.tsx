@@ -293,7 +293,7 @@ export function LibraryView(props: LibraryViewProps) {
           : 'Your folders are configured but no tracks have been indexed. Run a scan to pick them up.'
 
   return (
-    <section className="main-view">
+    <main className="main-view">
       <header className="view-header">
         <div className="view-heading">
           <h1>Library</h1>
@@ -707,6 +707,6 @@ export function LibraryView(props: LibraryViewProps) {
       {tagBatchIds ? (
         <TagBatchDialog trackIds={tagBatchIds} onClose={() => setTagBatchIds(null)} />
       ) : null}
-    </section>
+    </main>
   )
 }

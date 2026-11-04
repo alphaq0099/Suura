@@ -51,6 +51,7 @@ export function SeekBar({ positionMs, durationMs, fallbackMs = 0, disabled, onSe
         onKeyUp={commit}
         onBlur={commit}
         aria-label="Seek"
+        aria-valuetext={`${formatDuration(clampedMs)} of ${formatDuration(maxMs)}`}
       />
       <span className="time">{formatDuration(maxMs)}</span>
     </div>

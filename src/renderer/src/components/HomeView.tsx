@@ -1341,7 +1341,7 @@ export function HomeView(props: HomeViewProps) {
     const detailListKey = openArtist ? `artist:${openArtist.artist}` : albumKeyOf(openAlbum!)
 
     return (
-      <section className="main-view home-view" ref={scrollRef}>
+      <main className="main-view home-view" ref={scrollRef}>
         <div className="album-detail">
           <button type="button" className="home-back" onClick={closeAlbumDetail}>
             <ArrowLeftIcon />
@@ -1518,12 +1518,12 @@ export function HomeView(props: HomeViewProps) {
             }}
           />
         ) : null}
-      </section>
+      </main>
     )
   }
 
   return (
-    <section className="main-view home-view" ref={scrollRef}>
+    <main className="main-view home-view" ref={scrollRef}>
       <header className="view-header home-header">
         <div className="view-heading">
           <h1>Home</h1>
@@ -2080,6 +2080,6 @@ export function HomeView(props: HomeViewProps) {
           }}
         />
       ) : null}
-    </section>
+    </main>
   )
 }
