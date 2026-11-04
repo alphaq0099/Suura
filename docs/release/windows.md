@@ -123,9 +123,13 @@ restore still works when the new binary cannot start.
 **Settings → About → Save diagnostics** writes a plain-text bundle to a
 user-chosen file. It contains the app and runtime versions, platform, app paths,
 library-folder count, user agent, and the last 256 KB of
-`%APPDATA%\Suura\logs\suura.log`. It is local and user-initiated: no crash
-reporting service is configured and nothing is uploaded. Ask users to review the
-file before sharing it, because log lines can contain local library paths.
+`%APPDATA%\Suura\logs\suura.log`. It is local and user-initiated, and nothing is
+uploaded. **Settings → Misc → Crash reports** is a separate opt-in switch: it
+writes small JSON reports under `%APPDATA%\Suura\crashes`, which can be exported
+or cleared from the same card. No remote crash service is configured; the only
+way a crash report leaves the machine is if the user exports and shares it. Ask
+users to review either file before sharing it, because log lines and stack
+traces can contain local library paths.
 
 **Copy diagnostics** remains the shorter clipboard-only snapshot without log
 lines.

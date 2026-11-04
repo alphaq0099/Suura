@@ -5,6 +5,7 @@ import { DEFAULT_AUDIO_SETTINGS } from '@shared/audio'
 import type {
   AppPaths,
   AppSettings,
+  CrashReportsStatus,
   DeepPartial,
   EngineStatus,
   OnlinePlaylist,
@@ -109,6 +110,7 @@ export function App() {
   const equalizerOpenerRef = useRef<HTMLElement | null>(null)
   const [paths, setPaths] = useState<AppPaths | null>(null)
   const [runtimeInfo, setRuntimeInfo] = useState<RuntimeInfo | null>(null)
+  const [crashReports, setCrashReports] = useState<CrashReportsStatus | null>(null)
   const [engineStatus, setEngineStatus] = useState<EngineStatus | null>(null)
   const [engineLoading, setEngineLoading] = useState(false)
   const [sidecarProgress, setSidecarProgress] = useState<SidecarProgress | null>(null)
@@ -1032,6 +1034,26 @@ export function App() {
     }
   }, [runtimeInfo, engineStatus, paths, settings])
 
+  const refreshCrashReports = useCallback(async (): Promise<CrashReportsStatus> => {
+    const status = await api.getCrashReports()
+    setCrashReports(status)
+    return status
+  }, [])
+
+  // Clearing and exporting update the badge through the same refresh, so the
+  // card never shows a count that disagrees with the folder.
+  const clearCrashReports = useCallback(async (): Promise<number> => {
+    const removed = await api.clearCrashReports()
+    await refreshCrashReports()
+    return removed
+  }, [refreshCrashReports])
+
+  const exportCrashReports = useCallback(async (): Promise<string | null> => {
+    const file = await api.exportCrashReports()
+    await refreshCrashReports()
+    return file
+  }, [refreshCrashReports])
+
   // The data-care dialogs own their own error presentation. Letting the rejected
   // IPC promise reach Settings is what puts the message next to the buttons that
   // caused it, instead of in the global action banner.
@@ -1361,6 +1383,10 @@ export function App() {
           onOpenPath={(target) => void openPath(target)}
           onCopyDiagnostics={copyDiagnostics}
           onSaveDiagnostics={saveDiagnostics}
+          crashReports={crashReports}
+          onRefreshCrashReports={refreshCrashReports}
+          onClearCrashReports={clearCrashReports}
+          onExportCrashReports={exportCrashReports}
           onBackupData={backupData}
           onRestoreData={restoreData}
           onExportLibrary={exportLibrary}

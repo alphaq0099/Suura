@@ -11,6 +11,7 @@ import type {
   AllTracksQuery,
   AppSettings,
   ArtworkChoice,
+  CrashReportsStatus,
   DeepPartial,
   ListAlbumsQuery,
   ListTracksQuery,
@@ -57,6 +58,12 @@ const api: PlayerApi = {
 
   saveDiagnostics: (summary: string) =>
     ipcRenderer.invoke(IPC.diagnosticsSave, summary) as Promise<string | null>,
+
+  getCrashReports: () => ipcRenderer.invoke(IPC.crashReportsStatus) as Promise<CrashReportsStatus>,
+
+  clearCrashReports: () => ipcRenderer.invoke(IPC.crashReportsClear) as Promise<number>,
+
+  exportCrashReports: () => ipcRenderer.invoke(IPC.crashReportsExport) as Promise<string | null>,
 
   pickFolder: () => ipcRenderer.invoke(IPC.pickFolder) as Promise<string | null>,
 

@@ -558,7 +558,11 @@ packaging).
       uploaded.
 - [x] Renderer sandbox enabled. The preload imports only `electron` and shared constants; the self-test proves the
       bridge and `webUtils.getPathForFile` still work under `sandbox: true` in dev and packaged builds.
-- [ ] Opt-in crash reporting (no remote service is configured; diagnostics remain local/export-only)
+- [x] Opt-in local crash reporting: Settings → Misc has a **Crash reports** switch (off by default) that writes a small
+      JSON report under `<userData>/crashes` on a main-process exception, an unhandled rejection, a renderer-process crash
+      or a Chromium child-process crash. The card shows the count, newest time, folder and size, exports the reports as a
+      text bundle the user chooses, and clears them after confirmation. No remote service is configured and nothing is
+      uploaded; turning the switch off stops new files and leaves existing ones for inspection.
 - [ ] Windows 10/11 compatibility matrix, HiDPI, multi-monitor, 4K scaling
 - [x] Performance budgets enforced headlessly (`npm run perf`): 10,000-file scan, incremental rescan, first page,
       search, database size and main-process memory, with a non-zero exit and the missed metric named on a regression
@@ -568,10 +572,10 @@ packaging).
 - [ ] Accessibility pass: keyboard-only navigation, screen-reader labels, contrast
 
 **Exit:** a stranger can install, use and uninstall it without instructions.
-**Status:** the installer, manual diagnostics export, renderer sandboxing, headless perf budgets, daily yt-dlp update,
-the fetch-on-first-use sidecar installer, the CI workflow, the app update channel and yt-dlp rollback are complete.
-Crash reporting, compatibility and accessibility remain; signing is documented but not configured. The update feed
-itself has no host yet: the feature stays dormant until a URL is entered in Settings → About.
+**Status:** the installer, manual diagnostics export, opt-in local crash reports, renderer sandboxing, headless perf
+budgets, daily yt-dlp update, the fetch-on-first-use sidecar installer, the CI workflow, the app update channel and
+yt-dlp rollback are complete. Compatibility and accessibility remain; signing is documented but not configured. The
+update feed itself has no host yet: the feature stays dormant until a URL is entered in Settings → About.
 
 ### M9 — Android Port  *(~4–6 weeks)*
 **Goal:** reuse the core, replace the platform-specific layers.
@@ -732,8 +736,8 @@ and survives a kill between the temp write and the replace.
 complete (data layer plus the manager inside YouTube's Saved/Cache tabs). M13 is numbered next because it was added last; it is scheduled
 after M8 and before M9 so the Android port inherits the metadata core. The visual revamp landed as Home plus the album
 grid, and **Windows release engineering (M8) is in progress**: the per-user NSIS installer, manual diagnostics export,
-renderer sandbox, fetch-on-first-use sidecar installer, CI workflow, app update channel and yt-dlp rollback are built and
-verified; crash reporting and the compatibility/accessibility pass are still open, with signing last.
+opt-in local crash reports, renderer sandbox, fetch-on-first-use sidecar installer, CI workflow, app update channel and
+yt-dlp rollback are built and verified; the compatibility/accessibility pass is still open, with signing last.
 
 ---
 
@@ -836,14 +840,13 @@ and a YouTube row saves through the same download queue as YouTube Links. A shel
 place with a removable chip. The hero art is at full strength in both themes, and its crossfade pace is a Settings
 slider (3–60 s) instead of a constant.
 **Windows release engineering (M8) is in progress**: the per-user NSIS installer, icon, uninstall data prompt, renderer
-sandbox, headless perf budgets, fetch-on-first-use sidecar installer, CI workflow, app update channel and yt-dlp
-rollback are in place, and the packaged app passes its self-test. Updates read `latest.yml`/`beta.yml` from a static
-HTTPS folder set in Settings → About and never install without a press; the previous yt-dlp is kept and restored when a
-new one breaks. The remaining work is crash reporting and the compatibility/accessibility pass, with signing last. A
+sandbox, headless perf budgets, fetch-on-first-use sidecar installer, CI workflow, app update channel, yt-dlp rollback
+and opt-in local crash reports are in place, and the packaged app passes its self-test. Updates read `latest.yml`/`beta.yml`
+from a static HTTPS folder set in Settings → About and never install without a press; the previous yt-dlp is kept and
+restored when a new one breaks. The remaining work is the compatibility/accessibility pass, with signing last. A
 streaming UX redesign is independent of that sequence as long as it only changes the renderer; it must come before the
 sidecar work only if it changes what the engine must resolve, cache or download.
 
-**Next:** crash reporting and the compatibility/accessibility pass, with signing last; then M9. M13 is complete through
-Phase 6, and its Phase 7 (local AI transcription) stays deferred until asked for. M13's fingerprint fallback needs nothing
-more than the user's own AcoustID key: `fpcalc` arrives with the M8 engine download, and the text search keeps working
-without either.
+**Next:** the compatibility/accessibility pass, with signing last; then M9. M13 is complete through Phase 6, and its
+Phase 7 (local AI transcription) stays deferred until asked for. M13's fingerprint fallback needs nothing more than the
+user's own AcoustID key: `fpcalc` arrives with the M8 engine download, and the text search keeps working without either.

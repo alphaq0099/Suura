@@ -15,6 +15,7 @@ import type {
   ArtistSummary,
   CacheEntryDetails,
   CacheStats,
+  CrashReportsStatus,
   DeepPartial,
   DownloadHistoryItem,
   DownloadProgress,
@@ -87,6 +88,9 @@ export const IPC = {
   pathsGet: 'app:paths',
   runtimeInfo: 'app:runtime-info',
   diagnosticsSave: 'app:save-diagnostics',
+  crashReportsStatus: 'app:crash-reports-status',
+  crashReportsClear: 'app:crash-reports-clear',
+  crashReportsExport: 'app:crash-reports-export',
   pickFolder: 'dialogs:pick-folder',
   openPath: 'shell:open-path',
   dataBackup: 'data:backup',
@@ -303,6 +307,15 @@ export interface PlayerApi {
    * plus the recent log. Resolves to the file path, or null when cancelled.
    */
   saveDiagnostics(summary: string): Promise<string | null>
+  /** The local crash-report switch, count and folder. Nothing is uploaded. */
+  getCrashReports(): Promise<CrashReportsStatus>
+  /** Deletes local crash reports and returns how many files were removed. */
+  clearCrashReports(): Promise<number>
+  /**
+   * Asks where to write the crash-report bundle, then writes it. Resolves to the
+   * file path, or null when the user cancels.
+   */
+  exportCrashReports(): Promise<string | null>
   /** Opens the native folder picker. Resolves to null if the user cancels. */
   pickFolder(): Promise<string | null>
   openPath(target: string): Promise<void>

@@ -85,6 +85,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   backups: {
     retentionCount: 10
   },
+  // Crash reports are local-only and opt-in. Off is the honest default: a
+  // diagnostic file is still a file about the user's session, so writing one is
+  // their choice.
+  diagnostics: {
+    crashReports: false
+  },
   retention: {
     mode: 'stream',
     cacheBudgetMb: 5120,
@@ -166,6 +172,7 @@ export const DEFAULT_PREFERENCE_PATCH: DeepPartial<AppSettings> = {
   startup: { ...DEFAULT_SETTINGS.startup },
   desktop: { ...DEFAULT_SETTINGS.desktop },
   backups: { ...DEFAULT_SETTINGS.backups },
+  diagnostics: { ...DEFAULT_SETTINGS.diagnostics },
   retention: {
     mode: DEFAULT_SETTINGS.retention.mode,
     cacheBudgetMb: DEFAULT_SETTINGS.retention.cacheBudgetMb,

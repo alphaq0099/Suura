@@ -16,7 +16,8 @@ export function resolveAppPaths(userDataDir: string): AppPaths {
     cache: join(userDataDir, 'cache'),
     downloads: join(userDataDir, 'downloads'),
     backups: join(userDataDir, 'backups'),
-    engine: join(userDataDir, 'engine')
+    engine: join(userDataDir, 'engine'),
+    crashes: join(userDataDir, 'crashes')
   }
 }
 
@@ -27,7 +28,8 @@ export function ensureAppDirectories(paths: AppPaths): void {
     paths.cache,
     paths.downloads,
     paths.backups,
-    paths.engine
+    paths.engine,
+    paths.crashes
   ]
   for (const dir of dirs) {
     mkdirSync(dir, { recursive: true })

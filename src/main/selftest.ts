@@ -2863,6 +2863,193 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       diagnosticsSavedDetail
     )
 
+    // ---- 11a bis. local crash reports -----------------------------------
+    // A crash report is opt-in and local. The self-test proves the switch
+    // reaches settings, a written report appears in Misc, the bundle is a file
+    // the user chose, and clearing removes it without touching anything else.
+    container.crashes.clear()
+    const crashUi = await evaluate<{ card: boolean; toggle: boolean; enabled: boolean }>(
+      window,
+      `(async () => {
+         const out = { card: false, toggle: false, enabled: false }
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const press = (element) => { if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
+         const nav = (label) => {
+           const button = [...document.querySelectorAll('.nav-item')].find((el) => (el.textContent || '').trim().startsWith(label))
+           if (button) press(button)
+         }
+         const tab = (label) => {
+           const button = [...document.querySelectorAll('.settings-tab')].find((el) => (el.textContent || '').trim() === label)
+           if (button) press(button)
+         }
+         nav('Settings')
+         await sleep(300)
+         tab('Misc')
+         await sleep(400)
+         const card = [...document.querySelectorAll('.card')].find(
+           (candidate) => (candidate.querySelector('h2')?.textContent || '').trim().startsWith('Crash reports')
+         )
+         out.card = Boolean(card)
+         const label = card
+           ? [...card.querySelectorAll('.field.checkbox')].find((el) =>
+               (el.textContent || '').includes('Keep crash reports on this PC')
+             )
+           : null
+         const input = label ? label.querySelector('input') : null
+         out.toggle = Boolean(input)
+         if (input && !input.checked) {
+           input.click()
+           await sleep(600)
+         }
+         const settings = await window.player.getSettings()
+         out.enabled = settings.diagnostics.crashReports === true
+         return out
+       })()`
+    )
+    record(
+      crashUi.card && crashUi.toggle && crashUi.enabled,
+      'settings: Misc exposes the local crash-report card and its opt-in switch',
+      crashUi
+    )
+
+    const selftestCrashFile = container.crashes.record({
+      kind: 'renderer',
+      reason: 'crashed',
+      message: 'selftest renderer crash',
+      exitCode: 1337,
+      details: { proof: 'selftest' }
+    })
+    const crashStatusAfterWrite = container.crashes.status()
+    record(
+      selftestCrashFile !== null && crashStatusAfterWrite.count === 1,
+      'settings: an opted-in renderer crash writes a local report',
+      { file: selftestCrashFile, count: crashStatusAfterWrite.count }
+    )
+
+    const crashPanel = await evaluate<{
+      card: boolean
+      countShown: boolean
+      exportEnabled: boolean
+      clearEnabled: boolean
+    }>(
+      window,
+      `(async () => {
+         const out = { card: false, countShown: false, exportEnabled: false, clearEnabled: false }
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const press = (element) => { if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
+         const nav = (label) => {
+           const button = [...document.querySelectorAll('.nav-item')].find((el) => (el.textContent || '').trim().startsWith(label))
+           if (button) press(button)
+         }
+         const tab = (label) => {
+           const button = [...document.querySelectorAll('.settings-tab')].find((el) => (el.textContent || '').trim() === label)
+           if (button) press(button)
+         }
+         nav('Library')
+         await sleep(250)
+         nav('Settings')
+         await sleep(350)
+         tab('Misc')
+         await sleep(500)
+         const card = [...document.querySelectorAll('.card')].find(
+           (candidate) => (candidate.querySelector('h2')?.textContent || '').trim().startsWith('Crash reports')
+         )
+         out.card = Boolean(card)
+         const text = card ? card.textContent || '' : ''
+         out.countShown = text.includes('Saved reports') && /(^|\\D)1(\\D|$)/.test(text)
+         const button = (label) =>
+           card ? [...card.querySelectorAll('button')].find((el) => (el.textContent || '').trim().startsWith(label)) : null
+         out.exportEnabled = Boolean(button('Save reports') && !button('Save reports').disabled)
+         out.clearEnabled = Boolean(button('Clear reports') && !button('Clear reports').disabled)
+         return out
+       })()`
+    )
+    record(
+      crashPanel.card && crashPanel.countShown && crashPanel.exportEnabled && crashPanel.clearEnabled,
+      'settings: the crash-report card shows the saved count and its actions',
+      crashPanel
+    )
+
+    const crashExportTarget = join(app.getPath('userData'), 'crash-reports-selftest.txt')
+    const originalCrashSaveDialog = dialog.showSaveDialog
+    let crashExportOk = false
+    let crashExportDetail = 'not attempted'
+    try {
+      dialog.showSaveDialog = (async () => ({
+        canceled: false,
+        filePath: crashExportTarget
+      })) as unknown as typeof dialog.showSaveDialog
+      await evaluate<boolean>(
+        window,
+        `(async () => {
+           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+           const card = [...document.querySelectorAll('.card')].find(
+             (candidate) => (candidate.querySelector('h2')?.textContent || '').trim().startsWith('Crash reports')
+           )
+           const button = card
+             ? [...card.querySelectorAll('button')].find((el) => (el.textContent || '').trim().startsWith('Save reports'))
+             : null
+           if (button) button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+           await sleep(900)
+           return Boolean(button)
+         })()`
+      )
+      const crashExportText = await readFile(crashExportTarget, 'utf8')
+      crashExportOk =
+        crashExportText.includes('Suura crash reports') &&
+        crashExportText.includes('selftest renderer crash') &&
+        crashExportText.includes('Nothing here was uploaded') &&
+        crashExportText.includes('--- crash-')
+      crashExportDetail = `${crashExportText.length} chars`
+    } catch (cause) {
+      crashExportDetail = cause instanceof Error ? cause.message : String(cause)
+    } finally {
+      dialog.showSaveDialog = originalCrashSaveDialog
+    }
+    record(crashExportOk, 'settings: Save reports writes the local crash bundle', crashExportDetail)
+
+    const crashClear = await evaluate<{ count: number; confirmed: boolean }>(
+      window,
+      `(async () => {
+         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const card = [...document.querySelectorAll('.card')].find(
+           (candidate) => (candidate.querySelector('h2')?.textContent || '').trim().startsWith('Crash reports')
+         )
+         const clear = card
+           ? [...card.querySelectorAll('button')].find((el) => (el.textContent || '').trim().startsWith('Clear reports'))
+           : null
+         if (clear) clear.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await sleep(250)
+         const confirm = [...document.querySelectorAll('.reset-confirm button')].find(
+           (el) => (el.textContent || '').trim() === 'Delete reports'
+         )
+         if (confirm) confirm.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+         await sleep(700)
+         const status = await window.player.getCrashReports()
+         return { count: status.count, confirmed: Boolean(confirm) }
+       })()`
+    )
+    record(
+      crashClear.confirmed && crashClear.count === 0,
+      'settings: Clear reports asks first and empties the folder',
+      crashClear
+    )
+
+    const optOut = await evaluate<{ ignored: boolean; count: number }>(
+      window,
+      `(async () => {
+         await window.player.updateSettings({ diagnostics: { crashReports: false } })
+         return { ignored: false, count: (await window.player.getCrashReports()).count }
+       })()`
+    )
+    const optOutReport = container.crashes.record({ kind: 'main-exception', reason: 'opt-out test' })
+    record(
+      optOutReport === null && optOut.count === 0 && container.crashes.status().count === 0,
+      'settings: turning crash reports off stops new files',
+      { ignored: optOutReport === null, count: optOut.count }
+    )
+    await rm(crashExportTarget, { force: true })
+
     // ---- 11b. retention mode, cache IPC and save history ----------------
     // The mode control drives the same settings block the resolver reads. The
     // budget and age fields only exist in `cache` mode, so their presence is the

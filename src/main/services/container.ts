@@ -33,6 +33,7 @@ import { IPC_EVENTS } from '@shared/ipc'
 import type { AppPaths, AppSettings } from '@shared/types'
 import { createArtworkService, type ArtworkService } from '../artwork-service'
 import { broadcast } from '../broadcast'
+import { CrashReporter } from '../crash-reports'
 import { cleanupAbandonedDownloads, DownloadService } from '../download-service'
 import { StreamCache } from '../stream-cache'
 import { createOnlineService, type OnlineService } from '../online-service'
@@ -96,6 +97,8 @@ export interface AppContainer {
   sidecars: SidecarService
   /** The app update channel (dormant until a feed URL is configured). */
   updates: UpdateService
+  /** Local, opt-in crash reports. No remote service is involved. */
+  crashes: CrashReporter
   /** Measures ReplayGain for local files in the background. */
   replayGain: ReplayGainService
   /** The only writer that modifies a user's files; exposed for later phases. */
@@ -130,6 +133,40 @@ export function createContainer(): AppContainer {
   const restored = applyPendingRestore(paths, log.child('restore'))
 
   const settings = new SettingsService(paths.config, log.child('settings'))
+  // Install the local crash reporter as early as settings allow. Opt-in means
+  // disabled by default, so a normal launch writes nothing.
+  const crashes = new CrashReporter({
+    dir: paths.crashes,
+    log: log.child('crashes'),
+    enabled: () => settings.get().diagnostics.crashReports,
+    environment: () => ({
+      appVersion: app.getVersion(),
+      platform: process.platform,
+      arch: process.arch,
+      electron: process.versions.electron ?? 'unknown',
+      chromium: process.versions.chrome ?? 'unknown',
+      node: process.versions.node
+    })
+  })
+  crashes.install()
+  const onChildProcessGone = (
+    _event: Electron.Event,
+    details: Electron.Details
+  ): void => {
+    // Chromium exits its utility processes normally on shutdown.
+    if (details.reason === 'clean-exit') return
+    crashes.record({
+      kind: 'child-process',
+      reason: details.reason,
+      exitCode: details.exitCode,
+      details: {
+        type: details.type,
+        serviceName: details.serviceName,
+        name: details.name
+      }
+    })
+  }
+  app.on('child-process-gone', onChildProcessGone)
   const poToken = new PoTokenProvider({
     engine: () => settings.get().engine,
     log: log.child('po-token')
@@ -458,6 +495,7 @@ export function createContainer(): AppContainer {
     ytDlp,
     sidecars,
     updates,
+    crashes,
     replayGain,
     tagWriter,
     lyrics,
@@ -471,6 +509,8 @@ export function createContainer(): AppContainer {
       unwatchBackupRetention()
       unwatchPoToken()
       updates.dispose()
+      app.removeListener('child-process-gone', onChildProcessGone)
+      crashes.dispose()
       sidecars.cancel()
       poToken.dispose()
       replayGain.dispose()

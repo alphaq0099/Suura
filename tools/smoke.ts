@@ -77,6 +77,13 @@ import {
   writeDiagnosticsFile
 } from '../src/main/diagnostics'
 import {
+  CRASH_REPORT_KEEP,
+  CrashReporter,
+  buildCrashReportBundle,
+  clearCrashReports,
+  listCrashReports
+} from '../src/main/crash-reports'
+import {
   DATABASE_BUDGET_BYTES,
   PAGE_BUDGET_MS,
   RESCAN_BUDGET_MS,
@@ -3917,6 +3924,115 @@ async function main(): Promise<void> {
       'diagnostics: the renderer summary is normalised',
       sanitizeDiagnosticsSummary('a\r\nb\0c'),
       'a\nbc'
+    )
+
+    const crashDir = join(root, 'crash-reports')
+    const crashEnvironment = {
+      appVersion: '9.9.9',
+      platform: 'win32',
+      arch: 'x64',
+      electron: '1.0.0',
+      chromium: '2.0.0',
+      node: '3.0.0'
+    }
+    let crashEnabled = false
+    const crashReporter = new CrashReporter({
+      dir: crashDir,
+      log: silentLogger,
+      enabled: () => crashEnabled,
+      environment: () => crashEnvironment
+    })
+    const deniedReport = crashReporter.record({
+      kind: 'renderer',
+      reason: 'crashed',
+      exitCode: 1337
+    })
+    check(
+      'crash reports: the switch off writes nothing',
+      deniedReport === null && listCrashReports(crashDir).length === 0
+    )
+
+    crashEnabled = true
+    const firstReport = crashReporter.record({
+      kind: 'renderer',
+      reason: 'crashed',
+      message: 'renderer died',
+      stack: 'Error: boom\n  at render',
+      exitCode: 1337,
+      details: { url: 'player-media://track', extra: null }
+    })
+    check('crash reports: an enabled crash writes one file', firstReport !== null)
+    const storedReport = firstReport
+      ? (JSON.parse(await readFile(firstReport, 'utf8')) as Record<string, unknown>)
+      : {}
+    check(
+      'crash reports: the file records the kind, reason, exit code and environment',
+      storedReport.kind === 'renderer' &&
+        storedReport.reason === 'crashed' &&
+        storedReport.exitCode === 1337 &&
+        (storedReport.environment as { appVersion?: string }).appVersion === '9.9.9'
+    )
+    const crashStatus = crashReporter.status()
+    check(
+      'crash reports: status reports the count, newest time and folder',
+      crashStatus.enabled &&
+        crashStatus.count === 1 &&
+        crashStatus.latestAt !== null &&
+        crashStatus.folder === crashDir
+    )
+
+    const circularCrash: Record<string, unknown> = { reason: 'loop' }
+    circularCrash.self = circularCrash
+    crashReporter.record({
+      kind: 'main-exception',
+      reason: 'uncaughtException:uncaughtException',
+      message: 'loop',
+      details: circularCrash
+    })
+    check(
+      'crash reports: circular details are written safely',
+      listCrashReports(crashDir).length === 2
+    )
+    const crashBundle = buildCrashReportBundle(crashDir, new Date('2026-11-03T12:00:00Z'))
+    check(
+      'crash reports: the bundle says it is local and includes the reports',
+      crashBundle.includes('Written on this PC') &&
+        crashBundle.includes('Reports: 2') &&
+        crashBundle.includes('renderer died')
+    )
+    const clearedReports = clearCrashReports(crashDir)
+    check(
+      'crash reports: clearing removes every report',
+      clearedReports === 2 && listCrashReports(crashDir).length === 0
+    )
+
+    const pruneDir = join(root, 'crash-prune')
+    let crashTick = 0
+    const pruneReporter = new CrashReporter({
+      dir: pruneDir,
+      log: silentLogger,
+      enabled: () => true,
+      environment: () => crashEnvironment,
+      now: () => new Date(Date.UTC(2026, 0, 1, 0, 0, crashTick++)),
+      keep: 2
+    })
+    for (const kind of ['main-rejection', 'renderer', 'child-process'] as const) {
+      pruneReporter.record({ kind, reason: 'test' })
+    }
+    checkEqual(
+      'crash reports: only the newest reports are kept',
+      pruneReporter.list().length,
+      2
+    )
+    check('crash reports: the default keep limit is bounded', CRASH_REPORT_KEEP >= 1)
+
+    const malformedDir = join(root, 'crash-malformed')
+    await mkdir(malformedDir, { recursive: true })
+    await writeFile(join(malformedDir, 'crash-broken.json'), '{ not json', 'utf8')
+    const malformedReports = listCrashReports(malformedDir)
+    check(
+      'crash reports: an unreadable file still counts as evidence',
+      malformedReports.length === 1 && malformedReports[0]?.kind === 'unknown'
     )
 
     checkEqual('recovery: the first retry is quick', recoveryDelayMs(0), PLAYBACK_RECOVERY_DELAYS_MS[0])

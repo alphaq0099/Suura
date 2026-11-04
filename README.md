@@ -354,7 +354,8 @@ files.
 
 It talks to the network only when you ask it to: playing or searching YouTube goes through `yt-dlp` to YouTube,
 cover art for streamed tracks is fetched like any other thumbnail, and `yt-dlp` may check for its own updates. Local
-playback needs no network at all. Diagnostics are written to a file you pick; nothing is sent.
+playback needs no network at all. Diagnostics are written to a file you pick; nothing is sent. Crash reports are
+opt-in, stored under `%APPDATA%\Suura\crashes`, and only leave the machine if you export and share them.
 
 ---
 

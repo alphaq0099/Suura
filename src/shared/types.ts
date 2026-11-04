@@ -1407,6 +1407,17 @@ export interface BackupSettings {
 }
 
 /**
+ * Diagnostics that stay on this machine.
+ *
+ * Crash reports are opt-in and local: they are written under the app-data
+ * folder and never uploaded. Turning the switch off leaves existing files in
+ * place so the user can still inspect or clear them.
+ */
+export interface DiagnosticsSettings {
+  crashReports: boolean
+}
+
+/**
  * How much the library is trusted to keep itself up to date.
  */
 export interface LibrarySettings {
@@ -1443,6 +1454,7 @@ export interface AppSettings {
   startup: StartupSettings
   desktop: DesktopSettings
   backups: BackupSettings
+  diagnostics: DiagnosticsSettings
   retention: RetentionSettings
   engine: EngineSettings
   metadata: MetadataSettings
@@ -1461,6 +1473,38 @@ export interface AppPaths {
   backups: string
   /** Pinned yt-dlp/ffmpeg/fpcalc binaries downloaded by the app. */
   engine: string
+  /** Local crash reports, written only when the user opts in. */
+  crashes: string
+}
+
+/** What kind of process or error produced a local crash report. */
+export type CrashReportKind =
+  | 'main-exception'
+  | 'main-rejection'
+  | 'renderer'
+  | 'child-process'
+  | 'unknown'
+
+/** One file in the crash-reports folder, as Settings lists it. */
+export interface CrashReportSummary {
+  id: string
+  kind: CrashReportKind
+  reason: string
+  message: string | null
+  /** Epoch ms the report was written. */
+  occurredAt: number
+  bytes: number
+}
+
+/** The crash-report switch and what is currently stored on this PC. */
+export interface CrashReportsStatus {
+  /** Whether new reports are being written; existing files stay when off. */
+  enabled: boolean
+  count: number
+  /** Epoch ms of the newest report, or null when there are none. */
+  latestAt: number | null
+  bytes: number
+  folder: string
 }
 
 export interface ListTracksQuery {

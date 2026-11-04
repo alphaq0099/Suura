@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { BrowserWindow, nativeTheme, shell } from 'electron'
 import type { Logger } from '@core/logging/logger'
+import type { CrashReporter } from './crash-reports'
 
 /**
  * The single application window.
@@ -19,6 +20,8 @@ export interface MainWindowOptions {
    * a minimised player from costing a core.
    */
   backgroundThrottling?: boolean
+  /** Records renderer crashes locally when the user has opted in. */
+  crashes?: CrashReporter
 }
 
 export function createMainWindow(log: Logger, options: MainWindowOptions = {}): BrowserWindow {
@@ -56,6 +59,13 @@ export function createMainWindow(log: Logger, options: MainWindowOptions = {}): 
   })
   window.webContents.on('render-process-gone', (_event, details) => {
     log.error('renderer process gone', { reason: details.reason, exitCode: details.exitCode })
+    // A normal teardown is not a crash and should not leave a report behind.
+    if (details.reason === 'clean-exit') return
+    options.crashes?.record({
+      kind: 'renderer',
+      reason: details.reason,
+      exitCode: details.exitCode
+    })
   })
   window.webContents.on('preload-error', (_event, preloadPath, error) => {
     log.error('preload script threw', { preloadPath, error })

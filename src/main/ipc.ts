@@ -37,6 +37,7 @@ import type {
   DeepPartial,
   Density,
   DesktopSettings,
+  DiagnosticsSettings,
   DownloadFormat,
   EngineSettings,
   IconSet,
@@ -471,6 +472,14 @@ export function sanitizeSettingsPatch(input: unknown): DeepPartial<AppSettings> 
     patch.backups = backups
   }
 
+  if (isPlainObject(input.diagnostics)) {
+    const diagnostics: DeepPartial<DiagnosticsSettings> = {}
+    if (typeof input.diagnostics.crashReports === 'boolean') {
+      diagnostics.crashReports = input.diagnostics.crashReports
+    }
+    patch.diagnostics = diagnostics
+  }
+
   if (isPlainObject(input.retention)) {
     const retention: DeepPartial<RetentionSettings> = {}
     const source = input.retention
@@ -831,6 +840,47 @@ export function registerIpcHandlers(container: AppContainer): void {
       file: target,
       bytes: written.bytes,
       logTruncated: logTail.truncated
+    })
+    return target
+  })
+
+  ipcMain.handle(IPC.crashReportsStatus, () => container.crashes.status())
+
+  ipcMain.handle(IPC.crashReportsClear, () => {
+    const removed = container.crashes.clear()
+    log.info('local crash reports cleared', { removed })
+    return removed
+  })
+
+  // The bundle is the reports as written, plus a short header. Nothing leaves
+  // the machine unless the user chooses a destination and shares the file.
+  ipcMain.handle(IPC.crashReportsExport, async () => {
+    const reports = container.crashes.list()
+    if (reports.length === 0) return null
+
+    const parent = BrowserWindow.getFocusedWindow()
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const options: Electron.SaveDialogOptions = {
+      title: 'Save Suura crash reports',
+      buttonLabel: 'Save',
+      defaultPath: join(app.getPath('documents'), `Suura crash reports ${stamp}.txt`),
+      filters: [{ name: 'Text file', extensions: ['txt'] }]
+    }
+    const result = parent
+      ? await dialog.showSaveDialog(parent, options)
+      : await dialog.showSaveDialog(options)
+    if (result.canceled || !result.filePath) return null
+
+    const target =
+      extname(result.filePath).toLowerCase() === '.txt'
+        ? result.filePath
+        : `${result.filePath}.txt`
+    const content = container.crashes.bundle()
+    await writeFile(target, content, 'utf8')
+    log.info('crash reports saved', {
+      file: target,
+      reports: reports.length,
+      bytes: Buffer.byteLength(content, 'utf8')
     })
     return target
   })

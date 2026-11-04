@@ -295,6 +295,11 @@ export class SettingsService {
             ? clampInt(backups.retentionCount, 3, 50)
             : DEFAULT_SETTINGS.backups.retentionCount
       },
+      // Local crash reports are opt-in. A hand-edited `"crashReports": "yes"`
+      // must not silently switch them on.
+      diagnostics: {
+        crashReports: isPlainObject(settings.diagnostics) && settings.diagnostics.crashReports === true
+      },
       engine: {
         ...engine,
         cookiesFromBrowser: isSupportedCookieBrowser(engine.cookiesFromBrowser)

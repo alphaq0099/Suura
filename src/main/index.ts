@@ -125,7 +125,10 @@ function start(): void {
       // the headless CI run agree about what "fast enough" means.
       const coreFailures = scale ? checkScaleBudgets(scale) : 0
       const windowStartedAt = Date.now()
-      const window = createMainWindow(appContainer.log.child('window'), WINDOW_OPTIONS)
+      const window = createMainWindow(appContainer.log.child('window'), {
+        ...WINDOW_OPTIONS,
+        crashes: appContainer.crashes
+      })
 
       if (!HEADLESS) {
         tray = installTray({ window, log: appContainer.log.child('tray') })
@@ -171,7 +174,11 @@ function start(): void {
       app.on('activate', () => {
         const [existing] = BrowserWindow.getAllWindows()
         if (existing) focusWindow(existing)
-        else createMainWindow(appContainer.log.child('window'), WINDOW_OPTIONS)
+        else
+          createMainWindow(appContainer.log.child('window'), {
+            ...WINDOW_OPTIONS,
+            crashes: appContainer.crashes
+          })
       })
     })
     .catch((error: unknown) => {

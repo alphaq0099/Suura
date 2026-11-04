@@ -9,7 +9,7 @@ installing and using the app, read the [README](../README.md) instead. The full 
 
 ---
 
-## Status: M1–M7 and M12 complete, including the visual revamp (Home dashboard, merged **All tracks**, album/artist detail, playlist hero). M8 Windows release engineering is in progress: the per-user installer, local diagnostics export, renderer sandbox, headless performance gate, fetch-on-first-use sidecar installer, CI workflow, app update channel and yt-dlp rollback are done; signing, opt-in crash reporting and the compatibility/accessibility pass remain. M13 Library Metadata & Lyrics is complete through Phase 6 — the tag write path and manual editor, lyrics reading, single-track auto-tag, the artwork picker, the lyrics finder, batch lyrics and tags, and the AcoustID fingerprint fallback — with Phase 7 (local AI transcription) deferred. The GitHub Actions workflow (`.github/workflows/ci.yml`) runs the build, smoke, self-test and perf gates on `windows-latest` and is green.
+## Status: M1–M7 and M12 complete, including the visual revamp (Home dashboard, merged **All tracks**, album/artist detail, playlist hero). M8 Windows release engineering is in progress: the per-user installer, local diagnostics export, opt-in local crash reports, renderer sandbox, headless performance gate, fetch-on-first-use sidecar installer, CI workflow, app update channel and yt-dlp rollback are done; signing and the compatibility/accessibility pass remain. M13 Library Metadata & Lyrics is complete through Phase 6 — the tag write path and manual editor, lyrics reading, single-track auto-tag, the artwork picker, the lyrics finder, batch lyrics and tags, and the AcoustID fingerprint fallback — with Phase 7 (local AI transcription) deferred. The GitHub Actions workflow (`.github/workflows/ci.yml`) runs the build, smoke, self-test and perf gates on `windows-latest` and is green.
 
 Working today:
 
@@ -231,7 +231,10 @@ Working today:
   Suura, Electron, Chromium and Node versions and the yt-dlp/ffmpeg probe; **Copy diagnostics** writes versions, app
   paths, library-folder count and the user agent to the clipboard - no cookies, history, account data or library file
   paths. **Save diagnostics** writes that same snapshot plus the most recent log to a text file chosen with the native
-  dialog. Nothing is uploaded; the saved file can contain local paths from the log.
+  dialog. Nothing is uploaded; the saved file can contain local paths from the log. Settings → Misc has a separate
+  **Crash reports** card: opt-in (off by default), it writes a small JSON report under `<userData>/crashes` when the main
+  process, a renderer or a Chromium child process crashes. The card shows the saved count and folder, exports the reports
+  to a text file the user chooses, and clears them after a confirmation. No remote service exists; nothing is uploaded.
 - **Data care** (M7, complete): Settings → Misc can create a **backup folder** containing a consistent `library.db`,
   the settings and a manifest, and restore one from a folder picker. Restoring validates the database (integrity and
   schema), normalizes the settings through the same allowlist as the Settings form, copies the current library aside,
@@ -252,11 +255,11 @@ Working today:
 - The app updates from a static HTTPS feed configured in **Settings → About** (`latest.yml` for Stable, `beta.yml` for
   Beta). It never downloads or installs without an explicit press, and a missing feed is a clear "not configured" state.
 
-Not built yet (deliberately): optional crossfade, opt-in crash reporting and saved smart playlists (the Library's fixed
-chips are views, not user-defined lists). Tag writing remains deferred: removing a download or clearing the cache
-deletes files but never rewrites tags. Windows release engineering (M8) is in progress; the installer, manual log export,
-the sidecar downloader, the update channel and engine rollback are the completed slices, and the rest is listed in
-[Next steps](#next-steps).
+Not built yet (deliberately): optional crossfade and saved smart playlists (the Library's fixed chips are views, not
+user-defined lists). Tag writing remains deferred: removing a download or clearing the cache deletes files but never
+rewrites tags. Windows release engineering (M8) is in progress; the installer, manual log export, opt-in local crash
+reports, the sidecar downloader, the update channel and engine rollback are the completed slices, and the rest is listed
+in [Next steps](#next-steps).
 
 ## Windows build
 
@@ -1089,8 +1092,9 @@ docs/notes/             spike and measurement records, with raw JSON
 - **Fingerprint matching needs the user's own AcoustID key**, entered in Settings → Metadata. Without it the button
   answers with a pointer to that tab and never contacts the service. It is a separate button in the tag finder, not part
   of a batch, because it reads up to two minutes of audio and spends that key's quota. Phase 7 (local transcription) is not built.
-- **Copy diagnostics** is clipboard-only, but **Save diagnostics** writes a local text bundle with the recent log. There
-  is no opt-in crash reporting and nothing is uploaded automatically.
+- **Copy diagnostics** is clipboard-only, but **Save diagnostics** writes a local text bundle with the recent log.
+  **Crash reports** are opt-in, written under `<userData>/crashes` and exported only when the user asks. Nothing is
+  uploaded automatically and no remote crash service exists.
 
 ## Next steps
 
@@ -1103,8 +1107,8 @@ Everything below is release work, not product work; M1–M7, M12 and M13 (throug
 3. **Host the update feed** and publish `latest.yml`/`beta.yml` beside each installer. The app side is built: a static
    HTTPS folder set in Settings → About, channel mapping, download/install consent and yt-dlp rollback. What is missing
    is the host and the publishing step.
-4. **Decide crash reporting**: keep the local, export-only diagnostics bundle, or add an opt-in remote service. Nothing
-   is uploaded today.
+4. **Crash reporting is local and opt-in.** The remaining choice, if a hosted error service is ever wanted, is an
+   explicit consent screen and a privacy note; nothing is uploaded today.
 5. **Compatibility and accessibility pass**: Windows 10/11 at 100–200% scaling, multi-monitor and HiDPI, plus
    keyboard-only navigation, screen-reader labels and contrast.
 6. **Extend the performance gate**: `npm run perf` already runs in CI and passed there, enforcing the 10 000-file scan,

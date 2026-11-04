@@ -23,6 +23,7 @@ import type {
   ArtworkShape,
   ArtworkSize,
   CookieFallbackMode,
+  CrashReportsStatus,
   DeepPartial,
   Density,
   DownloadFormat,
@@ -87,6 +88,10 @@ export interface SettingsViewProps {
   onOpenPath: (target: string) => void
   onCopyDiagnostics: () => Promise<void>
   onSaveDiagnostics: () => Promise<string | null>
+  crashReports: CrashReportsStatus | null
+  onRefreshCrashReports: () => Promise<CrashReportsStatus>
+  onClearCrashReports: () => Promise<number>
+  onExportCrashReports: () => Promise<string | null>
   onBackupData: () => Promise<string | null>
   onRestoreData: () => Promise<boolean>
   onExportLibrary: () => Promise<string | null>
@@ -387,6 +392,10 @@ export function SettingsView(props: SettingsViewProps) {
     onOpenPath,
     onCopyDiagnostics,
     onSaveDiagnostics,
+    crashReports,
+    onRefreshCrashReports,
+    onClearCrashReports,
+    onExportCrashReports,
     onBackupData,
     onRestoreData,
     onExportLibrary,
@@ -410,6 +419,50 @@ export function SettingsView(props: SettingsViewProps) {
   const [providerError, setProviderError] = useState<string | null>(null)
   const [diagnosticsBusy, setDiagnosticsBusy] = useState<'copy' | 'save' | null>(null)
   const [diagnosticsNote, setDiagnosticsNote] = useState<string | null>(null)
+  const [crashBusy, setCrashBusy] = useState<'clear' | 'export' | null>(null)
+  const [crashNote, setCrashNote] = useState<string | null>(null)
+  const [crashError, setCrashError] = useState<string | null>(null)
+  const [confirmClearCrashes, setConfirmClearCrashes] = useState(false)
+
+  // The count changes outside this panel (a renderer crash, or clearing from
+  // another run), so read the folder again when Settings opens.
+  useEffect(() => {
+    void onRefreshCrashReports().catch(() => undefined)
+  }, [onRefreshCrashReports])
+
+  const runExportCrashReports = async (): Promise<void> => {
+    setCrashBusy('export')
+    setCrashError(null)
+    setCrashNote(null)
+    try {
+      const file = await onExportCrashReports()
+      setCrashNote(file ? `Crash reports saved to ${file}` : 'No crash reports to save.')
+    } catch (cause) {
+      setCrashError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setCrashBusy(null)
+    }
+  }
+
+  const runClearCrashReports = async (): Promise<void> => {
+    setCrashBusy('clear')
+    setCrashError(null)
+    setCrashNote(null)
+    try {
+      const removed = await onClearCrashReports()
+      setConfirmClearCrashes(false)
+      setCrashNote(
+        removed > 0
+          ? `Cleared ${removed} crash report${removed === 1 ? '' : 's'}.`
+          : 'There were no crash reports to clear.'
+      )
+    } catch (cause) {
+      setCrashError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setCrashBusy(null)
+    }
+  }
+
   const [updateFeedDraft, setUpdateFeedDraft] = useState(settings.update.feedUrl ?? '')
   useEffect(() => {
     setUpdateFeedDraft(settings.update.feedUrl ?? '')
@@ -2006,7 +2059,8 @@ export function SettingsView(props: SettingsViewProps) {
                       ['Logs', paths.logs],
                       ['Artwork cache', paths.cache],
                       ['Downloads', paths.downloads],
-                      ['Backups', paths.backups]
+                      ['Backups', paths.backups],
+                      ['Crash reports', paths.crashes]
                     ] as const
                   ).map(([label, target]) => (
                     <li key={label}>
@@ -2023,6 +2077,120 @@ export function SettingsView(props: SettingsViewProps) {
               ) : (
                 <p className="card-hint">Loading…</p>
               )}
+              </article>
+
+              <article className="card">
+                <header className="card-header">
+                  <h2>
+                    Crash reports
+                    <InfoHint label="About crash reports">
+                      Stored only on this PC. Nothing is uploaded, ever.
+                    </InfoHint>
+                  </h2>
+                </header>
+                <p className="card-hint">
+                  Off by default. When on, Suura saves a small report if the app or its renderer crashes, so you
+                  can review it or share it yourself.
+                </p>
+                <label className="field checkbox">
+                  <input
+                    type="checkbox"
+                    checked={settings.diagnostics.crashReports}
+                    onChange={(event) =>
+                      onUpdate({ diagnostics: { crashReports: event.target.checked } })
+                    }
+                  />
+                  <span>
+                    Keep crash reports on this PC
+                    <InfoHint label="About the crash-report switch">
+                      Off stops new reports. Existing files stay until you clear them.
+                    </InfoHint>
+                  </span>
+                </label>
+                {crashReports ? (
+                  <ul className="status-list">
+                    <li>
+                      <span className="status-name">Saved reports</span>
+                      <span className="status-value">
+                        {crashReports.count === 0
+                          ? 'None'
+                          : `${formatCount(crashReports.count)} · ${formatBytes(crashReports.bytes)}`}
+                      </span>
+                    </li>
+                    <li>
+                      <span className="status-name">Latest</span>
+                      <span className="status-value">
+                        {crashReports.latestAt ? formatTimestamp(crashReports.latestAt) : 'Never'}
+                      </span>
+                    </li>
+                    <li>
+                      <span className="status-name">Folder</span>
+                      <span className="status-value" title={crashReports.folder}>
+                        {crashReports.folder}
+                      </span>
+                    </li>
+                  </ul>
+                ) : (
+                  <p className="card-hint">Checking this PC…</p>
+                )}
+                <div className="field-row">
+                  <button
+                    type="button"
+                    onClick={() => void runExportCrashReports()}
+                    disabled={crashBusy !== null || (crashReports?.count ?? 0) === 0}
+                  >
+                    {crashBusy === 'export' ? <SpinnerIcon /> : null}
+                    <span>Save reports...</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmClearCrashes(true)}
+                    disabled={crashBusy !== null || (crashReports?.count ?? 0) === 0}
+                  >
+                    {crashBusy === 'clear' ? <SpinnerIcon /> : null}
+                    <span>Clear reports...</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onOpenPath(crashReports?.folder ?? paths?.crashes ?? '')}
+                    disabled={!crashReports && !paths}
+                  >
+                    Open folder
+                  </button>
+                </div>
+                {confirmClearCrashes ? (
+                  <div className="reset-confirm" role="alert">
+                    <p>Delete every saved crash report? This cannot be undone.</p>
+                    <div className="field-row">
+                      <button
+                        type="button"
+                        className="primary"
+                        autoFocus
+                        onClick={() => void runClearCrashReports()}
+                        disabled={crashBusy !== null}
+                      >
+                        Delete reports
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmClearCrashes(false)}
+                        disabled={crashBusy !== null}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+                {crashError ? (
+                  <div className="banner error" role="alert">
+                    {crashError}
+                  </div>
+                ) : null}
+                {crashNote ? (
+                  <p className="card-hint" role="status">
+                    {crashNote}
+                  </p>
+                ) : null}
               </article>
             </div>
 
