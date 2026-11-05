@@ -5691,14 +5691,6 @@ a.np-lyrics-meta:hover {
   gap: 8px;
 }
 
-/* Below the window's minimum width the two halves stack, so the button does not
-   wrap onto a line of its own beside a squeezed paragraph. */
-@media (max-width: 700px) {
-  .engine-callout-actions {
-    width: 100%;
-  }
-}
-
 .online-bar {
   display: flex;
   flex-wrap: wrap;
