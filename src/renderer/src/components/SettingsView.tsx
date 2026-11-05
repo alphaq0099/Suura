@@ -99,6 +99,12 @@ export interface SettingsViewProps {
   onFindDuplicates: () => Promise<DuplicateReport>
   onMergeDuplicates: () => Promise<DuplicateMergeOutcome>
   onRelocateMissing: () => Promise<RelocateReport | null>
+  /**
+   * Opens on this tab instead of General. Used when another view sends the user
+   * here for a specific control, such as the engine download on YouTube. Only
+   * read on mount, so a later visit from the sidebar still starts at General.
+   */
+  initialTab?: SettingsTabId
 }
 
 const QUALITY_CHOICES: Array<{ value: QualityTier; label: string }> = [
@@ -204,7 +210,8 @@ const TABS = [
   { id: 'about', label: 'About' }
 ] as const
 
-type TabId = (typeof TABS)[number]['id']
+export type SettingsTabId = (typeof TABS)[number]['id']
+type TabId = SettingsTabId
 
 /**
  * A compact explanation that stays out of the way until it is needed.
@@ -402,9 +409,10 @@ export function SettingsView(props: SettingsViewProps) {
     missingTracks,
     onFindDuplicates,
     onMergeDuplicates,
-    onRelocateMissing
+    onRelocateMissing,
+    initialTab
   } = props
-  const [tab, setTab] = useState<TabId>('general')
+  const [tab, setTab] = useState<TabId>(initialTab ?? 'general')
   const [confirmReset, setConfirmReset] = useState(false)
   const [resetDone, setResetDone] = useState(false)
   const [dataBusy, setDataBusy] = useState<'backup' | 'restore' | 'export' | null>(null)

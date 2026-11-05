@@ -38,7 +38,7 @@ import { PlaylistsView } from './components/PlaylistsView'
 import { QueueView } from './components/QueueView'
 import { SavesPanel } from './components/SavesPanel'
 import { SearchView, type SearchSelectionItem } from './components/SearchView'
-import { SettingsView } from './components/SettingsView'
+import { SettingsView, type SettingsTabId } from './components/SettingsView'
 import { Sidebar, type ViewName } from './components/Sidebar'
 import { TextFieldMenuHost } from './components/TextFieldMenu'
 import { useDownloads } from './hooks/useDownloads'
@@ -96,6 +96,12 @@ function diagnosticsSummary(
 
 export function App() {
   const [view, setView] = useState<ViewName>('home')
+  /**
+   * The tab Settings should open on, set by another view that sends the user
+   * there for one control. Cleared as soon as Settings has mounted, so the
+   * sidebar still opens General.
+   */
+  const [settingsTab, setSettingsTab] = useState<SettingsTabId | null>(null)
   /** Which YouTube surface is showing: link history, saved files or cache. */
   const [onlineTab, setOnlineTab] = useState<OnlineTab>('links')
   /** Whether the full-window player is covering the app. */
@@ -178,6 +184,13 @@ export function App() {
       // A full or disabled localStorage must not break navigation.
     }
   }, [view, onlineTab])
+
+  // Settings opens on the tab another view asked for, then forgets the request
+  // so a later visit from the sidebar starts at General. The tab is read only
+  // when SettingsView mounts, so clearing it here does not move the user.
+  useEffect(() => {
+    if (view === 'settings' && settingsTab !== null) setSettingsTab(null)
+  }, [view, settingsTab])
 
   // Theme is applied as data attributes on <html> rather than on `.app` so the
   // page background, native scrollbars and `color-scheme` change with it. The
@@ -633,9 +646,10 @@ export function App() {
   }, [])
 
   // The first open reads the saved probe; the Refresh button is the only path
-  // that insists on spawning the binaries again.
+  // that insists on spawning the binaries again. YouTube asks for the probe too
+  // because it offers the engine download where the need appears.
   useEffect(() => {
-    if (view !== 'settings') return
+    if (view !== 'settings' && view !== 'online') return
     if (engineStatus || engineLoading) return
     void refreshEngine()
   }, [view, engineStatus, engineLoading, refreshEngine])
@@ -1284,7 +1298,18 @@ export function App() {
           onQueueSavedTracks={queueLocalTracks}
           onOpenLibrary={() => setView('library')}
           onOpenSettings={() => setView('settings')}
+          onOpenEngineSettings={() => {
+            setSettingsTab('streaming')
+            setView('settings')
+          }}
           onError={setActionError}
+          engineStatus={engineStatus}
+          sidecarInstalling={sidecarInstalling}
+          sidecarProgress={sidecarProgress}
+          sidecarNote={sidecarNote}
+          sidecarError={sidecarError}
+          onInstallSidecars={installSidecars}
+          onCancelSidecarInstall={cancelSidecarInstall}
         />
       ) : view === 'playlists' ? (
         <PlaylistsView
@@ -1351,6 +1376,7 @@ export function App() {
       ) : (
         <SettingsView
           settings={settings}
+          initialTab={settingsTab ?? undefined}
           paths={paths}
           runtimeInfo={runtimeInfo}
           engineStatus={engineStatus}

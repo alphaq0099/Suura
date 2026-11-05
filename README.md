@@ -68,10 +68,11 @@ source.
 
 ### The YouTube engine
 
-Suura does not bundle `yt-dlp` or `ffmpeg`. On first use, open **Settings → Streaming → YouTube engine** and press
-**Download engine**. Suura fetches pinned versions into `%APPDATA%\Suura\engine`, checks each file's SHA-256 before
-installing it, and shows progress with a Cancel button. A copy you already have is used instead and reported as
-*available*, with where it came from.
+Suura does not bundle `yt-dlp` or `ffmpeg`. The **YouTube** view notices when they are missing and offers a
+**Download engine** button with the download size and progress; **Settings → Streaming → YouTube engine** has the same
+button, plus the probe and the engine folder. Suura fetches pinned versions into `%APPDATA%\Suura\engine`, checks each
+file's SHA-256 before installing it, and shows progress with a Cancel button. A copy you already have is used instead
+and reported as *available*, with where it came from.
 
 If you prefer to manage them yourself:
 
@@ -360,10 +361,11 @@ first if you care about them.
 **Windows says "Windows protected your PC".** The installer is unsigned. *More info → Run anyway*. See
 [Code signing](#code-signing).
 
-**YouTube says the engine is missing, or a link fails.** Open **Settings → Streaming → YouTube engine** and press
-**Check**. If `yt-dlp` or `ffmpeg` is missing, press **Download engine**. Most playback failures are an out-of-date
-`yt-dlp`; it updates itself daily unless you turned that off. If the engine is found but YouTube asks for a bot check,
-the **cookie fallback** can read cookies from a browser you choose; it is off by default and never runs quietly.
+**YouTube says the engine is missing, or a link fails.** The **YouTube** view offers **Download engine** at the top
+when `yt-dlp` or `ffmpeg` is missing. **Settings → Streaming → YouTube engine** has the same button plus **Check**. Most
+playback failures are an out-of-date `yt-dlp`; it updates itself daily unless you turned that off. If the engine is
+found but YouTube asks for a bot check, the **cookie fallback** can read cookies from a browser you choose; it is off
+by default and never runs quietly.
 
 **A track I moved shows as missing.** **Settings → Misc → Find moved files.** Suura matches it by fingerprint, then by
 size and modification time, and keeps its id, so playlists and play counts survive.

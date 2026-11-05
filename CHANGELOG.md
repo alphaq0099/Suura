@@ -29,6 +29,8 @@ First public pre-release. Everything below is new to anyone installing Suura for
 
 ### YouTube
 
+- The **YouTube** view offers the engine download where it is needed, with size, progress and cancel, instead of
+  only behind Settings → Streaming.
 - Paste a link, playlist, album or mix; resolve through `yt-dlp` and stream immediately.
 - Playlist/album/mix import as a stored snapshot, with re-import, per-entry trimming and custom names.
 - Search through YouTube's InnerTube API with a pager; channel pages open in place.

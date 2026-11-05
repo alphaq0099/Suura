@@ -5644,6 +5644,61 @@ a.np-lyrics-meta:hover {
 
 /* ---------- online ---------- */
 
+/* The engine download, offered where the need appears rather than only in
+   Settings. It is a callout, not a modal: a user who only plays local files can
+   ignore it and the rest of the view stays usable. */
+.engine-callout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px 20px;
+  padding: 14px 16px;
+  border: 1px solid rgb(var(--accent-rgb) / 34%);
+  border-radius: var(--radius);
+  background: rgb(var(--accent-rgb) / 7%);
+}
+
+.engine-callout-copy {
+  flex: 1 1 420px;
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.engine-callout-copy h2 {
+  margin: 0;
+  font-size: calc(13.5px * var(--text-scale));
+  font-weight: 600;
+}
+
+.engine-callout-copy p {
+  margin: 0;
+  max-width: 82ch;
+  color: var(--text-dim);
+  font-size: calc(12.5px * var(--text-scale));
+  line-height: 1.5;
+}
+
+.engine-callout-note.error {
+  color: var(--danger-text);
+}
+
+.engine-callout-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Below the window's minimum width the two halves stack, so the button does not
+   wrap onto a line of its own beside a squeezed paragraph. */
+@media (max-width: 700px) {
+  .engine-callout-actions {
+    width: 100%;
+  }
+}
+
 .online-bar {
   display: flex;
   flex-wrap: wrap;

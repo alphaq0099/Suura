@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import type { DownloadProgress, OnlinePlaylist, OnlinePlaylistDetail, OnlineTrack, Track } from '@shared/types'
-import { formatCount, formatDuration } from '@shared/format'
+import type {
+  DownloadProgress,
+  EngineStatus,
+  OnlinePlaylist,
+  OnlinePlaylistDetail,
+  OnlineTrack,
+  SidecarProgress,
+  Track
+} from '@shared/types'
+import { formatBytes, formatCount, formatDuration } from '@shared/format'
 import { YOUTUBE_QUEUE_SOURCE, tagQueueTracks } from '@shared/queue'
 import { onlineEntryToTrack, onlinePlaylistArtworkTrack, onlinePlaylistItemToTrack } from '@shared/online'
 import type { PlayingList } from '@shared/online'
@@ -16,6 +24,7 @@ import {
   CheckIcon,
   ClipboardIcon,
   CloseIcon,
+  CogIcon,
   CopyIcon,
   DownloadIcon,
   DiscIcon,
@@ -69,7 +78,21 @@ export interface OnlineViewProps {
   onQueueSavedTracks: (tracks: Track[]) => void
   onOpenLibrary: () => void
   onOpenSettings: () => void
+  /** Opens Settings on the Streaming tab, where the engine folder lives. */
+  onOpenEngineSettings: () => void
   onError: (message: string) => void
+  /**
+   * The engine probe. Streaming needs `yt-dlp` and `ffmpeg`, and the moment a
+   * user needs them is here, so the download is offered on this view rather
+   * than only behind Settings → Streaming.
+   */
+  engineStatus: EngineStatus | null
+  sidecarInstalling: boolean
+  sidecarProgress: SidecarProgress | null
+  sidecarNote: string | null
+  sidecarError: string | null
+  onInstallSidecars: () => Promise<void>
+  onCancelSidecarInstall: () => Promise<void>
 }
 
 /** A link that has been submitted but not resolved yet, or that failed. */
@@ -139,7 +162,15 @@ export function OnlineView(props: OnlineViewProps) {
     onQueueSavedTracks,
     onOpenLibrary,
     onOpenSettings,
-    onError
+    onOpenEngineSettings,
+    onError,
+    engineStatus,
+    sidecarInstalling,
+    sidecarProgress,
+    sidecarNote,
+    sidecarError,
+    onInstallSidecars,
+    onCancelSidecarInstall
   } = props
 
   const [url, setUrl] = useState('')
@@ -560,6 +591,17 @@ export function OnlineView(props: OnlineViewProps) {
   const listInput = parsed?.kind === 'list'
   const busyLabel = pending?.kind === 'list' ? 'Importing…' : 'Resolving…'
 
+  // Streaming needs both binaries. The probe is read when this view opens; a
+  // `null` status means it has not arrived yet, which is not the same as
+  // missing, so the callout stays away rather than flashing on every visit.
+  const requiredSidecars = (engineStatus?.sidecars ?? []).filter((sidecar) => !sidecar.optional)
+  const missingEngineBytes = requiredSidecars
+    .filter((sidecar) => !sidecar.available)
+    .reduce((sum, sidecar) => sum + sidecar.bytes, 0)
+  const engineMissing =
+    engineStatus !== null &&
+    (engineStatus.ready !== true || requiredSidecars.some((sidecar) => !sidecar.available))
+
   return (
     <main className="main-view online-view">
       <header className="view-header online-header">
@@ -632,6 +674,67 @@ export function OnlineView(props: OnlineViewProps) {
           </div>
         </div>
       </header>
+
+      {engineMissing ? (
+        <section className="engine-callout" aria-labelledby="engine-callout-title">
+          <div className="engine-callout-copy">
+            <h2 id="engine-callout-title">YouTube playback needs the download engine</h2>
+            <p>
+              Streaming goes through yt-dlp and ffmpeg. Suura downloads them on first use rather than bundling
+              them{missingEngineBytes > 0 ? ` — about ${formatBytes(missingEngineBytes)}` : ''} and verifies each
+              file before installing it. A copy you already have is used instead.
+            </p>
+            {sidecarProgress ? (
+              <div className="engine-progress" role="status">
+                <progress
+                  value={sidecarProgress.receivedBytes}
+                  max={Math.max(1, sidecarProgress.totalBytes)}
+                />
+                <span>
+                  {sidecarProgress.id}: {formatBytes(sidecarProgress.receivedBytes)} of{' '}
+                  {formatBytes(sidecarProgress.totalBytes)}
+                </span>
+              </div>
+            ) : null}
+            {sidecarError ? (
+              <p className="engine-callout-note error" role="status">
+                {sidecarError}
+              </p>
+            ) : sidecarNote ? (
+              <p className="engine-callout-note" role="status">
+                {sidecarNote}
+              </p>
+            ) : null}
+          </div>
+          <div className="engine-callout-actions">
+            <button
+              type="button"
+              className="primary"
+              onClick={() => void onInstallSidecars()}
+              disabled={sidecarInstalling}
+            >
+              {sidecarInstalling ? <SpinnerIcon /> : <DownloadIcon />}
+              <span>
+                {sidecarInstalling
+                  ? 'Downloading engine'
+                  : missingEngineBytes > 0
+                    ? `Download engine (${formatBytes(missingEngineBytes)})`
+                    : 'Download engine'}
+              </span>
+            </button>
+            {sidecarInstalling ? (
+              <button type="button" onClick={() => void onCancelSidecarInstall()}>
+                Cancel
+              </button>
+            ) : (
+              <button type="button" onClick={onOpenEngineSettings}>
+                <CogIcon />
+                <span>Engine settings</span>
+              </button>
+            )}
+          </div>
+        </section>
+      ) : null}
 
       {tab === 'links' ? (
         <>
