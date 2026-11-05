@@ -218,6 +218,7 @@ import {
   normalizeCookieBrowserProfile,
   normalizePoTokenProviderUrl,
   parseYouTubeLink,
+  usesAppBoundEncryption,
   withBrowserCookies,
   withPoTokenProvider,
   youtubeChannelUrl,
@@ -3176,10 +3177,46 @@ async function main(): Promise<void> {
       'youtube: an unavailable video becomes a human message',
       describeYouTubeFailure('ERROR: Video unavailable').toLowerCase().includes('unavailable')
     )
+    const cookieFailure = describeYouTubeFailure(
+      'ERROR: Failed to decrypt with DPAPI. See https://github.com/yt-dlp/yt-dlp/issues/10927 for more info\n'
+    ).toLowerCase()
+    check(
+      'youtube: an unreadable Chrome cookie store names the cause and the way out',
+      cookieFailure.includes('chrome and edge') &&
+        cookieFailure.includes('firefox') &&
+        cookieFailure.includes('po token') &&
+        !cookieFailure.includes('region-locked')
+    )
+    const lockedCookieDb = describeYouTubeFailure(
+      'ERROR: Could not copy Chrome cookie database. See https://github.com/yt-dlp/yt-dlp/issues/7271'
+    ).toLowerCase()
+    check(
+      'youtube: a locked Chrome cookie database suggests closing Chrome',
+      lockedCookieDb.includes('chrome is open') && lockedCookieDb.includes('close chrome')
+    )
+    const rateLimitMessage = describeYouTubeFailure(
+      'ERROR: Unable to download webpage: HTTP Error 429: Too Many Requests'
+    ).toLowerCase()
+    check(
+      'youtube: a 429 is described as a rate limit, not a bot challenge',
+      rateLimitMessage.includes('rate-limiting') && rateLimitMessage.includes('pause')
+    )
+    check(
+      'youtube: only Chrome and Edge are flagged for App-Bound Encryption',
+      usesAppBoundEncryption('chrome') && usesAppBoundEncryption('edge') && !usesAppBoundEncryption('firefox')
+    )
     check('youtube: the bot-check classifier is shared', isYouTubeBotCheck('ERROR: Sign in to confirm you are not a bot'))
     check(
       'youtube: a failed cookie read is not mistaken for a bot check',
       !isYouTubeBotCheck('ERROR: could not find chrome cookies database')
+    )
+    check(
+      'youtube: an unreadable cookie store does not pause YouTube requests',
+      !isYouTubeBotCheck('ERROR: Failed to decrypt with DPAPI. See https://github.com/yt-dlp/yt-dlp/issues/10927')
+    )
+    check(
+      'youtube: a 429 still pauses requests like a challenge',
+      isYouTubeBotCheck('Unable to download webpage: HTTP Error 429: Too Many Requests')
     )
     check('youtube: a transient network failure is retryable', isRetryableYouTubeFailure('ERROR: Connection reset by peer'))
     check(

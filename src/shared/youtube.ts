@@ -26,6 +26,20 @@ export function isSupportedCookieBrowser(value: unknown): value is CookieBrowser
 }
 
 /**
+ * Browsers whose Windows cookie store yt-dlp may fail to decrypt.
+ *
+ * Chrome 127 and later, and current Edge, encrypt cookies with App-Bound
+ * Encryption, which yt-dlp cannot read (yt-dlp issue 10927). The list is
+ * deliberately only these two: the other Chromium builds keep the older
+ * protection, so warning about them would be a guess.
+ */
+export const APP_BOUND_COOKIE_BROWSERS = ['chrome', 'edge'] as const
+
+export function usesAppBoundEncryption(value: string | null | undefined): boolean {
+  return typeof value === 'string' && (APP_BOUND_COOKIE_BROWSERS as readonly string[]).includes(value)
+}
+
+/**
  * The cookie fallback policy, kept next to the argument builders so the main
  * process, the settings UI and the smoke tests all agree on the allowed values.
  */
@@ -517,10 +531,28 @@ export function isRetryableYouTubeFailure(stderr: string): boolean {
  * "Something went wrong".
  */
 export function describeYouTubeFailure(stderr: string): string {
+  const text = stderr.toLowerCase()
+  // A cookie store that cannot be decrypted is a configuration failure, not a
+  // challenge, so it is described before the bot-check patterns. Chrome and
+  // Edge encrypt cookies with App-Bound Encryption on Windows, which yt-dlp
+  // cannot read (yt-dlp issue 10927); Firefox is the local workaround.
+  if (/failed to decrypt with dpapi|decrypt with dpapi/.test(text)) {
+    return 'The browser cookies could not be read: Chrome and Edge encrypt their cookie store in a way yt-dlp cannot decrypt on Windows. Choose Firefox in Settings → Streaming, or turn the cookie fallback off and use a PO Token provider.'
+  }
+  // Chrome holds an exclusive lock on its cookie database while it runs, so
+  // yt-dlp cannot even copy it (issue 7271). That is a different failure from
+  // a decryption problem and has a different fix.
+  if (/could not copy .*cookie database/.test(text)) {
+    return 'The browser cookies could not be read while Chrome is open, because Chrome locks its cookie database. Close Chrome and try again, or choose Firefox in Settings → Streaming.'
+  }
+  // A 429 is a rate limit. The gate still pauses requests because
+  // isYouTubeBotCheck matches it, but the message should name the real cause.
+  if (/http error 429|too many requests/.test(text)) {
+    return 'YouTube is rate-limiting requests from this network (HTTP 429). New YouTube requests pause for a few minutes; if it keeps happening, wait longer or try another network.'
+  }
   if (isYouTubeBotCheck(stderr)) {
     return 'YouTube is checking this request for automated traffic. New YouTube requests pause for a few minutes after this. The app does not sign in; a PO Token provider or the opt-in cookie fallback in Streaming settings may help.'
   }
-  const text = stderr.toLowerCase()
   if (/age.?restricted|confirm your age/.test(text)) {
     return 'This video is age-restricted, so it cannot be played here.'
   }

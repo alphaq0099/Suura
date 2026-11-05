@@ -501,7 +501,9 @@ turned off. On top of the page budget there is a small request governor:
   app stops adding requests instead of hammering the same wall. Resolves already cached still play during the pause;
 - browser cookies are off by default. Only a browser the user explicitly chooses is read, and the fallback decides
   whether that happens never, once after a challenge, or on every request. The app itself never signs in, and account
-  playlists remain unsupported;
+  playlists remain unsupported. On Windows, Chrome and Edge store cookies with App-Bound Encryption, which yt-dlp
+  cannot decrypt (issue 10927); that failure is described as a cookie problem naming Firefox and the PO Token provider,
+  so it is not mistaken for a region lock;
 - a PO Token provider is optional and external. The app does not bundle the bgutil plugin or its server; it points
   yt-dlp at the configured HTTP endpoint, reports whether `/ping` answers, and can start a command the user supplied
   (without a shell) if they ask it to.

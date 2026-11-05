@@ -48,7 +48,7 @@ import type {
   ThemeMode,
   UpdateStatus
 } from '@shared/types'
-import { COOKIE_BROWSERS, normalizePoTokenProviderUrl } from '@shared/youtube'
+import { COOKIE_BROWSERS, normalizePoTokenProviderUrl, usesAppBoundEncryption } from '@shared/youtube'
 import { normalizeAcoustidKey } from '@shared/acoustid'
 import { resolveUpdateFeedUrl } from '@shared/update'
 import { AudioSettingsPanel } from './AudioSettingsPanel'
@@ -1694,6 +1694,13 @@ export function SettingsView(props: SettingsViewProps) {
                 {settings.engine.cookieFallback !== 'off' && !settings.engine.cookiesFromBrowser ? (
                   <p className="card-hint status-error">
                     Choose a browser, or the fallback will be skipped.
+                  </p>
+                ) : null}
+                {settings.engine.cookieFallback !== 'off' &&
+                usesAppBoundEncryption(settings.engine.cookiesFromBrowser) ? (
+                  <p className="card-hint">
+                    Chrome and Edge cookies cannot be decrypted on Windows. Choose Firefox, or leave the
+                    fallback off and use a PO Token provider.
                   </p>
                 ) : null}
                 <p className="card-hint">The app never signs in; account playlists are unsupported.</p>

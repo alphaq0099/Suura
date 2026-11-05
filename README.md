@@ -365,7 +365,9 @@ first if you care about them.
 when `yt-dlp` or `ffmpeg` is missing. **Settings → Streaming → YouTube engine** has the same button plus **Check**. Most
 playback failures are an out-of-date `yt-dlp`; it updates itself daily unless you turned that off. If the engine is
 found but YouTube asks for a bot check, the **cookie fallback** can read cookies from a browser you choose; it is off
-by default and never runs quietly.
+by default and never runs quietly. On Windows, prefer **Firefox**: Chrome and Edge encrypt their cookie store with
+App-Bound Encryption, which the engine cannot decrypt, and Chrome also locks its cookie database while it runs. A PO
+Token provider is the alternative that needs no cookies.
 
 **A track I moved shows as missing.** **Settings → Misc → Find moved files.** Suura matches it by fingerprint, then by
 size and modification time, and keeps its id, so playlists and play counts survive.
