@@ -35,8 +35,8 @@ drawing support.
 - Lets the user choose the installation directory.
 - Runs the app after a successful install unless the user clears that box.
 - Ships no engine binaries: `yt-dlp`, `ffmpeg` and the optional `fpcalc` are
-  downloaded from Settings → Streaming into `%APPDATA%\Suura\engine` on first
-  use.
+  downloaded on first use from the **YouTube** view (or **Settings → Streaming**)
+  into `%APPDATA%\Suura\engine`.
 - Uninstalling asks, **defaulting to No**, whether to delete the app data
   directory (`%APPDATA%\Suura`). Choosing Yes removes the database, settings,
   logs, backups and caches. Music saved into `Music\Suura` is never deleted by
@@ -44,10 +44,15 @@ drawing support.
 
 ## Signing and SmartScreen
 
-Unsigned installers work, but Windows SmartScreen may show *Windows protected
-your PC*. For a public release, sign the installer and the executable with a
-code-signing certificate. electron-builder reads the standard environment
-variables:
+Public builds are **unsigned** until a certificate exists; the policy, the
+SignPath application and what would change are in
+[`CODE_SIGNING.md`](../../CODE_SIGNING.md). SmartScreen therefore warns on a
+downloaded installer, and the README documents the *More info → Run anyway*
+path. Publish `SHA256SUMS.txt` beside the installer so a download can at least
+be proved intact.
+
+When a certificate becomes available, electron-builder reads the standard
+environment variables:
 
 ```powershell
 $env:CSC_LINK = 'C:\secure\suura-signing.pfx'
@@ -55,10 +60,40 @@ $env:CSC_KEY_PASSWORD = '...'
 npm run package:win
 ```
 
-Never commit the certificate or its password. If no certificate is available,
-publish the SHA-256 checksum of the installer beside it and document the
-SmartScreen “More info → Run anyway” path; this is a temporary workaround, not
-a substitute for signing.
+Never commit the certificate or its password. CI-signed builds are the only
+builds that may ship once signing is in place — a local signing pass is for
+testing the pipeline, not for a release.
+
+## Publishing a release
+
+The order matters: the installer, the channel file and the checksum must all
+come from the same `package:win` run, on the same commit that is tagged.
+
+1. Bump `version` in `package.json` as the final commit before the tag. That
+   value becomes the installer name, the channel file's `version` and About.
+2. Run every gate above, then `npm run package:win`.
+3. Write `SHA256SUMS.txt` beside the installer. Uppercase hex matches what
+   `Get-FileHash` prints, so a reader can compare by eye:
+
+   ```powershell
+   Get-FileHash .\release\Suura-0.1.0-Setup.exe -Algorithm SHA256 |
+     ForEach-Object { "$($_.Hash)  Suura-0.1.0-Setup.exe" } |
+     Set-Content .\release\SHA256SUMS.txt -Encoding ascii
+   ```
+
+4. Tag the commit and create the GitHub release from it. Attach
+   `Suura-<version>-Setup.exe`, `Suura-<version>-Setup.exe.blockmap`,
+   `latest.yml` (or `beta.yml`) and `SHA256SUMS.txt`. The README links to the
+   newest release, so the release has to exist before the repository is made
+   public with that text.
+5. Optional mirror: copy the same four files into the feed folder on a static
+   host (Cloudflare R2, S3, any HTTPS server) and point **Settings → About →
+   Feed folder** at it. Nothing else is required — the updater reads
+   `latest.yml` and the installer it names, both relative to that folder.
+
+Do not attach `release/win-unpacked/`, and do not rebuild after tagging: a
+channel file that names one installer while another is attached is exactly the
+kind of mismatch the updater is designed to reject.
 
 ## App updates
 
