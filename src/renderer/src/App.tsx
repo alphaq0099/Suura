@@ -795,6 +795,17 @@ export function App() {
     }
   }, [update])
 
+  const pickCookiesFile = useCallback(async (): Promise<void> => {
+    setActionError(null)
+    try {
+      const file = await api.pickCookiesFile()
+      if (!file) return
+      await update({ engine: { cookiesFile: file } })
+    } catch (cause) {
+      setActionError(messageOf(cause))
+    }
+  }, [update])
+
   const playTrack = useCallback(
     (index: number): void => {
       if (showingStreams) setPlayingList(null)
@@ -1403,6 +1414,7 @@ export function App() {
           onRemoveFolder={(folder) => void removeFolder(folder)}
           onPickEngineDir={() => void pickEngineDir()}
           onPickDownloadFolder={() => void pickDownloadFolder()}
+          onPickCookiesFile={() => void pickCookiesFile()}
           onRefreshEngine={() => void refreshEngine(true)}
           onStartPoToken={startPoToken}
           onStopPoToken={stopPoToken}

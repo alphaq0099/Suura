@@ -1152,6 +1152,13 @@ export interface EngineSettings {
   cookiesFromBrowser: string | null
   /** Optional Chrome/Edge/Firefox profile name or path. */
   cookieBrowserProfile: string | null
+  /**
+   * Optional path to a Netscape-format cookies.txt exported from a browser.
+   * When set it takes priority over `cookiesFromBrowser`, which is the only
+   * way to use a browser whose store yt-dlp cannot decrypt (Chrome/Edge on
+   * Windows). The file is read by yt-dlp, never copied by the app.
+   */
+  cookiesFile: string | null
   /** Off, only after a bot check, or on every yt-dlp request. */
   cookieFallback: CookieFallbackMode
   /**

@@ -292,9 +292,8 @@ pane under **Imported** and can be played, added to the queue, saved in bulk or 
 |---|---|
 | **General** | Launch view, scan on launch, folder watching, click behaviour, volume-wheel step, resume playback, close to tray. |
 | **Appearance** | Theme (Midnight, Cream, Follow Windows), five accents, three densities, four text sizes, cover-art shape, motion, sidebar glyphs and panel style. |
-| **Streaming** | Engine folder and status, quality tier, retention mode and cache limits, save format and folder, prefetch, `yt-dlp` self-update, PO Token provider, cookie fallback, import limits. |
-| **Metadata** | The AcoustID key and the metadata providers used by **Find tags**, **Find lyrics** and **Match by fingerprint**. |
-| **Misc** | Backups and restore, library health, find moved files, crash reports, reset preferences. |
+| **Streaming** | Engine folder and status, quality tier, retention mode and cache limits, save format and folder, prefetch, `yt-dlp` self-update, PO Token provider, cookie fallback (browser or exported file), import limits. |
+| **Misc** | The AcoustID key, fingerprint lookup, backups and restore, library health, find moved files, crash reports, reset preferences. |
 | **About** | Versions of Suura, Electron, Chromium and Node, the `yt-dlp`/`ffmpeg` probe, the update feed and channel, **Copy diagnostics** and **Save diagnostics**. |
 
 **Settings → Misc** resets one section at a time — General, Playback, Streaming or Appearance — or all preferences at
@@ -366,8 +365,9 @@ when `yt-dlp` or `ffmpeg` is missing. **Settings → Streaming → YouTube engin
 playback failures are an out-of-date `yt-dlp`; it updates itself daily unless you turned that off. If the engine is
 found but YouTube asks for a bot check, the **cookie fallback** can read cookies from a browser you choose; it is off
 by default and never runs quietly. On Windows, prefer **Firefox**: Chrome and Edge encrypt their cookie store with
-App-Bound Encryption, which the engine cannot decrypt, and Chrome also locks its cookie database while it runs. A PO
-Token provider is the alternative that needs no cookies.
+App-Bound Encryption, which the engine cannot decrypt, and Chrome also locks its cookie database while it runs. If you
+need Chrome's session, export a Netscape `cookies.txt` and pick it in **Settings → Streaming → Cookie fallback** with
+the **Cookies file** field. A PO Token provider is the alternative that needs no cookies.
 
 **A track I moved shows as missing.** **Settings → Misc → Find moved files.** Suura matches it by fingerprint, then by
 size and modification time, and keeps its id, so playlists and play counts survive.

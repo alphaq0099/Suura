@@ -62,6 +62,36 @@ export function normalizeCookieBrowserProfile(value: unknown): string | null {
 }
 
 /**
+ * Validates a path to an exported cookies file.
+ *
+ * Only absolute paths are kept: a relative one would silently depend on the
+ * directory the app happened to start in. The file itself is read by yt-dlp,
+ * never copied into the app's data folder, so it stays under the user's
+ * control and can be revoked by deleting it.
+ */
+export function normalizeCookiesFile(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (trimmed.length === 0 || trimmed.length > 4096 || /[\r\n\0]/.test(trimmed)) return null
+  if (!/^(?:[a-zA-Z]:[\\/]|\\\\|\/)/.test(trimmed)) return null
+  return trimmed
+}
+
+/**
+ * Adds an exported cookies file to a yt-dlp call.
+ *
+ * Kept next to `withBrowserCookies` so every builder applies the same rule.
+ * The caller decides when cookies are used; this function only decides how.
+ */
+export function withCookiesFile(args: readonly string[], file: string | null | undefined): string[] {
+  const cleaned = normalizeCookiesFile(file)
+  if (!cleaned) return [...args]
+  const cookieArgs = ['--cookies', cleaned]
+  if (args[0] === '--ignore-config') return [args[0], ...cookieArgs, ...args.slice(1)]
+  return [...cookieArgs, ...args]
+}
+
+/**
  * Adds the opt-in cookie argument to a yt-dlp call.
  *
  * The argument never appears unless the user chose a browser in Settings. It is

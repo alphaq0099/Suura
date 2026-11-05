@@ -92,6 +92,7 @@ export const IPC = {
   crashReportsClear: 'app:crash-reports-clear',
   crashReportsExport: 'app:crash-reports-export',
   pickFolder: 'dialogs:pick-folder',
+  pickCookiesFile: 'dialogs:pick-cookies-file',
   openPath: 'shell:open-path',
   dataBackup: 'data:backup',
   dataRestore: 'data:restore',
@@ -318,6 +319,8 @@ export interface PlayerApi {
   exportCrashReports(): Promise<string | null>
   /** Opens the native folder picker. Resolves to null if the user cancels. */
   pickFolder(): Promise<string | null>
+  /** Opens the native file picker for an exported cookies.txt. */
+  pickCookiesFile(): Promise<string | null>
   openPath(target: string): Promise<void>
   /**
    * Copies the database and settings into a new backup folder the user chooses.

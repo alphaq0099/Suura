@@ -94,7 +94,8 @@ import {
   isCookieFallbackMode,
   isSupportedCookieBrowser,
   isYouTubeVideoId,
-  normalizeCookieBrowserProfile
+  normalizeCookieBrowserProfile,
+  normalizeCookiesFile
 } from '@shared/youtube'
 import type { AppContainer } from './services/container'
 import { listAllTracks } from './all-tracks'
@@ -525,6 +526,13 @@ export function sanitizeSettingsPatch(input: unknown): DeepPartial<AppSettings> 
     } else if (typeof source.cookieBrowserProfile === 'string') {
       engine.cookieBrowserProfile = normalizeCookieBrowserProfile(source.cookieBrowserProfile)
     }
+    if (source.cookiesFile === null) {
+      engine.cookiesFile = null
+    } else if (typeof source.cookiesFile === 'string' && source.cookiesFile.trim().length > 0) {
+      // Typed or picked paths become absolute here, so a later launch from a
+      // different working directory still finds the same file.
+      engine.cookiesFile = normalizeCookiesFile(normalizePath(source.cookiesFile))
+    }
     if (isCookieFallbackMode(source.cookieFallback)) {
       engine.cookieFallback = source.cookieFallback
     }
@@ -890,6 +898,22 @@ export function registerIpcHandlers(container: AppContainer): void {
     const options: Electron.OpenDialogOptions = {
       title: 'Choose a music folder',
       properties: ['openDirectory']
+    }
+    const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options)
+    if (result.canceled) return null
+    return result.filePaths[0] ?? null
+  })
+
+  ipcMain.handle(IPC.pickCookiesFile, async () => {
+    const parent = BrowserWindow.getFocusedWindow()
+    const options: Electron.OpenDialogOptions = {
+      title: 'Choose a cookies file',
+      buttonLabel: 'Use this file',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Cookies file', extensions: ['txt', 'cookies'] },
+        { name: 'All files', extensions: ['*'] }
+      ]
     }
     const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options)
     if (result.canceled) return null

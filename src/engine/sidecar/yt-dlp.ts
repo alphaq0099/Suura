@@ -10,7 +10,9 @@ import {
   isYouTubeBotCheck,
   isYouTubeVideoId,
   normalizeArtistName,
+  normalizeCookiesFile,
   withBrowserCookies,
+  withCookiesFile,
   withPoTokenProvider,
   youtubeChannelUrl,
   youtubeFormatSelector,
@@ -573,8 +575,10 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
       this.gate.assertReady()
       const engine = this.deps.engine()
       const browser = this.cookieBrowser()
+      const cookiesFile = this.cookieFile()
+      const hasCookieSource = browser !== null || cookiesFile !== null
       const fallback = engine.cookieFallback
-      const useCookiesFirst = fallback === 'always' && browser !== null
+      const useCookiesFirst = fallback === 'always' && hasCookieSource
       const baseArgs = withPoTokenProvider(
         withNetworkTransport(
           buildDownloadArgs(videoId, options.quality, options.format, options.outputTemplate, this.ffmpegLocation())
@@ -599,8 +603,10 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
             return await attempt(useCookiesFirst)
           } catch (error) {
             if (options.signal?.aborted) throw error
-            if (browser && fallback === 'on-bot-check' && isBotCheckError(error)) {
-              this.deps.log.info('retrying download with browser cookies after a bot check', { browser })
+            if (hasCookieSource && fallback === 'on-bot-check' && isBotCheckError(error)) {
+              this.deps.log.info('retrying download with cookies after a bot check', {
+                source: cookiesFile ? 'file' : browser
+              })
               return await attempt(true)
             }
             throw error
@@ -966,17 +972,21 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
     timeoutOverrideMs?: number
   ): Promise<{ stdout: string; stderr: string }> {
     const browser = this.cookieBrowser()
+    const cookiesFile = this.cookieFile()
+    const hasCookieSource = browser !== null || cookiesFile !== null
     const fallback = this.deps.engine().cookieFallback
-    const useCookiesFirst = fallback === 'always' && browser !== null
+    const useCookiesFirst = fallback === 'always' && hasCookieSource
     let cookiesTried = useCookiesFirst
 
     const attempt = (useCookies: boolean): Promise<{ stdout: string; stderr: string }> =>
       this.run(args, signal, timeoutOverrideMs, useCookies)
 
     const retryWithCookies = async (): Promise<{ stdout: string; stderr: string } | null> => {
-      if (!browser || fallback !== 'on-bot-check' || cookiesTried) return null
+      if (!hasCookieSource || fallback !== 'on-bot-check' || cookiesTried) return null
       cookiesTried = true
-      this.deps.log.info('retrying yt-dlp with browser cookies after a bot check', { browser })
+      this.deps.log.info('retrying yt-dlp with cookies after a bot check', {
+        source: cookiesFile ? 'file' : browser
+      })
       return attempt(true)
     }
 
@@ -1067,9 +1077,20 @@ export class YtDlpClient implements YtInfoProvider, YtPlaylistProvider, YtSearch
     return isSupportedCookieBrowser(engine.cookiesFromBrowser) ? engine.cookiesFromBrowser : null
   }
 
+  /** An exported cookies file, only when the fallback is enabled. */
+  private cookieFile(): string | null {
+    const engine = this.deps.engine()
+    if (engine.cookieFallback === 'off') return null
+    return normalizeCookiesFile(engine.cookiesFile)
+  }
+
   private withCookies(args: string[], useCookies: boolean): string[] {
     if (!useCookies) return args
     const engine = this.deps.engine()
+    // The file wins: it is the only source that works for browsers whose own
+    // store yt-dlp cannot read.
+    const file = normalizeCookiesFile(engine.cookiesFile)
+    if (file) return withCookiesFile(args, file)
     return withBrowserCookies(args, engine.cookiesFromBrowser, engine.cookieBrowserProfile)
   }
 

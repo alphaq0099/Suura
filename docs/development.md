@@ -227,8 +227,10 @@ Working today:
   The tab strip is keyboard-operable (arrows, Home, End) and the scrollable panels take focus, so the whole page can be
   used without a mouse. The Streaming tab also has the prefetch switch, a daily yt-dlp self-update, a PO Token provider
   section for the external bgutil HTTP server (with an optional command the app may start and stop), and a three-mode
-  cookie fallback - off, once after a bot check, or always - with an optional browser profile. **About** lists the
-  Suura, Electron, Chromium and Node versions and the yt-dlp/ffmpeg probe; **Copy diagnostics** writes versions, app
+  cookie fallback - off, once after a bot check, or always - with an optional browser profile or an exported
+  Netscape `cookies.txt`, which takes priority and is the workaround for a browser store yt-dlp cannot decrypt.
+  **About** lists the Suura, Electron, Chromium and Node versions and the yt-dlp/ffmpeg probe; **Copy diagnostics**
+  writes versions, app
   paths, library-folder count and the user agent to the clipboard - no cookies, history, account data or library file
   paths. **Save diagnostics** writes that same snapshot plus the most recent log to a text file chosen with the native
   dialog. Nothing is uploaded; the saved file can contain local paths from the log. Settings → Misc has a separate
@@ -503,7 +505,9 @@ turned off. On top of the page budget there is a small request governor:
   whether that happens never, once after a challenge, or on every request. The app itself never signs in, and account
   playlists remain unsupported. On Windows, Chrome and Edge store cookies with App-Bound Encryption, which yt-dlp
   cannot decrypt (issue 10927); that failure is described as a cookie problem naming Firefox and the PO Token provider,
-  so it is not mistaken for a region lock;
+  so it is not mistaken for a region lock. An exported Netscape `cookies.txt` can be chosen instead, and then wins over
+  the browser: it is the only way to use a browser store yt-dlp cannot read, and the app passes the path without copying
+  the file;
 - a PO Token provider is optional and external. The app does not bundle the bgutil plugin or its server; it points
   yt-dlp at the configured HTTP endpoint, reports whether `/ping` answers, and can start a command the user supplied
   (without a shell) if they ask it to.

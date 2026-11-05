@@ -67,6 +67,8 @@ const api: PlayerApi = {
 
   pickFolder: () => ipcRenderer.invoke(IPC.pickFolder) as Promise<string | null>,
 
+  pickCookiesFile: () => ipcRenderer.invoke(IPC.pickCookiesFile) as Promise<string | null>,
+
   openPath: (target: string) => ipcRenderer.invoke(IPC.openPath, target) as Promise<void>,
 
   backupData: () => ipcRenderer.invoke(IPC.dataBackup) as Promise<string | null>,

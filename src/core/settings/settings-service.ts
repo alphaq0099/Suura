@@ -37,7 +37,8 @@ import {
   DEFAULT_PO_TOKEN_PROVIDER_URL,
   isCookieFallbackMode,
   isSupportedCookieBrowser,
-  normalizeCookieBrowserProfile
+  normalizeCookieBrowserProfile,
+  normalizeCookiesFile
 } from '@shared/youtube'
 import { normalizeUpdateFeedUrl } from '@shared/update'
 import type { Logger } from '../logging/logger'
@@ -306,6 +307,7 @@ export class SettingsService {
           ? engine.cookiesFromBrowser
           : null,
         cookieBrowserProfile: normalizeCookieBrowserProfile(engine.cookieBrowserProfile),
+        cookiesFile: normalizeCookiesFile(engine.cookiesFile),
         cookieFallback: isCookieFallbackMode(engine.cookieFallback) ? engine.cookieFallback : 'off',
         poTokenEnabled: engine.poTokenEnabled === true,
         poTokenProviderUrl:

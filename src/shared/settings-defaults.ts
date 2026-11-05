@@ -110,6 +110,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     // never something the app does quietly.
     cookiesFromBrowser: null,
     cookieBrowserProfile: null,
+    // A file is the fallback of last resort: an exported cookies.txt works
+    // where yt-dlp cannot read the browser's own store.
+    cookiesFile: null,
     cookieFallback: 'off',
     // The provider is external by design. These defaults point at its standard
     // local port but leave both the switch and the command empty.

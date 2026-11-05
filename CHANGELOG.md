@@ -36,8 +36,8 @@ First public pre-release. Everything below is new to anyone installing Suura for
 - Search through YouTube's InnerTube API with a pager; channel pages open in place.
 - Title cleanup (`Artist - Title`, removed marketing tags) and per-row saved-state.
 - Prefetch of the next queue entry, a request governor, a bot-check circuit breaker, an optional PO Token provider and
-  an off-by-default three-mode cookie fallback that names a rate limit, a locked Chrome cookie database or an
-  undecryptable Chrome/Edge store instead of a generic failure.
+  an off-by-default three-mode cookie fallback that accepts a browser or an exported Netscape `cookies.txt`, and names a
+  rate limit, a locked Chrome cookie database or an undecryptable Chrome/Edge store instead of a generic failure.
 
 ### Saving and offline
 

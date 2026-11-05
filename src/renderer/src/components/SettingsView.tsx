@@ -82,6 +82,7 @@ export interface SettingsViewProps {
   onRemoveFolder: (folder: string) => void
   onPickEngineDir: () => void
   onPickDownloadFolder: () => void
+  onPickCookiesFile: () => void
   onRefreshEngine: () => void
   onStartPoToken: () => Promise<PoTokenStatus>
   onStopPoToken: () => Promise<PoTokenStatus>
@@ -392,6 +393,7 @@ export function SettingsView(props: SettingsViewProps) {
     onRemoveFolder,
     onPickEngineDir,
     onPickDownloadFolder,
+    onPickCookiesFile,
     onRefreshEngine,
     onStartPoToken,
     onStopPoToken,
@@ -1661,7 +1663,9 @@ export function SettingsView(props: SettingsViewProps) {
                     </span>
                     <select
                       value={settings.engine.cookiesFromBrowser ?? ''}
-                      disabled={settings.engine.cookieFallback === 'off'}
+                      disabled={
+                        settings.engine.cookieFallback === 'off' || Boolean(settings.engine.cookiesFile)
+                      }
                       onChange={(event) =>
                         onUpdate({ engine: { cookiesFromBrowser: event.target.value || null } })
                       }
@@ -1683,20 +1687,51 @@ export function SettingsView(props: SettingsViewProps) {
                     <input
                       type="text"
                       value={settings.engine.cookieBrowserProfile ?? ''}
-                      disabled={settings.engine.cookieFallback === 'off'}
+                      disabled={
+                        settings.engine.cookieFallback === 'off' || Boolean(settings.engine.cookiesFile)
+                      }
                       placeholder="Default profile"
                       onChange={(event) =>
                         onUpdate({ engine: { cookieBrowserProfile: event.target.value || null } })
                       }
                     />
                   </label>
+                  <label className="field wide">
+                    <span>
+                      Cookies file (optional)
+                      <InfoHint label="About a cookies file">
+                        An exported Netscape cookies.txt. Takes priority over the browser.
+                      </InfoHint>
+                    </span>
+                    <div className="field-row">
+                      <input
+                        type="text"
+                        readOnly
+                        value={settings.engine.cookiesFile ?? '(none)'}
+                      />
+                      <button type="button" onClick={onPickCookiesFile}>
+                        Choose
+                      </button>
+                      {settings.engine.cookiesFile ? (
+                        <button
+                          type="button"
+                          onClick={() => onUpdate({ engine: { cookiesFile: null } })}
+                        >
+                          Clear
+                        </button>
+                      ) : null}
+                    </div>
+                  </label>
                 </div>
-                {settings.engine.cookieFallback !== 'off' && !settings.engine.cookiesFromBrowser ? (
+                {settings.engine.cookieFallback !== 'off' &&
+                !settings.engine.cookiesFromBrowser &&
+                !settings.engine.cookiesFile ? (
                   <p className="card-hint status-error">
-                    Choose a browser, or the fallback will be skipped.
+                    Choose a browser or a cookies file, or the fallback will be skipped.
                   </p>
                 ) : null}
                 {settings.engine.cookieFallback !== 'off' &&
+                !settings.engine.cookiesFile &&
                 usesAppBoundEncryption(settings.engine.cookiesFromBrowser) ? (
                   <p className="card-hint">
                     Chrome and Edge cookies cannot be decrypted on Windows. Choose Firefox, or leave the

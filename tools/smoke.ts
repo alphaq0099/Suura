@@ -216,10 +216,12 @@ import {
   isYouTubeBotCheck,
   normalizeArtistName,
   normalizeCookieBrowserProfile,
+  normalizeCookiesFile,
   normalizePoTokenProviderUrl,
   parseYouTubeLink,
   usesAppBoundEncryption,
   withBrowserCookies,
+  withCookiesFile,
   withPoTokenProvider,
   youtubeChannelUrl,
   youtubeListTitle,
@@ -402,6 +404,7 @@ async function main(): Promise<void> {
     downloadConcurrency: 1,
     cookiesFromBrowser: null,
     cookieBrowserProfile: null,
+    cookiesFile: null,
     cookieFallback: 'off',
     poTokenEnabled: false,
     poTokenProviderUrl: 'http://127.0.0.1:4416',
@@ -3244,6 +3247,24 @@ async function main(): Promise<void> {
       normalizeCookieBrowserProfile('Profile 1\n--exec bad') === null
     )
     checkEqual(
+      'youtube: a cookies file is passed after --ignore-config',
+      withCookiesFile(['--ignore-config', '--no-playlist'], 'C:\\cookies\\youtube.txt').slice(0, 3).join(' '),
+      '--ignore-config --cookies C:\\cookies\\youtube.txt'
+    )
+    checkEqual(
+      'youtube: no cookies file means no cookie argument',
+      withCookiesFile(['--ignore-config'], null).join(' '),
+      '--ignore-config'
+    )
+    check(
+      'youtube: a relative cookies path is rejected',
+      normalizeCookiesFile('cookies.txt') === null && normalizeCookiesFile('C:\\cookies.txt') !== null
+    )
+    check(
+      'youtube: a newline in a cookies path is rejected',
+      normalizeCookiesFile('C:\\cookies.txt\n--exec bad') === null
+    )
+    checkEqual(
       'youtube: a provider URL loses its trailing slash',
       normalizePoTokenProviderUrl('http://127.0.0.1:4416/'),
       'http://127.0.0.1:4416'
@@ -3362,6 +3383,7 @@ async function main(): Promise<void> {
     check('settings: closing the window quits by default', !DEFAULT_SETTINGS.desktop.closeToTray)
     check('settings: browser cookies are off by default', DEFAULT_SETTINGS.engine.cookiesFromBrowser === null)
     checkEqual('settings: cookie fallback is off by default', DEFAULT_SETTINGS.engine.cookieFallback, 'off')
+    checkEqual('settings: no cookies file until one is chosen', DEFAULT_SETTINGS.engine.cookiesFile, null)
     check('settings: the cookie fallback accepts its three modes', isCookieFallbackMode('off') && isCookieFallbackMode('on-bot-check') && isCookieFallbackMode('always'))
     check('settings: the PO Token provider is off by default', !DEFAULT_SETTINGS.engine.poTokenEnabled)
     checkEqual(
