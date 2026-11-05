@@ -1,0 +1,66 @@
+name: Feature request
+description: Suggest something Suura should do, or do differently.
+title: '[Feature]: '
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Suura is a music player that also plays YouTube links. Requests are judged on whether they fit that shape:
+        one library, one queue, explicit saving, no account and no server.
+
+        Please check the [roadmap](https://github.com/alphaq0099/Suura/blob/main/ROADMAP.md) first — it may already be
+        planned, or deliberately out of scope.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that Suura makes hard or impossible today?
+      placeholder: I keep wanting to see which albums I have not played in a year, but the smart chips are fixed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like
+      description: Describe the behaviour, not the implementation. Mockups are welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Other apps, workarounds, or a smaller version of the same idea.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Library and scanning
+        - Playback and queue
+        - YouTube links, search or imports
+        - Saving and the offline cache
+        - Tags, artwork or lyrics
+        - Playlists and backups
+        - Settings and appearance
+        - Packaging and updates
+        - Accessibility
+        - Something else
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and the roadmap.
+          required: true
+        - label: This does not require an account, a cloud service or uploading my library.
+          required: false

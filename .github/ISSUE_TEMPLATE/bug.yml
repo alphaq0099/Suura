@@ -1,0 +1,114 @@
+name: Bug report
+description: Something in Suura is broken, wrong or confusing.
+title: '[Bug]: '
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. A report that says what you expected, what happened, and which build you are on is
+        usually fixable in one pass.
+
+        **Do not paste personal information** (full file paths, library listings, cookies) into a public issue.
+        Diagnostics are written to a local file you choose; read it before attaching it.
+
+        Security problems go through the private channel in
+        [SECURITY.md](https://github.com/alphaq0099/Suura/blob/main/SECURITY.md), not here.
+
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: What you saw, including any error text or dialog wording.
+      placeholder: I pressed Play on a YouTube link and the row stayed on "Resolving…" for two minutes.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      placeholder: The track should start within about ten seconds, or offer Retry.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: A short numbered list. Say whether it happens every time.
+      placeholder: |
+        1. Open YouTube → Links
+        2. Paste https://…
+        3. Press Play now
+        4. Wait
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Suura version
+      description: Settings → About, first line.
+      placeholder: 0.1.0
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      description: Settings → System → About, or `winver`.
+      placeholder: Windows 11 23H2 (22631.4169)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: build
+    attributes:
+      label: How are you running Suura?
+      options:
+        - Installed from the release installer
+        - Built from source (`npm run dev`)
+        - Built from source (`npm run package:win`)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where is it happening?
+      multiple: true
+      options:
+        - Library and scanning
+        - Playback and queue
+        - YouTube links, search or imports
+        - Saving and the offline cache
+        - Tags, artwork or lyrics
+        - Playlists and backups
+        - Settings and appearance
+        - Installer or updates
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics (optional)
+      description: |
+        Settings → About → Save diagnostics writes a text file with versions, paths, folder counts and the tail of the
+        log. Attach it if the problem involves playback, the engine or a crash. Remove anything you do not want public.
+      placeholder: Drag the diagnostics text file here.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I have removed personal information from anything I pasted or attached.
+          required: true

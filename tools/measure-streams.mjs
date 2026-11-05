@@ -10,7 +10,7 @@
  *
  *   node tools/measure-streams.mjs
  *
- * Results are written to docs/notes/yt-dlp-50-results.json. It needs yt-dlp on
+ * Results are written to docs/internal/notes/yt-dlp-50-results.json. It needs yt-dlp on
  * PATH (or set YTDLP to the executable) and network access. Nothing is written
  * outside this folder.
  */

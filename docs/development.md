@@ -170,7 +170,7 @@ Working today:
   of the same link in a session is instant, and a URL that expires is re-resolved once if the CDN answers 403. The `< 3 s`
   target is therefore a **warm** target (cached or prefetched playback, which meets it), while a cold paste has a
   **≤ 10 s** display target and shows *Resolving…* while it waits. See
-  [`docs/notes/yt-dlp-50.md`](./notes/yt-dlp-50.md). The player
+  [`docs/notes/yt-dlp-50.md`](./internal/notes/yt-dlp-50.md). The player
   bar marks a stream with a **YouTube** badge. Four seconds into a stream the app
   resolves the *next* queue entry in the background while **Prefetch the next track** is on (the default), so the
   7-10 s sidecar run happens while the current song is still playing and pressing Next (or reaching the end) only waits
@@ -359,8 +359,8 @@ response was a `206` with the requested range, and no link hit a bot check or an
 inside the app takes about **1 ms**, which is why the design warms the cache when the link is pasted and prefetches
 the next queue entry. The `< 3 s` target is therefore met for **warm or prefetched** playback; a cold paste has a
 **≤ 10 s** display target. Both samples and the reasoning are in
-[`docs/notes/yt-dlp-50.md`](./notes/yt-dlp-50.md) and
-[`docs/notes/yt-dlp-sample.md`](./notes/yt-dlp-sample.md).
+[`docs/notes/yt-dlp-50.md`](./internal/notes/yt-dlp-50.md) and
+[`docs/notes/yt-dlp-sample.md`](./internal/notes/yt-dlp-sample.md).
 
 ---
 
@@ -501,7 +501,7 @@ check impossible on playback: that check is per-request, and can still appear on
 retries or for restricted videos. Discovery no longer contributes to it: search and channel rows keep working while
 the yt-dlp playback path is inside a bot-check cooldown. The honest response for a blocked play is still to wait for the
 breaker, retry, or choose another result. The 50-link measurement in
-[`docs/notes/yt-dlp-50.md`](./notes/yt-dlp-50.md) predates the governor, so its timings are unchanged but its
+[`docs/notes/yt-dlp-50.md`](./internal/notes/yt-dlp-50.md) predates the governor, so its timings are unchanged but its
 request pattern is no longer quite what the app sends.
 
 Metadata cleanup happens at the boundary, in `cleanYouTubeMetadata`: marketing brackets are removed and a repeated
@@ -862,7 +862,7 @@ tools/
   measure-streams.mjs   the 50-link M3 timing harness (network + yt-dlp)
   runtime-check.cjs     Electron runtime assumptions
 docs/adr/               architecture decision records
-docs/notes/             spike and measurement records, with raw JSON
+docs/internal/notes/    spike and measurement records, with raw JSON
 ```
 
 ### Notable details

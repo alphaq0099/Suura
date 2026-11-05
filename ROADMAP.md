@@ -266,8 +266,8 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
       `src/engine/resolver.ts` and `src/shared/ipc.ts`
 - [ ] Verify yt-dlp + ffmpeg work as sidecars on a clean Windows machine; measure resolve latency and success rate on 20
       representative videos — presence is checked by `npm run smoke`; the 20-video sample (**20/20**, median 8.8 s) and
-      the 50-video M3 sample (**50/50**, median 8.3 s) are done, in [`docs/notes/yt-dlp-sample.md`](./docs/notes/yt-dlp-sample.md)
-      and [`docs/notes/yt-dlp-50.md`](./docs/notes/yt-dlp-50.md); the clean-machine pass is still open
+      the 50-video M3 sample (**50/50**, median 8.3 s) are done, in [`docs/internal/notes/yt-dlp-sample.md`](./docs/internal/notes/yt-dlp-sample.md)
+      and [`docs/internal/notes/yt-dlp-50.md`](./docs/internal/notes/yt-dlp-50.md); the clean-machine pass is still open
 - [x] Legal/ToS note drafted (§10) — in the README under **Legal** and in `docs/development.md` under **Scope and legal**
 **Exit:** a one-page architecture doc + stack ADR + working sidecar smoke test.
 
@@ -370,7 +370,7 @@ and the CDN's first 2 KB arrived in a median **0.46 s** (176–1263 ms), so the 
 cache, or moving to a prefetched next track, starts audio in well under a second. A **cold paste** has a display target
 of **≤ 10 s median** and shows *Resolving…* while it waits; making cold start `< 3 s` would require a resident sidecar
 (and a larger install), which is deliberately not this milestone. The M3 buffering state shipped in `e4ab1ba`. Evidence:
-[`docs/notes/yt-dlp-50.md`](./docs/notes/yt-dlp-50.md).*
+[`docs/internal/notes/yt-dlp-50.md`](./docs/internal/notes/yt-dlp-50.md).*
 
 ### M4 — Save to Library (lite)  *(done; automatic cache split into M12)*
 **Goal:** keep the "save it explicitly" half of §2.2. Saving stays a deliberate action; the automatic cache is a
@@ -816,8 +816,8 @@ player/
 
 ## 13. Immediate Next Steps (do these first)
 
-1. ~~**Run the sidecar spike**~~ Done: `docs/notes/yt-dlp-spike.md`, followed by the 20-link sample and the 50-link M3
-   measurement in `docs/notes/yt-dlp-50.md`. yt-dlp + ffmpeg resolve, seek, download and tag on this machine.
+1. ~~**Run the sidecar spike**~~ Done: `docs/internal/notes/yt-dlp-spike.md`, followed by the 20-link sample and the 50-link M3
+   measurement in `docs/internal/notes/yt-dlp-50.md`. yt-dlp + ffmpeg resolve, seek, download and tag on this machine.
 2. ~~**Decide the stack** (§3) once the spike has told you what the engine actually needs. Write it down as an ADR.~~ Done: `docs/adr/0001-stack-and-storage.md` (Electron + TypeScript + React, `node:sqlite`, no native build tools).
 3. ~~**Wireframe the 6 core screens**~~ Done, and built: Library, YouTube, Search, Playlists, Queue, Settings, Now
    Playing and the Saved/Cache manager inside YouTube all exist.
