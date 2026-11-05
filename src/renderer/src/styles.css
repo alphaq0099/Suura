@@ -64,6 +64,7 @@
 
   --bar-scrim-rgb: 15 16 22;
   --bar-scrim-alpha: 22%;
+  --bar-glow-opacity: 0.5;
   --bar-text-dim: #b6bdd2;
   --np-scrim-rgb: 15 16 22;
   --np-panel-rgb: 9 11 17;
@@ -173,7 +174,13 @@
   --tag-list-border: #bccbe6;
 
   --bar-scrim-rgb: 242 236 225;
-  --bar-scrim-alpha: 75%;
+  /* The scrim has to sit somewhere above the cover so dark text keeps its
+     contrast, but at 75% it left so little of the art that the bar looked flat
+     in Cream while the same cover still coloured the bar in Midnight. A lighter
+     scrim plus a stronger glow puts the same amount of cover into the bar in
+     both themes, and the bar's dim text still clears 4.5:1 over a dark cover. */
+  --bar-scrim-alpha: 58%;
+  --bar-glow-opacity: 0.82;
   --bar-text-dim: #554e43;
   --np-scrim-rgb: 242 236 225;
   --np-panel-rgb: 251 247 239;
@@ -2214,7 +2221,11 @@ input[type='radio'] {
   box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 22%);
 }
 
+/* The base button is a flex row that starts at the left edge. An icon-only
+   button with a fixed width therefore pushed its glyph against that edge and
+   left the space on the right — visible on the search card's `…` control. */
 .icon-button {
+  justify-content: center;
   padding: 6px;
   background: transparent;
   border-color: transparent;
@@ -3198,7 +3209,7 @@ input[type='radio'] {
   background-size: cover;
   background-position: center;
   filter: blur(44px) saturate(130%) brightness(118%);
-  opacity: 0.5;
+  opacity: var(--bar-glow-opacity, 0.5);
   mask-image: linear-gradient(180deg, transparent 0%, #000 60%, #000 100%);
 }
 

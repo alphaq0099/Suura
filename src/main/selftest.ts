@@ -1739,7 +1739,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         count: number
         labels: string
         appearanceVisible: boolean
-        metadataField: boolean
+        acoustidField: boolean
         onePanel: boolean
         restored: boolean
       }>(
@@ -1753,10 +1753,10 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            const visible = [...document.querySelectorAll('.settings-panel')].filter((el) => !el.hidden)
            const appearanceVisible = visible.some((el) => el.id === 'settings-panel-appearance')
            const onePanel = visible.length === 1
-           byLabel('Metadata')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+           byLabel('Misc')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
            await sleep(160)
-           const metadataField = Boolean(
-             document.querySelector('#settings-panel-metadata input[placeholder*="AcoustID"]')
+           const acoustidField = Boolean(
+             document.querySelector('#settings-panel-misc input[placeholder*="AcoustID"]')
            )
            byLabel('General')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
            await sleep(120)
@@ -1765,20 +1765,20 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
              count: tabs.length,
              labels: tabs.map((el) => (el.textContent || '').trim()).join('|'),
              appearanceVisible,
-             metadataField,
+             acoustidField,
              onePanel,
              restored: Boolean(general) && !general.hidden
            }
          })()`
       )
       record(
-        settingsTabs.count === 6 &&
-          settingsTabs.labels === 'General|Appearance|Streaming|Metadata|Misc|About' &&
+        settingsTabs.count === 5 &&
+          settingsTabs.labels === 'General|Appearance|Streaming|Misc|About' &&
           settingsTabs.appearanceVisible &&
-          settingsTabs.metadataField &&
+          settingsTabs.acoustidField &&
           settingsTabs.onePanel &&
           settingsTabs.restored,
-        `settings has six tabs and shows one panel at a time at ${width}x${height}`,
+        `settings has five tabs and shows one panel at a time at ${width}x${height}`,
         settingsTabs
       )
 
@@ -1914,6 +1914,31 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
           text: hintCopy.longestText,
           over: hintCopy.over
         }
+      )
+
+      // A card explains itself once: either a description under the heading or
+      // an ⓘ bubble beside it, never both. The duplicate reads as noise and was
+      // repeated across every settings tab.
+      const cardExplanations = await evaluate<{ both: string[] }>(
+        window,
+        `(() => {
+           const both = []
+           for (const card of document.querySelectorAll('.settings-panel .card')) {
+             const header = card.querySelector(':scope > .card-header')
+             if (!header || !header.querySelector('.info-hint-trigger')) continue
+             const next = header.nextElementSibling
+             if (next && next.classList.contains('card-hint')) {
+               const title = header.querySelector('h2')
+               both.push(((title ? title.textContent : '') || '').trim())
+             }
+           }
+           return { both }
+         })()`
+      )
+      record(
+        cardExplanations.both.length === 0,
+        'settings cards explain themselves once, not twice',
+        cardExplanations
       )
 
       const settingsGrid = await evaluate<{
@@ -3441,6 +3466,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       bandWidth: number
       bandHeight: number
       eqIconDistinct: boolean
+      mergedAudio: boolean
     }>(
       window,
       `(async () => {
@@ -3457,7 +3483,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            focusedPanel: false, panelTitle: '', barOrder: '', barEqButton: false,
            panelClosedByEscape: false, focusReturned: false, normalizationHint: '',
            scanAligned: '', eqCardHint: '', panelBottom: 0, barTop: 0, barHeight: 0,
-           panelWidth: 0, panelHeight: 0, bandWidth: 0, bandHeight: 0, eqIconDistinct: false
+           panelWidth: 0, panelHeight: 0, bandWidth: 0, bandHeight: 0, eqIconDistinct: false,
+           mergedAudio: false
          }
 
          press(nav('Settings'))
@@ -3470,10 +3497,13 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            (button) => text(button) === 'Open equalizer'
          )
          const eqCard = [...(panel || document).querySelectorAll('.audio-card')].find(
-           (card) => text(card.querySelector('h2')) === 'Equalizer'
+           (card) => text(card.querySelector('h2')) === 'Audio'
          )
-         const normalCard = [...(panel || document).querySelectorAll('.audio-card')].find(
-           (card) => text(card.querySelector('h2')) === 'Volume normalization'
+         const normalCard = eqCard
+         out.mergedAudio = Boolean(
+           eqCard &&
+             eqCard.querySelector('button') &&
+             eqCard.querySelectorAll('input[type="checkbox"]').length === 2
          )
          out.openButton = Boolean(open && eqCard)
          out.eqCardHint = text(eqCard?.querySelector('.card-hint'))
@@ -3481,7 +3511,8 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.normalizationHint = [...(normalCard?.querySelectorAll('.card-hint') || [])]
            .map((hint) => text(hint))
            .join(' | ')
-         const actions = normalCard?.querySelector('.card-actions')
+         const actionRows = [...(normalCard?.querySelectorAll('.card-actions') || [])]
+         const actions = actionRows[actionRows.length - 1]
          out.scanAligned = actions ? getComputedStyle(actions).justifyContent : ''
 
          press(open)
@@ -3537,6 +3568,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     record(
       audioUi.openButton && audioUi.slidersInSettings === 0 && audioUi.eqCardHint.length > 0,
       'equalizer: Settings keeps a short shortcut, not the whole curve',
+      audioUi
+    )
+    record(
+      audioUi.mergedAudio,
+      'equalizer: the equalizer and loudness controls share one Audio card',
       audioUi
     )
     record(
@@ -4241,6 +4277,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       barGlowOnBar: boolean
       tileGlowGone: boolean
       glowMasked: boolean
+      lightGlowOpacity: number
+      lightScrimAlpha: number
+      lightCoverStrength: number
       volumeBefore: number
       volumeMuted: number
       mutePressed: string
@@ -4323,7 +4362,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     }>(
       window,
       `(async () => {
-         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, volumeBeforeWheel: -1, volumeAfterWheel: -1, volumeWheelTop: -1, volumeWheelBottom: -1, wheelCancelled: false, barVolumeBefore: -1, barVolumeMuted: -1, barMutePressed: '', barVolumeRestored: -1, barPopHidden: false, barPopVertical: false, barPopWithin: false, barPopShownByFocus: false, barKeyBefore: -1, barKeyAfter: -1, barKeyProgress: '', barKeyRestored: -1, panelClosedByOutsidePress: false, panelStayedOpenOnInsidePress: false, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false, panelCloseState: '', lyricsOpened: false, queueClosedByLyrics: false, lyricRows: 0, lyricMeta: '', lyricCurrent: 0, lyricSeeked: false, lyricFill: false, lyricFillTransitionMs: -1, lyricFillFrames: 0, lyricPaused: false, lyricResumed: false, finderOpened: false, finderMatches: 0, finderMatchText: '', finderGeniusLabel: false, fetchedMeta: '', fetchedLines: 0, fetchedActions: false, fetchedActionText: '', fetchedFooterText: '', fetchedLink: false, fetchedLinkHref: '', fetchedUseFileLabel: '', fetchedUseFileEnabled: false, fileMeta: '', fileLines: 0, fileActions: false, forgetLabel: '', forgotMeta: '', offsetPlainAtZero: false, offsetAdjusted: '', offsetResetByPress: false, offsetResetGone: false, offsetLive: false, stageOpened: false, stageLines: 0, stageCurrent: 0, stageClosed: false, escapeHidLyrics: false, escapeKeptWindowAfterLyrics: false }
+         const out = { shapeReachesThumbnails: false, fitIsProportional: false, fitRatio: -1, fitIsLive: false, fitIsPlayerOnly: false, fitIsDisabledWhenRound: false, circleCropsTheBox: false, settingsRestored: false, barGlowOnBar: false, tileGlowGone: false, glowMasked: false, lightGlowOpacity: -1, lightScrimAlpha: -1, lightCoverStrength: -1, volumeBefore: -1, volumeMuted: -1, mutePressed: '', volumeRestored: -1, volumeBeforeWheel: -1, volumeAfterWheel: -1, volumeWheelTop: -1, volumeWheelBottom: -1, wheelCancelled: false, barVolumeBefore: -1, barVolumeMuted: -1, barMutePressed: '', barVolumeRestored: -1, barPopHidden: false, barPopVertical: false, barPopWithin: false, barPopShownByFocus: false, barKeyBefore: -1, barKeyAfter: -1, barKeyProgress: '', barKeyRestored: -1, panelClosedByOutsidePress: false, panelStayedOpenOnInsidePress: false, popoverHidden: false, panelAtRest: false, queueRows: 0, queueLabels: '', queueCurrent: 0, truncates: false, panelOpened: false, panelRowsFit: false, shadowFades: false, shadowStyle: '', jumped: false, panelStayedOpen: false, escapeHidPanel: false, escapeKeptWindow: false, escapeClosedWindow: false, panelCloseState: '', lyricsOpened: false, queueClosedByLyrics: false, lyricRows: 0, lyricMeta: '', lyricCurrent: 0, lyricSeeked: false, lyricFill: false, lyricFillTransitionMs: -1, lyricFillFrames: 0, lyricPaused: false, lyricResumed: false, finderOpened: false, finderMatches: 0, finderMatchText: '', finderGeniusLabel: false, fetchedMeta: '', fetchedLines: 0, fetchedActions: false, fetchedActionText: '', fetchedFooterText: '', fetchedLink: false, fetchedLinkHref: '', fetchedUseFileLabel: '', fetchedUseFileEnabled: false, fileMeta: '', fileLines: 0, fileActions: false, forgetLabel: '', forgotMeta: '', offsetPlainAtZero: false, offsetAdjusted: '', offsetResetByPress: false, offsetResetGone: false, offsetLive: false, stageOpened: false, stageLines: 0, stageCurrent: 0, stageClosed: false, escapeHidLyrics: false, escapeKeptWindowAfterLyrics: false }
          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
          const pick = (selector) => document.querySelector(selector)
          const press = (element) => { if (element) element.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
@@ -4497,6 +4536,23 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
            const mask = String(getComputedStyle(glow).webkitMaskImage || getComputedStyle(glow).maskImage || '')
            out.glowMasked = mask.includes('gradient')
          }
+
+         // Cream used the same 22% scrim as Midnight but drew a 75% cream one over
+         // it, so the cover was reduced to a trace and the bar looked flat (4.png).
+         // The two themes have to put comparable cover colour into the bar.
+         const themeRoot = document.documentElement
+         const previousTheme = themeRoot.dataset.theme || 'dark'
+         themeRoot.dataset.theme = 'light'
+         await sleep(220)
+         out.lightGlowOpacity = glow ? Number(getComputedStyle(glow).opacity) : -1
+         const scrimStyle = bar
+           ? getComputedStyle(bar.querySelector('.player-bar-bg'), '::after').backgroundColor
+           : ''
+         const scrimChannels = (scrimStyle.match(/[\d.]+/g) || []).map(Number)
+         out.lightScrimAlpha = scrimChannels.length >= 4 ? scrimChannels[3] : -1
+         out.lightCoverStrength = out.lightGlowOpacity * (1 - out.lightScrimAlpha)
+         themeRoot.dataset.theme = previousTheme
+         await sleep(150)
 
          // Volume: click mutes, click again restores the level that was there. The
          // window is already open from the artwork checks above.
@@ -4974,6 +5030,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     record(visuals.barGlowOnBar, 'the player bar ambience spans the whole bar')
     record(visuals.tileGlowGone, 'the now-playing tile no longer paints its own glow')
     record(visuals.glowMasked, 'the bar ambience is masked so it has no hard edge')
+    record(
+      visuals.lightCoverStrength >= 0.3,
+      'the Cream player bar shows the cover art, not only a flat tint',
+      `glow ${visuals.lightGlowOpacity} x (1 - scrim ${visuals.lightScrimAlpha}) = ${visuals.lightCoverStrength.toFixed(3)}`
+    )
     record(
       visuals.volumeBefore > 0 && visuals.volumeMuted === 0 && visuals.mutePressed === 'true',
       'clicking the volume button mutes',

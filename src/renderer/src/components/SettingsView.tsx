@@ -205,7 +205,6 @@ const TABS = [
   { id: 'general', label: 'General' },
   { id: 'appearance', label: 'Appearance' },
   { id: 'streaming', label: 'Streaming' },
-  { id: 'metadata', label: 'Metadata' },
   { id: 'misc', label: 'Misc' },
   { id: 'about', label: 'About' }
 ] as const
@@ -797,10 +796,6 @@ export function SettingsView(props: SettingsViewProps) {
                   Startup, window &amp; resume
                 </h2>
               </header>
-              <p className="card-hint">
-                Where Suura opens, whether it checks for changes made while it was closed, what happens to the last
-                queue, and whether closing the window quits or hides it.
-              </p>
               <div className="field-grid">
                 <label className="field">
                   <span>Open at launch</span>
@@ -859,15 +854,11 @@ export function SettingsView(props: SettingsViewProps) {
 
             <article className="card">
               <header className="card-header">
-                <h2>
-                  Click behaviour
-                  <InfoHint label="About click behaviour">
-                    A double click always arrives as two single clicks.
-                  </InfoHint>
-                </h2>
+                <h2>Mouse behaviour</h2>
               </header>
               <p className="card-hint">
-                Choose what one click does; double-click always receives two single clicks first.
+                What one click does in a list, and how far one wheel notch moves the volume. A double
+                click always receives two single clicks first; Shift always moves one volume percent.
               </p>
               <div className="field-grid">
                 <label className="field">
@@ -900,20 +891,6 @@ export function SettingsView(props: SettingsViewProps) {
                     ))}
                   </select>
                 </label>
-              </div>
-            </article>
-
-            <article className="card">
-              <header className="card-header">
-                <h2>
-                  Playback &amp; volume
-                  <InfoHint label="About playback and volume">
-                    Shift always moves one percent. Volume is remembered.
-                  </InfoHint>
-                </h2>
-              </header>
-              <p className="card-hint">How much one wheel notch changes the volume.</p>
-              <div className="field-grid">
                 <label className="field">
                   <span>Volume wheel step</span>
                   <select
@@ -1280,12 +1257,7 @@ export function SettingsView(props: SettingsViewProps) {
 
               <article className="card">
                 <header className="card-header">
-                  <h2>
-                    List columns
-                    <InfoHint label="About list columns">
-                      Narrow panes may hide columns regardless.
-                    </InfoHint>
-                  </h2>
+                  <h2>List columns</h2>
                 </header>
                 <p className="card-hint">Choose which optional columns appear in each kind of list.</p>
                 <div className="column-toggle-groups">
@@ -1333,9 +1305,6 @@ export function SettingsView(props: SettingsViewProps) {
                 <header className="card-header">
                   <h2>
                     YouTube engine <span className="badge">yt-dlp</span>
-                    <InfoHint label="About the YouTube engine">
-                      Playback and saving need yt-dlp and ffmpeg.
-                    </InfoHint>
                   </h2>
                   <button type="button" onClick={onRefreshEngine} disabled={engineLoading}>
                     {engineLoading ? <SpinnerIcon /> : <RefreshIcon />}
@@ -1489,12 +1458,7 @@ export function SettingsView(props: SettingsViewProps) {
 
               <article className="card">
                 <header className="card-header">
-                  <h2>
-                    PO Token provider
-                    <InfoHint label="About the PO Token provider">
-                      Optional third-party server for YouTube bot checks.
-                    </InfoHint>
-                  </h2>
+                  <h2>PO Token provider</h2>
                   <button type="button" onClick={onRefreshEngine} disabled={engineLoading}>
                     {engineLoading ? <SpinnerIcon /> : <RefreshIcon />}
                     <span>Check status</span>
@@ -1669,12 +1633,7 @@ export function SettingsView(props: SettingsViewProps) {
             <div className="cards-col">
               <article className="card">
                 <header className="card-header">
-                  <h2>
-                    Cookie fallback
-                    <InfoHint label="About cookie fallback">
-                      Off never reads cookies. The middle option retries once after a bot check.
-                    </InfoHint>
-                  </h2>
+                  <h2>Cookie fallback</h2>
                 </header>
                 <p className="card-hint">Off by default. A targeted retry, not an account login.</p>
                 <div className="field-grid">
@@ -1742,12 +1701,7 @@ export function SettingsView(props: SettingsViewProps) {
 
               <article className="card">
                 <header className="card-header">
-                  <h2>
-                    Playback &amp; imports
-                    <InfoHint label="About playback and imports">
-                      Caps apply while listing; downloads run separately.
-                    </InfoHint>
-                  </h2>
+                  <h2>Playback &amp; imports</h2>
                 </header>
                 <p className="card-hint">Caps keep a large playlist from becoming a large queue.</p>
                 <div className="field-grid">
@@ -1814,12 +1768,7 @@ export function SettingsView(props: SettingsViewProps) {
 
               <article className="card">
                 <header className="card-header">
-                  <h2>
-                    How streams are kept
-                    <InfoHint label="About offline streaming">
-                      Stream writes nothing; Cache keeps a copy; Keep saves into the library.
-                    </InfoHint>
-                  </h2>
+                  <h2>How streams are kept</h2>
                 </header>
                 <p className="card-hint">
                   {RETENTION_CHOICES.find((choice) => choice.value === settings.retention.mode)?.hint}
@@ -1885,12 +1834,7 @@ export function SettingsView(props: SettingsViewProps) {
 
               <article className="card">
                 <header className="card-header">
-                  <h2>
-                    Saving to your library
-                    <InfoHint label="About saving streams">
-                      Downloads once, writes tags and cover, and files it in your music folder.
-                    </InfoHint>
-                  </h2>
+                  <h2>Saving to your library</h2>
                 </header>
                 <p className="card-hint">
                   These settings apply to a manual Save and to Keep mode. A saved file plays offline and survives a
@@ -1953,94 +1897,6 @@ export function SettingsView(props: SettingsViewProps) {
         <section
           className="settings-panel"
           role="tabpanel"
-          id="settings-panel-metadata"
-          aria-labelledby="settings-tab-metadata"
-          tabIndex={0}
-          hidden={tab !== 'metadata'}
-        >
-          <div className="cards">
-            <article className="card">
-              <header className="card-header">
-                <h2>
-                  Fingerprint lookup
-                  <InfoHint label="About fingerprint lookup">
-                    Names a file from its audio when its tags are too wrong to search with.
-                  </InfoHint>
-                </h2>
-              </header>
-              <p className="card-hint">
-                AcoustID matches a Chromaprint fingerprint to a MusicBrainz recording. It needs
-                fpcalc and your own AcoustID application key; the text search works without either.
-              </p>
-              <div className="field-grid">
-                <label className="field wide">
-                  <span>
-                    AcoustID key
-                    <InfoHint label="About the AcoustID key">
-                      Create a free application key at acoustid.org and paste it here.
-                    </InfoHint>
-                  </span>
-                  <input
-                    type="text"
-                    value={acoustidKeyDraft}
-                    placeholder="Your AcoustID application key"
-                    aria-invalid={!acoustidKeyValid}
-                    onChange={(event) => setAcoustidKeyDraft(event.target.value)}
-                    onBlur={commitAcoustidKey}
-                    onKeyDown={(event) => {
-                      if (event.key !== 'Enter') return
-                      event.preventDefault()
-                      commitAcoustidKey()
-                    }}
-                  />
-                </label>
-              </div>
-              {!acoustidKeyValid ? (
-                <p className="card-hint status-error">
-                  A key is 8 to 64 letters and digits. Clear the field to turn fingerprint matching
-                  off.
-                </p>
-              ) : null}
-
-              <ul className="status-list">
-                <li className={fpcalcState?.available ? 'ok' : ''}>
-                  <span className="status-name">fpcalc</span>
-                  <span className="status-value">
-                    {fpcalcState
-                      ? fpcalcState.installed
-                        ? `${fpcalcState.version} installed`
-                        : fpcalcState.available
-                          ? `found via ${sourceLabel(fpcalcState.source)}`
-                          : 'not installed'
-                      : 'not checked'}
-                  </span>
-                </li>
-              </ul>
-              {fpcalcState && !fpcalcState.installed ? (
-                <div className="field-row">
-                  <button type="button" onClick={() => void onInstallSidecars()} disabled={sidecarInstalling}>
-                    {sidecarInstalling ? <SpinnerIcon /> : <DownloadIcon />}
-                    <span>Download pinned engine</span>
-                  </button>
-                  <span className="card-hint">
-                    {fpcalcState.available
-                      ? 'The copy above works; this also puts a pinned copy in the engine folder.'
-                      : 'fpcalc is optional: streaming works without it.'}
-                  </span>
-                </div>
-              ) : null}
-
-              <p className="card-hint">
-                Matching by fingerprint is a separate action in the tag finder. It reads up to two
-                minutes of audio, so it is never part of a batch.
-              </p>
-            </article>
-          </div>
-        </section>
-
-        <section
-          className="settings-panel"
-          role="tabpanel"
           id="settings-panel-misc"
           aria-labelledby="settings-tab-misc"
           tabIndex={0}
@@ -2050,285 +1906,327 @@ export function SettingsView(props: SettingsViewProps) {
             <div className="cards-col">
               <article className="card">
                 <header className="card-header">
-                  <h2>
-                    Storage &amp; diagnostics
-                  <InfoHint label="About app data">
-                    Everything the app writes; the log is the first place to look.
-                  </InfoHint>
-                </h2>
-              </header>
-              <p className="card-hint">App data, logs and caches. Open a folder to inspect it.</p>
-              {paths ? (
-                <ul className="path-list">
-                  {(
-                    [
-                      ['Database', paths.database],
-                      ['Config', paths.config],
-                      ['Logs', paths.logs],
-                      ['Artwork cache', paths.cache],
-                      ['Downloads', paths.downloads],
-                      ['Backups', paths.backups],
-                      ['Crash reports', paths.crashes]
-                    ] as const
-                  ).map(([label, target]) => (
-                    <li key={label}>
-                      <span className="path-label">{label}</span>
-                      <span className="path-value" title={target}>
-                        {target}
-                      </span>
-                      <button type="button" onClick={() => onOpenPath(target)}>
-                        Open
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="card-hint">Loading…</p>
-              )}
-              </article>
-
-              <article className="card">
-                <header className="card-header">
-                  <h2>
-                    Crash reports
-                    <InfoHint label="About crash reports">
-                      Stored only on this PC. Nothing is uploaded, ever.
-                    </InfoHint>
-                  </h2>
+                  <h2>Storage &amp; diagnostics</h2>
                 </header>
-                <p className="card-hint">
-                  Off by default. When on, Suura saves a small report if the app or its renderer crashes, so you
-                  can review it or share it yourself.
-                </p>
-                <label className="field checkbox">
-                  <input
-                    type="checkbox"
-                    checked={settings.diagnostics.crashReports}
-                    onChange={(event) =>
-                      onUpdate({ diagnostics: { crashReports: event.target.checked } })
-                    }
-                  />
-                  <span>
-                    Keep crash reports on this PC
-                    <InfoHint label="About the crash-report switch">
-                      Off stops new reports. Existing files stay until you clear them.
-                    </InfoHint>
-                  </span>
-                </label>
-                {crashReports ? (
-                  <ul className="status-list">
-                    <li>
-                      <span className="status-name">Saved reports</span>
-                      <span className="status-value">
-                        {crashReports.count === 0
-                          ? 'None'
-                          : `${formatCount(crashReports.count)} · ${formatBytes(crashReports.bytes)}`}
-                      </span>
-                    </li>
-                    <li>
-                      <span className="status-name">Latest</span>
-                      <span className="status-value">
-                        {crashReports.latestAt ? formatTimestamp(crashReports.latestAt) : 'Never'}
-                      </span>
-                    </li>
-                    <li>
-                      <span className="status-name">Folder</span>
-                      <span className="status-value" title={crashReports.folder}>
-                        {crashReports.folder}
-                      </span>
-                    </li>
+                <p className="card-hint">App data, logs and caches. Open a folder to inspect it.</p>
+                {paths ? (
+                  <ul className="path-list">
+                    {(
+                      [
+                        ['Database', paths.database],
+                        ['Config', paths.config],
+                        ['Logs', paths.logs],
+                        ['Artwork cache', paths.cache],
+                        ['Downloads', paths.downloads],
+                        ['Backups', paths.backups],
+                        ['Crash reports', paths.crashes]
+                      ] as const
+                    ).map(([label, target]) => (
+                      <li key={label}>
+                        <span className="path-label">{label}</span>
+                        <span className="path-value" title={target}>
+                          {target}
+                        </span>
+                        <button type="button" onClick={() => onOpenPath(target)}>
+                          Open
+                        </button>
+                      </li>
+                    ))}
                   </ul>
                 ) : (
-                  <p className="card-hint">Checking this PC…</p>
+                  <p className="card-hint">Loading…</p>
                 )}
-                <div className="field-row">
-                  <button
-                    type="button"
-                    onClick={() => void runExportCrashReports()}
-                    disabled={crashBusy !== null || (crashReports?.count ?? 0) === 0}
-                  >
-                    {crashBusy === 'export' ? <SpinnerIcon /> : null}
-                    <span>Save reports...</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmClearCrashes(true)}
-                    disabled={crashBusy !== null || (crashReports?.count ?? 0) === 0}
-                  >
-                    {crashBusy === 'clear' ? <SpinnerIcon /> : null}
-                    <span>Clear reports...</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onOpenPath(crashReports?.folder ?? paths?.crashes ?? '')}
-                    disabled={!crashReports && !paths}
-                  >
-                    Open folder
-                  </button>
-                </div>
-                {confirmClearCrashes ? (
-                  <div className="reset-confirm" role="alert">
-                    <p>Delete every saved crash report? This cannot be undone.</p>
-                    <div className="field-row">
-                      <button
-                        type="button"
-                        className="primary"
-                        autoFocus
-                        onClick={() => void runClearCrashReports()}
-                        disabled={crashBusy !== null}
-                      >
-                        Delete reports
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setConfirmClearCrashes(false)}
-                        disabled={crashBusy !== null}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-                {crashError ? (
-                  <div className="banner error" role="alert">
-                    {crashError}
-                  </div>
-                ) : null}
-                {crashNote ? (
-                  <p className="card-hint" role="status">
-                    {crashNote}
+                </article>
+
+                <article className="card">
+                  <header className="card-header">
+                    <h2>Crash reports</h2>
+                  </header>
+                  <p className="card-hint">
+                    Off by default. When on, Suura saves a small report if the app or its renderer crashes, so you
+                    can review it or share it yourself.
                   </p>
-                ) : null}
+                  <label className="field checkbox">
+                    <input
+                      type="checkbox"
+                      checked={settings.diagnostics.crashReports}
+                      onChange={(event) =>
+                        onUpdate({ diagnostics: { crashReports: event.target.checked } })
+                      }
+                    />
+                    <span>
+                      Keep crash reports on this PC
+                      <InfoHint label="About the crash-report switch">
+                        Off stops new reports. Existing files stay until you clear them.
+                      </InfoHint>
+                    </span>
+                  </label>
+                  {crashReports ? (
+                    <ul className="status-list">
+                      <li>
+                        <span className="status-name">Saved reports</span>
+                        <span className="status-value">
+                          {crashReports.count === 0
+                            ? 'None'
+                            : `${formatCount(crashReports.count)} · ${formatBytes(crashReports.bytes)}`}
+                        </span>
+                      </li>
+                      <li>
+                        <span className="status-name">Latest</span>
+                        <span className="status-value">
+                          {crashReports.latestAt ? formatTimestamp(crashReports.latestAt) : 'Never'}
+                        </span>
+                      </li>
+                      <li>
+                        <span className="status-name">Folder</span>
+                        <span className="status-value" title={crashReports.folder}>
+                          {crashReports.folder}
+                        </span>
+                      </li>
+                    </ul>
+                  ) : (
+                    <p className="card-hint">Checking this PC…</p>
+                  )}
+                  <div className="field-row">
+                    <button
+                      type="button"
+                      onClick={() => void runExportCrashReports()}
+                      disabled={crashBusy !== null || (crashReports?.count ?? 0) === 0}
+                    >
+                      {crashBusy === 'export' ? <SpinnerIcon /> : null}
+                      <span>Save reports...</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmClearCrashes(true)}
+                      disabled={crashBusy !== null || (crashReports?.count ?? 0) === 0}
+                    >
+                      {crashBusy === 'clear' ? <SpinnerIcon /> : null}
+                      <span>Clear reports...</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onOpenPath(crashReports?.folder ?? paths?.crashes ?? '')}
+                      disabled={!crashReports && !paths}
+                    >
+                      Open folder
+                    </button>
+                  </div>
+                  {confirmClearCrashes ? (
+                    <div className="reset-confirm" role="alert">
+                      <p>Delete every saved crash report? This cannot be undone.</p>
+                      <div className="field-row">
+                        <button
+                          type="button"
+                          className="primary"
+                          autoFocus
+                          onClick={() => void runClearCrashReports()}
+                          disabled={crashBusy !== null}
+                        >
+                          Delete reports
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmClearCrashes(false)}
+                          disabled={crashBusy !== null}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                  {crashError ? (
+                    <div className="banner error" role="alert">
+                      {crashError}
+                    </div>
+                  ) : null}
+                  {crashNote ? (
+                    <p className="card-hint" role="status">
+                      {crashNote}
+                    </p>
+                  ) : null}
               </article>
             </div>
 
             <div className="cards-col">
               <article className="card">
                 <header className="card-header">
-                  <h2>
-                    Backup &amp; restore
-                  <InfoHint label="About backups">
-                    Startup and pre-upgrade copies. Restore validates, then restarts.
-                  </InfoHint>
-                </h2>
-              </header>
-              <p className="card-hint">Automatic copies at startup and before upgrades; export a CSV for spreadsheets.</p>
-              <div className="field-grid">
-                <label className="field">
-                  <span>
-                    Automatic backups to keep
-                    <InfoHint label="About backup retention">
-                      Keeps the newest copies; manual backups are never touched. Lowering prunes now.
-                    </InfoHint>
-                  </span>
-                  <input
-                    type="number"
-                    min={3}
-                    max={50}
-                    value={settings.backups.retentionCount}
-                    onChange={(event) =>
-                      onUpdate({ backups: { retentionCount: Number(event.target.value) } })
-                    }
-                  />
-                </label>
-              </div>
-              <div className="field-row">
-                <button type="button" onClick={() => void runBackup()} disabled={dataBusy !== null}>
-                  {dataBusy === 'backup' ? <SpinnerIcon /> : null}
-                  <span>Back up now…</span>
-                </button>
-                <button type="button" onClick={() => void runRestore()} disabled={dataBusy !== null}>
-                  {dataBusy === 'restore' ? <SpinnerIcon /> : null}
-                  <span>Restore from backup…</span>
-                </button>
-                <button type="button" onClick={() => void runExport()} disabled={dataBusy !== null}>
-                  {dataBusy === 'export' ? <SpinnerIcon /> : null}
-                  <span>Export library as CSV.</span>
-                </button>
-                {paths ? (
-                  <button type="button" onClick={() => onOpenPath(paths.backups)}>
-                    Open backups folder
+                  <h2>Backup &amp; restore</h2>
+                </header>
+                <p className="card-hint">Automatic copies at startup and before upgrades; export a CSV for spreadsheets.</p>
+                <div className="field-grid">
+                  <label className="field">
+                    <span>
+                      Automatic backups to keep
+                      <InfoHint label="About backup retention">
+                        Keeps the newest copies; manual backups are never touched. Lowering prunes now.
+                      </InfoHint>
+                    </span>
+                    <input
+                      type="number"
+                      min={3}
+                      max={50}
+                      value={settings.backups.retentionCount}
+                      onChange={(event) =>
+                        onUpdate({ backups: { retentionCount: Number(event.target.value) } })
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="field-row">
+                  <button type="button" onClick={() => void runBackup()} disabled={dataBusy !== null}>
+                    {dataBusy === 'backup' ? <SpinnerIcon /> : null}
+                    <span>Back up now…</span>
                   </button>
+                  <button type="button" onClick={() => void runRestore()} disabled={dataBusy !== null}>
+                    {dataBusy === 'restore' ? <SpinnerIcon /> : null}
+                    <span>Restore from backup…</span>
+                  </button>
+                  <button type="button" onClick={() => void runExport()} disabled={dataBusy !== null}>
+                    {dataBusy === 'export' ? <SpinnerIcon /> : null}
+                    <span>Export library as CSV.</span>
+                  </button>
+                  {paths ? (
+                    <button type="button" onClick={() => onOpenPath(paths.backups)}>
+                      Open backups folder
+                    </button>
+                  ) : null}
+                </div>
+                {dataError ? (
+                  <div className="banner error" role="alert">
+                    {dataError}
+                  </div>
                 ) : null}
-              </div>
-              {dataError ? (
-                <div className="banner error" role="alert">
-                  {dataError}
-                </div>
-              ) : null}
-              {dataNote ? (
-                <p className="data-note" role="status">
-                  {dataNote}
-                </p>
-              ) : null}
-            </article>
+                {dataNote ? (
+                  <p className="data-note" role="status">
+                    {dataNote}
+                  </p>
+                ) : null}
+              </article>
 
-            <article className="card">
-              <header className="card-header">
-                <h2>
-                  Library health
-                  <InfoHint label="About library health">
-                    Duplicates are byte-identical files; merging keeps the oldest entry.
-                  </InfoHint>
-                </h2>
-              </header>
-              <p className="card-hint">
-                Find byte-identical duplicates, merge them, or reconnect files after a folder move.
-              </p>
-              <div className="field-row">
-                <button
-                  type="button"
-                  onClick={() => void runFindDuplicates()}
-                  disabled={careBusy !== null}
-                >
-                  {careBusy === 'duplicates' ? <SpinnerIcon /> : null}
-                  <span>Find duplicates.</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void runMergeDuplicates()}
-                  disabled={careBusy !== null || !duplicates || duplicates.groups === 0}
-                >
-                  {careBusy === 'merge' ? <SpinnerIcon /> : null}
-                  <span>Merge duplicates.</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void runRelocate()}
-                  disabled={careBusy !== null || missingTracks === 0}
-                >
-                  {careBusy === 'relocate' ? <SpinnerIcon /> : null}
-                  <span>Find moved files.</span>
-                </button>
-              </div>
-              <p className="data-note">
-                {missingTracks === 0
-                  ? 'No files are missing from the library.'
-                  : `${missingTracks} missing track${missingTracks === 1 ? '' : 's'} kept with history and playlist entries.`}
-              </p>
-              {careError ? (
-                <div className="banner error" role="alert">
-                  {careError}
-                </div>
-              ) : null}
-              {careNote ? (
-                <p className="data-note" role="status">
-                  {careNote}
+              <article className="card">
+                <header className="card-header">
+                  <h2>Library health</h2>
+                </header>
+                <p className="card-hint">
+                  Find byte-identical duplicates, merge them, or reconnect files after a folder move.
                 </p>
-              ) : null}
-            </article>
+                <div className="field-row">
+                  <button
+                    type="button"
+                    onClick={() => void runFindDuplicates()}
+                    disabled={careBusy !== null}
+                  >
+                    {careBusy === 'duplicates' ? <SpinnerIcon /> : null}
+                    <span>Find duplicates.</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void runMergeDuplicates()}
+                    disabled={careBusy !== null || !duplicates || duplicates.groups === 0}
+                  >
+                    {careBusy === 'merge' ? <SpinnerIcon /> : null}
+                    <span>Merge duplicates.</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void runRelocate()}
+                    disabled={careBusy !== null || missingTracks === 0}
+                  >
+                    {careBusy === 'relocate' ? <SpinnerIcon /> : null}
+                    <span>Find moved files.</span>
+                  </button>
+                </div>
+                <p className="data-note">
+                  {missingTracks === 0
+                    ? 'No files are missing from the library.'
+                    : `${missingTracks} missing track${missingTracks === 1 ? '' : 's'} kept with history and playlist entries.`}
+                </p>
+                {careError ? (
+                  <div className="banner error" role="alert">
+                    {careError}
+                  </div>
+                ) : null}
+                {careNote ? (
+                  <p className="data-note" role="status">
+                    {careNote}
+                  </p>
+                ) : null}
+              </article>
+
+              <article className="card">
+                <header className="card-header">
+                  <h2>Fingerprint lookup</h2>
+                </header>
+                <p className="card-hint">
+                  AcoustID matches a Chromaprint fingerprint to a MusicBrainz recording. It needs
+                  fpcalc and your own AcoustID application key; the text search works without either.
+                </p>
+                <div className="field-grid">
+                  <label className="field wide">
+                    <span>
+                      AcoustID key
+                      <InfoHint label="About the AcoustID key">
+                        Create a free application key at acoustid.org and paste it here.
+                      </InfoHint>
+                    </span>
+                    <input
+                      type="text"
+                      value={acoustidKeyDraft}
+                      placeholder="Your AcoustID application key"
+                      aria-invalid={!acoustidKeyValid}
+                      onChange={(event) => setAcoustidKeyDraft(event.target.value)}
+                      onBlur={commitAcoustidKey}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter') return
+                        event.preventDefault()
+                        commitAcoustidKey()
+                      }}
+                    />
+                  </label>
+                </div>
+                {!acoustidKeyValid ? (
+                  <p className="card-hint status-error">
+                    A key is 8 to 64 letters and digits. Clear the field to turn fingerprint matching
+                    off.
+                  </p>
+                ) : null}
+
+                <ul className="status-list">
+                  <li className={fpcalcState?.available ? 'ok' : ''}>
+                    <span className="status-name">fpcalc</span>
+                    <span className="status-value">
+                      {fpcalcState
+                        ? fpcalcState.installed
+                          ? `${fpcalcState.version} installed`
+                          : fpcalcState.available
+                            ? `found via ${sourceLabel(fpcalcState.source)}`
+                            : 'not installed'
+                        : 'not checked'}
+                    </span>
+                  </li>
+                </ul>
+                {fpcalcState && !fpcalcState.installed ? (
+                  <div className="field-row">
+                    <button type="button" onClick={() => void onInstallSidecars()} disabled={sidecarInstalling}>
+                      {sidecarInstalling ? <SpinnerIcon /> : <DownloadIcon />}
+                      <span>Download pinned engine</span>
+                    </button>
+                    <span className="card-hint">
+                      {fpcalcState.available
+                        ? 'The copy above works; this also puts a pinned copy in the engine folder.'
+                        : 'fpcalc is optional: streaming works without it.'}
+                    </span>
+                  </div>
+                ) : null}
+              </article>
 
             </div>
           </div>
 
           <footer className="settings-footer">
             <div className="settings-footer-head">
-              <h2>
-                Reset preferences
-                <InfoHint label="About resetting preferences">
-                  Resets preferences only; folders and data stay.
-                </InfoHint>
-              </h2>
+              <h2>Reset preferences</h2>
               <p className="card-hint">Puts preferences back to defaults; library folders and data stay.</p>
             </div>
             <div className="settings-section-resets">
@@ -2350,43 +2248,43 @@ export function SettingsView(props: SettingsViewProps) {
               </div>
             </div>
             <p className="card-hint">The other sections and your folders stay as they are.</p>
-              <div className="settings-reset">
-                {confirmReset ? (
-                  <div className="reset-confirm" role="alert">
-                    <p>Reset these preferences now?</p>
-                    <div className="field-row">
-                      <button
-                        type="button"
-                        className="primary"
-                        autoFocus
-                        onClick={() => {
-                          onUpdate(DEFAULT_PREFERENCE_PATCH)
-                          setConfirmReset(false)
-                          setResetDone(true)
-                        }}
-                      >
-                        Reset preferences
-                      </button>
-                      <button type="button" onClick={closeReset}>
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : (
+            <div className="settings-reset">
+              {confirmReset ? (
+                <div className="reset-confirm" role="alert">
+                  <p>Reset these preferences now?</p>
                   <div className="field-row">
                     <button
-                      ref={resetButtonRef}
                       type="button"
+                      className="primary"
+                      autoFocus
                       onClick={() => {
-                        setConfirmReset(true)
-                        setResetDone(false)
+                        onUpdate(DEFAULT_PREFERENCE_PATCH)
+                        setConfirmReset(false)
+                        setResetDone(true)
                       }}
                     >
-                      Reset preferences…
+                      Reset preferences
                     </button>
-                    {resetDone ? <span role="status">Preferences reset.</span> : null}
+                    <button type="button" onClick={closeReset}>
+                      Cancel
+                    </button>
                   </div>
-                )}
+                </div>
+              ) : (
+                <div className="field-row">
+                  <button
+                    ref={resetButtonRef}
+                    type="button"
+                    onClick={() => {
+                      setConfirmReset(true)
+                      setResetDone(false)
+                    }}
+                  >
+                    Reset preferences…
+                  </button>
+                  {resetDone ? <span role="status">Preferences reset.</span> : null}
+                </div>
+              )}
             </div>
           </footer>
         </section>
@@ -2402,12 +2300,7 @@ export function SettingsView(props: SettingsViewProps) {
           <div className="cards">
             <article className="card about-card">
               <header className="card-header">
-                <h2>
-                  About
-                  <InfoHint label="About this build">
-                    Search, channels, cache and Downloads are in; M8 is in progress.
-                  </InfoHint>
-                </h2>
+                <h2>About</h2>
                 <span className="badge">M8 · release</span>
               </header>
               <p className="card-hint">

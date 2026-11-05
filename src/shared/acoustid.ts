@@ -109,7 +109,7 @@ export function parseAcoustidError(payload: unknown): AcoustidError | null {
 /** A sentence for the review dialog, never the raw service code. */
 export function describeAcoustidFailure(error: AcoustidError): string {
   if (error.code === ACOUSTID_INVALID_API_KEY) {
-    return 'The AcoustID key was refused. Check it in Settings \u2192 Metadata.'
+    return 'The AcoustID key was refused. Check it in Settings \u2192 Misc.'
   }
   if (error.code === ACOUSTID_INVALID_FINGERPRINT) {
     return 'AcoustID could not read this file\u2019s fingerprint. Try the text search instead.'

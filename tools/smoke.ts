@@ -5514,7 +5514,7 @@ async function main(): Promise<void> {
     check(
       'fingerprint: a refused key points at Settings',
       refusedKey instanceof AcoustidError &&
-        describeAcoustidFailure(refusedKey).includes('Settings \u2192 Metadata'),
+        describeAcoustidFailure(refusedKey).includes('Settings \u2192 Misc'),
       refusedKey instanceof AcoustidError ? describeAcoustidFailure(refusedKey) : String(refusedKey)
     )
 
@@ -5931,7 +5931,7 @@ async function main(): Promise<void> {
     )
     check(
       'fingerprint: a 400 key refusal points at Settings',
-      (refusedLookup.providers[0]?.message ?? '').includes('Settings \u2192 Metadata'),
+      (refusedLookup.providers[0]?.message ?? '').includes('Settings \u2192 Misc'),
       refusedLookup.providers[0]?.message ?? ''
     )
 
@@ -5948,8 +5948,8 @@ async function main(): Promise<void> {
     checkEqual('fingerprint: no key makes no request', noKeyCalls, 0)
     checkEqual('fingerprint: no key is a sentence', noKeyLookup.providers[0]?.ok, false)
     check(
-      'fingerprint: the sentence points at the Metadata tab',
-      (noKeyLookup.providers[0]?.message ?? '').includes('Metadata'),
+      'fingerprint: the sentence points at the Misc tab',
+      (noKeyLookup.providers[0]?.message ?? '').includes('Misc'),
       noKeyLookup.providers[0]?.message ?? ''
     )
   }

@@ -53,7 +53,7 @@ Working today:
   track/disc and lyrics, plus a cover picked from the file, its folder, the source video or a provider. Writes are atomic
   and only touch the fields the user changed. **Find tags** asks iTunes and MusicBrainz, scores the answers against the
   row's title, artist and length, and shows them for review rather than writing them; a file whose tags are too wrong to
-  search with can be matched by its audio fingerprint instead (AcoustID, with the user's own key in Settings → Metadata).
+  search with can be matched by its audio fingerprint instead (AcoustID, with the user's own key in Settings → Misc).
   The lyrics panel shows embedded `USLT`/`SYLT` or a `.lrc` sidecar, follows the sung line with a manual-scroll pause and an
   offset, and **Find lyrics** fetches from LRCLIB or Genius. A selection can be batch-scanned for missing lyrics or wrong
   tags, reviewed row by row, applied, and undone once.
@@ -649,13 +649,13 @@ MusicBrainz nothing, so the tag finder has a second, deliberate path: read the a
   locating and running `fpcalc`; `src/core/library/tag-lookup.ts` chains the two services and turns every failure into a
   sentence.
 - A refused request arrives as HTTP 400 with a JSON body. The body is read, so a wrong or expired key says to check
-  Settings → Metadata instead of being reported as an outage — the bare status alone cannot tell the two apart.
-- `fpcalc` is optional in the engine manifest. Streaming works without it. The Metadata tab distinguishes the three
+  Settings → Misc instead of being reported as an outage — the bare status alone cannot tell the two apart.
+- `fpcalc` is optional in the engine manifest. Streaming works without it. The Misc tab distinguishes the three
   cases honestly: the pinned copy installed in the engine folder, a usable copy found elsewhere (and where), or nothing
   at all — a copy on `PATH` is never called "not installed".
-- The **AcoustID key** is the user's own application key, stored in Settings → Metadata. It is validated as 8–64 letters
+- The **AcoustID key** is the user's own application key, stored in Settings → Misc. It is validated as 8–64 letters
   and digits on write and on read; blank or invalid is stored as `null`, meaning "not configured", and the lookup then
-  answers with a pointer to the Metadata tab instead of calling the service.
+  answers with a pointer to the Misc tab instead of calling the service.
 - AcoustID's score is **kept**, not re-scored against the tags: the whole point is that those tags were wrong.
   `rankCandidates` has an `acoustid` case for exactly this. Candidates are labelled `AcoustID` in the review dialog, and
   the candidate's release front image is labelled `Cover Art Archive` in the artwork picker.
@@ -1099,7 +1099,7 @@ docs/internal/notes/    spike and measurement records, with raw JSON
 - The packaged app ships no `yt-dlp`, `ffmpeg` or `fpcalc`. A clean machine can use the local library but must download
   the engine from Settings → Streaming (or install them on `PATH`) before streaming, saving, or fingerprint matching.
   `fpcalc` is optional: everything else works without it. The packaged selftest uses the copy already on this machine.
-- **Fingerprint matching needs the user's own AcoustID key**, entered in Settings → Metadata. Without it the button
+- **Fingerprint matching needs the user's own AcoustID key**, entered in Settings → Misc. Without it the button
   answers with a pointer to that tab and never contacts the service. It is a separate button in the tag finder, not part
   of a batch, because it reads up to two minutes of audio and spends that key's quota. Phase 7 (local transcription) is not built.
 - **Copy diagnostics** is clipboard-only, but **Save diagnostics** writes a local text bundle with the recent log.

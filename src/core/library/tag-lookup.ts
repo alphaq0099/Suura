@@ -284,7 +284,7 @@ export function createTagLookup(options: TagLookupOptions): TagLookup {
     const key = options.getAcoustidKey?.() ?? null
     if (!key) {
       return empty(
-        'Add your AcoustID key in Settings \u2192 Metadata to match a file by its fingerprint.'
+        'Add your AcoustID key in Settings \u2192 Misc to match a file by its fingerprint.'
       )
     }
     if (!options.fingerprint) {

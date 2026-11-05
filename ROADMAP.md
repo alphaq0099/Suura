@@ -699,7 +699,7 @@ port inherits the metadata core instead of reimplementing it. M12 set the same p
 - [x] `fpcalc` sidecar: located like the other engine binaries, spawned with a timeout and killed as a tree, `-json` output
       parsed into a whole-file duration and a Chromaprint fingerprint; optional in the engine manifest, so streaming still
       works without it
-- [x] AcoustID key in Settings → Metadata: 8–64 letters and digits, normalised on write and on read, blank or invalid stored
+- [x] AcoustID key in Settings → Misc: 8–64 letters and digits, normalised on write and on read, blank or invalid stored
       as "not configured" so nothing unconfigured reaches the service
 - [x] MusicBrainz lookup: the AcoustID recording id is re-fetched with its releases, release groups, genres and media, and
       the release whose medium actually lists the recording supplies album, track/disc numbers and the release year
@@ -714,7 +714,7 @@ port inherits the metadata core instead of reimplementing it. M12 set the same p
 
 **Status:** Phases 1–6 are complete as written: a wrong tag can be fixed by hand or in a batch, a cover can be replaced,
 lyrics can be read, found and written, and a file whose tags are unusable can be named from its audio fingerprint. Every
-write is reversible. Phase 6 is dormant until the user supplies their own AcoustID key in Settings → Metadata; it needs
+write is reversible. Phase 6 is dormant until the user supplies their own AcoustID key in Settings → Misc; it needs
 `fpcalc`, which M8's engine download installs separately from the rest. Phase 7 stays deferred.
 
 **Exit:** a wrong tag can be fixed and a lyric found from inside the app on MP3/FLAC/M4A/Ogg; every write is reversible

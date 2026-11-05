@@ -244,7 +244,7 @@ player, and focus goes back to the button that opened it.
 
 ### Naming a file from its fingerprint
 
-**Settings → Metadata** takes an AcoustID API key (free from [acoustid.org](https://acoustid.org/new-application)).
+**Settings → Misc** takes an AcoustID API key (free from [acoustid.org](https://acoustid.org/new-application)).
 With a key and `fpcalc` installed, **Match by fingerprint** in the tag finder reads up to two minutes of audio and asks
 AcoustID what the recording is. It is its own button — never part of a lookup, a batch or a scan — because it spends
 your key and reads the file. This is how a `track01` row with unusable tags can still be named correctly. `fpcalc` is

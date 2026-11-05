@@ -12,12 +12,13 @@ export interface AudioSettingsPanelProps {
 }
 
 /**
- * Equaliser shortcut and ReplayGain controls.
+ * Equaliser shortcut and ReplayGain controls in one card.
  *
- * The curve itself is a playback control and lives on the player bar, where it
- * can be adjusted without leaving what is playing. This card keeps the way in,
- * and the scan needs a progress state that would otherwise drown the small reset
- * switches around it.
+ * Both are playback processing, so they share a card rather than taking two
+ * slots in the General grid for two sentences. The curve itself is a playback
+ * control and lives on the player bar, where it can be adjusted without leaving
+ * what is playing. This card keeps the way in, and the scan needs a progress
+ * state that would otherwise drown the small reset switches around it.
  */
 export function AudioSettingsPanel(props: AudioSettingsPanelProps) {
   const {
@@ -37,90 +38,82 @@ export function AudioSettingsPanel(props: AudioSettingsPanelProps) {
   const canScan = !scanning && !noLibrary && (replayGainStatus === null || pending > 0)
 
   return (
-    <>
-      <article className="card audio-card">
-        <header className="card-header">
-          <h2>Equalizer</h2>
-        </header>
-        <p className="card-hint">Ten bands and a preamp, applied while the track is playing.</p>
-        <div className="card-actions start">
-          <button type="button" className="button" onClick={onOpenEqualizer}>
-            <SlidersIcon size={16} /> Open equalizer
-          </button>
-        </div>
-      </article>
+    <article className="card audio-card">
+      <header className="card-header">
+        <h2>Audio</h2>
+      </header>
+      <p className="card-hint">
+        Ten bands and a preamp for playback, plus ReplayGain leveling for local tracks. The
+        equalizer applies while a track plays; a measured value is stored per file, so leveling is
+        instant after the first analysis. Streams are not measured yet.
+      </p>
 
-      <article className="card audio-card">
-        <header className="card-header">
-          <h2>Volume normalization</h2>
-        </header>
-        <p className="card-hint">
-          Plays local tracks at a consistent loudness using a ReplayGain measurement. The value is
-          stored per file, so it is applied instantly after the first analysis. Streams are not
-          measured yet.
-        </p>
+      <div className="card-actions start">
+        <button type="button" className="button" onClick={onOpenEqualizer}>
+          <SlidersIcon size={16} /> Open equalizer
+        </button>
+      </div>
 
-        <div className="field-grid">
-          <label className="field checkbox">
-            <input
-              type="checkbox"
-              checked={normalization.enabled}
-              onChange={(event) =>
-                onUpdate({ audio: { normalization: { enabled: event.target.checked } } })
-              }
-            />
-            <span>Apply ReplayGain to local tracks</span>
-          </label>
+      <div className="field-grid">
+        <label className="field checkbox">
+          <input
+            type="checkbox"
+            checked={normalization.enabled}
+            onChange={(event) =>
+              onUpdate({ audio: { normalization: { enabled: event.target.checked } } })
+            }
+          />
+          <span>Apply ReplayGain to local tracks</span>
+        </label>
 
-          <label className="field checkbox">
-            <input
-              type="checkbox"
-              checked={normalization.preventClipping}
-              onChange={(event) =>
-                onUpdate({
-                  audio: { normalization: { preventClipping: event.target.checked } }
-                })
-              }
-            />
-            <span>Prevent clipping at the measured peak</span>
-          </label>
-        </div>
+        <label className="field checkbox">
+          <input
+            type="checkbox"
+            checked={normalization.preventClipping}
+            onChange={(event) =>
+              onUpdate({
+                audio: { normalization: { preventClipping: event.target.checked } }
+              })
+            }
+          />
+          <span>Prevent clipping at the measured peak</span>
+        </label>
+      </div>
 
-        {scanning ? (
-          <div className="replay-gain-run" role="status">
-            <progress
-              value={replayGainStatus?.scanned ?? 0}
-              max={Math.max(replayGainStatus?.total ?? 0, 1)}
-            />
-            <p className="card-hint">
-              Analysing <strong>{replayGainStatus?.scanned ?? 0}</strong> of{' '}
-              <strong>{replayGainStatus?.total ?? 0}</strong>
-              {replayGainStatus?.currentFile ? (
-                <span className="scan-file" title={replayGainStatus.currentFile}>
-                  {baseName(replayGainStatus.currentFile)}
-                </span>
-              ) : null}
-            </p>
-          </div>
-        ) : (
-          <p className={`card-hint ${replayGainStatus?.phase === 'failed' ? 'status-error' : ''}`}>
-            {statusText(replayGainStatus, analyzed, total, pending)}
+      {scanning ? (
+        <div className="replay-gain-run" role="status">
+          <progress
+            value={replayGainStatus?.scanned ?? 0}
+            max={Math.max(replayGainStatus?.total ?? 0, 1)}
+          />
+          <p className="card-hint">
+            Analysing <strong>{replayGainStatus?.scanned ?? 0}</strong> of{' '}
+            <strong>{replayGainStatus?.total ?? 0}</strong>
+            {replayGainStatus?.currentFile ? (
+              <span className="scan-file" title={replayGainStatus.currentFile}>
+                {baseName(replayGainStatus.currentFile)}
+              </span>
+            ) : null}
           </p>
-        )}
-
-        <div className="card-actions start">
-          {scanning ? (
-            <button type="button" onClick={onCancelReplayGain}>
-              Cancel scan
-            </button>
-          ) : (
-            <button type="button" onClick={() => void onScanReplayGain()} disabled={!canScan}>
-              {noLibrary ? 'No local tracks' : pending === 0 && replayGainStatus ? 'All tracks measured' : 'Analyse missing tracks'}
-            </button>
-          )}
         </div>
-      </article>
-    </>
+      ) : (
+        <p className={`card-hint ${replayGainStatus?.phase === 'failed' ? 'status-error' : ''}`}>
+          {statusText(replayGainStatus, analyzed, total, pending)}
+        </p>
+      )}
+
+      <div className="card-actions start">
+        {scanning ? (
+          <button type="button" onClick={onCancelReplayGain}>
+            Cancel scan
+          </button>
+        ) : (
+          <button type="button" onClick={() => void onScanReplayGain()} disabled={!canScan}>
+            {noLibrary ? 'No local tracks' : pending === 0 && replayGainStatus ? 'All tracks measured' : 'Analyse missing tracks'}
+          </button>
+        )}
+      </div>
+    </article>
   )
 }
 
