@@ -95,7 +95,7 @@ export interface AppContainer {
   ytDlp: YtDlpClient
   /** Downloads the pinned sidecars into `paths.engine` on first use. */
   sidecars: SidecarService
-  /** The app update channel (dormant until a feed URL is configured). */
+  /** The app update channel (ships with the public feed; dormant when cleared). */
   updates: UpdateService
   /** Local, opt-in crash reports. No remote service is involved. */
   crashes: CrashReporter
@@ -229,8 +229,8 @@ export function createContainer(): AppContainer {
   })
   scheduleEngineAutoUpdate({ settings, ytDlp, log: log.child('yt-dlp-update') })
 
-  // The update feed is a setting, so the service reads it live. Until a host
-  // is configured it stays dormant and says so in About.
+  // The update feed is a setting, so the service reads it live. It ships with
+  // the public feed; clearing it makes the service dormant and says so in About.
   const updates = new UpdateService({
     settings,
     log: log.child('updates'),

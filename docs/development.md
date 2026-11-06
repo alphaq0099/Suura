@@ -254,8 +254,9 @@ Working today:
   binary is downloaded on first use into `<userData>/engine` and verified by pinned SHA-256 and size; the configured
   folder, the managed folder, `PATH` and the well-known locations are probed in that order. Before `yt-dlp -U`, the
   working binary is copied aside; a broken update, a failed update, or repeated extractor failures restore it.
-- The app updates from a static HTTPS feed configured in **Settings → About** (`latest.yml` for Stable, `beta.yml` for
-  Beta). It never downloads or installs without an explicit press, and a missing feed is a clear "not configured" state.
+- The app updates from a static HTTPS feed that ships preconfigured in **Settings → About** (`latest.yml` for Stable,
+  `beta.yml` for Beta). It never downloads or installs without an explicit press, and clearing the feed is a clear
+  "not configured" state.
 
 Not built yet (deliberately): optional crossfade and saved smart playlists (the Library's fixed chips are views, not
 user-defined lists). Tag writing remains deferred: removing a download or clearing the cache deletes files but never
@@ -754,8 +755,9 @@ renderer, and translates failures into sentences ("The update feed has no beta.y
 
 Two rules keep it quiet:
 
-- **Nothing runs until a feed is configured.** With no URL the service reports `disabled` with a "not configured"
-  message; it does not ask the network on every launch. The feed URL is a setting so a private mirror needs no rebuild.
+- **Nothing runs without a feed.** The published feed is the default, so a fresh install can check; clearing the field
+  makes the service report `disabled` with a "not configured" message and nothing touches the network. The feed URL is a
+  setting so a private mirror needs no rebuild.
 - **A check never installs.** The daily background check (`scheduleAutoCheck`) is package-only, runs at most once per
   24 h (`update.lastCheckAt` is recorded even on failure), and starts 30 s after launch so the window and first scan
   come first. Only **Restart and install** calls `quitAndInstall`.
@@ -1099,9 +1101,9 @@ docs/internal/notes/    spike and measurement records, with raw JSON
   scan (adding a folder, or Rescan). A folder that is missing when watching starts — an unmounted drive — is watched only
   after the folder list changes or the app is restarted; `fs.watch` needs the directory to exist.
 - Search is prefix-AND only; no fuzzy matching or field-scoped queries.
-- The installer is unsigned unless the build environment sets `CSC_LINK`; SmartScreen may warn. App updates exist but
-  stay dormant until a feed folder is entered in Settings → About, so a build with no configured host still upgrades by
-  a fresh install over the previous one.
+- The installer is unsigned unless the build environment sets `CSC_LINK`; SmartScreen may warn. Published builds default
+  to the project's R2 feed, so updates work without setup. Clearing the feed folder in Settings → About makes the updater
+  dormant again, and a build with no configured host upgrades by a fresh install over the previous one.
 - The packaged app ships no `yt-dlp`, `ffmpeg` or `fpcalc`. A clean machine can use the local library but must download
   the engine from Settings → Streaming (or install them on `PATH`) before streaming, saving, or fingerprint matching.
   `fpcalc` is optional: everything else works without it. The packaged selftest uses the copy already on this machine.
@@ -1120,9 +1122,9 @@ Everything below is release work, not product work; M1–M7, M12 and M13 (throug
    Streaming downloads the pinned engine files there; the installer itself now ships no binaries.
 2. **Sign the installer** with a real certificate (`CSC_LINK` / `CSC_KEY_PASSWORD`) and document the SmartScreen
    workaround for the unsigned case; the checklist is in [`docs/release/windows.md`](./release/windows.md).
-3. **Host the update feed** and publish `latest.yml`/`beta.yml` beside each installer. The app side is built: a static
-   HTTPS folder set in Settings → About, channel mapping, download/install consent and yt-dlp rollback. What is missing
-   is the host and the publishing step.
+3. **Keep the update feed current**: `latest.yml`/`beta.yml` and the installer are published beside each other with
+   `tools/publish-r2.ps1`. The app side is done — a default HTTPS folder, channel mapping, download/install consent and
+   yt-dlp rollback — so the remaining work is running the publish step with every release.
 4. **Crash reporting is local and opt-in.** The remaining choice, if a hosted error service is ever wanted, is an
    explicit consent screen and a privacy note; nothing is uploaded today.
 5. **Windows compatibility pass**: Windows 10/11 at 100–200% scaling, multi-monitor and HiDPI. The accessibility side is

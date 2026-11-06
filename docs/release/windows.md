@@ -108,9 +108,10 @@ kind of mismatch the updater is designed to reject.
 ## App updates
 
 The app updates from a **static HTTPS folder**: no update server is required.
-Any host that serves files unchanged works (S3, a web server, a CDN). The
-folder is configured in **Settings → About → Feed folder**; until a URL is
-entered the updater is dormant and About says *Not configured*.
+Any host that serves files unchanged works (S3, a web server, a CDN). Published
+builds point at the project's R2 bucket by default; the folder can be changed or
+cleared in **Settings → About → Feed folder**, and with no URL the updater is
+dormant and About says *Not configured*.
 
 A published folder holds, for each channel:
 
@@ -158,12 +159,15 @@ npx wrangler login        # once, or set CLOUDFLARE_API_TOKEN
 pwsh -File tools/publish-r2.ps1 -Bucket surra -BaseUrl https://updates.example.com
 ```
 
-The bucket needs a public custom domain or its `r2.dev` subdomain; use that same
-folder as the About feed. Versioned files are cached for a year, while
-`latest.yml`, `SHA256SUMS.txt` and the stable `Suura-Setup.exe` alias are
-revalidated on every request. Before uploading, the script checks that the
-channel file and checksum describe the installer on disk. `-DryRun` prints the
-plan without sending anything, and `-Prefix stable` publishes under a subfolder.
+The bucket needs a public custom domain or its `r2.dev` subdomain. That public
+folder is the built-in feed (currently
+`https://pub-f78cb36c07324422ba352033e3d71909.r2.dev`), stored one time in
+`src/shared/settings-defaults.ts`; change it there when the host changes.
+Versioned files are cached for a year, while `latest.yml`, `SHA256SUMS.txt` and
+the stable `Suura-Setup.exe` alias are revalidated on every request. Before
+uploading, the script checks that the channel file and checksum describe the
+installer on disk. `-DryRun` prints the plan without sending anything, and
+`-Prefix stable` publishes under a subfolder.
 
 The stable alias exists so a fixed URL always serves the newest installer. It
 is the same bytes as the versioned installer, and it is re-uploaded with every
@@ -321,10 +325,11 @@ ratio or emulate unplugging a monitor.
 - Confirm `npm run package:win` leaves `release/latest.yml` beside the
   installer (or `beta.yml` for a pre-release version), and that the file names
   the same installer.
-- On an installed build, set **Settings → About → Feed folder** to the static
-  folder, press **Check now**, then **Download update**, then **Restart and
-  install**; confirm the version changes and the library is untouched. With no
-  feed set, confirm About says *Not configured* and no request is made.
+- On an installed build, leave **Settings → About → Feed folder** at the
+  built-in value (or paste the published folder), press **Check now**, then
+  **Download update**, then **Restart and install**; confirm the version changes
+  and the library is untouched. Clearing the field must make About say *Not
+  configured* and stop all requests.
 - Update yt-dlp once from Settings → Streaming, confirm
   `%APPDATA%\Suura\engine\yt-dlp.previous.exe` appears, then press
   **Restore previous** and confirm extraction works again and the saved copy is

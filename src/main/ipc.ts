@@ -1596,8 +1596,8 @@ export function registerIpcHandlers(container: AppContainer): void {
 
   // ---- app updates ------------------------------------------------------
   // The service owns every state transition; these handlers only ask it and
-  // return the resulting snapshot. A check is package-only and dormant until a
-  // feed URL is configured, so none of these reaches the network by accident.
+  // return the resulting snapshot. A check is package-only, and clearing the
+  // feed is what keeps it off the network.
   ipcMain.handle(IPC.updateStatus, () => container.updates.statusSnapshot())
   ipcMain.handle(IPC.updateCheck, () => container.updates.checkNow())
   ipcMain.handle(IPC.updateDownload, () => container.updates.downloadNow())

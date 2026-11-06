@@ -133,11 +133,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   metadata: {
     acoustidKey: null
   },
-  // Updates are dormant until a feed host exists: no URL means the app never
-  // contacts an update server. Stable is the safe default for a first release.
+  // Suura ships with its own published feed, so updates work without setup.
+  // Clearing the field in Settings -> About sets this to null and the app
+  // stops contacting any update host. Stable is the safe default.
   update: {
     channel: 'stable',
-    feedUrl: null,
+    feedUrl: 'https://pub-f78cb36c07324422ba352033e3d71909.r2.dev',
     autoCheck: true,
     lastCheckAt: null
   }

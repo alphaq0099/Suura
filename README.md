@@ -321,7 +321,8 @@ by default (3–50 configurable). A backup written by a newer version is refused
 Suura updates from a **static HTTPS folder** (a "feed") that serves a small channel file beside the installer. It never
 downloads or installs anything behind your back:
 
-1. **Settings → About** shows the configured feed. A build with no feed says *Not configured* and never checks.
+1. **Settings → About** shows the feed. Published builds already point at Suura's folder; clearing the field stops all
+   checks.
 2. **Check now** asks the feed whether a newer version exists.
 3. **Download update** fetches it, with progress.
 4. **Restart and install** is the only action that quits and replaces the app.
@@ -329,7 +330,7 @@ downloads or installs anything behind your back:
 With **Check once a day in the background** on, an installed build checks once per 24 hours after a short settle. The
 check is package-only; the download still waits for you.
 
-Public builds may ship with a feed already configured. You can point the field at another folder, or clear it to
+Published builds ship with Suura's feed already configured. You can point the field at another folder, or clear it to
 disable checks.
 
 ---

@@ -3314,7 +3314,16 @@ async function main(): Promise<void> {
 
     // --- app update channel ------------------------------------------------
     checkEqual('update: the stable channel is the default', DEFAULT_SETTINGS.update.channel, 'stable')
-    check('update: no feed is configured by default', DEFAULT_SETTINGS.update.feedUrl === null)
+    checkEqual(
+      'update: the published feed is the default',
+      DEFAULT_SETTINGS.update.feedUrl,
+      'https://pub-f78cb36c07324422ba352033e3d71909.r2.dev'
+    )
+    checkEqual(
+      'update: the default feed resolves to latest.yml',
+      resolveUpdateFeedUrl(DEFAULT_SETTINGS.update.feedUrl, 'stable'),
+      'https://pub-f78cb36c07324422ba352033e3d71909.r2.dev/latest.yml'
+    )
     check('update: background checks are on by default', DEFAULT_SETTINGS.update.autoCheck)
     checkEqual(
       'update: a stable feed resolves to latest.yml',
