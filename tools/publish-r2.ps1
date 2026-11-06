@@ -52,22 +52,34 @@ if (-not (Test-Path -LiteralPath $ReleaseDir)) {
 $files = @(
   [pscustomobject]@{
     Name = $installer
+    Key = $installer
     ContentType = 'application/octet-stream'
     CacheControl = 'public, max-age=31536000, immutable'
   },
   [pscustomobject]@{
     Name = "$installer.blockmap"
+    Key = "$installer.blockmap"
     ContentType = 'application/octet-stream'
     CacheControl = 'public, max-age=31536000, immutable'
   },
   [pscustomobject]@{
     Name = $channelFile
+    Key = $channelFile
     ContentType = 'text/yaml; charset=utf-8'
     CacheControl = 'no-cache, max-age=0, must-revalidate'
   },
   [pscustomobject]@{
     Name = 'SHA256SUMS.txt'
+    Key = 'SHA256SUMS.txt'
     ContentType = 'text/plain; charset=utf-8'
+    CacheControl = 'no-cache, max-age=0, must-revalidate'
+  },
+  # Stable alias so the landing page can link to one URL release after release.
+  # It must be revalidated because the object behind it changes every version.
+  [pscustomobject]@{
+    Name = $installer
+    Key = 'Suura-Setup.exe'
+    ContentType = 'application/octet-stream'
     CacheControl = 'no-cache, max-age=0, must-revalidate'
   }
 )
@@ -92,7 +104,7 @@ if ($channelText -notmatch [regex]::Escape($installer)) {
 $sizeMatch = [regex]::Match($channelText, '(?m)^\s*size:\s*(\d+)\s*$')
 if ($sizeMatch.Success) {
   $declaredSize = [int64]$sizeMatch.Groups[1].Value
-  $actualSize = ($files | Where-Object Name -eq $installer).Length
+  $actualSize = Get-Item -LiteralPath (Join-Path $ReleaseDir $installer) | Select-Object -ExpandProperty Length
   if ($declaredSize -ne $actualSize) {
     throw "$channelFile says $declaredSize bytes but $installer is $actualSize bytes. Repackage before publishing."
   }
@@ -123,7 +135,7 @@ $npx = Get-Command npx -ErrorAction Stop
 
 Write-Output "Publishing Suura $version to r2://$Bucket/$cleanPrefix"
 foreach ($file in $files) {
-  $key = if ($cleanPrefix) { "$cleanPrefix/$($file.Name)" } else { $file.Name }
+  $key = if ($cleanPrefix) { "$cleanPrefix/$($file.Key)" } else { $file.Key }
   Write-Output ("  {0} ({1:N0} bytes) -> {2}" -f $file.Name, $file.Length, $key)
 }
 
@@ -134,7 +146,7 @@ if ($DryRun) {
 }
 
 foreach ($file in $files) {
-  $key = if ($cleanPrefix) { "$cleanPrefix/$($file.Name)" } else { $file.Name }
+  $key = if ($cleanPrefix) { "$cleanPrefix/$($file.Key)" } else { $file.Key }
   $objectPath = "$Bucket/$key"
 
   # --remote is explicit: without it Wrangler writes to its local simulator and
@@ -168,7 +180,8 @@ if (-not $base) {
 
 Write-Output "Checking $base"
 foreach ($file in $files) {
-  $url = "$base/$($file.Name)"
+  $key = if ($cleanPrefix) { "$cleanPrefix/$($file.Key)" } else { $file.Key }
+  $url = "$base/$key"
   try {
     $response = Invoke-WebRequest -Uri $url -Method Head -UseBasicParsing -TimeoutSec 60
   } catch {

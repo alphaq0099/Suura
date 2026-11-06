@@ -151,10 +151,14 @@ pwsh -File tools/publish-r2.ps1 -Bucket surra -BaseUrl https://updates.example.c
 
 The bucket needs a public custom domain or its `r2.dev` subdomain; use that same
 folder as the About feed. Versioned files are cached for a year, while
-`latest.yml` and `SHA256SUMS.txt` are revalidated on every request. Before
-uploading, the script checks that the channel file and checksum describe the
-installer on disk. `-DryRun` prints the plan without sending anything, and
-`-Prefix stable` publishes under a subfolder.
+`latest.yml`, `SHA256SUMS.txt` and the stable `Suura-Setup.exe` alias are
+revalidated on every request. Before uploading, the script checks that the
+channel file and checksum describe the installer on disk. `-DryRun` prints the
+plan without sending anything, and `-Prefix stable` publishes under a subfolder.
+
+The stable alias exists so the landing page can link to `/Suura-Setup.exe`
+release after release instead of hard-coding a version. It is the same bytes as
+the versioned installer, and it is re-uploaded with every release.
 
 ## yt-dlp rollback
 

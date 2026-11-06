@@ -16,8 +16,10 @@ yet**, and there is no telemetry of any kind. An Android version is planned; it 
 
 ## Download
 
-Installers are published on the [Releases page](https://github.com/alphaq0099/Suura/releases/latest) as
-`Suura-<version>-Setup.exe`, next to a `SHA256SUMS.txt` you can use to verify the download.
+The project page is **[suura-player.pages.dev](https://suura-player.pages.dev)**. Installers are published on the
+[Releases page](https://github.com/alphaq0099/Suura/releases/latest) as `Suura-<version>-Setup.exe`, next to a
+`SHA256SUMS.txt` you can use to verify the download, and mirrored at
+[`Suura-Setup.exe`](https://pub-f78cb36c07324422ba352033e3d71909.r2.dev/Suura-Setup.exe).
 
 The installer is **per-user**: it installs to `%LOCALAPPDATA%\Programs\Suura`, needs no administrator password, and
 creates a desktop and Start-menu shortcut.
