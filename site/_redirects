@@ -1,0 +1,4 @@
+# Cloudflare Pages strips .html from asset URLs with a 308. Google's HTML-file
+# verification needs the exact file name to answer 200, so rewrite the .html
+# path onto the asset instead of redirecting.
+/googlef2c3dd2539e533f6.html /googlef2c3dd2539e533f6 200
