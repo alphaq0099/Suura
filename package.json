@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Desktop music player for local files and YouTube links, with optional saving into the library.",
-  "author": "Suura",
+  "author": "alphaq0099",
   "license": "MIT",
   "main": "./out/main/index.js",
   "scripts": {
