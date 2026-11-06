@@ -160,6 +160,21 @@ The stable alias exists so the landing page can link to `/Suura-Setup.exe`
 release after release instead of hard-coding a version. It is the same bytes as
 the versioned installer, and it is re-uploaded with every release.
 
+### Landing page
+
+`site/` is a dependency-free static page for Cloudflare Pages:
+
+```powershell
+npx wrangler pages deploy site --project-name suura-player --branch main
+```
+
+It is published at <https://suura-player.pages.dev>. The bare `suura.pages.dev`
+name is claimed by another account, which is why the project is `suura-player`.
+`site/_headers` owns the CSP and cache rules; `site/icon.png` and
+`site/favicon.ico` are copies of `build/icon.png` and `build/icon.ico`, so
+refresh them whenever `npm run icon` regenerates the artwork. If the site moves
+to a custom domain, update the canonical and `og:` URLs in `site/index.html`.
+
 ## yt-dlp rollback
 
 The daily `yt-dlp -U` can also ship a broken extractor. Before updating, the app
