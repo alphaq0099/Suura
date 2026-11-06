@@ -371,10 +371,10 @@ h1 .accent {
   100% {
     transform: scale(1);
   }
-  16% {
-    transform: scale(1.045);
+  22% {
+    transform: scale(1.07);
   }
-  34% {
+  52% {
     transform: scale(1);
   }
 }
