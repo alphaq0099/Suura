@@ -75,6 +75,7 @@ First public pre-release. Everything below is new to anyone installing Suura for
 ### Packaging and updates
 
 - Per-user NSIS installer: no administrator prompt, clean uninstall, app data kept unless explicitly deleted.
+- The note icon set: one master image generates the 512 px artwork, all nine ICO frames and the tray bitmap.
 - Fetch-on-first-use engine installer with pinned versions and SHA-256 verification.
 - Optional update feed over a static HTTPS folder, with explicit Download and Restart-and-install steps and a daily
   background check.

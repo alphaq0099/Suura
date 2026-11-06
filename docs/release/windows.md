@@ -23,10 +23,11 @@ pre-release version such as `0.2.0-beta.1`). `electron-builder.yml` declares a
 generic publish provider so that file is always generated; nothing is uploaded
 unless `--publish` is passed explicitly.
 
-The Windows icon is generated from `tools/make-icon.ps1` into
-`build/icon.png` and `build/icon.ico`. Run `npm run icon` after changing the
-artwork; the generated files are committed so a build does not need PowerShell
-drawing support.
+The icon set is generated from the master artwork at `build/icon-source.png` by
+`tools/make-icon.ps1` into `build/icon.png`, `build/icon.ico` and the embedded
+tray bitmap in `src/main/tray-icon.ts`. Replace the master and run `npm run
+icon` after changing the artwork; the generated files are committed so a build
+does not need PowerShell drawing support.
 
 ## What the installer does
 
