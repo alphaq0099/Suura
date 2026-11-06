@@ -12,6 +12,7 @@
     "build": "npm run typecheck && electron-vite build",
     "preview": "electron-vite preview",
     "icon": "pwsh -NoProfile -File tools/make-icon.ps1",
+  "publish:r2": "pwsh -NoProfile -File tools/publish-r2.ps1",
     "package:dir": "npm run build && electron-builder --dir --win",
     "package:win": "npm run build && electron-builder --win nsis",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",

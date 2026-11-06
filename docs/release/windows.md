@@ -139,6 +139,23 @@ npx http-server release -p 8080
 then set the feed to `http://localhost:8080` in About. HTTP is only accepted
 for localhost; every other feed must be `https://`.
 
+### Publishing to R2
+
+`tools/publish-r2.ps1` uploads the installer, blockmap, channel file and
+`SHA256SUMS.txt` for the current version, then checks each one over HTTPS:
+
+```powershell
+npx wrangler login        # once, or set CLOUDFLARE_API_TOKEN
+pwsh -File tools/publish-r2.ps1 -Bucket surra -BaseUrl https://updates.example.com
+```
+
+The bucket needs a public custom domain or its `r2.dev` subdomain; use that same
+folder as the About feed. Versioned files are cached for a year, while
+`latest.yml` and `SHA256SUMS.txt` are revalidated on every request. Before
+uploading, the script checks that the channel file and checksum describe the
+installer on disk. `-DryRun` prints the plan without sending anything, and
+`-Prefix stable` publishes under a subfolder.
+
 ## yt-dlp rollback
 
 The daily `yt-dlp -U` can also ship a broken extractor. Before updating, the app
