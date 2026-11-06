@@ -84,13 +84,22 @@ come from the same `package:win` run, on the same commit that is tagged.
 
 4. Tag the commit and create the GitHub release from it. Attach
    `Suura-<version>-Setup.exe`, `Suura-<version>-Setup.exe.blockmap`,
-   `latest.yml` (or `beta.yml`) and `SHA256SUMS.txt`. The README links to the
-   newest release, so the release has to exist before the repository is made
-   public with that text.
-5. Optional mirror: copy the same four files into the feed folder on a static
-   host (Cloudflare R2, S3, any HTTPS server) and point **Settings → About →
-   Feed folder** at it. Nothing else is required — the updater reads
-   `latest.yml` and the installer it names, both relative to that folder.
+   `latest.yml` (or `beta.yml`) and `SHA256SUMS.txt`. Also attach a copy of the
+   installer named exactly `Suura-Setup.exe`:
+
+   ```powershell
+   Copy-Item .\release\Suura-0.1.0-Setup.exe .\release\Suura-Setup.exe
+   gh release upload v0.1.0 .\release\Suura-Setup.exe
+   ```
+
+   GitHub has no stable asset alias, so this duplicate is what keeps
+   `releases/latest/download/Suura-Setup.exe` — the landing-page button —
+   pointing at the newest build without a version in the URL. The README links
+   to the newest release, so the release has to exist before the repository is
+   made public with that text.
+5. Mirror the feed to Cloudflare R2 with `tools/publish-r2.ps1` (see below). It
+   uploads the installer, blockmap, channel file, checksums and a matching
+   `Suura-Setup.exe` alias, then verifies each over HTTPS.
 
 Do not attach `release/win-unpacked/`, and do not rebuild after tagging: a
 channel file that names one installer while another is attached is exactly the
@@ -156,9 +165,9 @@ revalidated on every request. Before uploading, the script checks that the
 channel file and checksum describe the installer on disk. `-DryRun` prints the
 plan without sending anything, and `-Prefix stable` publishes under a subfolder.
 
-The stable alias exists so the landing page can link to `/Suura-Setup.exe`
-release after release instead of hard-coding a version. It is the same bytes as
-the versioned installer, and it is re-uploaded with every release.
+The stable alias exists so a fixed URL always serves the newest installer. It
+is the same bytes as the versioned installer, and it is re-uploaded with every
+release. On R2 it doubles as a fallback download when GitHub is unreachable.
 
 ### Landing page
 
@@ -174,6 +183,11 @@ name is claimed by another account, which is why the project is `suura-player`.
 `site/favicon.ico` are copies of `build/icon.png` and `build/icon.ico`, so
 refresh them whenever `npm run icon` regenerates the artwork. If the site moves
 to a custom domain, update the canonical and `og:` URLs in `site/index.html`.
+
+The download button targets
+`https://github.com/alphaq0099/Suura/releases/latest/download/Suura-Setup.exe`,
+which is why every release must carry that alias as an asset. The fine print
+links to the identical file on the R2 bucket as a fallback.
 
 ## yt-dlp rollback
 
