@@ -92,11 +92,11 @@ come from the same `package:win` run, on the same commit that is tagged.
    gh release upload v0.1.0 .\release\Suura-Setup.exe
    ```
 
-   GitHub has no stable asset alias, so this duplicate is what keeps
-   `releases/latest/download/Suura-Setup.exe` — the landing-page button —
-   pointing at the newest build without a version in the URL. The README links
-   to the newest release, so the release has to exist before the repository is
-   made public with that text.
+   GitHub has no stable asset alias, so this duplicate is what keeps the
+   fallback link `releases/latest/download/Suura-Setup.exe` pointing at the
+   newest build without a version in the URL. The README links to the newest
+   release, so the release has to exist before the repository is made public
+   with that text.
 5. Mirror the feed to Cloudflare R2 with `tools/publish-r2.ps1` (see below). It
    uploads the installer, blockmap, channel file, checksums and a matching
    `Suura-Setup.exe` alias, then verifies each over HTTPS.
@@ -167,7 +167,27 @@ plan without sending anything, and `-Prefix stable` publishes under a subfolder.
 
 The stable alias exists so a fixed URL always serves the newest installer. It
 is the same bytes as the versioned installer, and it is re-uploaded with every
-release. On R2 it doubles as a fallback download when GitHub is unreachable.
+release. The Worker below serves it from Cloudflare's edge.
+
+### Download Worker
+
+`worker/` is a small Cloudflare Worker bound to the same bucket. It exists
+because the bucket's `r2.dev` hostname is rate-limited for development use,
+while `workers.dev` is not; the free plan allows 100,000 requests a day.
+
+```powershell
+cd worker
+npx wrangler deploy
+```
+
+It is deployed as `suura-downloads` and answers at
+<https://suura-downloads.grey-alex0099.workers.dev>. Only `Suura-Setup.exe`,
+`SHA256SUMS.txt`, `latest.yml`/`beta.yml` and versioned
+`Suura-<version>-Setup.exe[.blockmap]` objects are served; every other path is a
+404. Range requests, `HEAD`, `ETag` and a one-year cache for versioned files are
+handled in `worker/src/index.js`. The binding lives in
+`worker/wrangler.jsonc`, so a redeploy needs no extra configuration. Attaching a
+custom domain to the bucket later would let this Worker be retired.
 
 ### Landing page
 
@@ -185,9 +205,9 @@ refresh them whenever `npm run icon` regenerates the artwork. If the site moves
 to a custom domain, update the canonical and `og:` URLs in `site/index.html`.
 
 The download button targets
-`https://github.com/alphaq0099/Suura/releases/latest/download/Suura-Setup.exe`,
-which is why every release must carry that alias as an asset. The fine print
-links to the identical file on the R2 bucket as a fallback.
+`https://suura-downloads.grey-alex0099.workers.dev/Suura-Setup.exe`, and the
+fine print falls back to the identical GitHub release asset. The Worker URL only
+changes if the Worker is renamed or a custom domain replaces it.
 
 ## yt-dlp rollback
 

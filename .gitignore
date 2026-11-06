@@ -19,6 +19,7 @@ Thumbs.db
 coverage/
 *.tsbuildinfo
 .eslintcache
+.wrangler/
 
 # Package-manager noise beyond the generic *.log above.
 npm-debug.log*
