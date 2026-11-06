@@ -1122,21 +1122,26 @@ Everything below is release work, not product work; M1–M7, M12 and M13 (throug
    Streaming downloads the pinned engine files there; the installer itself now ships no binaries.
 2. **Sign the installer** with a real certificate (`CSC_LINK` / `CSC_KEY_PASSWORD`) and document the SmartScreen
    workaround for the unsigned case; the checklist is in [`docs/release/windows.md`](./release/windows.md).
-3. **Keep the update feed current**: `latest.yml`/`beta.yml` and the installer are published beside each other with
-   `tools/publish-r2.ps1`. The app side is done — a default HTTPS folder, channel mapping, download/install consent and
-   yt-dlp rollback — so the remaining work is running the publish step with every release.
-4. **Crash reporting is local and opt-in.** The remaining choice, if a hosted error service is ever wanted, is an
+3. **Prove one complete update cycle on an installed copy**: publish 0.1.1 with `npm run publish:r2`, then Check now →
+   Download update → Restart and install on a 0.1.0 install. Confirm the version changes, the library and playlists
+   survive, and no second copy is left behind. The pieces are verified; the loop as a whole has never run.
+4. **Keep the update feed current**: `latest.yml`/`beta.yml` and the installer are published beside each other with
+   `tools/publish-r2.ps1`. The app side is done — the R2 folder is the default, with channel mapping, download/install
+   consent and yt-dlp rollback — so the remaining work is running the publish step with every release.
+5. **Crash reporting is local and opt-in.** The remaining choice, if a hosted error service is ever wanted, is an
    explicit consent screen and a privacy note; nothing is uploaded today.
-5. **Windows compatibility pass**: Windows 10/11 at 100–200% scaling, multi-monitor and HiDPI. The accessibility side is
+6. **Windows compatibility pass**: Windows 10/11 at 100–200% scaling, multi-monitor and HiDPI. The accessibility side is
    done: landmarks, `aria-current`, tab-key navigation, field labels, slider value text, modal focus trapping and
    restoration, measured contrast, and forced-colors fallbacks, all covered by the self-test. The display side has its
    code and a hardware checklist in [`docs/release/windows.md`](./release/windows.md): 1280px artwork cache with a
    regenerating migration, an extra-large-text layout sweep at the minimum window, and off-screen clamp on the mini
    player. What remains is running that checklist on real Windows 10/11 hardware.
-6. **Extend the performance gate**: `npm run perf` already runs in CI and passed there, enforcing the 10 000-file scan,
+7. **Extend the performance gate**: `npm run perf` already runs in CI and passed there, enforcing the 10 000-file scan,
    rescan, paging, search, database size and main-process memory budgets. Cold start, first audio and memory under
    playback stay manual.
-7. **M2 gap**: optional crossfade.
+8. **M2 gap**: optional crossfade.
 
-The update-feed host, crash-reporting service and signing certificate are decisions rather than code, so they come
-before the steps that depend on them.
+[`ROADMAP.md`](../ROADMAP.md) §14 is the full 1.0 list. Beyond the three release blockers above it covers the packaging
+placeholders in `electron-builder.yml`, third-party notices and the ffmpeg licence choice, renderer hardening (permission
+handler, navigation guard, CSP, corrupt-database recovery), the phone-export feature, the format/failure/soak matrices,
+and the beta-channel and bad-release drills.

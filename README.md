@@ -10,7 +10,8 @@ library, one queue, one search box.
   that survives a restart, and a mini player for when the window is in the way.
 
 Suura is an early pre-release for Windows 10 and 11 (64-bit). The source is public, the installer is **not code-signed
-yet**, and there is no telemetry of any kind. An Android version is planned; it is not started.
+yet**, and there is no telemetry of any kind. There is no Android app: Windows comes first, and a phone version is
+demand-only — see [`ROADMAP.md`](./ROADMAP.md) §7/M9 and the finish line in §14.
 
 ---
 

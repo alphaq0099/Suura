@@ -2,7 +2,8 @@
 
 A music player that manages a **local music library** and can also **search, stream and download songs from YouTube** through a backend engine built on **yt-dlp**.
 
-- **Platform order:** Windows desktop first → Android later
+- **Platform order:** Windows desktop now. Android is **deferred and demand-only** — it is not planned work, and starts only
+  if Windows is finished and users ask for it in numbers (see §7/M9).
 - **Streaming first:** play immediately, no waiting for a full download
 - **User's choice:** decide per-track / per-playlist whether downloaded audio is kept on disk, cached temporarily, or never written to disk at all. **The bounded cache, offline replay and the Saved/Cache tabs inside YouTube are complete in M12a + M12b.**
 - **Status of this document:** the plan. Implementation has started — see [`README.md`](./README.md) for what actually
@@ -32,7 +33,9 @@ A single app where a user's music lives in one place:
 - No music *upload/sharing* features
 - No DRM'd commercial streaming services (Spotify/Apple Music) integration
 - No social features
-- No iOS (revisit only after Android ships)
+- No Android or iOS app while Windows is unfinished: phones already have good local players, the YouTube core cannot ship on
+  Play, and a second platform would double maintenance for a solo project (M9)
+- No iOS. Revisit only if a mobile port ever happens, and only after it.
 
 ### 1.4 Success criteria for v1 (Windows)
 - Library of 10,000 tracks scans, indexes and is searchable; cold start < 2 s
@@ -232,7 +235,7 @@ Rules:
 | Bot checks / "Sign in to confirm you're not a bot" | Optional external PO Token provider (`youtubepot-bgutilhttp`), an off-by-default cookie fallback (`off` / once after a bot check / always), a 5/15-minute circuit breaker, and a clear in-app message. The app does not bundle the provider or the plugin |
 | Rate limiting (`429`) | Two metadata starts at a time with jitter, one transient retry, a 5/15-minute breaker, and a UI-visible cooldown message |
 | Extractor breakage | yt-dlp ships frequent fixes → **auto-update the sidecar**, keep the last-known-good binary, roll back on failure |
-| Bundling ffmpeg | Ship an LGPL build to keep licensing simpler, or fetch on first use; verify checksums |
+| Bundling ffmpeg | Fetch on first use (chosen in M8) with a pinned URL, byte count and SHA-256. **The current pin is a GPL-3.0 `ffmpeg-static` build**, while this table and the README imply LGPL; either move to an LGPL build or state the GPL provenance in the third-party notices (§14.3) |
 | Region/age restrictions, geo-blocks | Detect the specific error and give a human-readable reason instead of "failed" |
 | Non-music videos, live streams, very long videos | Reject or warn; mark as non-library content |
 | yt-dlp's own ToS posture | yt-dlp is public domain (Unlicense); the *act* of downloading is the user's responsibility — the app must say so |
@@ -582,22 +585,47 @@ packaging).
 **Exit:** a stranger can install, use and uninstall it without instructions.
 **Status:** the installer, manual diagnostics export, opt-in local crash reports, renderer sandboxing, headless perf
 budgets, daily yt-dlp update, the fetch-on-first-use sidecar installer, the CI workflow, the app update channel,
-yt-dlp rollback and the accessibility pass are complete. The Windows 10/11 HiDPI, multi-monitor and 4K check remains;
-signing is documented but not configured. The update feed itself has no host yet: the feature stays dormant until a URL
-is entered in Settings → About.
+yt-dlp rollback, the R2 feed and the accessibility pass are complete. The published feed
+(`https://pub-f78cb36c07324422ba352033e3d71909.r2.dev`) is now the default, so a fresh install checks without setup;
+clearing it in Settings → About still disables every request. What is left is the finish line in §14 — the real
+Windows 10/11 hardware pass, signing, and one proven update cycle on an installed copy.
 
-### M9 — Android Port  *(~4–6 weeks)*
-**Goal:** reuse the core, replace the platform-specific layers.
-- [ ] Confirm the shared/reused surface (data model, DB, settings, playlists, retention policy) vs. what must be rewritten (engine, player, UI, storage permissions)
-- [ ] Embed the resolver: NewPipeExtractor-based engine (or an embedded-Python yt-dlp via Chaquopy — evaluate size and stability), behind the same `IMediaResolver`
-- [ ] Android player: background playback, notification + lock-screen controls, audio focus, Bluetooth/metadata, MediaSession
-- [ ] Scoped storage: app-private cache + user-chosen library folder (SAF), correct permission flows
-- [ ] Mobile UX rework: bottom nav (Library / Search / Downloads / Playing), mini-player, gesture controls, Material 3
-- [ ] Battery/data-saver awareness: "stream only on Wi-Fi", download only on Wi-Fi, cache budget in MB
-- [ ] Play Store requirements: target API level, data-safety form, privacy policy, and a serious decision about whether an app whose purpose is downloading from YouTube can be distributed there at all (alternative: direct APK / F-Droid)
-**Exit:** feature parity on the core loop (library + search + stream + keep), signed APK released.
+### M9 — Android Port  *(deferred; demand-only, not scheduled)*
 
-### M10 — Two-Device Continuity *(optional, ~2–4 weeks)*
+**Decision.** Android is not planned work. It starts only if **all** of these are true:
+
+1. Windows is finished (§14) and has real users who keep asking for a phone app — not the maintainer wanting one.
+2. Distribution is accepted as **APK sideload / F-Droid only**. Google Play prohibits apps that facilitate downloading
+   from YouTube, so the core feature cannot ship there. Android 14+ also makes sideloading more friction than it was.
+3. A two-week spike passes: MediaStore index → Media3 playback → foreground service → notification controls → survives a
+   phone call. No milestone, no dates before that.
+4. The maintenance cost is accepted: two release pipelines, a second signing key (lose it and the app can never update),
+   and YouTube changes chased twice.
+
+**Why not now.** The engine layer is the blocker, not the UI. Streaming already needs `yt-dlp` (Python), `ffmpeg` (native
+build) and a Node-based PO-token provider (`src/engine/sidecar/po-token.ts`); an APK either bundles three runtimes or
+reimplements the most volatile part of the stack. Meanwhile the niche is served on Android by NewPipe, Tubular, Seal,
+InnerTune, Metrolist and PowerAmp, and Suura's differentiator — one curated library with tags, duplicates, ReplayGain,
+lyrics *and* YouTube — is desk work.
+
+If it is ever built, it should be a **separate Android app** sharing the `player-backup` format and the design language,
+not a port with platform branches inside this tree. A phone-sync feature (export a playlist as M3U plus files for
+PowerAmp) is the cheap answer to the actual need and is tracked in §14.
+
+**If it is picked up:**
+- [ ] Confirm the shared surface (backup format, playlist semantics, settings vocabulary) vs. the rewrite (engine, player,
+      storage, UI)
+- [ ] Resolver behind the existing `IMediaResolver`: NewPipeExtractor, or embedded Python — decided by a spike
+- [ ] Media3/ExoPlayer + foreground service + MediaSession + audio focus; the Web Audio EQ is replaced, not ported
+- [ ] MediaStore + SAF for storage; no `fs.watch`
+- [ ] Mobile UX: bottom nav, mini-player, touch targets, no hover
+- [ ] Data saver: stream-only on mobile data, Wi-Fi-only downloads
+- [ ] Update path: signed APK, in-app installer or F-Droid metadata
+**Exit (if ever):** library + search + stream + keep on a signed APK, installed and updated by a stranger.
+
+### M10 — Two-Device Continuity *(deferred with M9)*
+The phone half of this only exists if M9 does. Until then the portable bridge is the backup format and M3U export (§14).
+
 - [ ] Optional **companion server mode**: one device (usually the PC) exposes its resolved stream + library over LAN so the other device can play/download from it
 - [ ] Playlist/play-state sync between devices (local network, no cloud account)
 - [ ] "Send to device" (Cast-like) for the same-network case
@@ -662,8 +690,8 @@ Cache tabs through the header toggles.
 ### M13 — Library Metadata & Lyrics  *(~6 weeks; Phases 1–6 complete, Phase 7 deferred)*
 **Goal:** fix the tags YouTube got wrong, and show the lyrics a file already has, without leaving the player.
 
-The number is next because the milestone was added last; the **schedule** is after M8 and before M9, so the Android
-port inherits the metadata core instead of reimplementing it. M12 set the same precedent.
+The number is next because the milestone was added last; Phases 1–6 are complete. Phase 7 is separate, additive work and
+is not scheduled. M13 is no longer a prerequisite for anything: Android (M9) is deferred, so nothing "inherits" it.
 
 **Phase 1 - write path (the foundation)**
 - [x] One `TagWriter` with a per-format strategy: `node-id3` for MP3 `USLT`/`SYLT`, ffmpeg `-c copy` for FLAC/Ogg/Opus
@@ -735,19 +763,19 @@ and survives a kill between the temp write and the replace.
 | M6 | Settings Revamp | Hierarchy, grouping, honest controls | 1–2 w | M5 |
 | M7 | Playlists, Sync & Data Care | Import/export, migrations, dedupe | 2 w | M6 |
 | M8 | Windows Release Engineering *(in progress)* | Installer, update, telemetry, a11y | 2 w | M7 |
-| M9 | Android Port | New engine + player + UI | 4–6 w | M8 |
-| M10 | Two-Device Continuity *(optional)* | LAN companion server | 2–4 w | M9 |
+| M9 | Android Port *(deferred, demand-only)* | Only if Windows is finished and users ask | — | M8 |
+| M10 | Two-Device Continuity *(deferred with M9)* | LAN companion server | — | M9 |
 | M11 | Long-term extras | Scrobbling, hi-res, plugins, visualiser | continuous | — |
 | M12 | Offline Cache & Downloads *(complete)* | Cache engine, offline replay, history; manager surface inside YouTube's Saved/Cache tabs | 2–3 w | M4, M6 |
 | M13 | Library Metadata & Lyrics *(Phases 1–6 complete; Phase 7 deferred)* | Tag writing, auto-tag, artwork, lyrics, fingerprint | 6 w | M1, M7 |
 
-**Critical path:** M0 → M1 → M3 → M4 → M5 → M6 → M8 → M13 → M9. M2 can be interleaved, M7 is data-care hygiene, and M12 is
-complete (data layer plus the manager inside YouTube's Saved/Cache tabs). M13 is numbered next because it was added last; it is scheduled
-after M8 and before M9 so the Android port inherits the metadata core. The visual revamp landed as Home plus the album
-grid, and **Windows release engineering (M8) is in progress**: the per-user NSIS installer, manual diagnostics export,
-opt-in local crash reports, renderer sandbox, fetch-on-first-use sidecar installer, CI workflow, app update channel and
-yt-dlp rollback are built and verified, as is the accessibility pass; the Windows 10/11 HiDPI, multi-monitor and 4K check
-is still open, with signing last.
+**Critical path:** M0 → M1 → M3 → M4 → M5 → M6 → M8 → §14 finish line → M13 Phase 7 (only if asked). M2 can be interleaved,
+M7 is data-care hygiene, and M12 is complete (data layer plus the manager inside YouTube's Saved/Cache tabs). M13 is
+numbered next because it was added last; Phases 1–6 are complete and Phase 7 stays deferred. **Android (M9) is not on the
+critical path and is not scheduled**: it is demand-only, with the entry conditions written into its section. The visual
+revamp landed as Home plus the album grid, and **Windows release engineering (M8) is nearly done**: the per-user NSIS
+installer, diagnostics export, opt-in local crash reports, renderer sandbox, fetch-on-first-use sidecar installer, CI
+workflow, a live update feed, yt-dlp rollback and the accessibility pass are built and verified. §14 is what remains.
 
 ---
 
@@ -763,7 +791,7 @@ is still open, with signing last.
 | Player engine limitations (seeking, gapless, formats) | Core UX feels amateur | Medium | Pick the engine with a known escape hatch to a native path; validate gapless in M2 |
 | Sidecar packaging/licensing (ffmpeg) | Ship blocker | Low–Medium | LGPL build or fetch-on-first-use with checksum verification |
 | Scope creep in the UI | Delayed delivery | High | Freeze the 6 core screens in M0; everything else goes to M11 |
-| Android engine gap (no yt-dlp) | Rewrite instead of port | Medium | `IMediaResolver` from day one + capability negotiation in the UI |
+| Android engine gap (no yt-dlp) | Rewrite instead of port | Not applicable while M9 is deferred | `IMediaResolver` is in place; the decision is recorded, not scheduled |
 
 ---
 
@@ -849,16 +877,115 @@ first; its fourth column is **Source** rather than Album, the filter chip and se
 and a YouTube row saves through the same download queue as YouTube Links. A shelf's **More** filters the same list in
 place with a removable chip. The hero art is at full strength in both themes, and its crossfade pace is a Settings
 slider (3–60 s) instead of a constant.
-**Windows release engineering (M8) is in progress**: the per-user NSIS installer, icon, uninstall data prompt, renderer
-sandbox, headless perf budgets, fetch-on-first-use sidecar installer, CI workflow, app update channel, yt-dlp rollback
-and opt-in local crash reports are in place, and the packaged app passes its self-test. Updates read `latest.yml`/`beta.yml`
-from a static HTTPS folder set in Settings → About and never install without a press; the previous yt-dlp is kept and
-restored when a new one breaks. The accessibility and keyboard pass is done; the remaining work is the Windows 10/11
-HiDPI, multi-monitor and 4K check, with signing last. A streaming UX redesign is independent of that sequence as long as
-it only changes the renderer; it must come before the sidecar work only if it changes what the engine must resolve,
-cache or download.
+**Windows release engineering (M8) is nearly done**: the per-user NSIS installer, icon, uninstall data prompt, renderer
+sandbox, headless perf budgets, fetch-on-first-use sidecar installer, CI workflow, the published update feed, yt-dlp
+rollback and opt-in local crash reports are in place, and the packaged app passes its self-test. Updates read
+`latest.yml`/`beta.yml` from the R2 folder that now ships as the default and never install without a press; the previous
+yt-dlp is kept and restored when a new one breaks. The accessibility and keyboard pass is done. §14 is the remaining
+list: the real Windows 10/11 hardware run, signing, one proven update cycle, and the packaging, licensing, hardening and
+release-process items that only matter at 1.0.
 
-**Next:** the Windows 10/11 HiDPI, multi-monitor and 4K check, with signing last; then M9. M13 is complete through
-Phase 6, and its Phase 7 (local AI transcription) stays deferred until asked for. M13's fingerprint fallback needs
-nothing more than the user's own AcoustID key: `fpcalc` arrives with the M8 engine download, and the text search keeps
-working without either.
+**Next:** the §14 finish line — the real Windows 10/11 hardware pass, signing, and one proven update cycle on an installed
+copy. Android (M9) is deferred and demand-only. M13 is complete through Phase 6, and its Phase 7 (local AI transcription)
+stays deferred until asked for. M13's fingerprint fallback needs nothing more than the user's own AcoustID key: `fpcalc`
+arrives with the M8 engine download, and the text search keeps working without either.
+
+---
+
+## 14. Windows 1.0 Finish Line
+
+What stands between 0.1.0 and a release a stranger can trust. Ordered by what blocks the version, not by effort. *(code)*
+marks work in this repository; the rest is hardware, accounts and process.
+
+### 14.1 Release blockers
+
+- [ ] **Real hardware pass** — install, run and uninstall on Windows 10 and Windows 11: 100/125/150/200% scaling, 4K,
+      two monitors with the window dragged between them, a monitor unplugged while the mini player is open,
+      sleep/resume, audio device switch (headphones → speakers → Bluetooth), a long queue, a 10k-track library.
+      Checklist in `docs/release/windows.md`.
+- [ ] **Signing** — SignPath approval or a certificate, `CSC_LINK`/`CSC_KEY_PASSWORD` in the release environment, and the
+      signature verified on the installer and the installed exe. Unsigned stays shippable; signed is finished.
+      `CODE_SIGNING.md`.
+- [ ] **One complete update cycle on an installed copy** — publish 0.1.1, let 0.1.0 see it, Check now → Download update →
+      Restart and install; confirm the version changes, the library and playlists survive, the old exe is replaced and no
+      second copy is left behind. The parts are verified; the whole loop has never run.
+
+### 14.2 Packaging and metadata *(code)*
+
+- [ ] `electron-builder.yml` still carries two placeholders: `copyright: Copyright c 2026 Suura` (misspelled and not the
+      copyright holder) and `publish.url: https://updates.suura.invalid/suura`. Set the copyright to `2026 alphaq0099` and
+      point the publish block at the real R2 folder, or drop it — today the generated `latest.yml` is only correct because
+      the runtime overrides the feed.
+- [ ] Confirm the exe's file properties (product, version, description, publisher, icon) and the Apps & Features entry
+      after install.
+- [ ] Upgrade in place 0.1.0 → next: settings, engine folder and library untouched, no duplicate Start-menu entry.
+- [ ] Uninstall: app data kept by default, the opt-in prompt deletes it, no stale shortcuts or registry keys.
+- [ ] Decide file associations for `.m3u`/`.m3u8`. Today double-clicking a playlist does nothing.
+
+### 14.3 Trust, licences and legal *(code + docs)*
+
+- [ ] **Third-party notices** — there is no `NOTICE`/`THIRD-PARTY.md` and no in-app credits view: Electron + Chromium,
+      `music-metadata`, `node-id3`, React, and the downloaded yt-dlp (Unlicense) and ffmpeg (GPL-3.0 — see below).
+      Add a credits page under About and a `THIRD-PARTY.md`.
+- [ ] **ffmpeg licence mismatch** — `src/engine/sidecar/manifest.ts` pins `eugeneware/ffmpeg-static` b6.1.1, whose
+      package is **GPL-3.0-or-later**, while §6.4 and the README imply an LGPL build. It is fetched at runtime rather than
+      bundled, so this is a disclosure decision, not a redistribution one — but pick one: switch the pin to an LGPL
+      build, or state the GPL provenance plainly in the notices.
+- [ ] First-run and About: the YouTube/ToS disclaimer and the "no telemetry" statement, in plain language.
+- [ ] Privacy statement that matches behaviour: the daily update check contacts R2/Cloudflare, crash reports never leave
+      the machine, no analytics.
+- [ ] Site: a known-issues page and an FAQ. The site is one page today; the changelog is only in the repo.
+
+### 14.4 Security hardening *(code)*
+
+- [ ] `session.setPermissionRequestHandler` — none today. Deny camera, microphone, geolocation, notifications, MIDI and
+      clipboard-read outright; a music player needs none of them.
+- [ ] `will-navigate` guard, and restrict `setWindowOpenHandler` to `http:`/`https:`. It currently passes any scheme to
+      `shell.openExternal`, so a stray `file:` or custom-scheme link reaches the shell.
+- [ ] CSP for the renderer — there is no meta or header CSP. Sandbox and `contextIsolation` are on; a CSP is the next
+      cheap layer.
+- [ ] Re-audit the custom protocols (`player-media://`, `player-art://`, `player-stream://`) for traversal and arbitrary
+      path disclosure. The download and cache paths already check "inside the root"; the protocols should too.
+- [ ] **Corrupt database recovery** — a failed `library.db` open shows an error box and calls `app.exit(1)`. Offer
+      "restore the newest automatic backup" (the rotating copies already exist) or "start a new library" instead.
+- [ ] Confirm the local PO-token provider binds loopback only and never triggers a Windows Firewall prompt.
+
+### 14.5 Product finish
+
+- [ ] **Crossfade** — the last open M2 checkbox. Build it or remove it from the roadmap; a stale promise is worse than
+      "no".
+- [ ] **Send to phone** — export a playlist as `.m3u8` plus a folder copy, ready for PowerAmp or any phone player. This is
+      the answer to "I want it on my phone" without M9.
+- [ ] Decide autostart with Windows. Tray and close-to-tray exist; autostart does not.
+- [ ] Empty and error state sweep: no folders, no engine, offline, YouTube blocked, download failed, disk full.
+- [ ] Narrator pass on the real app. The automated accessibility pass proves landmarks, focus and contrast, not spoken
+      labels.
+
+### 14.6 Quality bars
+
+- [ ] Soak test: a day of use with sleep/resume, a long queue, repeated downloads and cache churn — no memory growth, no
+      orphaned `yt-dlp`/`ffmpeg` processes, no stuck `.part` files.
+- [ ] Format matrix on hardware: MP3, FLAC, Opus, M4A/AAC, WAV; 44.1/48/96 kHz; mono and stereo; VBR and CBR.
+- [ ] Failure matrix: offline, DNS failure, 403 mid-stream, bot check, expired CDN URL, cancelled download, read-only
+      library folder, locked file, disk full, a path over 260 characters, non-ASCII paths, a OneDrive-synced folder.
+- [ ] Defender and one third-party antivirus on both the unsigned and the signed installer: no false positive.
+- [ ] 10,000-track repeat on the release build, plus a 50,000-track sanity check.
+
+### 14.7 Release process
+
+- [ ] `CHANGELOG.md`: replace `[Unreleased]` with the released version and date; every release gets a section.
+- [ ] One documented sequence, run in order: version bump → `npm run typecheck` → `npm run smoke` → `npm run build` →
+      `npm run package:win` → `SHA256SUMS.txt` → `npm run publish:r2` → GitHub release with the `Suura-Setup.exe` alias.
+      It is written in `docs/release/windows.md` and has been run once, by hand.
+- [ ] Decide whether releases stay manual or become a tag-triggered workflow. Either is fine; leaving it unstated is not.
+- [ ] Beta-channel rehearsal: bump to `0.2.0-beta.1`, confirm electron-builder writes `beta.yml`, publish it and install it
+      through the Beta setting. The beta path has never been exercised.
+- [ ] Bad-release drill: document how to yank a version (electron-updater never downgrades, so recovery is a new patch
+      release) and how to pull the R2 alias.
+- [ ] Tag `v1.0.0` only when 14.1–14.3 are done. 1.0 is a promise that "install, use, uninstall" is proven.
+
+### 14.8 Deliberately not in 1.0
+
+Last.fm scrobbling, Discord presence, a visualiser, plugins, hi-res/WASAPI exclusive output, local AI transcription
+(M13 Phase 7), two-device continuity (M10) and Android (M9). Each is additive; none is needed for a finished Windows
+release.
