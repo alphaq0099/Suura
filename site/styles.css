@@ -180,6 +180,7 @@ h1 {
   font-weight: 800;
   line-height: 1.02;
   letter-spacing: -0.045em;
+  text-wrap: balance;
 }
 
 h1 .accent {
@@ -256,26 +257,60 @@ h1 .accent {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 30px;
+  gap: 34px;
   min-height: 380px;
+}
+
+.icon-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(74%, 320px);
+  aspect-ratio: 1;
+  isolation: isolate;
+  animation: arrive 0.8s cubic-bezier(0.2, 0.7, 0.3, 1) both;
 }
 
 .halo {
   position: absolute;
-  width: min(62%, 300px);
+  width: 96%;
   aspect-ratio: 1;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 85, 65, 0.55), rgba(255, 85, 65, 0) 68%);
-  filter: blur(48px);
+  background: radial-gradient(circle, rgba(255, 85, 65, 0.5), rgba(255, 85, 65, 0) 68%);
+  filter: blur(46px);
   opacity: 0.7;
-  animation: breathe 11s ease-in-out infinite;
+  animation: breathe 6s ease-in-out infinite;
+}
+
+/* One ring leaves the icon on each beat, so the hero reads as a player with a
+   pulse instead of a static logo. Transform and opacity only, so it stays on
+   the compositor and costs no layout. */
+.ripple {
+  position: absolute;
+  inset: 0;
+  border: 2px solid rgba(255, 85, 65, 0.7);
+  border-radius: 50%;
+  box-shadow: 0 0 22px rgba(255, 85, 65, 0.16);
+  opacity: 0;
+  animation: ripple 2.7s cubic-bezier(0.16, 0.62, 0.26, 1) infinite;
+  will-change: transform, opacity;
+}
+
+.ripple:nth-of-type(2) {
+  animation-delay: 0.9s;
+}
+
+.ripple:nth-of-type(3) {
+  animation-delay: 1.8s;
 }
 
 .app-icon {
   position: relative;
-  width: min(78%, 320px);
+  width: 100%;
   height: auto;
-  filter: drop-shadow(0 32px 60px rgba(0, 0, 0, 0.55));
+  filter: drop-shadow(0 30px 56px rgba(0, 0, 0, 0.55));
+  animation: beat 0.9s ease-in-out infinite;
+  will-change: transform;
 }
 
 .chips {
@@ -299,6 +334,26 @@ h1 .accent {
   backdrop-filter: blur(8px);
 }
 
+.hero-copy > * {
+  animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+.hero-copy > :nth-child(2) {
+  animation-delay: 0.06s;
+}
+
+.hero-copy > :nth-child(3) {
+  animation-delay: 0.12s;
+}
+
+.hero-copy > :nth-child(4) {
+  animation-delay: 0.18s;
+}
+
+.hero-copy > :nth-child(5) {
+  animation-delay: 0.24s;
+}
+
 @keyframes breathe {
   0%,
   100% {
@@ -306,8 +361,57 @@ h1 .accent {
     opacity: 0.55;
   }
   50% {
-    transform: scale(1.06);
+    transform: scale(1.05);
     opacity: 0.8;
+  }
+}
+
+@keyframes beat {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  16% {
+    transform: scale(1.045);
+  }
+  34% {
+    transform: scale(1);
+  }
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(1.02);
+    opacity: 0.65;
+  }
+  55% {
+    opacity: 0.22;
+  }
+  100% {
+    transform: scale(1.42);
+    opacity: 0;
+  }
+}
+
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
@@ -315,6 +419,7 @@ h1 .accent {
 
 .section {
   padding: clamp(56px, 8vw, 96px) 0;
+  scroll-margin-top: 84px;
 }
 
 .section-head {
@@ -335,6 +440,7 @@ h2 {
   font-size: clamp(1.8rem, 3.4vw, 2.7rem);
   line-height: 1.1;
   letter-spacing: -0.035em;
+  text-wrap: balance;
 }
 
 .section-head > p:last-child {
@@ -578,7 +684,7 @@ h2 {
     min-height: 300px;
   }
 
-  .app-icon {
+  .icon-stage {
     width: min(58%, 260px);
   }
 
@@ -597,21 +703,79 @@ h2 {
   }
 
   .site-header nav {
-    gap: 16px;
+    gap: 18px;
     font-size: 0.85rem;
+  }
+
+  .site-header nav a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  h1 {
+    font-size: clamp(2.15rem, 10.5vw, 3rem);
+    line-height: 1.05;
+  }
+
+  h2 {
+    font-size: clamp(1.65rem, 7vw, 2.2rem);
+  }
+
+  .hero {
+    padding: 36px 0 56px;
+  }
+
+  .hero-visual {
+    min-height: 0;
+    gap: 24px;
+  }
+
+  .icon-stage {
+    width: min(56%, 210px);
+  }
+
+  .chips {
+    gap: 6px;
+  }
+
+  .chips li {
+    font-size: 0.74rem;
+    padding: 5px 10px;
   }
 
   .feature-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .feature {
+    padding: 20px;
+  }
+
+  .section {
+    padding: 52px 0;
+  }
+
+  .section-head {
+    margin-bottom: 30px;
+  }
+
+  .download-card {
+    border-radius: 20px;
+    padding: 24px 20px;
+  }
+
   .actions .button {
     width: 100%;
   }
 
-  .hero-visual {
-    order: 0;
-    min-height: 250px;
+  .steps {
+    gap: 20px;
+  }
+
+  .steps pre code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
 
   .site-header .source-link {
@@ -621,6 +785,38 @@ h2 {
   .footer-inner {
     flex-direction: column;
     align-items: flex-start;
+    gap: 16px;
+  }
+
+  .site-footer nav {
+    gap: 16px;
+  }
+}
+
+@media (max-width: 380px) {
+  .brand span {
+    font-size: 0.98rem;
+  }
+
+  .site-header nav {
+    gap: 14px;
+    font-size: 0.8rem;
+  }
+
+  .eyebrow {
+    font-size: 0.72rem;
+    letter-spacing: 0.01em;
+  }
+
+  .chips li {
+    font-size: 0.7rem;
+  }
+}
+
+@media (hover: none) {
+  .feature:hover {
+    transform: none;
+    border-color: var(--line);
   }
 }
 
