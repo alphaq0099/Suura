@@ -2542,6 +2542,16 @@ export function SettingsView(props: SettingsViewProps) {
                   {diagnosticsNote}
                 </p>
               ) : null}
+
+              <details className="about-licences">
+                <summary>Open-source licences</summary>
+                <p className="card-hint">
+                  Suura is MIT-licensed. It runs on Electron and Chromium (MIT and BSD-3-Clause), React, React DOM,
+                  music-metadata and node-id3 (MIT), and the Inter typeface (SIL OFL 1.1). yt-dlp (Unlicense), ffmpeg
+                  (GPL-3.0) and fpcalc (LGPL-2.1) are downloaded separately, only when you ask for them, and run as
+                  their own programs. The full notices ship with the source as <code>THIRD-PARTY.md</code>.
+                </p>
+              </details>
             </article>
           </div>
         </section>

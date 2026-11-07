@@ -141,6 +141,32 @@ export function pruneDatabaseBackups(directory: string, keep = BACKUP_KEEP): num
 }
 
 /**
+ * The newest automatic copy that SQLite reports as sound.
+ *
+ * Used only when the live library will not open. Manual backup folders are left
+ * alone: those are the user's, and choosing one automatically would be a guess.
+ * A copy from a newer schema is skipped too, because this build cannot read it.
+ */
+export function findDatabaseRecoveryCandidate(
+  directory: string,
+  maxSchemaVersion = latestVersion()
+): { file: string; schemaVersion: number } | null {
+  for (const entry of listDatabaseBackups(directory)) {
+    const name = entry.file.split(/[\\/]/).pop() ?? ''
+    if (!name.startsWith('auto-') && !name.startsWith('pre-migration-')) continue
+    try {
+      const inspection = inspectDatabaseFile(entry.file)
+      if (inspection.integrity !== 'ok') continue
+      if (inspection.schemaVersion > maxSchemaVersion) continue
+      return { file: entry.file, schemaVersion: inspection.schemaVersion }
+    } catch {
+      // An unreadable file is not a candidate; try the next one.
+    }
+  }
+  return null
+}
+
+/**
  * Makes at most one automatic copy per day.
  *
  * The file's mtime is the clock rather than a setting, so the policy survives a

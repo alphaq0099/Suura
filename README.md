@@ -379,6 +379,11 @@ size and modification time, and keeps its id, so playlists and play counts survi
 **The library is slow to open on a network drive.** Turn off **Watch folders for changes** under **Settings → General**.
 Watching is what makes new albums appear by themselves, and it is the first thing to give up on a slow share.
 
+**Suura says the library is damaged.** The database did not pass SQLite's integrity check. The dialog offers the newest
+usable automatic backup (kept in `<userData>\backups`), a fresh library, or Quit. Restoring brings back the library as it
+was when that copy was made; starting fresh keeps your music files but forgets playlists and play counts until the folders
+are scanned again. The damaged file is renamed, not deleted, so it can be inspected later.
+
 **A tag edit was refused.** A file that is playing, read-only, or locked by another program is reported rather than
 half-written. Stop playback or close the other program and try again; an edit made during playback is queued.
 

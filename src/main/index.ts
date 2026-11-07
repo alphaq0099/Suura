@@ -11,6 +11,7 @@ import { installStreamProtocolHandler } from './stream-protocol'
 import { checkScaleBudgets, runScaleCheck, seedScaleLibrary } from './scale-check'
 import { runSelfTest } from './selftest'
 import { createContainer, type AppContainer } from './services/container'
+import { LibraryOpenCancelledError } from './db-recovery'
 import { installTray, type TrayController } from './tray'
 import { createMainWindow } from './window'
 
@@ -83,7 +84,7 @@ function start(): void {
   app
     .whenReady()
     .then(async () => {
-      const appContainer = createContainer()
+      const appContainer = createContainer({ interactive: !HEADLESS })
       container = appContainer
 
       // `npm run perf` stops here: the budgets below are about the core, so it
@@ -182,6 +183,12 @@ function start(): void {
       })
     })
     .catch((error: unknown) => {
+      // The user answered "Quit" in the damaged-library dialog. That is a
+      // decision, not a failure, so it leaves without an error box.
+      if (error instanceof LibraryOpenCancelledError) {
+        app.exit(0)
+        return
+      }
       // Without a window there is nowhere to show this, so it goes to the log file
       // and stderr, and the process exits non-zero rather than hanging invisibly.
       console.error('Failed to start Suura:', error)

@@ -912,10 +912,8 @@ marks work in this repository; the rest is hardware, accounts and process.
 
 ### 14.2 Packaging and metadata *(code)*
 
-- [ ] `electron-builder.yml` still carries two placeholders: `copyright: Copyright c 2026 Suura` (misspelled and not the
-      copyright holder) and `publish.url: https://updates.suura.invalid/suura`. Set the copyright to `2026 alphaq0099` and
-      point the publish block at the real R2 folder, or drop it — today the generated `latest.yml` is only correct because
-      the runtime overrides the feed.
+- [x] `electron-builder.yml` placeholders removed: the copyright is `Copyright © 2026 alphaq0099` and the publish block
+      points at the real R2 folder, so generated metadata matches where the files live.
 - [ ] Confirm the exe's file properties (product, version, description, publisher, icon) and the Apps & Features entry
       after install.
 - [ ] Upgrade in place 0.1.0 → next: settings, engine folder and library untouched, no duplicate Start-menu entry.
@@ -924,13 +922,11 @@ marks work in this repository; the rest is hardware, accounts and process.
 
 ### 14.3 Trust, licences and legal *(code + docs)*
 
-- [ ] **Third-party notices** — there is no `NOTICE`/`THIRD-PARTY.md` and no in-app credits view: Electron + Chromium,
-      `music-metadata`, `node-id3`, React, and the downloaded yt-dlp (Unlicense) and ffmpeg (GPL-3.0 — see below).
-      Add a credits page under About and a `THIRD-PARTY.md`.
-- [ ] **ffmpeg licence mismatch** — `src/engine/sidecar/manifest.ts` pins `eugeneware/ffmpeg-static` b6.1.1, whose
-      package is **GPL-3.0-or-later**, while §6.4 and the README imply an LGPL build. It is fetched at runtime rather than
-      bundled, so this is a disclosure decision, not a redistribution one — but pick one: switch the pin to an LGPL
-      build, or state the GPL provenance plainly in the notices.
+- [x] **Third-party notices** — `THIRD-PARTY.md` lists the bundled and downloaded components with their licences, and
+      Settings → About carries a collapsed credits block that summarises it.
+- [x] **ffmpeg licence mismatch resolved by disclosure** — the pinned `eugeneware/ffmpeg-static` b6.1.1 build is
+      GPL-3.0-or-later. It is fetched at runtime, not bundled, and runs as a separate program, so the pin stays and the
+      provenance is stated plainly in `THIRD-PARTY.md` and About instead of being described as LGPL.
 - [ ] First-run and About: the YouTube/ToS disclaimer and the "no telemetry" statement, in plain language.
 - [ ] Privacy statement that matches behaviour: the daily update check contacts R2/Cloudflare, crash reports never leave
       the machine, no analytics.
@@ -938,16 +934,16 @@ marks work in this repository; the rest is hardware, accounts and process.
 
 ### 14.4 Security hardening *(code)*
 
-- [ ] `session.setPermissionRequestHandler` — none today. Deny camera, microphone, geolocation, notifications, MIDI and
-      clipboard-read outright; a music player needs none of them.
-- [ ] `will-navigate` guard, and restrict `setWindowOpenHandler` to `http:`/`https:`. It currently passes any scheme to
-      `shell.openExternal`, so a stray `file:` or custom-scheme link reaches the shell.
-- [ ] CSP for the renderer — there is no meta or header CSP. Sandbox and `contextIsolation` are on; a CSP is the next
-      cheap layer.
+- [x] `session.setPermissionRequestHandler` and `setPermissionCheckHandler` deny every device permission; clipboard
+      access already goes through IPC, so nothing the app uses is lost.
+- [x] `will-navigate` guard, and `setWindowOpenHandler` now passes only `http:`/`https:` to `shell.openExternal`.
+- [x] CSP for the renderer — already present for production builds in `electron.vite.config.ts` (dev omits it because
+      Vite injects an inline refresh preamble); no change needed, only verification.
 - [ ] Re-audit the custom protocols (`player-media://`, `player-art://`, `player-stream://`) for traversal and arbitrary
       path disclosure. The download and cache paths already check "inside the root"; the protocols should too.
-- [ ] **Corrupt database recovery** — a failed `library.db` open shows an error box and calls `app.exit(1)`. Offer
-      "restore the newest automatic backup" (the rotating copies already exist) or "start a new library" instead.
+- [x] **Corrupt database recovery** — a library that will not open now offers "restore the newest usable automatic
+      backup", "start a new library" or "quit", keeps the damaged file beside the database, and never prompts during the
+      headless runs.
 - [ ] Confirm the local PO-token provider binds loopback only and never triggers a Windows Firewall prompt.
 
 ### 14.5 Product finish

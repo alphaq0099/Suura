@@ -9797,24 +9797,39 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     // One window, two layouts. The renderer swaps the UI and asks main for the
     // native bounds; this check exercises that whole round trip, including the
     // smaller minimum size that has to be applied before the window can shrink.
+    // The resize itself is a native round trip through IPC, so the window can
+    // legitimately take a moment to shrink under load. Waiting for the state
+    // (measured, with a ceiling) checks the outcome instead of how fast this
+    // machine happens to be; a window that never shrinks still fails.
     const mini = await evaluate<{
       button: boolean
       entered: boolean
       width: number
+      shrinkMs: number
       title: string
       controls: number
       barHidden: boolean
       expanded: boolean
       fullWidth: number
+      restoreMs: number
       barVisible: boolean
     }>(
       window,
       `(async () => {
          const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+         const waitFor = async (predicate, timeout = 5000) => {
+           const started = performance.now()
+           while (performance.now() - started < timeout) {
+             if (predicate()) return Math.round(performance.now() - started)
+             await wait(50)
+           }
+           return -1
+         }
          const button = document.querySelector('.mini-player-button')
-         if (!button) return { button: false, entered: false, width: 0, title: '', controls: 0, barHidden: false, expanded: false, fullWidth: 0, barVisible: false }
+         if (!button) return { button: false, entered: false, width: 0, shrinkMs: -1, title: '', controls: 0, barHidden: false, expanded: false, fullWidth: 0, restoreMs: -1, barVisible: false }
          button.click()
-         await wait(600)
+         const shrinkMs = await waitFor(() => window.innerWidth <= 470)
+         await wait(100)
          const app = document.querySelector('.app')
          const miniPanel = document.querySelector('.mini-player')
          const bar = document.querySelector('.player-bar')
@@ -9825,18 +9840,21 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          const width = window.innerWidth
          const expand = document.querySelector('.mini-player-expand')
          if (expand) expand.click()
-         await wait(600)
+         const restoreMs = await waitFor(() => window.innerWidth >= 900)
+         await wait(100)
          const appAfter = document.querySelector('.app')
          const barAfter = document.querySelector('.player-bar')
          return {
            button: true,
            entered,
            width,
+           shrinkMs,
            title,
            controls,
            barHidden,
            expanded: Boolean(appAfter && !appAfter.classList.contains('mini-player-mode') && !document.querySelector('.mini-player')),
            fullWidth: window.innerWidth,
+           restoreMs,
            barVisible: Boolean(barAfter && getComputedStyle(barAfter).display !== 'none')
          }
        })()`
@@ -9845,12 +9863,12 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     record(
       mini.entered && mini.width <= 470 && mini.title.length > 0 && mini.controls >= 4,
       'mini player shrinks the window and renders its own controls',
-      { entered: mini.entered, width: mini.width, title: mini.title, controls: mini.controls }
+      { entered: mini.entered, width: mini.width, title: mini.title, controls: mini.controls, ms: mini.shrinkMs }
     )
     record(
       mini.barHidden && mini.expanded && mini.fullWidth >= 900 && mini.barVisible,
       'leaving mini player restores the full window and player bar',
-      { hidden: mini.barHidden, expanded: mini.expanded, width: mini.fullWidth, bar: mini.barVisible }
+      { hidden: mini.barHidden, expanded: mini.expanded, width: mini.fullWidth, bar: mini.barVisible, ms: mini.restoreMs }
     )
   } catch (error) {
     failures += 1

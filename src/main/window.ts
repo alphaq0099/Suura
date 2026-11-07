@@ -24,6 +24,22 @@ export interface MainWindowOptions {
   crashes?: CrashReporter
 }
 
+/**
+ * Opens a web link in the real browser and nothing else.
+ *
+ * `shell.openExternal` will happily hand any scheme — `file:`, `ms-settings:`,
+ * a registered protocol handler — to Windows. Only http(s) is a link the UI
+ * should be able to produce, so everything else is dropped.
+ */
+function openExternalSafely(url: string): void {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') void shell.openExternal(url)
+  } catch {
+    // A malformed URL never reaches the shell.
+  }
+}
+
 export function createMainWindow(log: Logger, options: MainWindowOptions = {}): BrowserWindow {
   const window = new BrowserWindow({
     width: 1200,
@@ -73,9 +89,26 @@ export function createMainWindow(log: Logger, options: MainWindowOptions = {}): 
 
   // Links in the UI open in the real browser, never in an app window.
   window.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url)
+    openExternalSafely(url)
     return { action: 'deny' }
   })
+
+  // The app is a single page, so any navigation away from it is either a bug or
+  // an injected link. Allow the page to reload itself; send web links out and
+  // drop everything else.
+  window.webContents.on('will-navigate', (event, url) => {
+    if (url === window.webContents.getURL()) return
+    event.preventDefault()
+    openExternalSafely(url)
+  })
+
+  // The UI needs no device permission at all: clipboard access goes through IPC
+  // and playback is a local file or stream. Denying by default means a bug or a
+  // stray page cannot reach the camera, the microphone or the location.
+  window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => {
+    callback(false)
+  })
+  window.webContents.session.setPermissionCheckHandler(() => false)
 
   // electron-vite sets this in dev; production loads the built HTML.
   const devServerUrl = process.env['ELECTRON_RENDERER_URL']

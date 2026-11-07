@@ -2679,6 +2679,33 @@ input[type='radio'] {
   max-width: 96ch;
 }
 
+/* Collapsed credits: the About card stays short, the notices are still one click away. */
+.about-licences {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: calc(12px * var(--text-scale));
+}
+
+.about-licences summary {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.about-licences summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.about-licences .card-hint {
+  margin-top: 8px;
+}
+
 .badge {
   font-size: calc(10.5px * var(--text-scale));
   text-transform: uppercase;

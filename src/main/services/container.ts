@@ -5,7 +5,8 @@ import { ensureAppDirectories, resolveAppPaths } from '@core/paths'
 import { createLogger, type Logger } from '@core/logging/logger'
 import { SettingsService } from '@core/settings/settings-service'
 import { applyPendingRestore, ensureDailyBackup, pruneDatabaseBackups } from '@core/db/backups'
-import { openLibraryDatabase, type DatabaseHandle } from '@core/db/database'
+import { type DatabaseHandle } from '@core/db/database'
+import { openLibraryWithRecovery } from '../db-recovery'
 import { TrackRepository } from '@core/library/track-repository'
 import { DownloadHistoryRepository } from '@core/library/download-history-repository'
 import { LibraryService } from '@core/library/library-service'
@@ -116,7 +117,15 @@ export interface AppContainer {
   dispose(): void
 }
 
-export function createContainer(): AppContainer {
+export interface CreateContainerOptions {
+  /**
+   * Offer recovery when the library will not open. False for the headless runs,
+   * which have no one to answer a dialog.
+   */
+  interactive?: boolean
+}
+
+export function createContainer(options: CreateContainerOptions = {}): AppContainer {
   const paths = resolveAppPaths(app.getPath('userData'))
   ensureAppDirectories(paths)
 
@@ -171,9 +180,10 @@ export function createContainer(): AppContainer {
     engine: () => settings.get().engine,
     log: log.child('po-token')
   })
-  const database = openLibraryDatabase(paths.database, log.child('db'), {
+  const database = openLibraryWithRecovery(paths, log.child('db'), {
     backupsDir: paths.backups,
-    backupKeep: settings.get().backups.retentionCount
+    backupKeep: settings.get().backups.retentionCount,
+    interactive: options.interactive ?? false
   })
   if (hadDatabase || restored) {
     try {

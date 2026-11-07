@@ -101,6 +101,7 @@ import {
   createBackupBundle,
   createDatabaseBackup,
   ensureDailyBackup,
+  findDatabaseRecoveryCandidate,
   inspectBackupBundle,
   nextBackupDirectory,
   pruneDatabaseBackups,
@@ -2134,6 +2135,23 @@ async function main(): Promise<void> {
     checkEqual('rotation starts with five automatic copies', readdirSync(rotationDirectory).length, 5)
     checkEqual('rotation removes the oldest copies', pruneDatabaseBackups(rotationDirectory, 2), 3)
     checkEqual('rotation keeps the requested number', readdirSync(rotationDirectory).length, 2)
+
+    // A live library that will not open is repaired from the newest healthy
+    // automatic copy, not by asking the user to delete the file by hand.
+    const recoveryDirectory = join(root, 'recovery')
+    createDatabaseBackup(database.db, recoveryDirectory, 'auto-old', new Date(Date.now() - 60_000))
+    createDatabaseBackup(database.db, recoveryDirectory, 'auto-new', new Date())
+    await writeFile(join(recoveryDirectory, 'auto-broken.db'), 'this is not a database')
+    const candidate = findDatabaseRecoveryCandidate(recoveryDirectory, latestVersion())
+    check('recovery finds an automatic copy', candidate !== null)
+    check('recovery skips a file that is not a database', !candidate?.file.includes('broken'))
+    checkEqual('recovery reports the copy schema', candidate?.schemaVersion, latestVersion())
+    const manualDirectory = join(root, 'manual-only')
+    createDatabaseBackup(database.db, manualDirectory, 'manual-copy', new Date())
+    check(
+      'recovery leaves manual backups out',
+      findDatabaseRecoveryCandidate(manualDirectory, latestVersion()) === null
+    )
 
     const futureDatabase = join(root, 'future.db')
     copyFileSync(

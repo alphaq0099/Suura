@@ -12,7 +12,7 @@
 
 appId: com.suura.desktop
 productName: Suura
-copyright: Copyright © 2026 Suura
+copyright: Copyright © 2026 alphaq0099
 
 directories:
   output: release
@@ -20,12 +20,13 @@ directories:
 
 # A generic provider makes electron-builder write the channel file
 # (latest.yml, or beta.yml for a prerelease version) beside the installer.
-# The URL here is a placeholder: the app reads the real feed folder from
-# Settings, and stays dormant until one is configured. Nothing is uploaded
-# unless `--publish` is passed explicitly.
+# The URL is the public R2 folder that ships as the app's default feed, so the
+# generated metadata describes where the files really live. The app still reads
+# the feed folder from Settings, and nothing is uploaded unless `--publish` is
+# passed explicitly.
 publish:
   provider: generic
-  url: https://updates.suura.invalid/suura
+  url: https://pub-f78cb36c07324422ba352033e3d71909.r2.dev
 
 files:
   - out/**/*
