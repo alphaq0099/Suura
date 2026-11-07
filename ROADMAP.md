@@ -939,12 +939,16 @@ marks work in this repository; the rest is hardware, accounts and process.
 - [x] `will-navigate` guard, and `setWindowOpenHandler` now passes only `http:`/`https:` to `shell.openExternal`.
 - [x] CSP for the renderer — already present for production builds in `electron.vite.config.ts` (dev omits it because
       Vite injects an inline refresh preamble); no change needed, only verification.
-- [ ] Re-audit the custom protocols (`player-media://`, `player-art://`, `player-stream://`) for traversal and arbitrary
-      path disclosure. The download and cache paths already check "inside the root"; the protocols should too.
-- [x] **Corrupt database recovery** — a library that will not open now offers "restore the newest usable automatic
+- [x] Re-audit the custom protocols (`player-media://`, `player-art://`, `player-stream://`) for traversal and arbitrary
+      path disclosure. Media is gated by the library-folder allowlist (resolved, so `..` collapses, and separator-aware,
+      so a sibling with a shared name prefix is outside); artwork accepts only a 40-hex cache key; streams accept only a
+      UUID that indexes the proxy's in-memory map. Self-test and smoke cover all three refusals.
+- [x] **Corrupt database recovery** - a library that will not open now offers "restore the newest usable automatic
       backup", "start a new library" or "quit", keeps the damaged file beside the database, and never prompts during the
       headless runs.
-- [ ] Confirm the local PO-token provider binds loopback only and never triggers a Windows Firewall prompt.
+- [x] Confirm the local PO-token provider binds loopback only and never triggers a Windows Firewall prompt. Suura opens
+      no listening socket; the default provider URL is `http://127.0.0.1:4416`, and the provider is a separate, opt-in
+      program the user runs.
 
 ### 14.5 Product finish
 

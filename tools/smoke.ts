@@ -4246,6 +4246,10 @@ async function main(): Promise<void> {
     const tokenId = '00000000-0000-4000-8000-000000000000'
     checkEqual('stream: the URL round-trips', parseStreamUrl(buildStreamUrl(tokenId))?.token, tokenId)
     check('stream: a foreign scheme is rejected', parseStreamUrl(`player-media://stream/${tokenId}`) === null)
+    // A token is the whole authority for a stream: anything that is not the
+    // exact UUID shape must never reach the proxy's map.
+    check('stream: a path is not a token', parseStreamUrl('player-stream://stream/../../secret') === null)
+    check('stream: an encoded path is not a token', parseStreamUrl('player-stream://stream/..%2F..%2Fsecret') === null)
 
     const payload = Buffer.alloc(4096)
     for (let index = 0; index < payload.length; index += 1) payload[index] = index % 251

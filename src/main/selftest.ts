@@ -12,6 +12,7 @@ import { IPC_EVENTS } from '@shared/ipc'
 import { mergeLibrarySearch } from '@shared/search'
 import type { ArtworkChoice, TagLookupQuery } from '@shared/types'
 import { buildMediaUrl } from '@shared/media-url'
+import { buildArtworkUrl } from '@shared/artwork-url'
 import { buildStreamUrl } from '@shared/stream-url'
 import { youtubeWatchUrl } from '@shared/youtube'
 import { broadcast } from './broadcast'
@@ -986,6 +987,26 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
 
     const outsideLibrary = await net.fetch(buildMediaUrl(join(tmpdir(), 'definitely-not-in-library.flac')))
     record(outsideLibrary.status === 403, 'a path outside every library folder is refused with 403', outsideLibrary.status)
+
+    // The allowlist is lexical, so the interesting inputs are the ones that try
+    // to use `..` or a shared name prefix to look inside a folder they are not.
+    // The `..` is left in the URL on purpose: `join` would collapse it before
+    // the handler ever saw it, and the handler is what is being tested.
+    const traversal = await net.fetch(buildMediaUrl(`${fixtureDir}\\..\\definitely-not-in-library.flac`))
+    record(traversal.status === 403, 'a .. path that leaves the library is refused with 403', traversal.status)
+
+    const siblingPrefix = await net.fetch(buildMediaUrl(join(`${fixtureDir}-evil`, 'Selftest Tone.flac')))
+    record(
+      siblingPrefix.status === 403,
+      'a sibling folder sharing the library name prefix is refused with 403',
+      siblingPrefix.status
+    )
+
+    const resolvedInside = await net.fetch(buildMediaUrl(`${fixtureDir}\\sub\\..\\Selftest Tone.flac`))
+    record(resolvedInside.status === 200, 'a .. path that stays inside the library is still served', resolvedInside.status)
+
+    const artworkTraversal = await net.fetch(buildArtworkUrl('../../secret.png'))
+    record(artworkTraversal.status === 404, 'an artwork key carrying a path is refused', artworkTraversal.status)
 
     const missingInside = await net.fetch(buildMediaUrl(join(fixtureDir, 'missing.flac')))
     record(missingInside.status === 404, 'a missing file inside the library returns 404', missingInside.status)
