@@ -23,6 +23,7 @@ import type {
   LyricsTarget,
   LyricsWriteResult,
   PlaybackSnapshot,
+  PlaylistCopyResult,
   ResolvedSource,
   TagBatchApplyResult,
   TagBatchMode,
@@ -198,6 +199,9 @@ const api: PlayerApi = {
 
   exportPlaylist: (playlistId: number) =>
     ipcRenderer.invoke(IPC.playlistsExport, playlistId) as Promise<string | null>,
+
+  sendPlaylistToPhone: (playlistId: number) =>
+    ipcRenderer.invoke(IPC.playlistsSendToPhone, playlistId) as Promise<PlaylistCopyResult | null>,
 
   importPlaylist: () => ipcRenderer.invoke(IPC.playlistsImport),
 

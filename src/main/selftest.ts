@@ -6949,6 +6949,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       created: boolean
       hasImport: boolean
       hasExport: boolean
+      hasPhone: boolean
       sidebarCount: string
       menuOpened: boolean
       addedViaBar: boolean
@@ -6999,7 +7000,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       window,
       `(async () => {
          const out = {
-           emptyState: false, created: false, hasImport: false, hasExport: false, sidebarCount: '', menuOpened: false,
+           emptyState: false, created: false, hasImport: false, hasExport: false, hasPhone: false, sidebarCount: '', menuOpened: false,
            addedViaBar: false, hasRemoveFromLibrary: false, barStatus: '', contextMenuOpened: false,
            addedViaContext: false, contextStatus: '', countAfterAdds: -1,
            rowsAfterAdds: -1, legacyFooters: -1, keyboardOrder: '', dropLine: false, dragOrder: '',
@@ -7056,6 +7057,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.created = text(pick('.playlist-name')) === 'Selftest Mix'
          out.hasImport = Boolean(buttonWith('.view-header', 'Import'))
          out.hasExport = Boolean(buttonWith('.playlist-pane .header-actions', 'Export'))
+         out.hasPhone = Boolean(buttonWith('.playlist-pane .header-actions', 'To phone'))
          out.sidebarCount = text(pickAll('.nav-item').find((el) => text(el).trim().indexOf('Playlists') === 0).querySelector('.nav-count')).trim()
 
          // --- add a track from the library's selection bar
@@ -7285,6 +7287,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     record(lists.created, 'a playlist can be created from the form', lists.created)
     record(lists.hasImport, 'the Playlists view offers file import')
     record(lists.hasExport, 'a selected playlist offers file export')
+    record(lists.hasPhone, 'a selected playlist offers a phone copy')
     record(lists.sidebarCount === '1', 'the sidebar counts the playlists', lists.sidebarCount)
     record(lists.menuOpened && lists.addedViaBar, 'the selection bar adds the selected tracks to a playlist', lists.barStatus)
     record(

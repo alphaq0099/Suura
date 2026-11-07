@@ -12,7 +12,7 @@ import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, u
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
-import { dirname, join, relative } from 'node:path'
+import { dirname, basename, join, relative } from 'node:path'
 import { promisify } from 'node:util'
 import { deflateRawSync } from 'node:zlib'
 
@@ -67,7 +67,7 @@ import {
   tagBatchChanges,
   tagBatchFields
 } from '@shared/tag-batch'
-import type { AlbumSummary, EngineStatus, LyricsBatchSnapshot, LyricsCandidate, PendingWriteNotice, SidecarId, SidecarProgress, StreamLyricsTarget, TagBatchSnapshot, TagCandidate, TagLookupQuery, Track } from '@shared/types'
+import type { AlbumSummary, EngineStatus, LyricsBatchSnapshot, LyricsCandidate, PendingWriteNotice, PlaylistDetail, SidecarId, SidecarProgress, StreamLyricsTarget, TagBatchSnapshot, TagCandidate, TagLookupQuery, Track } from '@shared/types'
 import { serializeDetails, silentLogger } from '@core/logging/logger'
 import {
   DIAGNOSTICS_SUMMARY_LIMIT,
@@ -115,6 +115,7 @@ import { DataCareService } from '@core/library/data-care-service'
 import { FolderWatcher, isLibraryEvent, type FolderWatchEvent } from '@core/library/folder-watcher'
 import { PlaylistRepository } from '@core/library/playlist-repository'
 import { PlaylistService } from '@core/library/playlist-service'
+import { copyPlaylistToFolder, planPlaylistCopy } from '@core/library/playlist-copy'
 import {
   MAX_PLAYLIST_ENTRIES,
   exportPlaylistJson,
@@ -1365,6 +1366,90 @@ async function main(): Promise<void> {
       roadDetail.items.length
     )
     check('an exported M3U contains absolute file paths', roadM3U.includes(firstTrack.filePath))
+
+    // --- send to phone -----------------------------------------------------
+    // A phone cannot use an absolute Windows path, so the copy is a folder: the
+    // files under their own names and one .m3u8 beside them pointing at those
+    // names. Streamed rows have no file and are counted, never invented.
+    const phonePlan = planPlaylistCopy(roadDetail)
+    checkEqual('a phone copy plans one file per local track', phonePlan.entries.length, roadDetail.items.length)
+    checkEqual('a local playlist has nothing streamed', phonePlan.streamed, 0)
+    check(
+      'a phone copy keeps playlist order',
+      phonePlan.entries.every((entry, position) => entry.index === position)
+    )
+
+    const phoneSource = join(root, 'phone-source')
+    await mkdir(phoneSource, { recursive: true })
+    const phoneDetail = (name: string, paths: (string | null)[]): PlaylistDetail => ({
+      playlist: {
+        id: 1,
+        name,
+        createdAt: 0,
+        updatedAt: 0,
+        trackCount: paths.length,
+        artworkKey: null,
+        artworkTrackId: null
+      },
+      items: paths.map((filePath, index) => ({
+        id: index + 1,
+        track: { ...firstTrack, id: 9000 + index, filePath }
+      }))
+    })
+
+    const collision = planPlaylistCopy(
+      phoneDetail('Phone Mix', [join(phoneSource, 'Song One.mp3'), join(phoneSource, 'song one.mp3')])
+    )
+    checkEqual(
+      'two files with the same name get distinct names, case-insensitively',
+      collision.entries.map((entry) => entry.fileName).join(' | '),
+      'Song One.mp3 | song one (2).mp3'
+    )
+
+    const streamedPlan = planPlaylistCopy(phoneDetail('Streams', [null]))
+    checkEqual('a streamed row is counted, not planned as a copy', streamedPlan.streamed, 1)
+    checkEqual('and it produces no file entry', streamedPlan.entries.length, 0)
+
+    const phoneFolder = join(root, 'phone-export')
+    const phoneProgress: number[] = []
+    const phoneCopy = await copyPlaylistToFolder(roadDetail, phoneFolder, (done) => {
+      phoneProgress.push(done)
+    })
+    checkEqual('every local file is copied for the phone', phoneCopy.copied, roadDetail.items.length)
+    checkEqual('the playlist lands beside the files', phoneCopy.playlistFile, join(phoneFolder, 'Road Trip.m3u8'))
+    check('the copied file keeps its name', existsSync(join(phoneFolder, basename(firstTrack.filePath))))
+    const phoneText = await readFile(phoneCopy.playlistFile, 'utf8')
+    check(
+      'the phone playlist points at names, not at the PC paths',
+      !phoneText.includes(firstTrack.filePath) && phoneText.includes(basename(firstTrack.filePath))
+    )
+    check(
+      'the phone playlist is an extended M3U with CRLF',
+      phoneText.startsWith('#EXTM3U\r\n#PLAYLIST:Road Trip\r\n') && phoneText.includes('\r\n')
+    )
+    checkEqual('copying reports progress for every planned file', phoneProgress.length, phonePlan.entries.length)
+    checkEqual('and finishes at the total', phoneProgress[phoneProgress.length - 1], phonePlan.entries.length)
+
+    const partialCopy = await copyPlaylistToFolder(
+      phoneDetail('Partial', [firstTrack.filePath, join(phoneSource, 'gone.mp3')]),
+      join(root, 'phone-partial')
+    )
+    checkEqual('a vanished file is reported as missing', partialCopy.missing, 1)
+    checkEqual('the rest of the playlist still copies', partialCopy.copied, 1)
+    const partialText = await readFile(partialCopy.playlistFile, 'utf8')
+    check('a missing file is left out of the phone playlist', !partialText.includes('gone.mp3'))
+
+    let streamedCopyError = ''
+    try {
+      await copyPlaylistToFolder(phoneDetail('Only streams', [null]), join(root, 'phone-streams'))
+    } catch (error) {
+      streamedCopyError = (error as Error).message
+    }
+    check(
+      'a playlist of streams only says there is nothing to copy',
+      streamedCopyError.includes('streamed tracks'),
+      streamedCopyError
+    )
 
     const portablePath = join(musicDir, 'portable-test.m3u8')
     const portableText = [

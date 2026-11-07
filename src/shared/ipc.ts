@@ -42,6 +42,8 @@ import type {
   OnlineTrack,
   PlaybackSnapshot,
   Playlist,
+  PlaylistCopyProgress,
+  PlaylistCopyResult,
   PlaylistDetail,
   PlaylistImportOutcome,
   PoTokenStatus,
@@ -142,6 +144,7 @@ export const IPC = {
   playlistsClear: 'playlists:clear',
   playlistsExport: 'playlists:export',
   playlistsImport: 'playlists:import',
+  playlistsSendToPhone: 'playlists:send-to-phone',
   libraryExportCsv: 'library:export-csv',
   libraryFindDuplicates: 'library:find-duplicates',
   libraryMergeDuplicates: 'library:merge-duplicates',
@@ -216,6 +219,7 @@ export const IPC_EVENTS = {
   tagBatchProgress: 'event:tag-batch-progress',
   pendingWriteChanged: 'event:pending-write-changed',
   sidecarProgress: 'event:sidecar-progress',
+  playlistCopyProgress: 'event:playlist-copy-progress',
   updateChanged: 'event:update-changed'
 } as const
 
@@ -267,6 +271,8 @@ export interface PlayerEvents {
   pendingWriteChanged: PendingWriteNotice
   /** A sidecar download advanced, or one finished and the next started. */
   sidecarProgress: SidecarProgress
+  /** A "Send to phone" copy advanced by one track. */
+  playlistCopyProgress: PlaylistCopyProgress
   /** The app update channel changed state (checking, download progress, ready). */
   updateChanged: UpdateStatus
 }
@@ -286,6 +292,7 @@ export const EVENT_CHANNELS: Record<PlayerEventName, IpcEventChannel> = {
   tagBatchProgress: IPC_EVENTS.tagBatchProgress,
   pendingWriteChanged: IPC_EVENTS.pendingWriteChanged,
   sidecarProgress: IPC_EVENTS.sidecarProgress,
+  playlistCopyProgress: IPC_EVENTS.playlistCopyProgress,
   updateChanged: IPC_EVENTS.updateChanged
 }
 
@@ -559,6 +566,15 @@ export interface PlayerApi {
    * that was written, or null when the dialog was cancelled.
    */
   exportPlaylist(playlistId: number): Promise<string | null>
+  /**
+   * Copies a custom playlist to a folder chosen by the user: every local file
+   * under a name the folder can hold, plus a `.m3u8` that points at those names.
+   *
+   * Streamed tracks have no file and are left out; the result counts them
+   * separately from files that are missing or could not be copied. Resolves to
+   * null when either dialog was cancelled.
+   */
+  sendPlaylistToPhone(playlistId: number): Promise<PlaylistCopyResult | null>
   /**
    * Imports an M3U, M3U8 or Suura JSON playlist as a new custom playlist.
    *

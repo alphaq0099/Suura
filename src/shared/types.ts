@@ -766,6 +766,32 @@ export interface AddTracksOutcome {
 export type PlaylistFileFormat = 'm3u' | 'm3u8' | 'json'
 
 /**
+ * What "Send to phone" copied into the chosen folder.
+ *
+ * `streamed` rows have no file at all (a YouTube stream), `missing` paths were
+ * in the library but are gone from disk, and `failed` are copy errors — usually
+ * a full or read-only destination. The `.m3u8` lists only what really landed,
+ * so it never points at a file the phone cannot see.
+ */
+export interface PlaylistCopyResult {
+  /** Absolute folder the files were written into. */
+  folder: string
+  /** Absolute path of the `.m3u8` written beside them. */
+  playlistFile: string
+  copied: number
+  streamed: number
+  missing: number
+  failed: number
+}
+
+/** How far a "Send to phone" copy has got, pushed once per entry. */
+export interface PlaylistCopyProgress {
+  playlistId: number
+  done: number
+  total: number
+}
+
+/**
  * What a playlist import produced.
  *
  * `added` counts rows in the new playlist. `duplicates` are entries that named a

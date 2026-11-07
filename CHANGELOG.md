@@ -60,8 +60,10 @@ First public pre-release. Everything below is new to anyone installing Suura for
 
 ### Data care
 
-- M3U/M3U8 and JSON playlist import/export; CSV library export.
+- M3U/M3U8 and JSON playlist import/export; **To phone** copies a playlist's files and an `.m3u8` into a folder for a
+  phone player; CSV library export.
 - Manual backup and staged restore, rotating automatic backups, and a pre-migration copy.
+- A damaged library offers the newest healthy automatic backup, a fresh library or Quit, and keeps the damaged file.
 - Duplicate detection with safe merge, and relocation of moved files by fingerprint then size/mtime.
 - Append-only schema migrations with a `user_version` guard that refuses a newer database.
 
@@ -91,5 +93,5 @@ First public pre-release. Everything below is new to anyone installing Suura for
 
 - The installer is unsigned, so SmartScreen warns (see `CODE_SIGNING.md`).
 - Windows 10/11 HiDPI, multi-monitor and 4K verification is still in progress.
-- The Android app is planned and not started.
+- Android is deferred: it would be a separate app sharing the `player-backup` format, built only if there is demand.
 - Tag writing supports MP3, FLAC, M4A/M4B, Ogg and Opus; other formats are refused rather than half-written.

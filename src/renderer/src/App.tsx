@@ -1347,6 +1347,7 @@ export function App() {
           onCreate={playlists.create}
           onImportPlaylist={playlists.importPlaylist}
           onExportPlaylist={playlists.exportPlaylist}
+          onSendToPhone={playlists.sendToPhone}
           onRename={playlists.rename}
           onDelete={playlists.remove}
           onClear={playlists.clear}

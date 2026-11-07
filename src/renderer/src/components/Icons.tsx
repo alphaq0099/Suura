@@ -318,6 +318,15 @@ export function MiniPlayerIcon({ size = 16 }: IconProps) {
   )
 }
 
+export function PhoneIcon({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">
+      <rect x="7" y="2.5" width="10" height="19" rx="2.2" />
+      <path d="M10.7 18.6h2.6" />
+    </svg>
+  )
+}
+
 export function ExpandIcon({ size = 16 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" {...STROKE} aria-hidden="true">

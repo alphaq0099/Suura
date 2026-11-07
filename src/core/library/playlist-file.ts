@@ -219,9 +219,25 @@ function m3uLocation(detail: PlaylistDetail, index: number): string | null {
  * extension is what tells other players that the bytes are UTF-8.
  */
 export function exportPlaylistM3U(detail: PlaylistDetail): string {
+  return writeM3U(detail, (index) => m3uLocation(detail, index))
+}
+
+/**
+ * The same M3U, with each entry pointing at a file name inside the folder the
+ * playlist was copied into. A phone has no `C:\` drive, so an exported copy
+ * uses names relative to the `.m3u8`; `null` leaves that row out.
+ */
+export function exportPlaylistM3UForFolder(
+  detail: PlaylistDetail,
+  fileNameAt: (index: number) => string | null
+): string {
+  return writeM3U(detail, fileNameAt)
+}
+
+function writeM3U(detail: PlaylistDetail, locationAt: (index: number) => string | null): string {
   const lines = ['#EXTM3U', `#PLAYLIST:${oneLine(detail.playlist.name)}`]
   detail.items.forEach((item, index) => {
-    const location = m3uLocation(detail, index)
+    const location = locationAt(index)
     if (!location) return
     const track = item.track
     const label = track.artist ? `${track.artist} - ${track.title}` : track.title

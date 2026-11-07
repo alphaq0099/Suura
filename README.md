@@ -289,6 +289,11 @@ bar, from a row's context menu, or save the whole queue as a playlist from the p
 select one and press `Alt` + `↑` / `↓`; the order is kept exactly as you set it. Imported YouTube lists live in the same
 pane under **Imported** and can be played, added to the queue, saved in bulk or removed entry by entry.
 
+**Export** writes an `.m3u8`, `.m3u` or JSON playlist. **To phone** copies the playlist's local files and an `.m3u8` into
+a folder you choose, with paths that are relative to that folder, so the folder can be copied to a phone or SD card and
+opened by PowerAmp or any other M3U8 player. Streamed tracks have no file and are reported as left out; missing files are
+skipped and named in the summary.
+
 ### Settings
 
 | Tab | What lives there |

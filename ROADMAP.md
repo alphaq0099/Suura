@@ -950,7 +950,8 @@ marks work in this repository; the rest is hardware, accounts and process.
 
 - [ ] **Crossfade** — the last open M2 checkbox. Build it or remove it from the roadmap; a stale promise is worse than
       "no".
-- [ ] **Send to phone** — export a playlist as `.m3u8` plus a folder copy, ready for PowerAmp or any phone player. This is
+- [x] **Send to phone** - **To phone** in a playlist copies its local files into a folder of the user's choosing and
+      writes an `.m3u8` beside them with names relative to that folder, ready for PowerAmp or any phone player. This is
       the answer to "I want it on my phone" without M9.
 - [ ] Decide autostart with Windows. Tray and close-to-tray exist; autostart does not.
 - [ ] Empty and error state sweep: no folders, no engine, offline, YouTube blocked, download failed, disk full.

@@ -6,6 +6,7 @@ import type {
   OnlinePlaylist,
   OnlinePlaylistDetail,
   Playlist,
+  PlaylistCopyResult,
   PlaylistDetail,
   PlaylistImportOutcome,
   Track
@@ -20,7 +21,7 @@ import {
   PLAYLIST_INDEX_MIN,
   clampPlaylistIndexWidth
 } from '@shared/playlists'
-import { messageOf } from '../api'
+import { api, messageOf } from '../api'
 import type { UseDownloadsResult } from '../hooks/useDownloads'
 import { ArtworkImage } from './ArtworkImage'
 import { RowMenu } from './RowMenu'
@@ -32,6 +33,7 @@ import {
   InfoIcon,
   MoreIcon,
   PencilIcon,
+  PhoneIcon,
   PlayIcon,
   PlaylistIcon,
   PlusIcon,
@@ -74,6 +76,8 @@ export interface PlaylistsViewProps {
   onImportPlaylist: () => Promise<PlaylistImportOutcome | null>
   /** Opens the native save dialog for one custom playlist. */
   onExportPlaylist: (playlistId: number) => Promise<string | null>
+  /** Copies one custom playlist and its files into a folder for a phone. */
+  onSendToPhone: (playlistId: number) => Promise<PlaylistCopyResult | null>
   onRename: (playlistId: number, name: string) => Promise<void>
   onDelete: (playlistId: number) => Promise<void>
   onClear: (playlistId: number) => Promise<void>
@@ -154,6 +158,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
     onCreate,
     onImportPlaylist,
     onExportPlaylist,
+    onSendToPhone,
     onRename,
     onDelete,
     onClear,
@@ -174,6 +179,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
   const [newName, setNewName] = useState('')
   const [importing, setImporting] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [sending, setSending] = useState(false)
   const [transferNote, setTransferNote] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<number | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -439,6 +445,49 @@ export function PlaylistsView(props: PlaylistsViewProps) {
     }
   }, [detail, onExportPlaylist])
 
+  const activePlaylistId = detail?.playlist.id ?? null
+  useEffect(() => {
+    const token = api.on('playlistCopyProgress', (update) => {
+      if (update.playlistId !== activePlaylistId) return
+      setTransferNote(`Copying ${formatCount(update.done)} of ${formatCount(update.total)} tracks...`)
+    })
+    return () => api.off(token)
+  }, [activePlaylistId])
+
+  const runSendToPhone = useCallback(async (): Promise<void> => {
+    if (!detail) return
+    setSending(true)
+    setActionError(null)
+    setTransferNote(null)
+    try {
+      const result = await onSendToPhone(detail.playlist.id)
+      if (!result) {
+        setTransferNote('Send to phone cancelled.')
+        return
+      }
+      const playlistName = result.playlistFile.split(/[\\/]/).pop() ?? 'playlist.m3u8'
+      const parts = [
+        `Copied ${formatCount(result.copied)} ${result.copied === 1 ? 'track' : 'tracks'} and ${playlistName} to ${result.folder}.`
+      ]
+      if (result.streamed > 0) {
+        parts.push(
+          `${formatCount(result.streamed)} streamed ${result.streamed === 1 ? 'track was' : 'tracks were'} left out.`
+        )
+      }
+      if (result.missing > 0) {
+        parts.push(`${formatCount(result.missing)} ${result.missing === 1 ? 'file was' : 'files were'} missing.`)
+      }
+      if (result.failed > 0) {
+        parts.push(`${formatCount(result.failed)} ${result.failed === 1 ? 'file' : 'files'} could not be copied.`)
+      }
+      setTransferNote(parts.join(' '))
+    } catch (cause) {
+      setActionError(messageOf(cause))
+    } finally {
+      setSending(false)
+    }
+  }, [detail, onSendToPhone])
+
   const submitRename = useCallback(
     async (playlistId: number): Promise<void> => {
       const trimmed = renameValue.trim()
@@ -620,7 +669,7 @@ export function PlaylistsView(props: PlaylistsViewProps) {
           <button
             type="button"
             onClick={() => void runImport()}
-            disabled={importing || exporting}
+            disabled={importing || exporting || sending}
             title="Import an M3U, M3U8 or Suura JSON playlist"
           >
             {importing ? <SpinnerIcon /> : null}
@@ -1095,11 +1144,20 @@ export function PlaylistsView(props: PlaylistsViewProps) {
                   <button
                     type="button"
                     onClick={() => void runExport()}
-                    disabled={exporting || importing}
+                    disabled={exporting || importing || sending}
                     title="Export this playlist as M3U8, M3U or JSON"
                   >
                     {exporting ? <SpinnerIcon /> : <DownloadIcon />}
                     <span>{exporting ? 'Exporting.' : 'Export'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void runSendToPhone()}
+                    disabled={tracks.length === 0 || exporting || importing || sending}
+                    title="Copy this playlist and its files into a folder for a phone"
+                  >
+                    {sending ? <SpinnerIcon /> : <PhoneIcon />}
+                    <span>{sending ? 'Copying.' : 'To phone'}</span>
                   </button>
                   <button
                     type="button"

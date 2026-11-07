@@ -4,6 +4,7 @@ import type {
   OnlinePlaylist,
   OnlinePlaylistDetail,
   Playlist,
+  PlaylistCopyResult,
   PlaylistDetail,
   PlaylistImportOutcome,
   PlaylistItem
@@ -31,6 +32,8 @@ export interface UsePlaylistsResult {
   importPlaylist: () => Promise<PlaylistImportOutcome | null>
   /** Exports a playlist; null when the save dialog was cancelled. */
   exportPlaylist: (playlistId: number) => Promise<string | null>
+  /** Copies a playlist and its files for a phone; null when either dialog was cancelled. */
+  sendToPhone: (playlistId: number) => Promise<PlaylistCopyResult | null>
   rename: (playlistId: number, name: string) => Promise<void>
   remove: (playlistId: number) => Promise<void>
   clear: (playlistId: number) => Promise<void>
@@ -292,6 +295,11 @@ export function usePlaylists(): UsePlaylistsResult {
     []
   )
 
+  const sendToPhone = useCallback(
+    (playlistId: number): Promise<PlaylistCopyResult | null> => api.sendPlaylistToPhone(playlistId),
+    []
+  )
+
   const rename = useCallback(
     async (playlistId: number, name: string): Promise<void> => {
       const renamed = await api.renamePlaylist(playlistId, name)
@@ -443,6 +451,7 @@ export function usePlaylists(): UsePlaylistsResult {
     create,
     importPlaylist,
     exportPlaylist,
+    sendToPhone,
     rename,
     remove,
     clear,

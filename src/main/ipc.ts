@@ -1,4 +1,5 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, net, shell } from 'electron'
+import { statSync } from 'node:fs'
 import { writeFile, readFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 import {
@@ -1702,6 +1703,70 @@ export function registerIpcHandlers(container: AppContainer): void {
     const file = result.filePaths[0]
     if (result.canceled || !file) return null
     return container.playlists.importPlaylistFromFile(file)
+  })
+
+  // The phone gets a folder, not a path: the files are copied under their own
+  // names and the playlist beside them points at those names. The folder is a
+  // child of whatever the user picks, so a phone export never mixes into an
+  // existing music folder.
+  ipcMain.handle(IPC.playlistsSendToPhone, async (event, playlistId: unknown) => {
+    const id = toId(playlistId, 'playlist')
+    const detail = container.playlists.detail(id)
+    if (!detail) throw new Error('That playlist no longer exists.')
+    const plan = container.playlists.planPhoneCopy(id)
+    if (plan.entries.length === 0) {
+      throw new Error(
+        plan.streamed > 0
+          ? 'This playlist only has streamed tracks, so there are no files to copy.'
+          : 'This playlist has no tracks to copy.'
+      )
+    }
+
+    const parent = BrowserWindow.getFocusedWindow()
+    const folderName = sanitizeFilePart(detail.playlist.name, 'playlist')
+    const picker: Electron.OpenDialogOptions = {
+      title: 'Choose where the playlist folder goes',
+      buttonLabel: 'Choose folder',
+      defaultPath: app.getPath('documents'),
+      properties: ['openDirectory', 'createDirectory']
+    }
+    const picked = parent ? await dialog.showOpenDialog(parent, picker) : await dialog.showOpenDialog(picker)
+    const chosen = picked.filePaths[0]
+    if (picked.canceled || !chosen) return null
+
+    const folder = join(chosen, folderName)
+    const existing = statSync(folder, { throwIfNoEntry: false })
+    if (existing && !existing.isDirectory()) {
+      throw new Error(`There is already a file called "${folderName}" in that folder. Choose another one.`)
+    }
+
+    const parts = [`${plan.entries.length} track${plan.entries.length === 1 ? '' : 's'} will be copied to:`]
+    parts.push('', folder, '')
+    if (plan.streamed > 0) {
+      parts.push(
+        `${plan.streamed} streamed track${plan.streamed === 1 ? ' has' : 's have'} no file and will be left out.`
+      )
+    }
+    parts.push('Files with the same name in that folder are replaced.')
+    const confirm: Electron.MessageBoxOptions = {
+      type: 'question',
+      title: 'Send to phone',
+      message: `Copy "${detail.playlist.name}"?`,
+      detail: parts.join('\n'),
+      buttons: ['Copy', 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true
+    }
+    const answer = parent ? await dialog.showMessageBox(parent, confirm) : await dialog.showMessageBox(confirm)
+    if (answer.response !== 0) return null
+
+    const result = await container.playlists.sendToPhone(id, folder, (done, total) => {
+      if (event.sender.isDestroyed()) return
+      event.sender.send(IPC_EVENTS.playlistCopyProgress, { playlistId: id, done, total })
+    })
+    log.info('playlist copied for a phone', { playlistId: id, folder: result.folder, copied: result.copied })
+    return result
   })
 
   ipcMain.handle(IPC.libraryExportCsv, async () => {

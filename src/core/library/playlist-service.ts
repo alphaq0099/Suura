@@ -1,8 +1,16 @@
 import { readFileSync, statSync } from 'node:fs'
-import type { Playlist, PlaylistDetail, PlaylistFileFormat, PlaylistImportOutcome, Track } from '@shared/types'
+import type {
+  Playlist,
+  PlaylistCopyResult,
+  PlaylistDetail,
+  PlaylistFileFormat,
+  PlaylistImportOutcome,
+  Track
+} from '@shared/types'
 import { extractYouTubeVideoId } from '@shared/youtube'
 import { PlaylistRepository, POSITION_GAP, type PositionedItem } from './playlist-repository'
 import type { TrackRepository } from './track-repository'
+import { copyPlaylistToFolder, planPlaylistCopy, type PlaylistCopyPlan } from './playlist-copy'
 import {
   MAX_PLAYLIST_FILE_BYTES,
   exportPlaylistJson,
@@ -62,6 +70,38 @@ export class PlaylistService {
       name: detail.playlist.name,
       text: format === 'json' ? exportPlaylistJson(detail) : exportPlaylistM3U(detail)
     }
+  }
+
+  /**
+   * What "Send to phone" would copy, without writing anything.
+   *
+   * The dialog says how many files and how many streamed rows are involved
+   * before the user commits to a copy that may take a while.
+   */
+  planPhoneCopy(id: number): PlaylistCopyPlan {
+    const detail = this.repo.detail(id)
+    if (!detail) throw new Error('That playlist no longer exists.')
+    return planPlaylistCopy(detail)
+  }
+
+  /** Copies a playlist and its files into a folder for a phone player. */
+  async sendToPhone(
+    id: number,
+    folder: string,
+    onProgress?: (done: number, total: number) => void
+  ): Promise<PlaylistCopyResult> {
+    const detail = this.repo.detail(id)
+    if (!detail) throw new Error('That playlist no longer exists.')
+    const result = await copyPlaylistToFolder(detail, folder, onProgress)
+    this.log.info('playlist sent to phone', {
+      playlistId: id,
+      folder,
+      copied: result.copied,
+      streamed: result.streamed,
+      missing: result.missing,
+      failed: result.failed
+    })
+    return result
   }
 
   /**

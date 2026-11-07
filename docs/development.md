@@ -1060,11 +1060,15 @@ docs/internal/notes/    spike and measurement records, with raw JSON
   mark anything missing from a folder it could not enumerate, so an unmounted drive does not quietly hide the library.
 
 - **Playlist transfer is a match, not a trust exercise.** Export writes an extended M3U/M3U8 (UTF-8, CRLF, absolute
-  paths) or the versioned `player-playlist` JSON. Import resolves relative entries against the playlist's own folder,
-  matches local paths through the same normalised content key the scanner uses, and matches YouTube watch URLs through a
-  saved track's origin id. It creates a playlist only when at least one entry resolves, reports added, duplicate, missing
-  and invalid entries, and suffixes a colliding name with ` (2)`. Files are capped at 10 MB and 50 000 entries. CSV export
-  is the whole library, not the loaded page: UTF-8 BOM, CRLF and RFC 4180 quoting so Excel opens it correctly.
+  paths) or the versioned `player-playlist` JSON. **Send to phone** instead copies the playlist's local files into
+  `<chosen folder>\<playlist name>`, names collisions case-insensitively (`Song (2).mp3`), and writes one `.m3u8` whose
+  entries are bare file names — a phone has no `C:\`. Streamed rows, vanished files and failed copies are counted
+  separately and the playlist lists only files that really landed. Import resolves relative entries against the
+  playlist's own folder, matches local paths through the same normalised content key the scanner uses, and matches
+  YouTube watch URLs through a saved track's origin id. It creates a playlist only when at least one entry resolves,
+  reports added, duplicate, missing and invalid entries, and suffixes a colliding name with ` (2)`. Files are capped at
+  10 MB and 50 000 entries. CSV export is the whole library, not the loaded page: UTF-8 BOM, CRLF and RFC 4180 quoting so
+  Excel opens it correctly.
 
 - **The play state is a snapshot, not a queue table.** One row holds a JSON array of ids, the cursor and the position.
   Nothing ever queries *into* it — it is read once at start-up and rewritten as a whole — so a table of rows would buy
