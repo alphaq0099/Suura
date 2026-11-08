@@ -2543,6 +2543,23 @@ export function SettingsView(props: SettingsViewProps) {
                 </p>
               ) : null}
 
+              <p className="card-hint">
+                Suura collects nothing: no account, no analytics and no telemetry. Crash reports stay on this PC and
+                are off until you turn them on. The{' '}
+                <a
+                  href="https://suura-player.pages.dev/privacy"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  privacy statement
+                </a>{' '}
+                lists every request the app can make, and the only one it sends on its own is the update check above.
+              </p>
+              <p className="card-hint">
+                YouTube links play through yt-dlp and are subject to YouTube's Terms of Service. Suura is not
+                affiliated with YouTube: a link plays in the app, and nothing is downloaded unless you save it.
+              </p>
+
               <details className="about-licences">
                 <summary>Open-source licences</summary>
                 <p className="card-hint">

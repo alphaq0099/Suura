@@ -1573,10 +1573,24 @@ export function HomeView(props: HomeViewProps) {
             {hasLibrary ? 'Your music, at a glance.' : 'A quiet home for your music.'}
           </h2>
           {!hasLibrary ? (
-            <p>
-              Add a folder of audio files and Suura will index everything inside it. Nothing is
-              uploaded or moved.
-            </p>
+            <>
+              <p>
+                Add a folder of audio files and Suura will index everything inside it. Nothing is
+                uploaded or moved.
+              </p>
+              <p className="home-legal">
+                YouTube links play through yt-dlp under YouTube's Terms of Service; Suura is not
+                affiliated with YouTube. There is no account and no telemetry — the{' '}
+                <a
+                  href="https://suura-player.pages.dev/privacy"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  privacy statement
+                </a>{' '}
+                has the details.
+              </p>
+            </>
           ) : null}
           <div className="home-stats">
             <div className="home-stat">

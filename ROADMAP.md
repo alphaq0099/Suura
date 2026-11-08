@@ -927,10 +927,14 @@ marks work in this repository; the rest is hardware, accounts and process.
 - [x] **ffmpeg licence mismatch resolved by disclosure** — the pinned `eugeneware/ffmpeg-static` b6.1.1 build is
       GPL-3.0-or-later. It is fetched at runtime, not bundled, and runs as a separate program, so the pin stays and the
       provenance is stated plainly in `THIRD-PARTY.md` and About instead of being described as LGPL.
-- [ ] First-run and About: the YouTube/ToS disclaimer and the "no telemetry" statement, in plain language.
-- [ ] Privacy statement that matches behaviour: the daily update check contacts R2/Cloudflare, crash reports never leave
-      the machine, no analytics.
-- [ ] Site: a known-issues page and an FAQ. The site is one page today; the changelog is only in the repo.
+- [x] First-run and About: the YouTube/ToS disclaimer and the "no telemetry" statement, in plain language. Home's welcome
+      hero and Settings → About both carry it, both link the privacy statement, and neither adds a second explanation to a
+      card that already has one.
+- [x] Privacy statement that matches behaviour: the daily update check contacts R2/Cloudflare, crash reports never leave
+      the machine, no analytics. The statement at <https://suura-player.pages.dev/privacy> lists every host and every
+      request, including the ones a button starts.
+- [x] Site: a known-issues page and an FAQ. The FAQ at <https://suura-player.pages.dev/faq> answers the installer
+      warning, offline use, YouTube limits, saving tracks, updates, data and Android, then lists the known issues.
 
 ### 14.4 Security hardening *(code)*
 

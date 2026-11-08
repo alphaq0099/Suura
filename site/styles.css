@@ -833,3 +833,179 @@ h2 {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* ---------- prose pages: privacy and FAQ ---------- */
+
+.prose-page {
+  padding: clamp(40px, 6vw, 72px) 0 clamp(64px, 8vw, 96px);
+}
+
+.prose-header {
+  max-width: 700px;
+  margin-bottom: 40px;
+}
+
+.prose-header h1 {
+  margin: 8px 0 16px;
+  font-size: clamp(2rem, 4.4vw, 3rem);
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+.prose-header p {
+  color: var(--muted);
+  font-size: 1.02rem;
+  line-height: 1.6;
+}
+
+.prose-header p + p {
+  margin-top: 12px;
+}
+
+.prose {
+  display: grid;
+  gap: clamp(28px, 4vw, 40px);
+  max-width: 760px;
+}
+
+.prose section {
+  padding-top: 26px;
+  border-top: 1px solid var(--line);
+}
+
+.prose h2 {
+  margin-bottom: 12px;
+  font-size: 1.35rem;
+  letter-spacing: -0.02em;
+}
+
+.prose p,
+.prose li {
+  color: var(--muted);
+  line-height: 1.68;
+}
+
+.prose p + p {
+  margin-top: 12px;
+}
+
+.prose ul {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+  padding-left: 20px;
+  list-style: none;
+}
+
+.prose ul li {
+  position: relative;
+}
+
+.prose ul li::before {
+  content: '';
+  position: absolute;
+  top: 0.68em;
+  left: -16px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.prose strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.prose a {
+  color: var(--accent-bright);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.prose a:hover {
+  color: var(--text);
+}
+
+.prose code {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.9em;
+}
+
+.faq {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.faq details {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.faq details:hover,
+.faq details[open] {
+  border-color: var(--line-strong);
+  background: var(--panel-soft);
+}
+
+.faq summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 15px 18px;
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+/* One text box for the question. As separate flex items, a `code` child and the
+   text around it were spread across the row by space-between. */
+.faq summary > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.faq summary::-webkit-details-marker {
+  display: none;
+}
+
+.faq summary::after {
+  content: '+';
+  color: var(--accent);
+  font-size: 1.15rem;
+  line-height: 1;
+  transition: transform 160ms ease;
+}
+
+.faq details[open] summary::after {
+  transform: rotate(45deg);
+}
+
+.faq details > p,
+.faq details > ul {
+  padding: 0 18px 16px;
+}
+
+@media (max-width: 620px) {
+  .prose-header h1 {
+    font-size: clamp(1.8rem, 8.5vw, 2.4rem);
+  }
+
+  .faq summary {
+    padding: 14px 15px;
+  }
+
+  .faq details > p,
+  .faq details > ul {
+    padding: 0 15px 14px;
+  }
+}

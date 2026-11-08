@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FAQ and known issues — Suura</title>
+    <meta
+      name="description"
+      content="Answers about installing Suura, the unsigned-build warning, offline use, YouTube streaming, saving tracks, updates and your data — plus the list of known issues."
+    />
+    <link rel="canonical" href="https://suura-player.pages.dev/faq" />
+    <meta name="theme-color" content="#080d18" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Suura" />
+    <meta property="og:title" content="FAQ and known issues — Suura" />
+    <meta
+      property="og:description"
+      content="What SmartScreen means, how updates work, what happens to your files, and what is still rough."
+    />
+    <meta property="og:url" content="https://suura-player.pages.dev/faq" />
+    <meta property="og:image" content="https://suura-player.pages.dev/icon.png" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" href="/icon.png" sizes="512x512" />
+    <link rel="stylesheet" href="/styles.css?v=4" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <div class="wrap header-inner">
+        <a class="brand" href="/" aria-label="Suura home">
+          <img src="/icon.png" alt="" width="32" height="32" />
+          <span>Suura</span>
+        </a>
+        <nav aria-label="Primary">
+          <a href="/#features">Features</a>
+          <a href="/#download">Download</a>
+          <a href="/privacy">Privacy</a>
+          <a class="source-link" href="https://github.com/alphaq0099/Suura">Source</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <div class="wrap prose-page">
+        <header class="prose-header">
+          <p class="kicker">Help</p>
+          <h1>Questions and known issues</h1>
+          <p>
+            Short answers first, then the things that are still rough. If something is missing, the
+            <a href="https://github.com/alphaq0099/Suura/issues">issue tracker</a> is the place to ask.
+          </p>
+        </header>
+
+        <div class="prose">
+          <section>
+            <h2>Getting started</h2>
+            <div class="faq">
+              <details>
+                <summary><span>Is Suura free?</span></summary>
+                <p>
+                  Yes. Suura is MIT-licensed and free, with no account, no paid tier and no advertising. The source is
+                  on <a href="https://github.com/alphaq0099/Suura">GitHub</a>.
+                </p>
+              </details>
+
+              <details>
+                <summary><span>Which Windows versions does it run on?</span></summary>
+                <p>
+                  Windows 10 and Windows 11, 64-bit. It installs for your user only, into
+                  <code>%LOCALAPPDATA%\Programs\Suura</code>, so it never asks for administrator rights.
+                </p>
+              </details>
+
+              <details>
+                <summary><span>Why does SmartScreen warn about the installer?</span></summary>
+                <p>
+                  The build is not code-signed yet, so Windows shows "Windows protected your PC" for a new file it has
+                  not seen before. Choose <strong>More info</strong> → <strong>Run anyway</strong>. The checksum in
+                  <code>SHA256SUMS.txt</code> matches the file you downloaded, so you can verify it yourself before
+                  running it.
+                </p>
+              </details>
+
+              <details>
+                <summary><span>Does it work offline?</span></summary>
+                <p>
+                  Your own files and anything you saved or cached play with no connection. YouTube, lyrics, tags and
+                  covers need one, because each of those is a request to a server.
+                </p>
+              </details>
+
+              <details>
+                <summary><span>What happens to my files?</span></summary>
+                <p>
+                  Suura indexes the folders you choose and never moves or renames anything. It writes into a file only
+                  when you edit its tags or lyrics, save a stream, or use <strong>To phone</strong> — and tag and
+                  lyric edits keep a backup first. Playlists live in Suura's own database, not in your music folder.
+                </p>
+              </details>
+            </div>
+          </section>
+
+          <section>
+            <h2>YouTube and streaming</h2>
+            <div class="faq">
+              <details>
+                <summary><span>Why does playback need <code>yt-dlp</code>?</span></summary>
+                <p>
+                  Suura resolves and streams YouTube itself, and <code>yt-dlp</code> is the piece that does it. Suura
+                  offers to download it the first time you paste a link, and updates it only when you ask. Nothing is
+                  installed until a YouTube feature needs it.
+                </p>
+              </details>
+
+              <details>
+                <summary><span>YouTube says it wants to confirm I'm not a bot. What now?</span></summary>
+                <p>
+                  That check comes from YouTube, not from Suura. Try again in a few minutes; if it keeps happening,
+                  Settings → Streaming explains the optional PO Token provider, which is a separate program that helps
+                  with exactly this. The optional cookie fallback can also help if you have a YouTube session in a
+                  browser on this computer.
+                </p>
+              </details>
+
+              <details>
+                <summary><span>Do saved tracks keep working if a video is taken down?</span></summary>
+                <p>
+                  Yes. A saved track is a real file in your Music folder with its tags and cover, and it plays without
+                  YouTube. A track you only cached may be evicted when the cache fills; saving it makes it permanent.
+                </p>
+              </details>
+
+              <details>
+                <summary><span>How do I get a playlist onto my phone?</span></summary>
+                <p>
+                  Open a playlist and press <strong>To phone</strong>. Suura copies the local files into a folder you
+                  pick, inside a folder named after the playlist, and writes an <code>.m3u8</code> beside them with
+                  plain file names. Copy that folder to the phone; PowerAmp and most players read it as-is.
+                </p>
+              </details>
+            </div>
+          </section>
+
+          <section>
+            <h2>Updates and data</h2>
+            <div class="faq">
+              <details>
+                <summary><span>How do updates work?</span></summary>
+                <p>
+                  Suura checks its update feed about twenty seconds after launch and at most once a day. Settings →
+                  About shows the last check and offers <strong>Check now</strong>, then <strong>Download update</strong>
+                  and <strong>Restart and install</strong>. Your library, playlists and settings are kept.
+                </p>
+              </details>
+
+              <details>
+                <summary><span>What does Suura send over the network?</span></summary>
+                <p>
+                  The update check is the only request it makes on its own; everything else waits for a button. The
+                  <a href="/privacy">privacy statement</a> lists every host and what each one receives.
+                </p>
+              </details>
+
+              <details>
+                <summary><span>Where is my library stored? Can I move it?</span></summary>
+                <p>
+                  The audio stays in your folders. Suura's database, caches, engine binaries and logs live in
+                  <code>%APPDATA%\Suura</code>. <strong>Settings → Misc</strong> has <strong>Back up now</strong> and
+                  <strong>Restore from backup</strong>, plus an export of the library as CSV. A restored database
+                  matches its files again on the next scan.
+                </p>
+              </details>
+
+              <details>
+                <summary><span>If I uninstall, is my data deleted?</span></summary>
+                <p>
+                  Only if you say so. The uninstaller asks, and the default answer keeps Suura's data folder for a
+                  later reinstall. Your music is never deleted, including anything Suura saved into
+                  <code>Music\Suura</code>.
+                </p>
+              </details>
+
+              <details>
+                <summary><span>Is there an Android or iOS app?</span></summary>
+                <p>
+                  No. Suura is a Windows desktop app. Getting music onto a phone means copying files — the
+                  <strong>To phone</strong> button does the packing — and Android is not planned unless enough people
+                  ask for it.
+                </p>
+              </details>
+            </div>
+          </section>
+
+          <section>
+            <h2>Known issues</h2>
+            <p>These are known today. Anything here is a bug or a deliberate gap, not a surprise:</p>
+            <ul>
+              <li>
+                <strong>The installer is unsigned.</strong> Windows SmartScreen warns until code signing is in place.
+                This is the same file and the same app; verify the checksum if you want certainty.
+              </li>
+              <li>
+                <strong>Playlists are not associated with Suura.</strong> Double-clicking an <code>.m3u</code> or
+                <code>.m3u8</code> in Explorer does not open the app. Import the file from the Playlists view instead.
+              </li>
+              <li>
+                <strong>Gapless playback is in; crossfade is not.</strong> Tracks run into each other without a gap, but
+                there is no overlap or fade between them.
+              </li>
+              <li>
+                <strong>YouTube playback can be interrupted by YouTube.</strong> A bot check, a removed video or a
+                changed player can stop a stream until the engine updates. Nothing in the app can promise otherwise.
+              </li>
+              <li>
+                <strong>The PO Token provider is not bundled.</strong> It is separate software you install and run;
+                Settings only points Suura at it.
+              </li>
+              <li>
+                <strong>Windows only, 64-bit.</strong> There is no portable build, no 32-bit build and no macOS or
+                Linux build.
+              </li>
+            </ul>
+          </section>
+
+          <section>
+            <h2>Reporting a problem</h2>
+            <p>
+              Open an issue at
+              <a href="https://github.com/alphaq0099/Suura/issues">github.com/alphaq0099/Suura/issues</a>. Settings →
+              About can <strong>Copy diagnostics</strong> or <strong>Save diagnostics</strong> for you; both contain
+              local file paths, so read them before you paste. Crash reports are off by default — if you want one,
+              turn it on in Settings → Misc before the crash and attach the file yourself.
+            </p>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap footer-inner">
+        <div class="footer-brand">
+          <img src="/icon.png" alt="" width="24" height="24" />
+          <span>Suura</span>
+        </div>
+        <p class="footer-note">© 2026 alphaq0099 · MIT licensed · This page loads nothing from third parties.</p>
+        <nav aria-label="Project links">
+          <a href="/privacy">Privacy</a>
+          <a href="https://github.com/alphaq0099/Suura">GitHub</a>
+          <a href="https://github.com/alphaq0099/Suura/releases">Releases</a>
+          <a href="https://github.com/alphaq0099/Suura/issues">Issues</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -928,6 +928,24 @@ input[type='radio'] {
   line-height: 1.55;
 }
 
+/* The first-run note under the welcome copy: present on an empty library, gone
+   the moment a folder is indexed. Same colour as the paragraph above it, one
+   step smaller so it reads as a footnote rather than a second instruction. */
+.home-hero .home-legal {
+  font-size: calc(11.5px * var(--text-scale));
+  line-height: 1.5;
+}
+
+.home-hero .home-legal a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.home-hero .home-legal a:hover {
+  color: var(--text);
+}
+
 .home-hero-actions {
   display: flex;
   flex-wrap: wrap;

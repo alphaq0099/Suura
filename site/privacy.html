@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Privacy — Suura</title>
+    <meta
+      name="description"
+      content="What Suura sends, when it sends it, and what never leaves your computer: no account, no analytics, no telemetry, and crash reports that stay local."
+    />
+    <link rel="canonical" href="https://suura-player.pages.dev/privacy" />
+    <meta name="theme-color" content="#080d18" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Suura" />
+    <meta property="og:title" content="Privacy — Suura" />
+    <meta
+      property="og:description"
+      content="Every network request Suura can make, the one it makes on its own, and why nothing is collected."
+    />
+    <meta property="og:url" content="https://suura-player.pages.dev/privacy" />
+    <meta property="og:image" content="https://suura-player.pages.dev/icon.png" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" href="/icon.png" sizes="512x512" />
+    <link rel="stylesheet" href="/styles.css?v=4" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <div class="wrap header-inner">
+        <a class="brand" href="/" aria-label="Suura home">
+          <img src="/icon.png" alt="" width="32" height="32" />
+          <span>Suura</span>
+        </a>
+        <nav aria-label="Primary">
+          <a href="/#features">Features</a>
+          <a href="/#download">Download</a>
+          <a href="/faq">FAQ</a>
+          <a class="source-link" href="https://github.com/alphaq0099/Suura">Source</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <div class="wrap prose-page">
+        <header class="prose-header">
+          <p class="kicker">Privacy</p>
+          <h1>What leaves your computer</h1>
+          <p>
+            Suura is a local music player, so the honest answer is: very little, and only when it has to. There is
+            no account, no analytics and no telemetry. This page lists every request the app can make so you can
+            check it against what you see.
+          </p>
+          <p class="fineprint">Last updated 8 November 2026. This statement describes Suura 0.1.0 and later.</p>
+        </header>
+
+        <div class="prose">
+          <section>
+            <h2>The short version</h2>
+            <ul>
+              <li>Nothing is collected by the developer: no identifier, no usage count, no crash upload.</li>
+              <li>
+                One request happens without you asking: the daily update check. It can be turned off, and the feed
+                address can be cleared, in <strong>Settings → About</strong>.
+              </li>
+              <li>
+                Everything else — YouTube, lyrics, tags, covers, the engine download — contacts a server only when
+                you press the button that needs it.
+              </li>
+              <li>Crash reports are written to this computer and are off by default. They are never uploaded.</li>
+              <li>Your music files are never moved, renamed or uploaded. Their tags change only when you edit them.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2>The update check</h2>
+            <p>
+              About twenty seconds after launch, and at most once a day, Suura asks its update feed whether a newer
+              version exists. Pressing <strong>Check now</strong> in Settings → About asks the same question. When
+              you choose <strong>Download update</strong>, the installer comes from that same feed.
+            </p>
+            <p>
+              The default feed is a Cloudflare R2 bucket; the address is shown in Settings → About and can be cleared,
+              which stops the check completely. The request carries what any web request carries — your IP address
+              and a user agent naming the app and its version — and nothing about your library, your queue or what
+              you have played. Cloudflare serves the feed and keeps its own request logs under
+              <a href="https://www.cloudflare.com/privacypolicy/">Cloudflare's privacy policy</a>.
+            </p>
+          </section>
+
+          <section>
+            <h2>Requests you start yourself</h2>
+            <p>
+              These only happen after an action, and each one needs the title, artist, album or duration you are
+              asking about. None of them receives your file paths or your listening history.
+            </p>
+            <ul>
+              <li>
+                <strong>YouTube</strong> — searching, pasting a link and streaming go to YouTube through
+                <code>yt-dlp</code> and YouTube's own API. YouTube sees your IP address as it would in a browser. If
+                you enable the optional browser-cookie fallback, the cookies you chose are used for those requests,
+                which is what lets a signed-in session work.
+              </li>
+              <li>
+                <strong>Lyrics</strong> — <a href="https://lrclib.net">LRCLIB</a> and
+                <a href="https://genius.com">Genius</a> are asked for the track title, artist, album and duration when
+                you press Find lyrics or run a batch.
+              </li>
+              <li>
+                <strong>Tags and covers</strong> — the <a href="https://itunes.apple.com">iTunes Search API</a>,
+                <a href="https://musicbrainz.org">MusicBrainz</a> and the
+                <a href="https://coverartarchive.org">Cover Art Archive</a> are asked when you use Find tags or
+                choose a cover. AcoustID fingerprinting uses
+                <a href="https://acoustid.org">AcoustID</a> with a key you enter yourself, and only after you ask for
+                a fingerprint.
+              </li>
+              <li>
+                <strong>The engine</strong> — <code>yt-dlp</code>, <code>ffmpeg</code> and <code>fpcalc</code> are
+                downloaded from their projects' GitHub releases the first time a feature needs them, and updated only
+                on request.
+              </li>
+              <li>
+                <strong>The PO Token provider</strong> — if you enable one, Suura talks to the local address you set
+                (by default <code>http://127.0.0.1:4416</code>). Suura opens no listening socket; the provider is a
+                separate program you install and run, and it is the one that talks to Google.
+              </li>
+            </ul>
+          </section>
+
+          <section>
+            <h2>Cookies and sign-in</h2>
+            <p>
+              Suura has no account of its own. The optional cookie fallback exists only for YouTube requests that
+              need a signed-in session. It is off by default, and when you turn it on you pick either a browser
+              profile on this computer or a Netscape <code>cookies.txt</code> file. Suura stores the location you
+              picked in its settings, reads the file for <code>yt-dlp</code>, and sends it nowhere else. Reset
+              preferences leaves that location alone, because it is a place on disk rather than a taste.
+            </p>
+          </section>
+
+          <section>
+            <h2>What stays on this computer</h2>
+            <p>
+              Suura keeps its own data in <code>%APPDATA%\Suura</code>: the library database, automatic backups, the
+              stream cache, downloaded engine binaries, logs, and crash reports if you turned them on. Your music
+              stays where you keep it, and anything Suura saves goes where you choose (by default
+              <code>Music\Suura</code>).
+            </p>
+            <p>
+              Uninstalling removes the program. The uninstaller asks before deleting the data folder, and the safe
+              answer — keep it for a later reinstall — is the default. You can also delete the folder yourself at any
+              time.
+            </p>
+          </section>
+
+          <section>
+            <h2>Crash reports and logs</h2>
+            <p>
+              Crash reports are off by default. When you turn them on in <strong>Settings → Misc</strong>, Suura
+              writes a small text report beside its other data if the app or its window process crashes; Settings can
+              list, export and clear them. Nothing is uploaded. If you report a bug, you choose whether to attach a
+              report, and you can read it first.
+            </p>
+            <p>
+              The app also keeps a local log for troubleshooting. It stays on this computer unless you use
+              <strong>Save diagnostics</strong>, which writes a bundle to a file you pick. Both can contain local file
+              paths, so review them before sharing.
+            </p>
+          </section>
+
+          <section>
+            <h2>This website</h2>
+            <p>
+              This page is static and loads nothing from third parties: no analytics, no advertising, no remote fonts,
+              no cookies. Cloudflare Pages serves it and, like any web host, sees the requests it serves; that is
+              covered by Cloudflare's policy rather than by anything this page runs.
+            </p>
+          </section>
+
+          <section>
+            <h2>Changes</h2>
+            <p>
+              If a future version makes a new kind of request, this page changes with it and the date above moves.
+              The source is public: the network calls live in
+              <a href="https://github.com/alphaq0099/Suura/tree/main/src">the repository</a>, and the licences of
+              everything Suura runs are listed in
+              <a href="https://github.com/alphaq0099/Suura/blob/main/THIRD-PARTY.md">THIRD-PARTY.md</a>. Questions go
+              to <a href="https://github.com/alphaq0099/Suura/issues">the issue tracker</a>.
+            </p>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap footer-inner">
+        <div class="footer-brand">
+          <img src="/icon.png" alt="" width="24" height="24" />
+          <span>Suura</span>
+        </div>
+        <p class="footer-note">© 2026 alphaq0099 · MIT licensed · This page loads nothing from third parties.</p>
+        <nav aria-label="Project links">
+          <a href="/faq">FAQ</a>
+          <a href="https://github.com/alphaq0099/Suura">GitHub</a>
+          <a href="https://github.com/alphaq0099/Suura/releases">Releases</a>
+          <a href="https://github.com/alphaq0099/Suura/issues">Issues</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>
