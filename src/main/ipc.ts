@@ -451,6 +451,9 @@ export function sanitizeSettingsPatch(input: unknown): DeepPartial<AppSettings> 
     if (typeof source.scanOnLaunch === 'boolean') {
       startup.scanOnLaunch = source.scanOnLaunch
     }
+    if (typeof source.startOnLogin === 'boolean') {
+      startup.startOnLogin = source.startOnLogin
+    }
     if (typeof source.resumePlayback === 'boolean') {
       startup.resumePlayback = source.resumePlayback
     }

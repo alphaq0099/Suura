@@ -5,6 +5,12 @@
 ; it will not touch: the music files the user saved into Music\Suura.
 
 !macro customUnInstall
+  ; "Start Suura when I sign in" is a Windows sign-in entry, so it survives the
+  ; config folder being kept. Remove it either way: an entry pointing at a
+  ; deleted executable is worse than no entry.
+  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Suura"
+  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "suura"
+
   ${IfNot} ${Silent}
     MessageBox MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2 \
       "Also delete Suura's library database, settings, caches and logs?$\r$\n$\r$\nYour music files in Music\Suura will NOT be deleted. Choose No to keep your data for a later reinstall." \

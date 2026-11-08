@@ -1409,6 +1409,11 @@ export interface StartupSettings {
   /** Scan the library once per launch, in addition to the first-run scan. */
   scanOnLaunch: boolean
   /**
+   * Register Suura as a Windows sign-in item. Off by default: a program that
+   * starts itself is a choice the user makes, not a side effect of installing.
+   */
+  startOnLogin: boolean
+  /**
    * Start playing the restored queue instead of leaving it paused. Off by
    * default: opening the app is not a request to make noise.
    */

@@ -71,6 +71,7 @@ First public pre-release. Everything below is new to anyone installing Suura for
 
 - Six tabs: General, Appearance, Streaming, Metadata, Misc, About, with per-section reset.
 - Themes (Midnight, Cream, Follow Windows), five accents, three densities and four text sizes.
+- Optional **Start Suura when I sign in**: one Windows sign-in entry, off by default and removed by the uninstaller.
 - One `<main>` landmark per view, a keyboard-complete tab strip, a modal focus trap with restoration, and
   forced-colors fallbacks.
 
@@ -87,6 +88,7 @@ First public pre-release. Everything below is new to anyone installing Suura for
 ### Privacy
 
 - No account, no telemetry, no analytics, and nothing uploaded automatically.
+- The only request the app makes on its own is the daily update check against a static feed, and it can be turned off.
 - Opt-in local crash reports under `%APPDATA%\Suura\crashes`; manual diagnostics export.
 
 ### Known limitations

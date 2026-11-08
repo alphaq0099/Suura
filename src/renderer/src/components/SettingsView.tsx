@@ -851,6 +851,19 @@ export function SettingsView(props: SettingsViewProps) {
                     </InfoHint>
                   </span>
                 </label>
+                <label className="field checkbox">
+                  <input
+                    type="checkbox"
+                    checked={settings.startup.startOnLogin}
+                    onChange={(event) => onUpdate({ startup: { startOnLogin: event.target.checked } })}
+                  />
+                  <span>
+                    Start Suura when I sign in
+                    <InfoHint label="About starting with Windows">
+                      Adds Suura to your Windows sign-in items. Playback still follows the resume setting.
+                    </InfoHint>
+                  </span>
+                </label>
               </div>
             </article>
 

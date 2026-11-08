@@ -37,6 +37,7 @@ import { broadcast } from '../broadcast'
 import { CrashReporter } from '../crash-reports'
 import { cleanupAbandonedDownloads, DownloadService } from '../download-service'
 import { StreamCache } from '../stream-cache'
+import { applyStartOnLogin } from '../login-item'
 import { createOnlineService, type OnlineService } from '../online-service'
 import { ReplayGainService } from '../replay-gain-service'
 import { SidecarService } from '../sidecar-service'
@@ -461,6 +462,19 @@ export function createContainer(options: CreateContainerOptions = {}): AppContai
     }
   })
 
+  // Windows keeps its own sign-in entry, so the setting and the OS are put back
+  // in step at launch and on every change. A packaged build only; the guard
+  // lives in the module because an unpackaged entry would point at electron.exe.
+  const autostartLog = log.child('startup')
+  let startOnLogin = settings.get().startup.startOnLogin
+  // Once at startup: a reinstall has to rebuild the entry the config asks for.
+  applyStartOnLogin(startOnLogin, autostartLog)
+  const unwatchAutostart = settings.onChange((next) => {
+    if (next.startup.startOnLogin === startOnLogin) return
+    startOnLogin = next.startup.startOnLogin
+    applyStartOnLogin(startOnLogin, autostartLog)
+  })
+
   // Turning the feature off must not leave a process the app started running.
   // Any change to the provider's own settings re-arms the one-shot auto-start:
   // nothing launches just because Settings was touched, but the next YouTube
@@ -533,6 +547,7 @@ export function createContainer(options: CreateContainerOptions = {}): AppContai
       unwatchSettings()
       unwatchTheme()
       unwatchBackupRetention()
+      unwatchAutostart()
       unwatchPoToken()
       updates.dispose()
       app.removeListener('child-process-gone', onChildProcessGone)

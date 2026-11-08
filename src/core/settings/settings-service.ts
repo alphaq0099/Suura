@@ -288,6 +288,9 @@ export class SettingsService {
               ? startup.view
               : DEFAULT_SETTINGS.startup.view,
         scanOnLaunch: startup.scanOnLaunch !== false,
+        // Only the literal `true` registers a sign-in item; a hand-edited
+        // `"startOnLogin": "off"` or a number must not start anything.
+        startOnLogin: startup.startOnLogin === true,
         resumePlayback: startup.resumePlayback === true
       },
       backups: {

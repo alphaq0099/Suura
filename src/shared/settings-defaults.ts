@@ -72,6 +72,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   startup: {
     view: 'last',
     scanOnLaunch: true,
+    // Windows is told about this at launch and whenever the switch moves; the
+    // setting is the source of truth so a reinstall rebuilds the entry.
+    startOnLogin: false,
     resumePlayback: false
   },
   // Closing the window quits unless the user asks otherwise. Hiding to the tray
@@ -211,7 +214,8 @@ export const SECTION_PREFERENCE_PATCHES: Record<PreferenceSection, DeepPartial<A
   general: {
     startup: {
       view: DEFAULT_SETTINGS.startup.view,
-      scanOnLaunch: DEFAULT_SETTINGS.startup.scanOnLaunch
+      scanOnLaunch: DEFAULT_SETTINGS.startup.scanOnLaunch,
+      startOnLogin: DEFAULT_SETTINGS.startup.startOnLogin
     },
     desktop: { ...DEFAULT_SETTINGS.desktop },
     library: {

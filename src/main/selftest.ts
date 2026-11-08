@@ -2690,6 +2690,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       startupChanged: boolean
       wheelChanged: boolean
       resumeChanged: boolean
+      loginChanged: boolean
       retentionChanged: boolean
       resetConfirmShown: boolean
       resetStatusShown: boolean
@@ -2698,6 +2699,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       startupRestored: boolean
       wheelRestored: boolean
       resumeRestored: boolean
+      loginRestored: boolean
       retentionRestored: boolean
       foldersKept: boolean
       sectionKeptOther: boolean
@@ -2716,9 +2718,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          const out = {
            keyboardEnd: false, keyboardHome: false, watchTurnedOff: false,
            behaviourChanged: false, startupChanged: false, wheelChanged: false,
-           resumeChanged: false, retentionChanged: false, resetConfirmShown: false,
+           resumeChanged: false, loginChanged: false, retentionChanged: false, resetConfirmShown: false,
            resetStatusShown: false, watchRestored: false, behaviourRestored: false,
-           startupRestored: false, wheelRestored: false, resumeRestored: false,
+           startupRestored: false, wheelRestored: false, resumeRestored: false, loginRestored: false,
            retentionRestored: false, foldersKept: false, sectionKeptOther: false,
            sectionResetRestored: false, aboutRuntime: false, diagnosticsCopied: false,
            saveDiagnosticsButton: false, backupCard: false, exportButton: false,
@@ -2758,6 +2760,12 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          const resumeInput = () => {
            const label = [...document.querySelectorAll('.field.checkbox')].find((el) =>
              (el.textContent || '').includes('Resume playback')
+           )
+           return label ? label.querySelector('input') : null
+         }
+         const loginInput = () => {
+           const label = [...document.querySelectorAll('.field.checkbox')].find((el) =>
+             (el.textContent || '').includes('Start Suura')
            )
            return label ? label.querySelector('input') : null
          }
@@ -2818,6 +2826,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          const resume = resumeInput()
          if (resume && !resume.checked) resume.click()
          await sleep(700)
+         const login = loginInput()
+         if (login && !login.checked) login.click()
+         await sleep(700)
 
          // Switching tabs re-renders the controlled select. If the write never
          // reached settings, React would put it straight back to 'select' here.
@@ -2827,6 +2838,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.startupChanged = selectField('Open at launch')?.value === 'search'
          out.wheelChanged = selectField('Volume wheel step')?.value === '10'
          out.resumeChanged = resumeInput()?.checked === true
+         out.loginChanged = loginInput()?.checked === true
          setNumber('Automatic backups to keep', 7)
          await sleep(600)
          out.retentionChanged = numberField('Automatic backups to keep')?.value === '7'
@@ -2880,6 +2892,7 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          out.behaviourRestored = selectField('Single click')?.value === 'select'
          out.wheelRestored = selectField('Volume wheel step')?.value === '5'
          out.resumeRestored = resumeInput()?.checked === false
+         out.loginRestored = loginInput()?.checked === false
 
          // Per-section reset: change General and Playback, then reset only
          // Playback. The startup view must survive a Playback reset, and the
@@ -2987,6 +3000,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
         settingsSafety.resumeChanged &&
         settingsSafety.resumeRestored,
       'settings: wheel step and automatic resume are wired and reset together',
+      settingsSafety
+    )
+    record(
+      settingsSafety.loginChanged && settingsSafety.loginRestored,
+      'settings: start with Windows reaches settings and reset restores it',
       settingsSafety
     )
     record(

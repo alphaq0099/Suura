@@ -42,6 +42,9 @@ does not need PowerShell drawing support.
   directory (`%APPDATA%\Suura`). Choosing Yes removes the database, settings,
   logs, backups and caches. Music saved into `Music\Suura` is never deleted by
   the uninstaller.
+- Uninstalling always removes the Windows sign-in entry, if **Start Suura when I
+  sign in** was turned on. The entry would otherwise point at an executable that
+  no longer exists.
 
 ## Signing and SmartScreen
 

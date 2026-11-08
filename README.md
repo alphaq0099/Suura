@@ -147,6 +147,9 @@ anywhere.
 Suura remembers the queue, the track and the position, and restores them paused on the next start — unless you turn on
 **Resume playback automatically** in Settings. Tracks that have since been deleted are left out.
 
+**Start Suura when I sign in** in Settings → General adds one Windows sign-in entry, so the app is there when you log
+in. It is off by default, and the uninstaller removes the entry.
+
 ### YouTube
 
 Paste a link into **YouTube → Links** and choose **Play now** or **Add to queue**. A cold link takes roughly 7–10
@@ -298,7 +301,7 @@ skipped and named in the summary.
 
 | Tab | What lives there |
 |---|---|
-| **General** | Launch view, scan on launch, folder watching, click behaviour, volume-wheel step, resume playback, close to tray. |
+| **General** | Launch view, scan on launch, start with Windows, folder watching, click behaviour, volume-wheel step, resume playback, close to tray. |
 | **Appearance** | Theme (Midnight, Cream, Follow Windows), five accents, three densities, four text sizes, cover-art shape, motion, sidebar glyphs and panel style. |
 | **Streaming** | Engine folder and status, quality tier, retention mode and cache limits, save format and folder, prefetch, `yt-dlp` self-update, PO Token provider, cookie fallback (browser or exported file), import limits. |
 | **Misc** | The AcoustID key, fingerprint lookup, backups and restore, library health, find moved files, crash reports, reset preferences. |

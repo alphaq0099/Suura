@@ -3493,6 +3493,7 @@ async function main(): Promise<void> {
     )
 
     check('settings: closing the window quits by default', !DEFAULT_SETTINGS.desktop.closeToTray)
+    check('settings: starting with Windows is off by default', !DEFAULT_SETTINGS.startup.startOnLogin)
     check('settings: browser cookies are off by default', DEFAULT_SETTINGS.engine.cookiesFromBrowser === null)
     checkEqual('settings: cookie fallback is off by default', DEFAULT_SETTINGS.engine.cookieFallback, 'off')
     checkEqual('settings: no cookies file until one is chosen', DEFAULT_SETTINGS.engine.cookiesFile, null)
@@ -3537,6 +3538,23 @@ async function main(): Promise<void> {
       'settings: a valid AcoustID key survives a read',
       new SettingsService(goodKeyFile, silentLogger).get().metadata.acoustidKey,
       'cSpUJKpD'
+    )
+
+    // The switch registers a Windows sign-in item, so only the literal `true`
+    // may arm it; a hand-edited string must not start anything at login.
+    const startupFile = join(settingsRoot, 'startup-flag.json')
+    await writeFile(startupFile, JSON.stringify({ startup: { startOnLogin: 'yes' } }), 'utf8')
+    checkEqual(
+      'settings: a non-boolean start-with-Windows flag stays off',
+      new SettingsService(startupFile, silentLogger).get().startup.startOnLogin,
+      false
+    )
+    const startupOnFile = join(settingsRoot, 'startup-on.json')
+    await writeFile(startupOnFile, JSON.stringify({ startup: { startOnLogin: true } }), 'utf8')
+    checkEqual(
+      'settings: a chosen start-with-Windows flag survives a read',
+      new SettingsService(startupOnFile, silentLogger).get().startup.startOnLogin,
+      true
     )
     // The provider manager is worth exercising for real: a command is split
     // without a shell, the child is started, `/ping` is read, and stopping kills
@@ -3919,6 +3937,7 @@ async function main(): Promise<void> {
       visuals: { accent: 'rose', density: 'compact' },
       interaction: { librarySingleClick: 'play' },
       desktop: { closeToTray: true },
+      startup: { startOnLogin: true },
       engine: { binDir: 'D:\\Tools', lastUpdateCheckAt: 123_456, importLimit: 42 },
       retention: { downloadFolder: 'D:\\Downloads', qualityTier: 'data-saver' }
     })
@@ -3932,6 +3951,7 @@ async function main(): Promise<void> {
     checkEqual('reset: restores the accent', afterReset.visuals.accent, 'blue')
     checkEqual('reset: restores click behaviour', afterReset.interaction.librarySingleClick, 'select')
     checkEqual('reset: restores closing to tray', afterReset.desktop.closeToTray, false)
+    checkEqual('reset: restores starting with Windows', afterReset.startup.startOnLogin, false)
     checkEqual('reset: restores import limits', afterReset.engine.importLimit, DEFAULT_SETTINGS.engine.importLimit)
     checkEqual('reset: restores saving quality', afterReset.retention.qualityTier, 'high')
     check(

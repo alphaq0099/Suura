@@ -961,8 +961,15 @@ marks work in this repository; the rest is hardware, accounts and process.
 - [x] **Send to phone** - **To phone** in a playlist copies its local files into a folder of the user's choosing and
       writes an `.m3u8` beside them with names relative to that folder, ready for PowerAmp or any phone player. This is
       the answer to "I want it on my phone" without M9.
-- [ ] Decide autostart with Windows. Tray and close-to-tray exist; autostart does not.
-- [ ] Empty and error state sweep: no folders, no engine, offline, YouTube blocked, download failed, disk full.
+- [x] **Start with Windows** - an opt-in switch in Settings → General. Off by default, because a program that starts
+      itself is the user's choice to make. The config file is the source of truth: the entry is rebuilt at launch after
+      a reinstall, removed when the switch is turned off, and the uninstaller deletes it even when the app data is
+      kept. A packaged build only — an unpackaged entry would point at `electron.exe`.
+- [x] Empty and error state sweep: no folders (Home's welcome hero, Library's "No music folders yet"), no engine (the
+      YouTube engine callout with size, progress and error), offline (the media element's own network error), YouTube
+      blocked (the cooldown message with the remaining minutes), download failed (the row's own reason), disk full (the
+      pre-flight free-space check before a save). Each state names what happened and what to do next; the visual pass on
+      real hardware is part of 14.1.
 - [ ] Narrator pass on the real app. The automated accessibility pass proves landmarks, focus and contrast, not spoken
       labels.
 
