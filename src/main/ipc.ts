@@ -101,7 +101,7 @@ import {
 import type { AppContainer } from './services/container'
 import { listAllTracks } from './all-tracks'
 import { broadcast } from './broadcast'
-import { mergeDeferredTagWrite, PendingWrites, type DeferredTagWrite } from './pending-writes'
+import { mergeDeferredTagWrite, type DeferredTagWrite } from './pending-writes'
 import { readLogTail, sanitizeDiagnosticsSummary, writeDiagnosticsFile } from './diagnostics'
 import { LIBRARY_SEARCH_LIMIT, searchLibrary } from './library-search'
 import { isMiniPlayer, setMiniPlayer } from './window-mode'
@@ -678,7 +678,7 @@ function sanitizeArtistLimit(input: unknown): number {
 }
 
 export function registerIpcHandlers(container: AppContainer): void {
-  const { settings, library, log } = container
+  const { settings, library, log, pendingWrites } = container
 
   // The renderer owns playback, so it is the only place that knows which file
   // is open. Windows will not let us replace a file that is being streamed, and
@@ -686,15 +686,6 @@ export function registerIpcHandlers(container: AppContainer): void {
   // the id is kept here and checked before any tag write starts.
   let playingTrackId: number | null = null
   let playbackIsPlaying = false
-
-  // A write aimed at the track that is open for playback is queued here rather
-  // than refused. Fetching lyrics only happens while listening, so refusing was
-  // asking the user to stop the song they were looking at. The queue drains as
-  // soon as the renderer says the track is no longer the one playing.
-  const pendingWrites = new PendingWrites({
-    log: log.child('pending-writes'),
-    onResult: (notice) => broadcast(IPC_EVENTS.pendingWriteChanged, notice)
-  })
 
   // The tag fields each queued write still has to apply. A second save while
   // the first is waiting is a patch against the same unchanged row, so it is

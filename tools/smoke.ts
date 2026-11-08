@@ -7938,8 +7938,12 @@ async function main(): Promise<void> {
   // pinned down here rather than through a window.
   {
     const notices: PendingWriteNotice[] = []
+    // The failure report waits out a grace period, so the clock is driven here
+    // rather than the suite sleeping through it.
+    const clock = { now: 1_000_000 }
     const queue = new PendingWrites({
       log: silentLogger,
+      now: () => clock.now,
       onResult: (notice) => notices.push(notice)
     })
 
@@ -7981,21 +7985,28 @@ async function main(): Promise<void> {
     checkEqual('deferred writes: the entry runs after playback', resumed.written, 1)
     checkEqual('deferred writes: the entry leaves the queue', queue.size, 0)
 
-    // A write that fails stays queued, because the usual cause is the OS still
-    // holding the file; the next state change tries again.
+    // A write that fails because the file is still held is retried inside the
+    // same drain: stopping playback is the moment the file becomes writable, and
+    // waiting for some later state change could take hours.
     let failOnce = true
+    let transientAttempts = 0
     queue.enqueue(4, 'lyrics', async () => {
+      transientAttempts += 1
       if (failOnce) {
         failOnce = false
         throw new Error('the file is still open')
       }
     })
-    const failed = await queue.flush(() => false)
-    checkEqual('deferred writes: a failure keeps the entry', queue.size, 1)
-    checkEqual('deferred writes: a failure is counted', failed.failed, 1)
     const recovered = await queue.flush(() => false)
-    checkEqual('deferred writes: a retry can succeed', recovered.written, 1)
-    checkEqual('deferred writes: a retry empties the queue', queue.size, 0)
+    checkEqual('deferred writes: a transient failure is retried at once', transientAttempts, 2)
+    checkEqual('deferred writes: the retry counts as written', recovered.written, 1)
+    checkEqual('deferred writes: a recovered write is not failed', recovered.failed, 0)
+    checkEqual('deferred writes: a recovered write leaves the queue', queue.size, 0)
+    checkEqual(
+      'deferred writes: a transient failure is not reported',
+      notices.filter((notice) => !notice.ok).length,
+      0
+    )
 
     // A write queued while a flush is running belongs to the newer edit; the
     // finishing entry must not delete it.
@@ -8010,20 +8021,64 @@ async function main(): Promise<void> {
     await queue.flush(() => false)
     checkEqual('deferred writes: the newer entry then runs', queuedDuringFlush, true)
 
-    // A permanent failure is reported once, not on every retry.
+    // A state change that arrives while a pass is running earns another pass.
+    // The running pass read the queue before that change, so without the rerun
+    // the freed write would wait for an unrelated event.
+    let openGate = (): void => undefined
+    const gate = new Promise<void>((resolve) => {
+      openGate = resolve
+    })
+    let joinedRan = false
+    queue.enqueue(7, 'tags', () => gate)
+    const firstPass = queue.flush(() => false)
+    queue.enqueue(7, 'lyrics', async () => {
+      joinedRan = true
+    })
+    const joinedPass = queue.flush(() => false)
+    checkEqual(
+      'deferred writes: a flush during a pass joins the running one',
+      joinedPass === firstPass,
+      true
+    )
+    openGate()
+    await Promise.all([firstPass, joinedPass])
+    checkEqual('deferred writes: a write queued during a pass runs in that drain', joinedRan, true)
+    checkEqual('deferred writes: the joined flush empties the queue', queue.size, 0)
+
+    // A permanent failure is retried a few times inside one drain. It is not
+    // announced straight away: a locked file is the case the queue exists for,
+    // and a banner moments after stopping would be noise. After the grace
+    // period it is reported once, and it stays queued.
     notices.length = 0
+    let permanentAttempts = 0
     queue.enqueue(6, 'tags', async () => {
+      permanentAttempts += 1
       throw new Error('permission denied')
     })
-    for (let attempt = 0; attempt < 4; attempt += 1) await queue.flush(() => false)
+    const permanent = await queue.flush(() => false)
+    checkEqual('deferred writes: a permanent failure is tried a few times', permanentAttempts, 4)
+    checkEqual(
+      'deferred writes: a failure inside the grace period is not announced',
+      notices.filter((notice) => !notice.ok).length,
+      0
+    )
+    clock.now += 20_000
+    await queue.flush(() => false)
     const reported = notices.filter((notice) => !notice.ok)
-    checkEqual('deferred writes: a permanent failure is reported once', reported.length, 1)
+    checkEqual('deferred writes: a lasting failure is reported once', reported.length, 1)
     checkEqual(
       'deferred writes: the report names the track and reason',
       `${reported[0]?.trackId}|${reported[0]?.kind}|${reported[0]?.message}`,
       '6|tags|permission denied'
     )
     checkEqual('deferred writes: a permanent failure stays queued', queue.size, 1)
+    checkEqual('deferred writes: the drain reports what is left', permanent.failed, 1)
+    await queue.flush(() => false)
+    checkEqual(
+      'deferred writes: a reported failure is not reported again',
+      notices.filter((notice) => !notice.ok).length,
+      1
+    )
 
     // A second save while the first is still queued must not drop a field the
     // first one touched: both patches are measured against the same unchanged

@@ -49,6 +49,7 @@ import { createGeniusProvider } from '@core/library/lyrics-genius'
 import { createArtworkChoices, type ArtworkChoicesService } from '../artwork-choices'
 import { createYoutubeService, type YoutubeService } from '../youtube-service'
 import { LyricsBatchService } from '../lyrics-batch-service'
+import { PendingWrites } from '../pending-writes'
 import { TagBatchService } from '../tag-batch-service'
 
 /**
@@ -108,6 +109,13 @@ export interface AppContainer {
   lyrics: LyricsService
   /** Scans a selection for missing lyrics and applies the accepted ones. */
   lyricsBatch: LyricsBatchService
+  /**
+   * Writes postponed while their file was open for playback.
+   *
+   * Owned here rather than inside the IPC module so the self-test can wait for
+   * it to be empty before it resets a fixture that both sections share.
+   */
+  pendingWrites: PendingWrites
   /** iTunes and MusicBrainz lookups for the tag finder. */
   tagLookup: TagLookup
   /** Scans a selection for better tags and writes the accepted ones. */
@@ -479,6 +487,13 @@ export function createContainer(options: CreateContainerOptions = {}): AppContai
     onProgress: (status) => broadcast(IPC_EVENTS.replayGainProgress, status)
   })
 
+  // Tag saves and lyric writes aimed at a file that is open for playback wait
+  // here instead of being refused, so one queue serves both.
+  const pendingWrites = new PendingWrites({
+    log: log.child('pending-writes'),
+    onResult: (notice) => broadcast(IPC_EVENTS.pendingWriteChanged, notice)
+  })
+
   return {
     paths,
     log,
@@ -510,6 +525,7 @@ export function createContainer(options: CreateContainerOptions = {}): AppContai
     tagWriter,
     lyrics,
     lyricsBatch,
+    pendingWrites,
     tagLookup,
     tagBatch,
     artworkChoices,

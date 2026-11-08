@@ -474,12 +474,17 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
          const liftCard = document.querySelector('.home-shelf .album-card')
          const liftMain = liftCard?.querySelector('.album-card-main')
          liftMain?.focus()
-         await sleep(280)
+         // The lift is a 180 ms transition. Wait for it to settle rather than
+         // sampling one frame: a busy or occluded window can present its first
+         // frame late, which reads as "no lift" even though the style is right.
+         const liftDeadline = Date.now() + 4000
+         while (Math.abs(translateY(liftCard) + 4) >= 0.5 && Date.now() < liftDeadline) await sleep(50)
          out.cardFocus = document.activeElement === liftMain
          out.cardLift = translateY(liftCard)
 
          liftMain?.blur()
-         await sleep(280)
+         const restDeadline = Date.now() + 4000
+         while (Math.abs(translateY(liftCard)) >= 0.5 && Date.now() < restDeadline) await sleep(50)
          out.cardRest = translateY(liftCard)
 
          // A counted listen must refresh Recently played while Home is still
@@ -5431,6 +5436,25 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       'the queued writes reached the bytes on disk, not only the library row',
       `genre "${deferredFile.genre}", year ${String(deferredFile.year)}, lyrics ${deferredFileLyrics ? 'present' : 'missing'}`
     )
+    // The queue is drained from an IPC call the renderer makes, so the write can
+    // still be in flight when these checks finish. The batch sections below share
+    // this fixture and expect a file with no lyrics, genre or year, and a write
+    // that lands after the reset would put them back. Wait for the queue to be
+    // quiet; a stranded entry gets one direct attempt before the reset.
+    const drainDeadline = Date.now() + 15_000
+    while (container.pendingWrites.size > 0 && Date.now() < drainDeadline) await delay(100)
+    if (container.pendingWrites.size > 0) await container.pendingWrites.flush(() => false)
+    const deferredDrained = container.pendingWrites.size === 0
+    record(
+      deferredDrained,
+      'the deferred queue is empty before its shared fixture is reset',
+      `pending ${container.pendingWrites.size}`
+    )
+    if (!deferredDrained) {
+      // With the fetched row gone, a late lyrics write has nothing to put in the
+      // file, so the batch scan still sees a row without lyrics.
+      await container.lyrics.useFile(deferredTrack.id)
+    }
     // This fixture is shared with the batch sections below, which expect a file
     // with no lyrics, genre or year. Put it back now that the write has landed.
     await container.library.updateTags(deferredTrack.id, { genre: null, year: null, lyrics: null })
