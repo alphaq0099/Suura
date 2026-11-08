@@ -912,6 +912,9 @@ marks work in this repository; the rest is hardware, accounts and process.
 - [ ] **One complete update cycle on an installed copy** — publish 0.1.1, let 0.1.0 see it, Check now → Download update →
       Restart and install; confirm the version changes, the library and playlists survive, the old exe is replaced and no
       second copy is left behind. The parts are verified; the whole loop has never run.
+- [ ] **The sign-in entry on a real install** — a packaged build only, so it can only be proven on an installed copy:
+      turn the switch on and see the entry under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, restart Windows
+      and see Suura come up, uninstall and see the entry gone even when the data folder is kept.
 
 ### 14.2 Packaging and metadata *(code)*
 
@@ -920,8 +923,11 @@ marks work in this repository; the rest is hardware, accounts and process.
 - [ ] Confirm the exe's file properties (product, version, description, publisher, icon) and the Apps & Features entry
       after install.
 - [ ] Upgrade in place 0.1.0 → next: settings, engine folder and library untouched, no duplicate Start-menu entry.
-- [ ] Uninstall: app data kept by default, the opt-in prompt deletes it, no stale shortcuts or registry keys.
-- [ ] Decide file associations for `.m3u`/`.m3u8`. Today double-clicking a playlist does nothing.
+- [x] Uninstall: app data kept by default, the opt-in prompt deletes it, the Windows sign-in entry is removed either way,
+      and the installer's own message says music in `Music\Suura` is never deleted. The shortcut and registry sweep still
+      belongs to the hardware pass below.
+- [ ] Decide file associations for `.m3u`/`.m3u8`. Today double-clicking a playlist does nothing. The installer does not
+      register a ProgId yet, and adding one touches the same `Run`-key cleanup as the sign-in entry.
 
 ### 14.3 Trust, licences and legal *(code + docs)*
 
@@ -969,7 +975,8 @@ marks work in this repository; the rest is hardware, accounts and process.
 - [x] **Start with Windows** - an opt-in switch in Settings → General. Off by default, because a program that starts
       itself is the user's choice to make. The config file is the source of truth: the entry is rebuilt at launch after
       a reinstall, removed when the switch is turned off, and the uninstaller deletes it even when the app data is
-      kept. A packaged build only — an unpackaged entry would point at `electron.exe`.
+      kept. A packaged build only — an unpackaged entry would point at `electron.exe`. The preference, its persistence
+      and its reset are proven by the self-test and the smoke suite; the real install is a 14.1 item.
 - [x] Empty and error state sweep: no folders (Home's welcome hero, Library's "No music folders yet"), no engine (the
       YouTube engine callout with size, progress and error), offline (the media element's own network error), YouTube
       blocked (the cooldown message with the remaining minutes), download failed (the row's own reason), disk full (the
@@ -977,6 +984,9 @@ marks work in this repository; the rest is hardware, accounts and process.
       real hardware is part of 14.1.
 - [ ] Narrator pass on the real app. The automated accessibility pass proves landmarks, focus and contrast, not spoken
       labels.
+- [ ] Rotate the update feed and the download mirror off the R2 bucket's `r2.dev` hostname. It is reachable now but is
+      rate-limited for development use, and R2 sends no-cache headers; the Worker mirror in front of it is the fast path.
+      Needs a public bucket hostname or a Cloudflare-hosted domain, neither of which exists yet.
 
 ### 14.6 Quality bars
 
@@ -1004,5 +1014,5 @@ marks work in this repository; the rest is hardware, accounts and process.
 ### 14.8 Deliberately not in 1.0
 
 Last.fm scrobbling, Discord presence, a visualiser, plugins, hi-res/WASAPI exclusive output, local AI transcription
-(M13 Phase 7), two-device continuity (M10) and Android (M9). Each is additive; none is needed for a finished Windows
-release.
+(M13 Phase 7), crossfade, two-device continuity (M10) and Android (M9). Each is additive; none is needed for a finished
+Windows release.
