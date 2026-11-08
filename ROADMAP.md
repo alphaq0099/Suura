@@ -318,7 +318,10 @@ Assumes roughly one developer, part-time-to-full-time. Durations are relative, n
 - [x] Windows SMTC (now-playing overlay), taskbar thumbnail controls
 - [x] Mini player, tray icon, close-to-tray behaviour
 - [x] 10-band EQ + presets, preamp
-- [ ] Optional crossfade
+- [x] ~~Optional crossfade~~ **removed, not built** — the 1.0 decision. Gapless covers the transition need, and a
+      crossfade would have to change the transport itself (the next track becomes audible before the old one is
+      silent, so the progress bar, the Windows overlay and the queue would name it early) and would fight the
+      ReplayGain gain. See §14.5.
 - [x] Volume normalization for local files (ReplayGain scan)
 - [x] Keyboard shortcuts (space, arrows, N/P, M, Ctrl+F, Escape)
 - [x] Drag & drop of files/folders
@@ -956,8 +959,10 @@ marks work in this repository; the rest is hardware, accounts and process.
 
 ### 14.5 Product finish
 
-- [ ] **Crossfade** — the last open M2 checkbox. Build it or remove it from the roadmap; a stale promise is worse than
-      "no".
+- [x] **Crossfade** — settled as **no**. The last open M2 checkbox is closed rather than left as a promise: gapless
+      playback covers the transition, and a real crossfade would mean the transport naming the next track while the
+      current one is still audible, plus a fade that has to coexist with the volume control and ReplayGain. Nothing
+      ships in 1.0; the FAQ says so plainly.
 - [x] **Send to phone** - **To phone** in a playlist copies its local files into a folder of the user's choosing and
       writes an `.m3u8` beside them with names relative to that folder, ready for PowerAmp or any phone player. This is
       the answer to "I want it on my phone" without M9.

@@ -137,6 +137,9 @@ The bar at the bottom has play/pause, previous/next, a scrubber, volume, repeat 
 and the equalizer. Click the now-playing area to open the **full-window player** with a large cover, a full-width
 scrubber and the queue sliding in over the artwork. **Escape** closes it and playback never stops.
 
+Albums run together without a gap: the next track is decoded before the current one ends, so there is no silence
+between them. There is no crossfade — the next track starts exactly when the previous one stops.
+
 **Mini player** and the **tray icon** are there when the window is in the way. The tray menu shows and hides the
 window, toggles the mini player, and carries play/pause, previous, next and quit. Closing the window quits unless you
 turn on **Close to tray** in Settings.

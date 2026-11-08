@@ -94,6 +94,7 @@ First public pre-release. Everything below is new to anyone installing Suura for
 ### Known limitations
 
 - The installer is unsigned, so SmartScreen warns (see `CODE_SIGNING.md`).
+- There is no crossfade: tracks run into each other without a gap, but they never overlap.
 - Windows 10/11 HiDPI, multi-monitor and 4K verification is still in progress.
 - Android is deferred: it would be a separate app sharing the `player-backup` format, built only if there is demand.
 - Tag writing supports MP3, FLAC, M4A/M4B, Ogg and Opus; other formats are refused rather than half-written.
