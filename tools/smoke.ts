@@ -1068,7 +1068,13 @@ async function main(): Promise<void> {
     // --- allowlist --------------------------------------------------------
     check('a file inside a library folder is allowed', library.isPathAllowed(join(musicDir, 'x.flac')))
     check('a file outside every library folder is denied', !library.isPathAllowed(join(root, 'elsewhere.flac')))
-    check('normalisation is case-insensitive on Windows', normalizePath(musicDir) === normalizePath(musicDir.toUpperCase()))
+    check(
+      'normalisation matches the file system',
+      process.platform === 'win32'
+        ? normalizePath(musicDir) === normalizePath(musicDir.toUpperCase())
+        : normalizePath(join(root, 'Music', 'Song.FLAC')) !==
+            normalizePath(join(root, 'music', 'song.flac'))
+    )
     check(
       'sibling folders with a shared prefix are not treated as nested',
       !isPathInside(join(root, 'music'), join(root, 'music-other', 'song.flac'))
@@ -5273,17 +5279,22 @@ async function main(): Promise<void> {
       'missing'
     )
 
-    // A read-only file is the closest thing to "another program has it open"
-    // that a test can set up on Windows. The write must fail *and* leave the
-    // original byte-for-byte intact.
+    // "Another program has it open" is expressed differently per platform: a
+    // read-only file blocks a replace on Windows, while on Unix only the folder
+    // decides. Both must fail *and* leave the original byte-for-byte intact.
     const lockedPath = await makeTagFixture('locked.mp3', ['-c:a', 'libmp3lame'])
     const lockedBefore = await readFile(lockedPath)
-    await chmod(lockedPath, 0o444)
+    const lockedDir = dirname(lockedPath)
+    const lock = async (on: boolean): Promise<void> => {
+      if (process.platform === 'win32') await chmod(lockedPath, on ? 0o444 : 0o666)
+      else await chmod(lockedDir, on ? 0o555 : 0o755)
+    }
+    await lock(true)
     let locked: unknown = null
     await tagWriter.write(lockedPath, { title: 'Should not stick' }).catch((error) => {
       locked = error
     })
-    await chmod(lockedPath, 0o666)
+    await lock(false)
     checkEqual(
       'tags: a read-only file is reported as locked',
       locked instanceof TagWriteError ? locked.code : 'no-error',
@@ -8501,10 +8512,11 @@ async function main(): Promise<void> {
       // it missing just because the app-managed copy was never downloaded.
       const externalDir = join(engineRoot, 'external')
       await mkdir(externalDir, { recursive: true })
-      await writeFile(join(externalDir, 'yt-dlp.exe'), 'external-yt-dlp', 'utf8')
+      const externalName = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp'
+      await writeFile(join(externalDir, externalName), 'external-yt-dlp', 'utf8')
       const externalAsset = asset({
         id: 'yt-dlp',
-        file: 'yt-dlp.exe',
+        file: externalName,
         url: `${base}/file`
       })
       const originalPath = process.env.PATH
