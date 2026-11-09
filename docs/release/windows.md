@@ -108,6 +108,30 @@ Do not attach `release/win-unpacked/`, and do not rebuild after tagging: a
 channel file that names one installer while another is attached is exactly the
 kind of mismatch the updater is designed to reject.
 
+### Releases are manual
+
+Releases are cut by hand from a Windows machine. There is no tag-triggered
+workflow, and that is a decision rather than an omission:
+
+- The build needs the signing secrets (`CSC_LINK`, `CSC_KEY_PASSWORD`) and
+  Cloudflare credentials. A tag workflow could hold them too, but it would also
+  publish whatever commit received the tag, with no point at which a person
+  installs the result once before strangers do.
+- The gates include a hardware pass and a self-test that opens a real window.
+  Neither fits a hosted runner, so a tag build would be green on a machine that
+  cannot prove the thing being released.
+- The installer, blockmap, channel file and checksum must come from one
+  `package:win` run on the tagged commit. Doing it by hand keeps that visible.
+- Publishing is two steps — the GitHub release and then `publish-r2.ps1`, which
+  re-downloads every object over HTTPS and compares it. A workflow would have to
+  reproduce that check, and a failure halfway through would leave a feed naming
+  a file that is not there.
+
+It can move to a tag trigger after 1.0, when signing is routine and a GitHub
+environment approval gates the upload. Until then the rule is the same either
+way: **the tag names the commit that was built, and nothing is rebuilt after the
+tag.**
+
 ## App updates
 
 The app updates from a **static HTTPS folder**: no update server is required.
@@ -175,6 +199,37 @@ installer on disk. `-DryRun` prints the plan without sending anything, and
 The stable alias exists so a fixed URL always serves the newest installer. It
 is the same bytes as the versioned installer, and it is re-uploaded with every
 release. The Worker below serves it from Cloudflare's edge.
+
+### Yanking a bad release
+
+electron-updater never downgrades. Once a build has been offered, a lower
+version in `latest.yml` is simply "not newer", so deleting the feed does not
+roll anybody back. Recovery is always a **higher** version, and the drill is:
+
+1. **Stop the feed before it spreads.** Re-upload the previous release's
+   `latest.yml` and `Suura-Setup.exe`, or remove them
+   (`npx wrangler r2 object delete surra/latest.yml --remote`). Anyone who has
+   not updated stops being offered the bad build; anyone already on it is not
+   downgraded, only replaced later.
+2. **Keep the artefacts reachable.** Edit the GitHub release notes to say it is
+   withdrawn instead of deleting the release: the landing page, the Worker
+   mirror and the README fallback all point at files that must keep resolving.
+   Marking it a pre-release takes it out of "latest" without breaking an old
+   link.
+3. **Publish the bad installer's SHA-256** in the release notes, so support can
+   tell a bad download from a good one.
+4. **Cut the fixed patch version** through the full sequence above. The new
+   `latest.yml` ends the incident, because it is higher than the bad build and
+   every installed copy converges on it.
+5. **Re-check the alias and the feed.** `Suura-Setup.exe` is re-uploaded by
+   `publish-r2.ps1` on every release, so step 4 moves the landing-page link, the
+   Worker path and the README fallback back to a good file. Fetch
+   `<feed>/latest.yml` and `<worker>/Suura-Setup.exe` once more afterwards.
+
+The failure worth practising is a **partial upload**: `publish-r2.ps1` sends the
+installer before the channel file, so an interrupted run leaves the previous
+channel file in place and the old version still on offer. Re-running the script
+overwrites every object; `-DryRun` shows the plan first.
 
 ### Download Worker
 

@@ -1000,15 +1000,22 @@ marks work in this repository; the rest is hardware, accounts and process.
 
 ### 14.7 Release process
 
-- [ ] `CHANGELOG.md`: replace `[Unreleased]` with the released version and date; every release gets a section.
-- [ ] One documented sequence, run in order: version bump → `npm run typecheck` → `npm run smoke` → `npm run build` →
+- [x] `CHANGELOG.md`: 0.1.0 now has its own dated section that matches what shipped on 2026-11-06, and `[Unreleased]`
+      holds only the work done after it. Every future release gets the same treatment.
+- [x] One documented sequence, run in order: version bump → `npm run typecheck` → `npm run smoke` → `npm run build` →
       `npm run package:win` → `SHA256SUMS.txt` → `npm run publish:r2` → GitHub release with the `Suura-Setup.exe` alias.
-      It is written in `docs/release/windows.md` and has been run once, by hand.
-- [ ] Decide whether releases stay manual or become a tag-triggered workflow. Either is fine; leaving it unstated is not.
+      It is written in `docs/release/windows.md` and was run for 0.1.0.
+- [x] Releases stay **manual**, decided and written down in `docs/release/windows.md`: signing and R2 credentials, a
+      hardware pass and a windowing self-test that a hosted runner cannot do, one `package:win` run behind all four
+      artefacts, and an upload step that re-verifies every object over HTTPS. A tag-triggered build is worth revisiting
+      after 1.0, gated by a GitHub environment approval; until then the tag names the commit that was built.
 - [ ] Beta-channel rehearsal: bump to `0.2.0-beta.1`, confirm electron-builder writes `beta.yml`, publish it and install it
-      through the Beta setting. The beta path has never been exercised.
-- [ ] Bad-release drill: document how to yank a version (electron-updater never downgrades, so recovery is a new patch
-      release) and how to pull the R2 alias.
+      through the Beta setting. The beta path has never been exercised. It needs an installed copy, so it waits with
+      the 14.1 checks.
+- [x] Bad-release drill, written in `docs/release/windows.md`: electron-updater never downgrades, so a yank means
+      restoring the previous channel file, withdrawing the GitHub release without deleting it, and publishing a higher
+      patch version. It also covers the case that actually breaks a feed — an upload that stopped before the channel
+      file moved.
 - [ ] Tag `v1.0.0` only when 14.1–14.3 are done. 1.0 is a promise that "install, use, uninstall" is proven.
 
 ### 14.8 Deliberately not in 1.0
@@ -1016,3 +1023,11 @@ marks work in this repository; the rest is hardware, accounts and process.
 Last.fm scrobbling, Discord presence, a visualiser, plugins, hi-res/WASAPI exclusive output, local AI transcription
 (M13 Phase 7), crossfade, two-device continuity (M10) and Android (M9). Each is additive; none is needed for a finished
 Windows release.
+
+**Linux and macOS builds are not part of 1.0 either.** Windows 10/11 x64 is the only target, and the FAQ says so
+plainly. "Not started" is not "impossible": Electron runs on both, and parts of the code already branch on
+`process.platform`. But the installer, the Windows sign-in entry, the taskbar and media-overlay integration, the
+`Suura-Setup.exe` update alias and the engine manifest's `.exe` downloads are all Windows-shaped, and a second platform
+doubles the hardware pass that has not happened once yet. A Linux build would be its own track after 1.0 — AppImage or
+`.deb`, MPRIS instead of the Windows overlay, per-platform engine URLs, and its own update feed — not a checkbox inside
+this release.

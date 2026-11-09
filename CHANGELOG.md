@@ -9,6 +9,44 @@ backup is taken before any schema upgrade, so an upgrade keeps the library.
 
 ## [Unreleased]
 
+Changes since 0.1.0. Nothing here is in a published build yet.
+
+### Library
+
+- A library that will not open offers the newest healthy automatic backup, a fresh library or Quit, and keeps the damaged
+  file beside the database.
+
+### Playlists
+
+- **To phone** copies a playlist's files and an `.m3u8` into a folder of your choosing, ready for a phone player.
+
+### Settings
+
+- Optional **Start Suura when I sign in**: one Windows sign-in entry, off by default and removed by the uninstaller.
+
+### Playback
+
+- A write postponed because a file was open now lands when playback stops. The queue drains until it is quiet, a locked
+  write is retried within the same drain, and a lasting failure is announced only after several attempts over 15 seconds.
+
+### Security
+
+- `player-media://` resolves `..` before the allowlist comparison and is separator-aware, `player-art://` accepts only a
+  40-hex cache key, and `player-stream://` accepts only a stream's UUID. Each refusal is exercised by the self-test.
+- The window denies every device permission, sends only `http:`/`https:` links to the shell, and blocks navigation away
+  from itself.
+
+### Privacy
+
+- A privacy statement at <https://suura-player.pages.dev/privacy> lists every host and every request, including the daily
+  update check — the only request the app makes on its own.
+
+### Changed
+
+- Crossfade is settled as **no**. Gapless playback already removes the gap between tracks; an overlap is not planned.
+
+## [0.1.0] - 2026-11-06
+
 First public pre-release. Everything below is new to anyone installing Suura for the first time.
 
 ### Library
@@ -60,10 +98,8 @@ First public pre-release. Everything below is new to anyone installing Suura for
 
 ### Data care
 
-- M3U/M3U8 and JSON playlist import/export; **To phone** copies a playlist's files and an `.m3u8` into a folder for a
-  phone player; CSV library export.
+- M3U/M3U8 and JSON playlist import/export; CSV library export.
 - Manual backup and staged restore, rotating automatic backups, and a pre-migration copy.
-- A damaged library offers the newest healthy automatic backup, a fresh library or Quit, and keeps the damaged file.
 - Duplicate detection with safe merge, and relocation of moved files by fingerprint then size/mtime.
 - Append-only schema migrations with a `user_version` guard that refuses a newer database.
 
@@ -71,7 +107,6 @@ First public pre-release. Everything below is new to anyone installing Suura for
 
 - Six tabs: General, Appearance, Streaming, Metadata, Misc, About, with per-section reset.
 - Themes (Midnight, Cream, Follow Windows), five accents, three densities and four text sizes.
-- Optional **Start Suura when I sign in**: one Windows sign-in entry, off by default and removed by the uninstaller.
 - One `<main>` landmark per view, a keyboard-complete tab strip, a modal focus trap with restoration, and
   forced-colors fallbacks.
 
@@ -88,13 +123,11 @@ First public pre-release. Everything below is new to anyone installing Suura for
 ### Privacy
 
 - No account, no telemetry, no analytics, and nothing uploaded automatically.
-- The only request the app makes on its own is the daily update check against a static feed, and it can be turned off.
 - Opt-in local crash reports under `%APPDATA%\Suura\crashes`; manual diagnostics export.
 
 ### Known limitations
 
 - The installer is unsigned, so SmartScreen warns (see `CODE_SIGNING.md`).
-- There is no crossfade: tracks run into each other without a gap, but they never overlap.
 - Windows 10/11 HiDPI, multi-monitor and 4K verification is still in progress.
-- Android is deferred: it would be a separate app sharing the `player-backup` format, built only if there is demand.
+- The Android app is planned and not started.
 - Tag writing supports MP3, FLAC, M4A/M4B, Ogg and Opus; other formats are refused rather than half-written.
