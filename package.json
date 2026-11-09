@@ -1,6 +1,7 @@
 {
   "name": "suura",
   "productName": "Suura",
+  "desktopName": "suura",
   "version": "0.1.0",
   "private": true,
   "description": "Desktop music player for local files and YouTube links, with optional saving into the library.",

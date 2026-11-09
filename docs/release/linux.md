@@ -10,6 +10,36 @@ native modules and no Windows-only build step. What is Windows-shaped is the
 *edges*: the engine manifest, the executable bit, the autostart entry, packaging,
 the update channel file and the docs.
 
+## Status: first build, 2026-11-09
+
+Built and tested on Ubuntu 24.04 (kernel 6.8, Node 24.21, Electron 44.10.2):
+
+- `npm run build`, `npm run smoke` (1404/1404) and `npm run selftest` (428/428)
+  pass.
+- `npx electron-builder --linux AppImage` produces `Suura-0.1.0.AppImage`
+  (124 MB) and a `latest-linux.yml` channel file.
+- The packaged AppImage runs its own self-test from `release/` and passes
+  428/428.
+- The window renders, the Home screen lays out correctly, and the app writes to
+  `~/.config/Suura`.
+
+What the run taught us:
+
+- The test box has no `libfuse2`, so the AppImage was started with
+  `APPIMAGE_EXTRACT_AND_RUN=1`. A normal desktop installs FUSE 2; the fallback
+  belongs in the docs either way.
+- GitHub release downloads returned 504 during the run, and `npm ci` then left
+  Electron uninstalled without failing. `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`
+  fetched it. This is an outage workaround, not a permanent setting.
+- There is no audio device (ALSA reports "Unknown PCM default"), and every check
+  still passes: the suite does not depend on a real sink.
+- Media keys are refused as "already held by another app" on XFCE/X11. The app
+  degrades correctly, and it is the same class of problem as the Wayland note
+  below.
+- electron-builder warned that `desktopName` was unset, so a running window was
+  not grouped under the launcher icon. `package.json` now sets `suura` and
+  `linux.syncDesktopName` is on.
+
 ## Target
 
 - Ubuntu 24.04 x86_64 first; an AppImage, because it is the only Linux packaging
@@ -93,9 +123,11 @@ xvfb-run -a npx electron . --selftest
 
 ## What still has to be done
 
-- [ ] First build on Linux, then the self-test there. It will not be green on the
-      first run: the self-test was written against Windows and checks the taskbar
-      group and Windows-specific wording.
+- [x] First build on Linux, and the self-test there. The first run found five
+      Windows assumptions in the smoke suite and one real handler bug (a `..`
+      path was resolved for the allowlist but not before `stat`), all fixed.
+- [ ] Run it on a real desktop session with a sound device, and open the tag
+      editor, the full-window player and the mini player.
 - [ ] `fpcalc` on Linux: add a `tar.gz` branch to `zip.ts` (or extract with the
       system `tar`) and pin the row.
 - [ ] Media keys on Wayland: `globalShortcut` is not reliable there. Either use

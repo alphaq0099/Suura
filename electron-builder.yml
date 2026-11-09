@@ -69,6 +69,10 @@ nsis:
 linux:
   icon: build/icon.png
   category: AudioVideo
+  # Electron's WM_CLASS on Linux comes from `desktopName` in package.json, and
+  # the launcher matches the .desktop file against it. Without this the running
+  # window is not grouped under the app's icon.
+  syncDesktopName: true
   synopsis: Desktop music player for local files and YouTube links
   target:
     - target: AppImage

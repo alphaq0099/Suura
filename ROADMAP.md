@@ -1062,8 +1062,12 @@ nothing ships for Linux until the Windows 1.0 tag exists. Details and the build 
 
 ### 15.2 Packaging and updates
 
-- [ ] First AppImage build on Linux, then the self-test under Xvfb; fix what the Windows assumptions break.
-- [ ] `latest-linux.yml` in the R2 feed, and a publish path that uploads it beside `latest.yml`.
+- [x] First AppImage build on Linux, and the self-test there: typecheck, smoke (1404) and the self-test (428) pass
+      on Ubuntu 24.04, the AppImage builds at 124 MB alongside its `latest-linux.yml`, and the packaged build passes
+      its own self-test. The run found five Windows assumptions in the tests, a hard-coded separator in the traversal
+      check, and one real handler bug — `player-media://` resolved `..` for the allowlist but not before `stat`, so an
+      allowed request 404'd on Unix.
+- [ ] Put `latest-linux.yml` in the R2 feed, and a publish path that uploads it beside `latest.yml`.
 - [ ] Update wording for a file that replaces itself rather than an installer that runs.
 - [ ] A `.deb` target once the AppImage is settled.
 - [ ] `ubuntu-latest` CI job: build, smoke, self-test under Xvfb.
