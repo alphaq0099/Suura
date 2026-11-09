@@ -1,13 +1,14 @@
 # The gates that used to depend on remembering to run them.
 #
-# Two jobs, because they need different things: `checks` needs ffmpeg (the
+# Three jobs, because they need different things: `checks` needs ffmpeg (the
 # smoke fixtures and the self-test generate real audio) and a desktop session
-# for Electron; `perf` deliberately needs neither a window nor an audio device,
-# which is why its budgets are safe on a hosted runner.
+# for Electron; `linux` needs the same plus Xvfb, and proves the second
+# platform's engine pins and paths; `perf` deliberately needs neither a window
+# nor an audio device, which is why its budgets are safe on a hosted runner.
 #
 # Selftest runs the built `out/` bundles, so `npm run build` comes first and
-# carries the typecheck. The perf job builds its own copy: the two jobs are
-# independent and neither waits for the other.
+# carries the typecheck. The perf job builds its own copy: the three jobs are
+# independent and none waits for another.
 
 name: CI
 
@@ -50,6 +51,44 @@ jobs:
 
       - name: Self-test
         run: npm run selftest
+
+  # The Linux job exists because a Windows run cannot see a wrong Linux engine
+  # digest, a path that only breaks on a case-sensitive file system, or the
+  # AppImage's assumptions. It does not package: the AppImage build needs FUSE
+  # and produces a 124 MB file that nothing here consumes.
+  linux:
+    name: Typecheck, smoke and self-test (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install ffmpeg and the Electron runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ffmpeg xvfb libnss3 libgbm1 libasound2t64 libgtk-3-0 libxss1
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (typecheck included)
+        run: npm run build
+
+      - name: Smoke
+        run: npm run smoke
+
+      # A hosted runner has no display, and Ubuntu's unprivileged user
+      # namespaces are restricted there, so Chromium's own sandbox cannot start.
+      # `--no-sandbox` is a runner concession, not a shipped default: the app
+      # keeps the sandbox for real users.
+      - name: Self-test
+        run: xvfb-run -a npm run selftest -- --no-sandbox
 
   perf:
     name: Performance budgets

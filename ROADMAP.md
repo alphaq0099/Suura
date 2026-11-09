@@ -1070,7 +1070,8 @@ nothing ships for Linux until the Windows 1.0 tag exists. Details and the build 
 - [ ] Put `latest-linux.yml` in the R2 feed, and a publish path that uploads it beside `latest.yml`.
 - [ ] Update wording for a file that replaces itself rather than an installer that runs.
 - [ ] A `.deb` target once the AppImage is settled.
-- [ ] `ubuntu-latest` CI job: build, smoke, self-test under Xvfb.
+- [x] `ubuntu-latest` CI job: build, smoke and self-test under Xvfb, with ffmpeg and the Chromium libraries installed. It
+      runs beside the Windows job, so a Linux-only break stops a push instead of waiting for a release.
 
 ### 15.3 Release
 

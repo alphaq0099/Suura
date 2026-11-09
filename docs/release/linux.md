@@ -143,8 +143,10 @@ xvfb-run -a npx electron . --selftest
 - [ ] Packaging: a `.deb` target and a desktop file with the icon and categories.
 - [ ] Docs and site: a Linux download with its own SHA-256, the FAQ's "Windows
       only" answer, and README's platform table.
-- [ ] CI: an `ubuntu-latest` job that builds, smokes and runs the self-test under
-      Xvfb.
+- [x] CI: an `ubuntu-latest` job that installs ffmpeg and the Chromium libraries,
+      builds, smokes and runs the self-test under Xvfb. `--no-sandbox` is passed
+      to Electron there because the runner restricts user namespaces; it is a
+      runner concession, not a shipped default.
 - [ ] A Linux hardware pass, mirroring `windows.md`: GNOME/KDE, X11/Wayland,
       100–200% scaling, HiDPI, audio device switching, a 10k-track library.
 
