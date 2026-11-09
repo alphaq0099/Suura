@@ -161,7 +161,13 @@ import { LocalFileResolver } from '@engine/local-file-resolver'
 import { parseEbur128Summary } from '@engine/replay-gain'
 import { EngineStatusCache, getEngineStatus } from '@engine/sidecar/engine-status'
 import { installAsset, sidecarStates } from '@engine/sidecar/install'
-import { SIDECAR_ASSETS, sidecarAsset, type SidecarAsset } from '@engine/sidecar/manifest'
+import {
+  SIDECAR_ASSETS,
+  assetsForPlatform,
+  sidecarAsset,
+  sidecarAssetsByPlatform,
+  type SidecarAsset
+} from '@engine/sidecar/manifest'
 import {
   clearLastKnownGood,
   isManagedBinary,
@@ -8226,35 +8232,49 @@ async function main(): Promise<void> {
   {
     const engineRoot = await mkdtemp(join(tmpdir(), 'player-sidecars-'))
 
-    const ids = new Set(SIDECAR_ASSETS.map((asset) => asset.id))
-    checkEqual('sidecar: each id appears once', ids.size, SIDECAR_ASSETS.length)
-    check(
-      'sidecar: every pinned digest is a lower-case SHA-256',
-      SIDECAR_ASSETS.every((asset) => /^[0-9a-f]{64}$/.test(asset.sha256)),
-      SIDECAR_ASSETS.map((asset) => `${asset.id}=${asset.sha256}`).join(' ')
-    )
-    check(
-      'sidecar: every pinned size is positive',
-      SIDECAR_ASSETS.every((asset) => Number.isSafeInteger(asset.bytes) && asset.bytes > 0)
-    )
-    check(
-      'sidecar: every URL is an immutable https release',
-      SIDECAR_ASSETS.every(
-        (asset) => asset.url.startsWith('https://') && asset.url.includes('/releases/download/')
-      ),
-      SIDECAR_ASSETS.map((asset) => asset.url).join(' ')
-    )
-    check(
-      'sidecar: a zip asset names the exact member',
-      SIDECAR_ASSETS.every((asset) => asset.kind !== 'zip' || Boolean(asset.entry))
-    )
+    // Every table is checked, not just the one this machine will download: a
+    // wrong digest on the Linux row is a release failure that a Windows CI run
+    // would otherwise never see.
+    for (const [platform, assets] of Object.entries(sidecarAssetsByPlatform())) {
+      const ids = new Set(assets.map((asset) => asset.id))
+      checkEqual(`sidecar: ${platform} ids appear once`, ids.size, assets.length)
+      check(
+        `sidecar: ${platform} digests are lower-case SHA-256`,
+        assets.every((asset) => /^[0-9a-f]{64}$/.test(asset.sha256)),
+        assets.map((asset) => `${asset.id}=${asset.sha256}`).join(' ')
+      )
+      check(
+        `sidecar: ${platform} sizes are positive`,
+        assets.every((asset) => Number.isSafeInteger(asset.bytes) && asset.bytes > 0)
+      )
+      check(
+        `sidecar: ${platform} URLs are immutable https releases`,
+        assets.every(
+          (asset) => asset.url.startsWith('https://') && asset.url.includes('/releases/download/')
+        ),
+        assets.map((asset) => asset.url).join(' ')
+      )
+      check(
+        `sidecar: ${platform} zip assets name the exact member`,
+        assets.every((asset) => asset.kind !== 'zip' || Boolean(asset.entry))
+      )
+      check(
+        `sidecar: ${platform} optional assets are only fpcalc`,
+        assets.filter((asset) => asset.optional).every((asset) => asset.id === 'fpcalc')
+      )
+      check(
+        `sidecar: ${platform} ships yt-dlp and ffmpeg`,
+        assets.some((asset) => asset.id === 'yt-dlp') && assets.some((asset) => asset.id === 'ffmpeg')
+      )
+    }
     checkEqual(
       'sidecar: only fpcalc is optional',
       SIDECAR_ASSETS.filter((asset) => asset.optional)
         .map((asset) => asset.id)
         .join(','),
-      'fpcalc'
+      process.platform === 'win32' ? 'fpcalc' : ''
     )
+    check('sidecar: this build uses its platform table', assetsForPlatform(process.platform) === SIDECAR_ASSETS)
     checkEqual('sidecar: lookup by id returns its row', sidecarAsset('yt-dlp').id, 'yt-dlp')
     let unknownSidecar = ''
     try {

@@ -61,3 +61,17 @@ nsis:
   runAfterFinish: true
   deleteAppDataOnUninstall: false
   include: build/installer.nsh
+
+# Linux is a second target, not a port: the core, the player and the engine
+# already run there; what differs is packaging, the autostart entry and the
+# updater's channel file (`latest-linux.yml`). AppImage first, because it is the
+# only Linux target electron-updater can update in place.
+linux:
+  icon: build/icon.png
+  category: AudioVideo
+  synopsis: Desktop music player for local files and YouTube links
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  artifactName: ${productName}-${version}.${ext}

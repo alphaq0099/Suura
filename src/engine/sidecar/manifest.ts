@@ -15,8 +15,8 @@ import type { SidecarId } from '@shared/types'
  * and the user sees "the download did not match" for a server-side reason.
  *
  * Updating a sidecar is therefore a code change: bump the version, URL, byte
- * count and SHA-256 together. `tools/smoke.ts` checks that the row is
- * internally consistent.
+ * count and SHA-256 together. `tools/smoke.ts` checks that every row, on every
+ * platform, is internally consistent.
  */
 export interface SidecarAsset {
   id: SidecarId
@@ -43,7 +43,7 @@ export interface SidecarAsset {
   optional?: boolean
 }
 
-export const SIDECAR_ASSETS: readonly SidecarAsset[] = [
+const WINDOWS_ASSETS: readonly SidecarAsset[] = [
   {
     id: 'yt-dlp',
     version: '2026.10.26',
@@ -81,8 +81,64 @@ export const SIDECAR_ASSETS: readonly SidecarAsset[] = [
   }
 ]
 
+const LINUX_ASSETS: readonly SidecarAsset[] = [
+  {
+    id: 'yt-dlp',
+    version: '2026.10.26',
+    // The PyInstaller build for x86_64; the `_aarch64` and `.zip` variants are
+    // different files with different digests, so the name is part of the pin.
+    url: 'https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26/yt-dlp_linux',
+    sha256: '767ba9dce7052aa196f8b12652f433d76de128ba168966fa84b6394d5e6c6795',
+    bytes: 41_166_968,
+    file: 'yt-dlp',
+    kind: 'file',
+    license: 'Unlicense'
+  },
+  {
+    id: 'ffmpeg',
+    version: '6.1.1',
+    url: 'https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-linux-x64',
+    sha256: 'e7e7fb30477f717e6f55f9180a70386c62677ef8a4d4d1a5d948f4098aa3eb99',
+    bytes: 79_826_272,
+    file: 'ffmpeg',
+    kind: 'file',
+    license: 'GPL-3.0-or-later'
+  },
+  // fpcalc has no row here on purpose: AcoustID publishes the Linux build only
+  // as a `.tar.gz`, and the installer's archive reader handles zip alone. The
+  // fingerprint fallback therefore says the binary is missing, and the lyrics
+  // finder uses its own sources. Adding it is a `tar.gz` branch in `zip.ts`,
+  // not a checksum edit.
+]
+
+const ASSETS_BY_PLATFORM: Partial<Record<NodeJS.Platform, readonly SidecarAsset[]>> = {
+  win32: WINDOWS_ASSETS,
+  linux: LINUX_ASSETS
+}
+
+/** Every table, for the smoke test that checks the rows a release build will not use. */
+export function sidecarAssetsByPlatform(): Record<string, readonly SidecarAsset[]> {
+  return { win32: WINDOWS_ASSETS, linux: LINUX_ASSETS }
+}
+
+/**
+ * The rows for one platform.
+ *
+ * A platform with no table is a refusal, not a fallback: an app that shipped
+ * Windows binaries on Linux would fail at the first spawn with a confusing
+ * `ENOEXEC` instead of saying what is wrong.
+ */
+export function assetsForPlatform(platform: NodeJS.Platform): readonly SidecarAsset[] {
+  const assets = ASSETS_BY_PLATFORM[platform]
+  if (!assets) throw new Error(`No sidecar set is defined for ${platform}.`)
+  return assets
+}
+
+/** What this build downloads. */
+export const SIDECAR_ASSETS: readonly SidecarAsset[] = assetsForPlatform(process.platform)
+
 export function sidecarAsset(id: SidecarId): SidecarAsset {
   const asset = SIDECAR_ASSETS.find((candidate) => candidate.id === id)
-  if (!asset) throw new Error(`No sidecar is defined for ${id}.`)
+  if (!asset) throw new Error(`No sidecar is defined for ${process.platform} and ${id}.`)
   return asset
 }

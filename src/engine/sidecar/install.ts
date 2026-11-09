@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Logger } from '@core/logging/logger'
 import type { SidecarId, SidecarProgress, SidecarState } from '@shared/types'
@@ -283,6 +283,11 @@ export async function installAsset(
     }
 
     await replaceFile(extractPath, target)
+
+    // A rename keeps the downloaded file's mode, and a download arrives 0644
+    // under the usual umask — enough to read, not enough to run. Windows has no
+    // executable bit, so this is the one place the two platforms differ.
+    if (process.platform !== 'win32') await chmod(target, 0o755)
 
     const installedInfo = await stat(target)
     const record = await readRecord(options.dir)

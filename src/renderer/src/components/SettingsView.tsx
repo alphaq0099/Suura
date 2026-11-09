@@ -859,8 +859,8 @@ export function SettingsView(props: SettingsViewProps) {
                   />
                   <span>
                     Start Suura when I sign in
-                    <InfoHint label="About starting with Windows">
-                      Adds Suura to your Windows sign-in items. Playback still follows the resume setting.
+                    <InfoHint label="About starting when I sign in">
+                      Adds Suura to your desktop's sign-in items. Playback still follows the resume setting.
                     </InfoHint>
                   </span>
                 </label>
