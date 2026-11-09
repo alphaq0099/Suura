@@ -1,5 +1,6 @@
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import { Readable } from 'node:stream'
 import { protocol } from 'electron'
 import { MEDIA_SCHEME, parseMediaUrl } from '@shared/media-url'
@@ -27,7 +28,11 @@ export function installMediaProtocolHandler(deps: MediaProtocolDeps): void {
       return new Response('Malformed media request.', { status: 400 })
     }
 
-    const filePath = parsed.path
+    // Canonicalise once, then use the same string for the allowlist, `stat` and
+    // the read. A URL may still contain `..`, and on Unix `stat` resolves each
+    // segment in turn: `sub/../song.flac` fails when `sub` does not exist, even
+    // though the file it names does.
+    const filePath = resolve(parsed.path)
     if (!deps.isPathAllowed(filePath)) {
       deps.log.warn('blocked media request outside the library', { filePath })
       return new Response('Forbidden.', { status: 403 })
