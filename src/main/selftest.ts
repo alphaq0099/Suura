@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { copyFile, mkdir, readFile, rm, stat } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { app, BrowserWindow, clipboard, dialog, net } from 'electron'
 import { probeExecutable } from '@engine/sidecar/locate'
@@ -997,7 +997,11 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
     // to use `..` or a shared name prefix to look inside a folder they are not.
     // The `..` is left in the URL on purpose: `join` would collapse it before
     // the handler ever saw it, and the handler is what is being tested.
-    const traversal = await net.fetch(buildMediaUrl(`${fixtureDir}\\..\\definitely-not-in-library.flac`))
+    // The `..` has to be a real path segment, so it is built with the platform's
+    // own separator; a hard-coded backslash is an ordinary character on Linux.
+    const traversal = await net.fetch(
+      buildMediaUrl(`${fixtureDir}${sep}..${sep}definitely-not-in-library.flac`)
+    )
     record(traversal.status === 403, 'a .. path that leaves the library is refused with 403', traversal.status)
 
     const siblingPrefix = await net.fetch(buildMediaUrl(join(`${fixtureDir}-evil`, 'Selftest Tone.flac')))
@@ -1007,7 +1011,9 @@ export async function runSelfTest(window: BrowserWindow, container: AppContainer
       siblingPrefix.status
     )
 
-    const resolvedInside = await net.fetch(buildMediaUrl(`${fixtureDir}\\sub\\..\\Selftest Tone.flac`))
+    const resolvedInside = await net.fetch(
+      buildMediaUrl(`${fixtureDir}${sep}sub${sep}..${sep}Selftest Tone.flac`)
+    )
     record(resolvedInside.status === 200, 'a .. path that stays inside the library is still served', resolvedInside.status)
 
     const artworkTraversal = await net.fetch(buildArtworkUrl('../../secret.png'))
