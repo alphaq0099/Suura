@@ -926,8 +926,10 @@ marks work in this repository; the rest is hardware, accounts and process.
 - [x] Uninstall: app data kept by default, the opt-in prompt deletes it, the Windows sign-in entry is removed either way,
       and the installer's own message says music in `Music\Suura` is never deleted. The shortcut and registry sweep still
       belongs to the hardware pass below.
-- [ ] Decide file associations for `.m3u`/`.m3u8`. Today double-clicking a playlist does nothing. The installer does not
-      register a ProgId yet, and adding one touches the same `Run`-key cleanup as the sign-in entry.
+- [x] File associations for `.m3u`/`.m3u8`: **out of 1.0**, decided. Double-clicking a playlist does nothing and the
+      installer registers no ProgId; the FAQ says so and points at the Playlists view. Registering one is a feature, not
+      a checkbox: the app would have to accept a path at launch, hand it to the already-running instance, and remove the
+      keys on uninstall — the same registry sweep the sign-in entry needed.
 
 ### 14.3 Trust, licences and legal *(code + docs)*
 
@@ -1028,6 +1030,48 @@ Windows release.
 plainly. "Not started" is not "impossible": Electron runs on both, and parts of the code already branch on
 `process.platform`. But the installer, the Windows sign-in entry, the taskbar and media-overlay integration, the
 `Suura-Setup.exe` update alias and the engine manifest's `.exe` downloads are all Windows-shaped, and a second platform
-doubles the hardware pass that has not happened once yet. A Linux build would be its own track after 1.0 — AppImage or
-`.deb`, MPRIS instead of the Windows overlay, per-platform engine URLs, and its own update feed — not a checkbox inside
-this release.
+doubles the hardware pass that has not happened once yet. Linux now has its own track below; macOS has none.
+
+---
+
+## 15. Linux Release
+
+Started while the Windows hardware pass waits, because almost all of it is adaptation, not a port. The rule is that
+Windows stays the release in front: every change here must keep `typecheck`, `smoke` and the Windows self-test green, and
+nothing ships for Linux until the Windows 1.0 tag exists. Details and the build recipe are in
+[`docs/release/linux.md`](docs/release/linux.md).
+
+**Why it is small:** `node:sqlite` instead of a native module, `app.getPath()` for every folder, `navigator.mediaSession`
+(which Chromium publishes over MPRIS), and platform branches already present in the sidecar layer.
+
+**Why it is not free:** the engine manifest, the executable bit, the autostart entry, the AppImage target, the
+`latest-linux.yml` update channel, the docs, and a second hardware matrix.
+
+### 15.1 Groundwork *(code)*
+
+- [x] Two pinned engine tables — Windows and Linux — with `assetsForPlatform()` refusing a platform it has no rows for,
+      and the smoke test checking every row, not just the one this machine downloads.
+- [x] `chmod 0755` after a download on non-Windows; without it the first `yt-dlp` spawn fails with `EACCES`.
+- [x] Linux autostart through `~/.config/autostart/suura.desktop`, registering `$APPIMAGE` when it is set because an
+      AppImage's executable path is a temporary mount.
+- [x] `electron-builder.yml` AppImage target, `build/icon.png`, and `npm run package:linux`.
+- [x] Settings wording no longer says "Windows sign-in items", and the Windows uninstaller wording is unchanged.
+- [ ] `fpcalc` on Linux: add a `tar.gz` branch to the archive reader and pin the row.
+- [ ] Media keys on Wayland: the portal's GlobalShortcuts interface, or an explicit "not available" in Settings.
+- [ ] Tray without AppIndicator: detect the missing host and keep close-to-tray off, instead of an invisible icon.
+
+### 15.2 Packaging and updates
+
+- [ ] First AppImage build on Linux, then the self-test under Xvfb; fix what the Windows assumptions break.
+- [ ] `latest-linux.yml` in the R2 feed, and a publish path that uploads it beside `latest.yml`.
+- [ ] Update wording for a file that replaces itself rather than an installer that runs.
+- [ ] A `.deb` target once the AppImage is settled.
+- [ ] `ubuntu-latest` CI job: build, smoke, self-test under Xvfb.
+
+### 15.3 Release
+
+- [ ] Linux hardware pass: GNOME and KDE, X11 and Wayland, 100–200% scaling, HiDPI, audio device switching,
+      10k tracks, sleep/resume.
+- [ ] A Linux download on the site with its own checksum, and the FAQ/README platform answers rewritten.
+- [ ] A Linux signing story (AppImage has no Authenticode equivalent; a `.deb` needs a repo key if it is hosted).
+- [ ] Tag the first Linux release only after Windows 1.0 has shipped.
