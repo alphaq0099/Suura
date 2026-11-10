@@ -1,4 +1,4 @@
-# Publishes one Windows release to an R2 bucket that serves the update feed.
+# Publishes Suura's release files to an R2 bucket that serves the update feed.
 #
 #   npx wrangler login                                   (once, or set CLOUDFLARE_API_TOKEN)
 #   pwsh -File tools/publish-r2.ps1 -Bucket surra -BaseUrl https://pub-xxxx.r2.dev
@@ -8,14 +8,23 @@
 # The app reads the folder configured in Settings -> About, so the base URL here
 # is the same URL a user pastes there.
 #
-# Uploads exactly the four files electron-builder wrote for the current version:
-# the installer, its blockmap, the channel file (latest.yml or beta.yml) and
-# SHA256SUMS.txt. Versioned filenames are cached forever; the channel file and
-# checksums are always revalidated so a new release is seen immediately.
+# Uploads the files electron-builder wrote for the current version, for whichever
+# platform targets exist in the release folder:
+#
+#   Windows  the installer, its blockmap, latest.yml/beta.yml and the
+#            Suura-Setup.exe alias.
+#   Linux    the AppImage, its blockmap, latest-linux.yml/beta-linux.yml and the
+#            Suura.AppImage alias.
+#
+# SHA256SUMS.txt is shared: it must have a line for every artefact being
+# published. Versioned filenames are cached forever; channel files, checksums
+# and the stable aliases are always revalidated so a new release is seen at once.
 #
 #   pwsh -File tools/publish-r2.ps1 -Bucket surra -BaseUrl https://... -DryRun
+#   pwsh -File tools/publish-r2.ps1 -Platform linux
 #
-# Windows-only, like the release pipeline this feeds.
+# The default, `-Platform auto`, publishes whatever is present. Passing a
+# platform explicitly makes a missing artefact an error instead of a skip.
 
 [CmdletBinding()]
 param(
@@ -29,6 +38,9 @@ param(
   [string]$BaseUrl,
   # Where electron-builder wrote the release. Defaults to <repo>/release.
   [string]$ReleaseDir = (Join-Path (Split-Path -Parent $PSScriptRoot) 'release'),
+  # Which platform's files to publish. `auto` takes what the folder holds.
+  [ValidateSet('auto', 'windows', 'linux')]
+  [string]$Platform = 'auto',
   # Print the uploads without sending them.
   [switch]$DryRun
 )
@@ -42,88 +54,133 @@ if (-not (Test-Path -LiteralPath $packageJson)) {
 }
 
 $version = (Get-Content -LiteralPath $packageJson -Raw | ConvertFrom-Json).version
-$channelFile = if ($version -match '-') { 'beta.yml' } else { 'latest.yml' }
-$installer = "Suura-$version-Setup.exe"
+$channel = if ($version -match '-') { 'beta' } else { 'latest' }
 
 if (-not (Test-Path -LiteralPath $ReleaseDir)) {
-  throw "Missing release folder: $ReleaseDir. Run 'npm run package:win' first."
+  throw "Missing release folder: $ReleaseDir. Run 'npm run package:win' or 'npm run package:linux' first."
 }
 
-$files = @(
+$immutable = 'public, max-age=31536000, immutable'
+$revalidate = 'no-cache, max-age=0, must-revalidate'
+
+function New-Entry([string]$Name, [string]$Key, [string]$ContentType, [string]$CacheControl) {
   [pscustomobject]@{
-    Name = $installer
-    Key = $installer
-    ContentType = 'application/octet-stream'
-    CacheControl = 'public, max-age=31536000, immutable'
-  },
-  [pscustomobject]@{
-    Name = "$installer.blockmap"
-    Key = "$installer.blockmap"
-    ContentType = 'application/octet-stream'
-    CacheControl = 'public, max-age=31536000, immutable'
-  },
-  [pscustomobject]@{
-    Name = $channelFile
-    Key = $channelFile
-    ContentType = 'text/yaml; charset=utf-8'
-    CacheControl = 'no-cache, max-age=0, must-revalidate'
-  },
-  [pscustomobject]@{
-    Name = 'SHA256SUMS.txt'
-    Key = 'SHA256SUMS.txt'
-    ContentType = 'text/plain; charset=utf-8'
-    CacheControl = 'no-cache, max-age=0, must-revalidate'
-  },
-  # Stable alias so the landing page can link to one URL release after release.
-  # It must be revalidated because the object behind it changes every version.
-  [pscustomobject]@{
-    Name = $installer
-    Key = 'Suura-Setup.exe'
-    ContentType = 'application/octet-stream'
-    CacheControl = 'no-cache, max-age=0, must-revalidate'
+    Name = $Name
+    Key = $Key
+    ContentType = $ContentType
+    CacheControl = $CacheControl
   }
-)
+}
+
+# The stable alias is what the landing page and the README link to, so it is
+# revalidated on every request: the object behind it changes each release.
+$windowsArtifact = "Suura-$version-Setup.exe"
+$windowsChannel = "$channel.yml"
+$windows = [pscustomobject]@{
+  Label = 'Windows'
+  Artifact = $windowsArtifact
+  ChannelFile = $windowsChannel
+  Blockmap = "$windowsArtifact.blockmap"
+  BuildScript = 'package:win'
+  Files = @(
+    (New-Entry $windowsArtifact $windowsArtifact 'application/octet-stream' $immutable)
+    (New-Entry "$windowsArtifact.blockmap" "$windowsArtifact.blockmap" 'application/octet-stream' $immutable)
+    (New-Entry $windowsChannel $windowsChannel 'text/yaml; charset=utf-8' $revalidate)
+    (New-Entry $windowsArtifact 'Suura-Setup.exe' 'application/octet-stream' $revalidate)
+  )
+}
+
+$linuxArtifact = "Suura-$version.AppImage"
+$linuxChannel = "$channel-linux.yml"
+$linux = [pscustomobject]@{
+  Label = 'Linux'
+  Artifact = $linuxArtifact
+  ChannelFile = $linuxChannel
+  Blockmap = "$linuxArtifact.blockmap"
+  BuildScript = 'package:linux'
+  Files = @(
+    (New-Entry $linuxArtifact $linuxArtifact 'application/octet-stream' $immutable)
+    (New-Entry "$linuxArtifact.blockmap" "$linuxArtifact.blockmap" 'application/octet-stream' $immutable)
+    (New-Entry $linuxChannel $linuxChannel 'text/yaml; charset=utf-8' $revalidate)
+    (New-Entry $linuxArtifact 'Suura.AppImage' 'application/octet-stream' $revalidate)
+  )
+}
+
+$allSets = @($windows, $linux)
+$selected = switch ($Platform) {
+  'windows' { @($windows) }
+  'linux' { @($linux) }
+  default {
+    @($allSets | Where-Object { Test-Path -LiteralPath (Join-Path $ReleaseDir $_.Artifact) })
+  }
+}
+
+if ($selected.Count -eq 0) {
+  throw "No release artefact for $version in $ReleaseDir. Run 'npm run package:win' or 'npm run package:linux' first."
+}
+
+$files = @()
+foreach ($set in $selected) {
+  $artifactPath = Join-Path $ReleaseDir $set.Artifact
+  $channelPath = Join-Path $ReleaseDir $set.ChannelFile
+  $blockmapPath = Join-Path $ReleaseDir $set.Blockmap
+  if (-not (Test-Path -LiteralPath $artifactPath)) {
+    throw "Missing $($set.Artifact) in $ReleaseDir. Run 'npm run $($set.BuildScript)' first."
+  }
+  if (-not (Test-Path -LiteralPath $channelPath)) {
+    throw "Missing $($set.ChannelFile) in $ReleaseDir. Run 'npm run $($set.BuildScript)' first."
+  }
+  if (-not (Test-Path -LiteralPath $blockmapPath)) {
+    throw "Missing $($set.Blockmap) in $ReleaseDir. Repackage rather than publishing a partial differential update."
+  }
+
+  # The channel file and the checksum must describe this exact artefact. A
+  # mismatch here is the failure the updater would otherwise hit after download.
+  $channelText = Get-Content -LiteralPath $channelPath -Raw
+  if ($channelText -notmatch [regex]::Escape($set.Artifact)) {
+    throw "$($set.ChannelFile) does not name $($set.Artifact). Repackage before publishing."
+  }
+  $sizeMatch = [regex]::Match($channelText, '(?m)^\s*size:\s*(\d+)\s*$')
+  if ($sizeMatch.Success) {
+    $declaredSize = [int64]$sizeMatch.Groups[1].Value
+    $actualSize = (Get-Item -LiteralPath $artifactPath).Length
+    if ($declaredSize -ne $actualSize) {
+      throw "$($set.ChannelFile) says $declaredSize bytes but $($set.Artifact) is $actualSize bytes. Repackage before publishing."
+    }
+  }
+
+  $sumPath = Join-Path $ReleaseDir 'SHA256SUMS.txt'
+  if (-not (Test-Path -LiteralPath $sumPath)) {
+    throw "Missing SHA256SUMS.txt in $ReleaseDir. Write a line for $($set.Artifact) first."
+  }
+  $sumLine = Get-Content -LiteralPath $sumPath |
+    Where-Object { $_ -match [regex]::Escape($set.Artifact) } |
+    Select-Object -First 1
+  if (-not $sumLine) {
+    throw "SHA256SUMS.txt has no line for $($set.Artifact)."
+  }
+  $expectedHash = ([regex]::Match($sumLine, '^([0-9A-Fa-f]{64})')).Groups[1].Value
+  if ($expectedHash.Length -ne 64) {
+    throw "SHA256SUMS.txt has an unreadable hash for $($set.Artifact)."
+  }
+  $actualHash = (Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash
+  if ($actualHash -ne $expectedHash.ToUpperInvariant()) {
+    throw "SHA256SUMS.txt says $expectedHash but $($set.Artifact) hashes to $actualHash. Regenerate the checksum."
+  }
+
+  $files += $set.Files
+}
+
+# One checksum file for the folder, whichever platforms were built.
+$files += New-Entry 'SHA256SUMS.txt' 'SHA256SUMS.txt' 'text/plain; charset=utf-8' $revalidate
 
 foreach ($file in $files) {
   $path = Join-Path $ReleaseDir $file.Name
   if (-not (Test-Path -LiteralPath $path)) {
-    throw "Missing $($file.Name) in $ReleaseDir. Run 'npm run package:win' and write SHA256SUMS.txt first."
+    throw "Missing $($file.Name) in $ReleaseDir."
   }
   $file | Add-Member -NotePropertyName Path -NotePropertyValue $path
   $file | Add-Member -NotePropertyName Length -NotePropertyValue (Get-Item -LiteralPath $path).Length
-}
-
-# The channel file and the checksum must describe this exact installer. A
-# mismatch here is the failure the updater would otherwise hit after download.
-$channelPath = Join-Path $ReleaseDir $channelFile
-$channelText = Get-Content -LiteralPath $channelPath -Raw
-if ($channelText -notmatch [regex]::Escape($installer)) {
-  throw "$channelFile does not name $installer. Repackage before publishing."
-}
-
-$sizeMatch = [regex]::Match($channelText, '(?m)^\s*size:\s*(\d+)\s*$')
-if ($sizeMatch.Success) {
-  $declaredSize = [int64]$sizeMatch.Groups[1].Value
-  $actualSize = Get-Item -LiteralPath (Join-Path $ReleaseDir $installer) | Select-Object -ExpandProperty Length
-  if ($declaredSize -ne $actualSize) {
-    throw "$channelFile says $declaredSize bytes but $installer is $actualSize bytes. Repackage before publishing."
-  }
-}
-
-$sumPath = Join-Path $ReleaseDir 'SHA256SUMS.txt'
-$sumLine = Get-Content -LiteralPath $sumPath |
-  Where-Object { $_ -match [regex]::Escape($installer) } |
-  Select-Object -First 1
-if (-not $sumLine) {
-  throw "SHA256SUMS.txt has no line for $installer."
-}
-$expectedHash = ([regex]::Match($sumLine, '^([0-9A-Fa-f]{64})')).Groups[1].Value
-if ($expectedHash.Length -ne 64) {
-  throw "SHA256SUMS.txt has an unreadable hash for $installer."
-}
-$actualHash = (Get-FileHash -LiteralPath (Join-Path $ReleaseDir $installer) -Algorithm SHA256).Hash
-if ($actualHash -ne $expectedHash.ToUpperInvariant()) {
-  throw "SHA256SUMS.txt says $expectedHash but $installer hashes to $actualHash. Regenerate the checksum."
 }
 
 $cleanPrefix = $Prefix.Trim('/')
@@ -133,7 +190,8 @@ if ($cleanPrefix) { $base = if ($base) { "$base/$cleanPrefix" } else { $null } }
 if ($AccountId) { $env:CLOUDFLARE_ACCOUNT_ID = $AccountId }
 $npx = Get-Command npx -ErrorAction Stop
 
-Write-Output "Publishing Suura $version to r2://$Bucket/$cleanPrefix"
+$labels = ($selected | ForEach-Object { $_.Label }) -join ' + '
+Write-Output "Publishing Suura $version ($labels) to r2://$Bucket/$cleanPrefix"
 foreach ($file in $files) {
   $key = if ($cleanPrefix) { "$cleanPrefix/$($file.Key)" } else { $file.Key }
   Write-Output ("  {0} ({1:N0} bytes) -> {2}" -f $file.Name, $file.Length, $key)

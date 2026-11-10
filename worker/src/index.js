@@ -1,21 +1,25 @@
-// Serves the Suura installer and feed files from the R2 bucket through
+// Serves the Suura downloads and feed files from the R2 bucket through
 // Cloudflare's edge. The bucket's r2.dev hostname is rate-limited and meant for
 // development; a Worker on workers.dev is not, and its free plan allows 100,000
 // requests a day, which is far more headroom than a download button needs.
 //
 //   https://suura-downloads.<account>.workers.dev/Suura-Setup.exe
+//   https://suura-downloads.<account>.workers.dev/Suura.AppImage
 //
 // Only known release files are exposed. Everything else is a 404, so the bucket
 // can keep holding objects that should not be public at this hostname.
 
-const VERSIONED = /^Suura-\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-Setup\.exe(?:\.blockmap)?$/
+const VERSIONED = /^Suura-\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:-Setup\.exe|\.AppImage)(?:\.blockmap)?$/
 
 function allowed(key) {
   return (
     key === 'Suura-Setup.exe' ||
+    key === 'Suura.AppImage' ||
     key === 'SHA256SUMS.txt' ||
     key === 'latest.yml' ||
     key === 'beta.yml' ||
+    key === 'latest-linux.yml' ||
+    key === 'beta-linux.yml' ||
     VERSIONED.test(key)
   )
 }
@@ -60,7 +64,9 @@ export default {
       'cache-control',
       VERSIONED.test(key) ? 'public, max-age=31536000, immutable' : 'no-cache, max-age=0, must-revalidate'
     )
-    if (key.endsWith('.exe')) headers.set('content-disposition', `attachment; filename="${key}"`)
+    if (key.endsWith('.exe') || key.endsWith('.AppImage')) {
+      headers.set('content-disposition', `attachment; filename="${key}"`)
+    }
 
     const body = request.method === 'HEAD' ? null : object.body
 

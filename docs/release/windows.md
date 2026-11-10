@@ -179,7 +179,10 @@ for localhost; every other feed must be `https://`.
 ### Publishing to R2
 
 `tools/publish-r2.ps1` uploads the installer, blockmap, channel file and
-`SHA256SUMS.txt` for the current version, then checks each one over HTTPS:
+`SHA256SUMS.txt` for the current version, then checks each one over HTTPS. It
+also publishes a Linux build when one is in `release/`, or either platform
+alone with `-Platform windows` / `-Platform linux`; the Windows sequence is
+unchanged:
 
 ```powershell
 npx wrangler login        # once, or set CLOUDFLARE_API_TOKEN

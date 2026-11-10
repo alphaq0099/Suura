@@ -13,10 +13,10 @@ import { resolveUpdateFeedUrl } from '@shared/update'
 /**
  * The app's update channel, built on electron-updater's generic provider.
  *
- * The feed is a static HTTPS folder holding `latest.yml`/`beta.yml`, the
- * installer and its blockmap. There is no update server to run: any static host
- * works, and the URL is a setting so a private mirror can be used without a
- * rebuild.
+ * The feed is a static HTTPS folder holding `latest.yml`/`beta.yml` on Windows
+ * and `latest-linux.yml`/`beta-linux.yml` on Linux, the build that file names,
+ * and its blockmap. There is no update server to run: any static host works, and
+ * the URL is a setting so a private mirror can be used without a rebuild.
  *
  * Two deliberate rules:
  *

@@ -1070,8 +1070,12 @@ nothing ships for Linux until the Windows 1.0 tag exists. Details and the build 
       its own self-test. The run found five Windows assumptions in the tests, a hard-coded separator in the traversal
       check, and one real handler bug — `player-media://` resolved `..` for the allowlist but not before `stat`, so an
       allowed request 404'd on Unix.
-- [ ] Put `latest-linux.yml` in the R2 feed, and a publish path that uploads it beside `latest.yml`.
-- [ ] Update wording for a file that replaces itself rather than an installer that runs.
+- [x] `latest-linux.yml` in the R2 feed: `tools/publish-r2.ps1` publishes the AppImage, its blockmap, the channel file
+      and the `Suura.AppImage` alias beside the Windows files, or either platform alone with `-Platform`. The Worker
+      allowlist gained the AppImage and `-linux` channel names, and the Settings hint names the Linux channel file.
+- [x] Update wording for a file that replaces itself rather than an installer that runs: "Restart and install" already
+      says it, the Settings hint names the channel file per platform, and the release doc explains that the AppImage must
+      be writable because it is replaced at quit.
 - [ ] A `.deb` target once the AppImage is settled.
 - [x] `ubuntu-latest` CI job: build, smoke and self-test under Xvfb, with ffmpeg and the Chromium libraries installed. It
       runs beside the Windows job, so a Linux-only break stops a push instead of waiting for a release.

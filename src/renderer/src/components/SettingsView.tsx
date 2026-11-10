@@ -2490,7 +2490,8 @@ export function SettingsView(props: SettingsViewProps) {
 
                 <p className="card-hint">
                   Nothing is downloaded until you press Check now. The feed is a static folder serving{' '}
-                  {settings.update.channel === 'beta' ? 'beta.yml' : 'latest.yml'}, the installer and its blockmap.
+                  {settings.update.channel === 'beta' ? 'beta.yml' : 'latest.yml'} on Windows (add <code>-linux</code> on
+                  Linux) and the release it names.
                 </p>
 
                 <div className="field-row">

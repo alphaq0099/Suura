@@ -80,6 +80,11 @@ What the run taught us:
 - `src/main/tray.ts` — asks the session bus for a StatusNotifier host before
   creating the icon, so a session without one gets no tray and close-to-tray
   stays off instead of an invisible window.
+- `tools/publish-r2.ps1` and `worker/src/index.js` — the AppImage, its blockmap,
+  `latest-linux.yml` and the `Suura.AppImage` alias are published and served
+  beside the Windows files, with the same channel/size/checksum checks.
+- `src/renderer/src/components/SettingsView.tsx` — the update hint names the
+  channel file per platform instead of promising an installer and a blockmap.
 - `tools/smoke.ts` — checks both platform tables, so a wrong Linux digest fails
   on Windows CI rather than on a user's first download.
 
@@ -129,6 +134,34 @@ Headless runs (CI, a server) need a display:
 xvfb-run -a npx electron . --selftest
 ```
 
+## Publishing
+
+The Linux build writes two files, and both belong in the same feed folder as
+the Windows release:
+
+- `Suura-<version>.AppImage`, the download itself, cached forever;
+- `latest-linux.yml` (or `beta-linux.yml` for a prerelease), revalidated on
+  every request. electron-updater asks for this name on Linux by itself, so no
+  setting changes.
+
+`tools/publish-r2.ps1` publishes whichever platforms are present in `release/`,
+or one explicitly:
+
+```powershell
+pwsh -File tools/publish-r2.ps1 -Bucket surra -BaseUrl https://updates.example.com
+pwsh -File tools/publish-r2.ps1 -Platform linux -DryRun
+```
+
+It checks that `latest-linux.yml` names the AppImage, that the size matches and
+that `SHA256SUMS.txt` has the AppImage's digest before uploading anything, then
+re-downloads every object over HTTPS. The stable alias is `Suura.AppImage`, for
+the same reason `Suura-Setup.exe` exists: one URL that survives releases.
+
+An AppImage updates by being replaced on disk at quit, not by running an
+installer, so "Restart and install" is already the honest wording. It only
+works when the running file is writable; an AppImage started from a read-only
+location must be updated by downloading the new one yourself.
+
 ## What still has to be done
 
 - [x] First build on Linux, and the self-test there. The first run found five
@@ -146,10 +179,11 @@ xvfb-run -a npx electron . --selftest
       StatusNotifier host exists before creating the icon. No host means no tray
       and close-to-tray stays off, instead of an invisible icon. A probe that
       cannot run counts as "cannot tell" and is allowed through.
-- [ ] Updates: publish `latest-linux.yml` beside `latest.yml`, and teach
-      `tools/publish-r2.ps1` (or a Linux equivalent) to upload it. An AppImage
-      updates only when it is the running file, so the "Restart and install"
-      wording needs a Linux sentence.
+- [x] Updates: `tools/publish-r2.ps1` publishes the AppImage, its blockmap,
+      `latest-linux.yml` and the `Suura.AppImage` alias beside the Windows files,
+      verifying the channel file and the checksum first. The Settings hint now
+      names the Linux channel file, and the "Restart and install" wording was
+      already true for a file that replaces itself at quit.
 - [ ] Packaging: a `.deb` target and a desktop file with the icon and categories.
 - [ ] Docs and site: a Linux download with its own SHA-256, the FAQ's "Windows
       only" answer, and README's platform table.
