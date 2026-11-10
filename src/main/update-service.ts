@@ -8,7 +8,8 @@ import {
 import type { Logger } from '@core/logging/logger'
 import type { SettingsService } from '@core/settings/settings-service'
 import type { UpdateChannel, UpdateStatus } from '@shared/types'
-import { resolveUpdateFeedUrl } from '@shared/update'
+import { canUpdateInPlace } from '@shared/platform'
+import { resolveUpdateFeedUrl, updateChannelFileName } from '@shared/update'
 
 /**
  * The app's update channel, built on electron-updater's generic provider.
@@ -18,12 +19,14 @@ import { resolveUpdateFeedUrl } from '@shared/update'
  * and its blockmap. There is no update server to run: any static host works, and
  * the URL is a setting so a private mirror can be used without a rebuild.
  *
- * Two deliberate rules:
+ * Three deliberate rules:
  *
  * - Nothing is checked until a feed is configured. A missing host is a clear
  *   "not configured" state, not a failed request on every launch.
  * - A check never installs anything by itself. It finds a version, the user
  *   downloads it, and "Restart and install" is the only path that quits.
+ * - A build that cannot replace itself says so. A `.deb` belongs to the package
+ *   manager, so the app does not offer an in-app update that would need root.
  */
 
 /** Let the window and the first scan settle before asking the network. */
@@ -35,10 +38,10 @@ function messageOf(error: unknown): string {
 }
 
 /** Maps electron-updater's codes to sentences a user can act on. */
-export function describeUpdateError(error: unknown, channel: UpdateChannel): string {
+export function describeUpdateError(error: unknown, channel: UpdateChannel, platform: string): string {
   const message = messageOf(error)
   if (message.includes('ERR_UPDATER_CHANNEL_FILE_NOT_FOUND')) {
-    const file = channel === 'beta' ? 'beta.yml' : 'latest.yml'
+    const file = updateChannelFileName(channel, platform)
     return `The update feed has no ${file}. Check the feed URL and channel.`
   }
   if (message.includes('ERR_UPDATER_INVALID_UPDATE_INFO')) {
@@ -56,6 +59,8 @@ export interface UpdateServiceOptions {
   onChange?: (status: UpdateStatus) => void
   /** Overridable for tests: the service must stay dormant when not packaged. */
   isPackaged?: () => boolean
+  /** Overridable for tests: a `.deb` install cannot replace itself. */
+  canUpdate?: () => boolean
   /** Overridable for tests so nothing is downloaded or installed. */
   updater?: AppUpdater
   now?: () => number
@@ -64,6 +69,7 @@ export interface UpdateServiceOptions {
 export class UpdateService {
   private readonly updater: AppUpdater
   private readonly isPackaged: () => boolean
+  private readonly canUpdate: () => boolean
   private readonly now: () => number
   private status: UpdateStatus
   private configured = false
@@ -74,6 +80,7 @@ export class UpdateService {
   constructor(private readonly deps: UpdateServiceOptions) {
     this.updater = deps.updater ?? autoUpdater
     this.isPackaged = deps.isPackaged ?? (() => app.isPackaged)
+    this.canUpdate = deps.canUpdate ?? (() => canUpdateInPlace(process.platform, process.env))
     this.now = deps.now ?? Date.now
     this.status = this.disabledStatus()
 
@@ -125,7 +132,7 @@ export class UpdateService {
         state: 'error',
         percent: null,
         canInstall: false,
-        message: describeUpdateError(error, channel)
+        message: describeUpdateError(error, channel, process.platform)
       })
     }))
 
@@ -164,7 +171,7 @@ export class UpdateService {
         state: 'error',
         percent: null,
         canInstall: false,
-        message: describeUpdateError(error, channel)
+        message: describeUpdateError(error, channel, process.platform)
       })
     }
 
@@ -194,7 +201,7 @@ export class UpdateService {
         state: 'error',
         percent: null,
         canInstall: false,
-        message: describeUpdateError(error, channel)
+        message: describeUpdateError(error, channel, process.platform)
       })
     }
     return this.statusSnapshot()
@@ -211,7 +218,7 @@ export class UpdateService {
   /** Arms the one check per day, after the window has settled. */
   scheduleAutoCheck(): void {
     if (this.autoCheckTimer) return
-    if (!this.isPackaged()) return
+    if (!this.isSupported()) return
     const settings = this.deps.settings.get().update
     if (!settings.autoCheck || !settings.feedUrl) return
     const last = typeof settings.lastCheckAt === 'number' ? settings.lastCheckAt : 0
@@ -247,10 +254,24 @@ export class UpdateService {
     this.deps.onChange?.(this.statusSnapshot())
   }
 
+  /** False for a development run and for a package it cannot replace. */
+  private isSupported(): boolean {
+    return this.isPackaged() && this.canUpdate()
+  }
+
+  /** Why updates are off, in one sentence the About card can show. */
+  private unsupportedMessage(): string {
+    if (!this.isPackaged()) return 'Updates are only available in an installed build.'
+    if (process.platform === 'linux') {
+      return 'This build updates through your package manager. The AppImage can update in place.'
+    }
+    return 'This build cannot install an update in place.'
+  }
+
   private disabledStatus(): UpdateStatus {
     const settings = this.deps.settings.get().update
-    const supported = this.isPackaged()
-    const feedUrl = resolveUpdateFeedUrl(settings.feedUrl, settings.channel)
+    const supported = this.isSupported()
+    const feedUrl = resolveUpdateFeedUrl(settings.feedUrl, settings.channel, process.platform)
     return {
       state: 'disabled',
       currentVersion: app.getVersion(),
@@ -261,7 +282,7 @@ export class UpdateService {
         ? feedUrl
           ? null
           : 'No update feed is configured. Set the feed URL below to enable updates.'
-        : 'Updates are only available in an installed build.',
+        : this.unsupportedMessage(),
       supported,
       canInstall: false,
       lastCheckAt: settings.lastCheckAt
@@ -270,8 +291,8 @@ export class UpdateService {
 
   private applySettings(): void {
     const settings = this.deps.settings.get().update
-    const supported = this.isPackaged()
-    const feedUrl = resolveUpdateFeedUrl(settings.feedUrl, settings.channel)
+    const supported = this.isSupported()
+    const feedUrl = resolveUpdateFeedUrl(settings.feedUrl, settings.channel, process.platform)
     const base = settings.feedUrl
     const configured = supported && base !== null && feedUrl !== null
 
@@ -293,7 +314,7 @@ export class UpdateService {
           feedUrl,
           supported,
           canInstall: false,
-          message: describeUpdateError(error, settings.channel)
+          message: describeUpdateError(error, settings.channel, process.platform)
         }
         this.deps.onChange?.(this.statusSnapshot())
         return
@@ -314,7 +335,7 @@ export class UpdateService {
           ? feedUrl
             ? null
             : 'No update feed is configured. Set the feed URL below to enable updates.'
-          : 'Updates are only available in an installed build.',
+          : this.unsupportedMessage(),
         lastCheckAt: settings.lastCheckAt
       }
       this.deps.onChange?.(this.statusSnapshot())

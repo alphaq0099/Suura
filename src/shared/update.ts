@@ -2,15 +2,16 @@ import { UPDATE_CHANNELS } from './settings-defaults'
 import type { DeepPartial, UpdateChannel, UpdateSettings } from './types'
 
 /**
- * The channel file each feed serves.
+ * The channel file electron-updater requests on a platform.
  *
- * electron-builder writes `latest.yml` for a stable release and `beta.yml` for
- * a pre-release. Keeping the mapping here means Settings, the updater and the
- * release docs agree on the one filename that matters.
+ * electron-builder writes `latest.yml` for Windows and `latest-linux.yml` for
+ * Linux, so one feed folder can serve both without the names colliding. The
+ * mapping is a function rather than a constant because the same feed has two
+ * file names, and a Linux AppImage must ask for the Linux one.
  */
-export const UPDATE_CHANNEL_FILES: Readonly<Record<UpdateChannel, string>> = {
-  stable: 'latest.yml',
-  beta: 'beta.yml'
+export function updateChannelFileName(channel: UpdateChannel, platform: string): string {
+  const name = channel === 'beta' ? 'beta' : 'latest'
+  return platform === 'linux' ? `${name}-linux.yml` : `${name}.yml`
 }
 
 /**
@@ -19,14 +20,18 @@ export const UPDATE_CHANNEL_FILES: Readonly<Record<UpdateChannel, string>> = {
  * Returns null when the base is empty or not an absolute http(s) URL, so a
  * hand-edited config cannot make the app ask for `undefined/latest.yml`.
  */
-export function resolveUpdateFeedUrl(base: string | null | undefined, channel: UpdateChannel): string | null {
+export function resolveUpdateFeedUrl(
+  base: string | null | undefined,
+  channel: UpdateChannel,
+  platform: string
+): string | null {
   if (typeof base !== 'string') return null
   const trimmed = base.trim().replace(/\/+$/, '')
   if (trimmed.length === 0) return null
   try {
     const parsed = new URL(trimmed)
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null
-    return `${trimmed}/${UPDATE_CHANNEL_FILES[channel]}`
+    return `${trimmed}/${updateChannelFileName(channel, platform)}`
   } catch {
     return null
   }

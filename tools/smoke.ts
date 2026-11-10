@@ -242,7 +242,7 @@ import {
 import { buildArtworkUrl, parseArtworkUrl } from '@shared/artwork-url'
 import { formatAudioSummary, formatCodec } from '@shared/format'
 import { nextDecision, shuffleFrom, shuffled } from '@shared/queue'
-import { hasGlobalMediaKeys } from '@shared/platform'
+import { canUpdateInPlace, hasGlobalMediaKeys } from '@shared/platform'
 import { sanitizeTaskbarState, taskbarControls } from '@shared/taskbar'
 import { parseRangeHeader } from '@shared/range'
 import { isImportedPlaylistTrackId, onlineEntryToTrack, onlinePlaylistItemToTrack } from '@shared/online'
@@ -3484,19 +3484,29 @@ async function main(): Promise<void> {
     )
     checkEqual(
       'update: the default feed resolves to latest.yml',
-      resolveUpdateFeedUrl(DEFAULT_SETTINGS.update.feedUrl, 'stable'),
+      resolveUpdateFeedUrl(DEFAULT_SETTINGS.update.feedUrl, 'stable', 'win32'),
       'https://pub-f78cb36c07324422ba352033e3d71909.r2.dev/latest.yml'
     )
     check('update: background checks are on by default', DEFAULT_SETTINGS.update.autoCheck)
     checkEqual(
       'update: a stable feed resolves to latest.yml',
-      resolveUpdateFeedUrl('https://updates.example.com/suura', 'stable'),
+      resolveUpdateFeedUrl('https://updates.example.com/suura', 'stable', 'win32'),
       'https://updates.example.com/suura/latest.yml'
     )
     checkEqual(
       'update: a beta feed resolves to beta.yml',
-      resolveUpdateFeedUrl('https://updates.example.com/suura/', 'beta'),
+      resolveUpdateFeedUrl('https://updates.example.com/suura/', 'beta', 'win32'),
       'https://updates.example.com/suura/beta.yml'
+    )
+    checkEqual(
+      'update: the same feed names the Linux channel file',
+      resolveUpdateFeedUrl('https://updates.example.com/suura', 'stable', 'linux'),
+      'https://updates.example.com/suura/latest-linux.yml'
+    )
+    checkEqual(
+      'update: a Linux beta feed names its own file',
+      resolveUpdateFeedUrl('https://updates.example.com/suura', 'beta', 'linux'),
+      'https://updates.example.com/suura/beta-linux.yml'
     )
     checkEqual(
       'update: normalisation trims trailing slashes',
@@ -3522,6 +3532,14 @@ async function main(): Promise<void> {
     check('update: an invalid feed URL is stored as null', normalizeUpdate({ feedUrl: 'not a url' }).feedUrl === null)
     checkEqual('update: a check timestamp is rounded', normalizeUpdate({ lastCheckAt: 1234.6 }).lastCheckAt, 1235)
     checkEqual('update: an unset check timestamp stays null', normalizeUpdate({ lastCheckAt: -5 }).lastCheckAt, null)
+
+    // Only a build that can replace itself offers an in-app update. A .deb
+    // belongs to dpkg, and pretending otherwise would ask for a root password
+    // and then fail against a feed that does not carry the package.
+    check('update: a Windows install replaces itself', canUpdateInPlace('win32', {}))
+    check('update: an AppImage replaces itself', canUpdateInPlace('linux', { APPIMAGE: '/home/u/Suura.AppImage' }))
+    check('update: a .deb does not replace itself', !canUpdateInPlace('linux', { PATH: '/usr/bin' }))
+    check('update: an unpacked Linux build does not replace itself', !canUpdateInPlace('linux', {}))
 
     check('settings: fingerprint matching is off until a key is supplied', DEFAULT_SETTINGS.metadata.acoustidKey === null)
 

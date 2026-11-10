@@ -64,8 +64,9 @@ nsis:
 
 # Linux is a second target, not a port: the core, the player and the engine
 # already run there; what differs is packaging, the autostart entry and the
-# updater's channel file (`latest-linux.yml`). AppImage first, because it is the
-# only Linux target electron-updater can update in place.
+# updater's channel file (`latest-linux.yml`). AppImage is the target built
+# here, because it is the only Linux packaging electron-updater can replace in
+# place; the `.deb` comes from electron-builder.deb.yml and has no update feed.
 linux:
   icon: build/icon.png
   category: AudioVideo

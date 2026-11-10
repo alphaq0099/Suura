@@ -50,7 +50,7 @@ import type {
 } from '@shared/types'
 import { COOKIE_BROWSERS, normalizePoTokenProviderUrl, usesAppBoundEncryption } from '@shared/youtube'
 import { normalizeAcoustidKey } from '@shared/acoustid'
-import { resolveUpdateFeedUrl } from '@shared/update'
+import { normalizeUpdateFeedUrl } from '@shared/update'
 import { AudioSettingsPanel } from './AudioSettingsPanel'
 import { DownloadIcon, FolderIcon, InfoIcon, RefreshIcon, SpinnerIcon, TrashIcon } from './Icons'
 
@@ -477,8 +477,7 @@ export function SettingsView(props: SettingsViewProps) {
     setUpdateFeedDraft(settings.update.feedUrl ?? '')
   }, [settings.update.feedUrl])
   const updateFeedDraftValid =
-    updateFeedDraft.trim().length === 0 ||
-    resolveUpdateFeedUrl(updateFeedDraft.trim(), settings.update.channel) !== null
+    updateFeedDraft.trim().length === 0 || normalizeUpdateFeedUrl(updateFeedDraft.trim()) !== null
   const commitUpdateFeed = (): void => {
     const trimmed = updateFeedDraft.trim()
     if (!updateFeedDraftValid || trimmed === (settings.update.feedUrl ?? '')) return
@@ -2431,7 +2430,7 @@ export function SettingsView(props: SettingsViewProps) {
                     <span>
                       Channel
                       <InfoHint label="About update channels">
-                        Stable reads latest.yml. Beta reads beta.yml and may receive a release before it is promoted.
+                        Stable reads the latest channel file. Beta may receive a release before it is promoted.
                       </InfoHint>
                     </span>
                     <select
@@ -2442,15 +2441,15 @@ export function SettingsView(props: SettingsViewProps) {
                         })
                       }
                     >
-                      <option value="stable">Stable (latest.yml)</option>
-                      <option value="beta">Beta (beta.yml)</option>
+                      <option value="stable">Stable</option>
+                      <option value="beta">Beta (may be ahead)</option>
                     </select>
                   </label>
                   <label className="field wide">
                     <span>
                       Feed folder
                       <InfoHint label="About the update feed">
-                        A static HTTPS folder holding the channel file, installer and blockmap.
+                        A static HTTPS folder holding the channel file and the build it names.
                       </InfoHint>
                     </span>
                     <input

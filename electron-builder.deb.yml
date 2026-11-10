@@ -1,0 +1,21 @@
+# The `.deb`, built beside the AppImage and deliberately kept out of the update
+# feed.
+#
+# electron-updater can replace an AppImage in place because the file is the
+# installation. A `.deb` belongs to dpkg: installing a new one needs root, and
+# the feed does not serve the package. Clearing `publish` here means this build
+# writes no app-update.yml and adds no `.deb` entry to `latest-linux.yml`, so a
+# feed check can never offer a file that is not there. The app also reports
+# updates as unavailable in this build (see `canUpdateInPlace`).
+#
+#   npx electron-builder --config electron-builder.deb.yml --linux deb
+#
+# Everything else comes from the main config.
+extends: ./electron-builder.yml
+publish: null
+
+linux:
+  # dpkg refuses a package without a maintainer contact, and the project has no
+  # public mailbox; GitHub's per-account address reaches the author and outlives
+  # a laptop.
+  maintainer: alphaq0099 <alphaq0099@users.noreply.github.com>

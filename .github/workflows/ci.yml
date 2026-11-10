@@ -90,6 +90,27 @@ jobs:
       - name: Self-test
         run: xvfb-run -a npm run selftest -- --no-sandbox
 
+      # Packaging needs no display and no FUSE, only the tools electron-builder
+      # downloads. A broken target or a missing desktop entry fails here rather
+      # than on the first person who runs a release build. The .deb is a second
+      # invocation because it is built without the update feed: a package dpkg
+      # owns must not advertise an in-app update the feed does not carry.
+      - name: Package AppImage
+        run: npx electron-builder --linux AppImage
+      - name: Package deb
+        run: npx electron-builder --config electron-builder.deb.yml --linux deb
+
+      # The feed the AppImage updates from must name the AppImage and nothing
+      # else. A `.deb` line would advertise a file the feed does not serve, and a
+      # missing AppImage line would leave the updater with nothing to fetch.
+      - name: Check the Linux artifacts
+        run: |
+          ls -l release
+          test -n "$(find release -maxdepth 1 -name '*.AppImage' -print -quit)"
+          test -n "$(find release -maxdepth 1 -name '*.deb' -print -quit)"
+          grep -q '\.AppImage' release/latest-linux.yml
+          ! grep -q '\.deb' release/latest-linux.yml
+
   perf:
     name: Performance budgets
     runs-on: windows-latest

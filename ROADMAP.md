@@ -1042,7 +1042,7 @@ nothing ships for Linux until the Windows 1.0 tag exists. Details and the build 
 [`docs/release/linux.md`](docs/release/linux.md).
 
 **Why it is small:** `node:sqlite` instead of a native module, `app.getPath()` for every folder, `navigator.mediaSession`
-(which Chromium publishes over MPRIS), and platform branches already present in the sidecar layer.
+for now-playing integration, and platform branches already present in the sidecar layer.
 
 **Why it is not free:** the engine manifest, the executable bit, the autostart entry, the AppImage target, the
 `latest-linux.yml` update channel, the docs, and a second hardware matrix.
@@ -1065,20 +1065,24 @@ nothing ships for Linux until the Windows 1.0 tag exists. Details and the build 
 
 ### 15.2 Packaging and updates
 
-- [x] First AppImage build on Linux, and the self-test there: typecheck, smoke (1404) and the self-test (428) pass
-      on Ubuntu 24.04, the AppImage builds at 124 MB alongside its `latest-linux.yml`, and the packaged build passes
-      its own self-test. The run found five Windows assumptions in the tests, a hard-coded separator in the traversal
-      check, and one real handler bug — `player-media://` resolved `..` for the allowlist but not before `stat`, so an
-      allowed request 404'd on Unix.
+- [x] First AppImage build on Linux, and the self-test there: typecheck, smoke (1404 then, 1417 with the tar and platform
+      checks) and the self-test (428) pass on Ubuntu 24.04, the AppImage builds at 124 MB alongside its
+      `latest-linux.yml`, and the packaged build passes its own self-test. The run found five Windows assumptions in the
+      tests, a hard-coded separator in the traversal check, and one real handler bug — `player-media://` resolved `..`
+      for the allowlist but not before `stat`, so an allowed request 404'd on Unix.
 - [x] `latest-linux.yml` in the R2 feed: `tools/publish-r2.ps1` publishes the AppImage, its blockmap, the channel file
       and the `Suura.AppImage` alias beside the Windows files, or either platform alone with `-Platform`. The Worker
       allowlist gained the AppImage and `-linux` channel names, and the Settings hint names the Linux channel file.
 - [x] Update wording for a file that replaces itself rather than an installer that runs: "Restart and install" already
       says it, the Settings hint names the channel file per platform, and the release doc explains that the AppImage must
       be writable because it is replaced at quit.
-- [ ] A `.deb` target once the AppImage is settled.
-- [x] `ubuntu-latest` CI job: build, smoke and self-test under Xvfb, with ffmpeg and the Chromium libraries installed. It
-      runs beside the Windows job, so a Linux-only break stops a push instead of waiting for a release.
+- [x] A `.deb` target beside the AppImage, built by `package:linux` and by the Linux CI job from
+      `electron-builder.deb.yml`, which clears `publish`: no `app-update.yml`, no `.deb` entry in
+      `latest-linux.yml`, and `canUpdateInPlace` tells About that updates come from the package manager. The
+      maintainer field is the project's GitHub address; installing one by hand is still part of the hardware pass.
+- [x] `ubuntu-latest` CI job: build, smoke and self-test under Xvfb, with ffmpeg and the Chromium libraries installed.
+      It packages both targets and asserts that `latest-linux.yml` names the AppImage and no `.deb`. It runs beside
+      the Windows job, so a Linux-only break stops a push instead of waiting for a release.
 
 ### 15.3 Release
 

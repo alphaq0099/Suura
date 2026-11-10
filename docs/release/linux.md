@@ -45,8 +45,10 @@ What the run taught us:
 - Ubuntu 24.04 x86_64 first; an AppImage, because it is the only Linux packaging
   electron-updater can update in place.
 - GNOME and KDE on X11 and Wayland are the intended desktops, in that order.
-- No `.deb`, Snap or Flatpak in the first release. A `.deb` is the next packaging
-  step if the AppImage is well received.
+- A `.deb` is built beside the AppImage for people who prefer a package manager.
+  It does not update itself: electron-updater only replaces an AppImage, and a
+  `.deb` belongs to `dpkg`. The app reports that instead of offering a check the
+  feed cannot satisfy. Snap and Flatpak are not planned for the first release.
 
 ## What already works without a change
 
@@ -71,12 +73,20 @@ What the run taught us:
   (honouring `XDG_CONFIG_HOME`) and registers `$APPIMAGE` when set, because an
   AppImage's `app.getPath('exe')` is a temporary mount that disappears at reboot.
 - `electron-builder.yml` — an AppImage target for x64 and `build/icon.png`.
-- `package.json` — `npm run package:linux`.
+- `electron-builder.deb.yml` — the `.deb` as a separate build with `publish: null`,
+  so it carries no `app-update.yml` and adds no entry to `latest-linux.yml`.
+- `src/shared/platform.ts` — two platform facts that do not need Electron, so the
+  smoke suite checks both: `hasGlobalMediaKeys` (Wayland has no global grab) and
+  `canUpdateInPlace` (a Windows install or a Linux AppImage can replace itself).
+- `src/main/update-service.ts` — a `.deb` reports that updates come from the
+  package manager instead of offering a check that would ask for a root password,
+  and the channel file it names is `latest-linux.yml` on Linux.
+- `package.json` — `npm run package:linux`, and a `homepage` so the deb's
+  Homepage field does not depend on a `.git` folder being present.
 - `src/engine/sidecar/tar.ts` — a `.tar.gz` reader beside the ZIP one, because
   AcoustID publishes `fpcalc` for Linux only in that shape.
-- `src/shared/platform.ts` and `src/main/media-keys.ts` — Wayland has no global
-  key grab, so the four media keys are not registered there and the desktop's
-  own routing is left in charge.
+- `src/main/media-keys.ts` — Wayland leaves the four keys to the compositor and
+  says so in the log.
 - `src/main/tray.ts` — asks the session bus for a StatusNotifier host before
   creating the icon, so a session without one gets no tray and close-to-tray
   stays off instead of an invisible window.
@@ -118,8 +128,14 @@ npm ci
 npm run typecheck
 npm run smoke
 npm run build
-npx electron-builder --linux AppImage     # release/Suura-<version>.AppImage
+npm run package:linux                       # AppImage + deb in release/
+npx electron-builder --linux AppImage       # just the updatable one
+npx electron-builder --config electron-builder.deb.yml --linux deb
 ```
+
+The second command is separate on purpose: the `.deb` config clears `publish`,
+so that build writes no update metadata and cannot put a `.deb` in the
+`latest-linux.yml` the AppImage updater reads.
 
 Electron needs the usual Chromium libraries, and the AppImage needs FUSE 2 to
 run (or `--appimage-extract-and-run` where FUSE is unavailable):
@@ -162,6 +178,14 @@ installer, so "Restart and install" is already the honest wording. It only
 works when the running file is writable; an AppImage started from a read-only
 location must be updated by downloading the new one yourself.
 
+The `.deb` is not part of the update feed: `dpkg` owns it, and electron-updater
+does not replace it. Publish it on the releases page with its own checksum, and
+let the package manager own upgrades. Its maintainer field is
+`alphaq0099@users.noreply.github.com`, the only public address this project has.
+The app knows the difference: a `.deb` install reports updates as unavailable
+and names the package manager, rather than downloading a package it could not
+install without root.
+
 ## What still has to be done
 
 - [x] First build on Linux, and the self-test there. The first run found five
@@ -184,13 +208,17 @@ location must be updated by downloading the new one yourself.
       verifying the channel file and the checksum first. The Settings hint now
       names the Linux channel file, and the "Restart and install" wording was
       already true for a file that replaces itself at quit.
-- [ ] Packaging: a `.deb` target and a desktop file with the icon and categories.
+- [x] Packaging: a `.deb` target beside the AppImage, and the desktop file with
+      the icon and categories. Both are built by `npm run package:linux` and by
+      the Linux CI job; the `.deb` build has no `publish` config, so it carries no
+      update metadata and the app says its updates come from the package manager.
 - [ ] Docs and site: a Linux download with its own SHA-256, the FAQ's "Windows
       only" answer, and README's platform table.
 - [x] CI: an `ubuntu-latest` job that installs ffmpeg and the Chromium libraries,
-      builds, smokes and runs the self-test under Xvfb. `--no-sandbox` is passed
-      to Electron there because the runner restricts user namespaces; it is a
-      runner concession, not a shipped default.
+      builds, smokes and runs the self-test under Xvfb, packages the AppImage and
+      the .deb, and checks that `latest-linux.yml` names the AppImage but not the
+      .deb. `--no-sandbox` is passed to Electron there because the runner restricts
+      user namespaces; it is a runner concession, not a shipped default.
 - [ ] A Linux hardware pass, mirroring `windows.md`: GNOME/KDE, X11/Wayland,
       100–200% scaling, HiDPI, audio device switching, a 10k-track library.
 
