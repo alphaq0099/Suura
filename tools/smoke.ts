@@ -14,7 +14,7 @@ import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, basename, join, relative } from 'node:path'
 import { promisify } from 'node:util'
-import { deflateRawSync } from 'node:zlib'
+import { deflateRawSync, gzipSync } from 'node:zlib'
 
 import {
   ACCENT_CHOICES,
@@ -176,7 +176,9 @@ import {
   ytDlpRollbackStatus
 } from '@engine/sidecar/rollback'
 import { resolveUpdateFeedUrl, sanitizeUpdateSettingsPatch } from '@shared/update'
-import { isSafeEntryName, readZipEntry } from '@engine/sidecar/zip'
+import { isSafeEntryName } from '@engine/sidecar/archive-entry'
+import { readTarGzEntry } from '@engine/sidecar/tar'
+import { readZipEntry } from '@engine/sidecar/zip'
 import { RequestScheduler } from '@engine/sidecar/request-scheduler'
 import { retryAfterMs, retryWaitMs } from '@core/scheduling/provider-retry'
 import {
@@ -399,6 +401,42 @@ function buildZip(entries: readonly ZipTestEntry[]): Buffer {
   end.writeUInt32LE(directory.length, 12)
   end.writeUInt32LE(offset, 16)
   return Buffer.concat([...locals, directory, end])
+}
+
+interface TarTestEntry {
+  name: string
+  data: Buffer
+  /** A tar type flag; `0` is a regular file and `5` a directory. */
+  type?: string
+}
+
+/**
+ * Builds the smallest valid ustar archive, gzipped, for the reader tests.
+ *
+ * Header checksums are real because the reader is allowed to trust them later;
+ * the sizes and the member names are the parts under test.
+ */
+function buildTarGz(entries: readonly TarTestEntry[]): Buffer {
+  const blocks: Buffer[] = []
+  for (const entry of entries) {
+    const header = Buffer.alloc(512)
+    const name = Buffer.from(entry.name, 'utf8')
+    name.copy(header, 0, 0, Math.min(name.length, 100))
+    header.write('0000644\0', 100, 'ascii')
+    header.write(`${entry.data.length.toString(8).padStart(11, '0')}\0`, 124, 'ascii')
+    header.write('00000000000\0', 136, 'ascii')
+    header.write('        ', 148, 'ascii')
+    header.write(entry.type ?? '0', 156, 'ascii')
+    header.write('ustar\0', 257, 'ascii')
+    header.write('00', 263, 'ascii')
+    let sum = 0
+    for (const byte of header) sum += byte
+    header.write(`${sum.toString(8).padStart(6, '0')}\0 `, 148, 'ascii')
+    const padding = Buffer.alloc((512 - (entry.data.length % 512)) % 512)
+    blocks.push(header, entry.data, padding)
+  }
+  blocks.push(Buffer.alloc(1024))
+  return gzipSync(Buffer.concat(blocks))
 }
 
 async function main(): Promise<void> {
@@ -8266,8 +8304,12 @@ async function main(): Promise<void> {
         assets.map((asset) => asset.url).join(' ')
       )
       check(
-        `sidecar: ${platform} zip assets name the exact member`,
-        assets.every((asset) => asset.kind !== 'zip' || Boolean(asset.entry))
+        `sidecar: ${platform} archive assets name the exact member`,
+        assets.every((asset) => asset.kind === 'file' || Boolean(asset.entry))
+      )
+      check(
+        `sidecar: ${platform} archive kinds are understood`,
+        assets.every((asset) => asset.kind === 'file' || asset.kind === 'zip' || asset.kind === 'tar.gz')
       )
       check(
         `sidecar: ${platform} optional assets are only fpcalc`,
@@ -8283,7 +8325,7 @@ async function main(): Promise<void> {
       SIDECAR_ASSETS.filter((asset) => asset.optional)
         .map((asset) => asset.id)
         .join(','),
-      process.platform === 'win32' ? 'fpcalc' : ''
+      'fpcalc'
     )
     check('sidecar: this build uses its platform table', assetsForPlatform(process.platform) === SIDECAR_ASSETS)
     checkEqual('sidecar: lookup by id returns its row', sidecarAsset('yt-dlp').id, 'yt-dlp')
@@ -8336,12 +8378,49 @@ async function main(): Promise<void> {
       missingMember
     )
 
+    // The tar reader, for the archive shape AcoustID uses on Linux.
+    const memberTar = buildTarGz([
+      { name: 'chromaprint-fpcalc-1.6.2-linux-x86_64/', data: Buffer.alloc(0), type: '5' },
+      { name: 'chromaprint-fpcalc-1.6.2-linux-x86_64/fpcalc', data: Buffer.from('fake-fpcalc') }
+    ])
+    check(
+      'sidecar: a gzipped tar member is extracted',
+      readTarGzEntry(memberTar, 'chromaprint-fpcalc-1.6.2-linux-x86_64/fpcalc').toString() === 'fake-fpcalc'
+    )
+    let tarTraversal = ''
+    try {
+      readTarGzEntry(memberTar, '../evil')
+    } catch (error) {
+      tarTraversal = error instanceof Error ? error.message : String(error)
+    }
+    check('sidecar: a tar path outside the folder is refused', tarTraversal.includes('unsafe'), tarTraversal)
+    let tarMissing = ''
+    try {
+      readTarGzEntry(memberTar, 'chromaprint-fpcalc-1.6.2-linux-x86_64/missing')
+    } catch (error) {
+      tarMissing = error instanceof Error ? error.message : String(error)
+    }
+    check('sidecar: a missing tar member is refused', tarMissing.includes('does not contain'), tarMissing)
+    let tarGarbage = ''
+    try {
+      readTarGzEntry(gzipSync(Buffer.from('not a tar archive'.repeat(64))), 'fpcalc')
+    } catch (error) {
+      tarGarbage = error instanceof Error ? error.message : String(error)
+    }
+    check('sidecar: a gzip that is not a tar is refused', tarGarbage.length > 0, tarGarbage)
+
     // A local server stands in for GitHub: the installer only cares about bytes.
     const payload = Buffer.from('pinned-sidecar-bytes-'.repeat(64))
     const payloadDigest = createHash('sha256').update(payload).digest('hex')
     const zipPayload = Buffer.from('fpcalc-binary')
     const zipBuffer = buildZip([{ name: 'chromaprint-fpcalc-test/fpcalc.exe', data: zipPayload }])
     const zipDigest = createHash('sha256').update(zipBuffer).digest('hex')
+    const tarPayload = Buffer.from('fpcalc-linux-binary')
+    const tarBuffer = buildTarGz([
+      { name: 'chromaprint-fpcalc-test/', data: Buffer.alloc(0), type: '5' },
+      { name: 'chromaprint-fpcalc-test/fpcalc', data: tarPayload }
+    ])
+    const tarDigest = createHash('sha256').update(tarBuffer).digest('hex')
     let fileRequests = 0
 
     const server = createServer((request, response) => {
@@ -8366,6 +8445,10 @@ async function main(): Promise<void> {
         case '/zip':
           response.writeHead(200, { 'content-length': zipBuffer.length })
           response.end(zipBuffer)
+          return
+        case '/tar':
+          response.writeHead(200, { 'content-length': tarBuffer.length })
+          response.end(tarBuffer)
           return
         case '/slow':
           response.writeHead(200, { 'content-length': payload.length * 100 })
@@ -8507,6 +8590,30 @@ async function main(): Promise<void> {
       )
       const legacyZipStates = await sidecarStates(zipDir, [zipAsset])
       check('sidecar: a legacy zip record still counts as current', legacyZipStates[0]?.installed === true)
+
+      // A tar.gz asset becomes the member it names, which is how fpcalc ships
+      // for Linux.
+      const tarDir = join(engineRoot, 'tar')
+      const tarAsset = asset({
+        url: `${base}/tar`,
+        sha256: tarDigest,
+        bytes: tarBuffer.length,
+        file: 'fpcalc',
+        kind: 'tar.gz',
+        entry: 'chromaprint-fpcalc-test/fpcalc'
+      })
+      const tarResult = await installAsset(tarAsset, { dir: tarDir, log: silentLogger })
+      check('sidecar: a tar.gz asset installs', tarResult.installed)
+      check(
+        'sidecar: the tar.gz member is the installed binary',
+        (await readFile(join(tarDir, 'fpcalc'))).toString() === tarPayload.toString()
+      )
+      const tarStates = await sidecarStates(tarDir, [tarAsset])
+      check('sidecar: a tar.gz asset is current after install', tarStates[0]?.installed === true)
+      if (process.platform !== 'win32') {
+        const mode = (await stat(join(tarDir, 'fpcalc'))).mode & 0o777
+        checkEqual('sidecar: an installed tar.gz binary is executable', mode, 0o755)
+      }
 
       // A binary outside the engine folder is usable, so Settings must not call
       // it missing just because the app-managed copy was never downloaded.

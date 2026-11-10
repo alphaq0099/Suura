@@ -31,7 +31,7 @@ export interface SidecarAsset {
   /** Name the binary gets in the engine folder. */
   file: string
   /** How a download becomes the binary. */
-  kind: 'file' | 'zip'
+  kind: 'file' | 'zip' | 'tar.gz'
   /** For a zip, the exact member to extract. Never a pattern. */
   entry?: string
   /** SPDX identifier of the build being downloaded. */
@@ -104,11 +104,20 @@ const LINUX_ASSETS: readonly SidecarAsset[] = [
     kind: 'file',
     license: 'GPL-3.0-or-later'
   },
-  // fpcalc has no row here on purpose: AcoustID publishes the Linux build only
-  // as a `.tar.gz`, and the installer's archive reader handles zip alone. The
-  // fingerprint fallback therefore says the binary is missing, and the lyrics
-  // finder uses its own sources. Adding it is a `tar.gz` branch in `zip.ts`,
-  // not a checksum edit.
+  {
+    id: 'fpcalc',
+    version: '1.6.2',
+    // AcoustID ships Linux only as a `.tar.gz`; the member inside it is the
+    // binary, and the tar reader is the one this row added.
+    url: 'https://github.com/acoustid/chromaprint/releases/download/v1.6.2/chromaprint-fpcalc-1.6.2-linux-x86_64.tar.gz',
+    sha256: 'c968ad4a0821592a79b158fb2e1f46cbe0a22a0a1dbc0743c67d68e75d15d2bb',
+    bytes: 2_398_043,
+    file: 'fpcalc',
+    kind: 'tar.gz',
+    entry: 'chromaprint-fpcalc-1.6.2-linux-x86_64/fpcalc',
+    license: 'LGPL-2.1-or-later',
+    optional: true
+  }
 ]
 
 const ASSETS_BY_PLATFORM: Partial<Record<NodeJS.Platform, readonly SidecarAsset[]>> = {

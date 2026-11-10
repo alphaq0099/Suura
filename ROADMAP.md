@@ -1056,7 +1056,8 @@ nothing ships for Linux until the Windows 1.0 tag exists. Details and the build 
       AppImage's executable path is a temporary mount.
 - [x] `electron-builder.yml` AppImage target, `build/icon.png`, and `npm run package:linux`.
 - [x] Settings wording no longer says "Windows sign-in items", and the Windows uninstaller wording is unchanged.
-- [ ] `fpcalc` on Linux: add a `tar.gz` branch to the archive reader and pin the row.
+- [x] `fpcalc` on Linux: `tar.ts` reads the `.tar.gz` member, the row is pinned (2,398,043 bytes), `chmod 0755` applies
+      like any other sidecar, and the smoke test installs a tar.gz asset end to end.
 - [ ] Media keys on Wayland: the portal's GlobalShortcuts interface, or an explicit "not available" in Settings.
 - [ ] Tray without AppIndicator: detect the missing host and keep close-to-tray off, instead of an invisible icon.
 

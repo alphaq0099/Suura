@@ -72,6 +72,8 @@ What the run taught us:
   AppImage's `app.getPath('exe')` is a temporary mount that disappears at reboot.
 - `electron-builder.yml` — an AppImage target for x64 and `build/icon.png`.
 - `package.json` — `npm run package:linux`.
+- `src/engine/sidecar/tar.ts` — a `.tar.gz` reader beside the ZIP one, because
+  AcoustID publishes `fpcalc` for Linux only in that shape.
 - `tools/smoke.ts` — checks both platform tables, so a wrong Linux digest fails
   on Windows CI rather than on a user's first download.
 
@@ -81,7 +83,7 @@ What the run taught us:
 | --- | --- | --- |
 | `yt-dlp` | `yt-dlp/yt-dlp` `2026.10.26` → `yt-dlp_linux` | The PyInstaller x86_64 build; the `_aarch64` and `.zip` variants are different digests |
 | `ffmpeg` | `eugeneware/ffmpeg-static` `b6.1.1` → `ffmpeg-linux-x64` | Same immutable tag as the Windows pin; GPL-3.0-or-later, disclosed in `THIRD-PARTY.md` |
-| `fpcalc` | none | AcoustID publishes Linux only as `.tar.gz`, and the installer's archive reader handles zip alone |
+| `fpcalc` | `acoustid/chromaprint` `v1.6.2` → `chromaprint-fpcalc-1.6.2-linux-x86_64.tar.gz` | AcoustID ships Linux only as a `.tar.gz`, so the archive reader gained a tar branch; LGPL-2.1-or-later |
 
 To re-pin a Linux row (or add fpcalc), download the exact asset, then record all
 three values together — the URL, the byte count and the SHA-256:
@@ -128,8 +130,8 @@ xvfb-run -a npx electron . --selftest
       path was resolved for the allowlist but not before `stat`), all fixed.
 - [ ] Run it on a real desktop session with a sound device, and open the tag
       editor, the full-window player and the mini player.
-- [ ] `fpcalc` on Linux: add a `tar.gz` branch to `zip.ts` (or extract with the
-      system `tar`) and pin the row.
+- [x] `fpcalc` on Linux: a `.tar.gz` reader beside the ZIP one, and the pinned row. The member is extracted,
+      `chmod 0755` applies like any other sidecar, and the smoke test installs a tar.gz asset end to end.
 - [ ] Media keys on Wayland: `globalShortcut` is not reliable there. Either use
       the XDG Desktop Portal's GlobalShortcuts interface, or say that Wayland
       gets no global media keys.

@@ -6,6 +6,7 @@ import type { SidecarId, SidecarProgress, SidecarState } from '@shared/types'
 import { SIDECAR_ASSETS, type SidecarAsset } from './manifest'
 import { locateExecutable } from './locate'
 import { readZipEntry } from './zip'
+import { readTarGzEntry } from './tar'
 
 /**
  * Downloads the pinned sidecars into the app-managed engine folder.
@@ -267,18 +268,20 @@ export async function installAsset(
   }
 
   const target = join(options.dir, asset.file)
-  const downloadPath = temporaryName(options.dir, asset, asset.kind === 'zip' ? '.zip' : '.download')
-  const extractPath = asset.kind === 'zip' ? temporaryName(options.dir, asset, '.extract') : downloadPath
+  const archiveSuffix = asset.kind === 'zip' ? '.zip' : asset.kind === 'tar.gz' ? '.tar.gz' : null
+  const downloadPath = temporaryName(options.dir, asset, archiveSuffix ?? '.download')
+  const extractPath = archiveSuffix ? temporaryName(options.dir, asset, '.extract') : downloadPath
   const startedAt = (options.now ?? Date.now)()
 
   try {
     options.log.info('downloading sidecar', { id: asset.id, version: asset.version, bytes: asset.bytes })
     await download(asset, downloadPath, options)
 
-    if (asset.kind === 'zip') {
+    if (archiveSuffix) {
       if (!asset.entry) throw new SidecarInstallError(`No archive member is pinned for ${asset.id}.`, asset.id)
       const archive = await readFile(downloadPath)
-      const member = readZipEntry(archive, asset.entry)
+      const member =
+        asset.kind === 'zip' ? readZipEntry(archive, asset.entry) : readTarGzEntry(archive, asset.entry)
       await writeFile(extractPath, member, { mode: 0o755 })
     }
 
@@ -311,6 +314,6 @@ export async function installAsset(
   } finally {
     // The rename consumes the extract; removing it again is a no-op.
     await rm(downloadPath, { force: true }).catch(() => undefined)
-    if (asset.kind === 'zip') await rm(extractPath, { force: true }).catch(() => undefined)
+    if (archiveSuffix) await rm(extractPath, { force: true }).catch(() => undefined)
   }
 }

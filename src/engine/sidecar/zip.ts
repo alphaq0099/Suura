@@ -1,4 +1,5 @@
 import { inflateRawSync } from 'node:zlib'
+import { MAX_ENTRY_BYTES, isSafeEntryName } from './archive-entry'
 
 /**
  * The smallest ZIP reader that can install one known binary.
@@ -17,15 +18,6 @@ const EOCD_SIGNATURE = 0x06054b50
 const CENTRAL_SIGNATURE = 0x02014b50
 const LOCAL_SIGNATURE = 0x04034b50
 const MAX_COMMENT_BYTES = 0xffff
-const MAX_ENTRY_BYTES = 512 * 1024 * 1024
-
-export function isSafeEntryName(name: string): boolean {
-  if (!name || name.length > 1024) return false
-  if (name.includes('\0') || name.includes('\\')) return false
-  if (name.startsWith('/') || name.startsWith('.')) return false
-  if (/^[A-Za-z]:/.test(name)) return false
-  return name.split('/').every((part) => part.length > 0 && part !== '.' && part !== '..')
-}
 
 function findEndOfCentralDirectory(zip: Buffer): number {
   const earliest = Math.max(0, zip.length - 22 - MAX_COMMENT_BYTES)
