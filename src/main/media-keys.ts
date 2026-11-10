@@ -1,5 +1,6 @@
 import { globalShortcut } from 'electron'
 import { EVENT_CHANNELS, type PlayerCommand } from '@shared/ipc'
+import { hasGlobalMediaKeys } from '@shared/platform'
 import type { Logger } from '@core/logging/logger'
 import { broadcast } from './broadcast'
 
@@ -18,8 +19,18 @@ const MEDIA_KEYS: Array<{ accelerator: string; command: PlayerCommand }> = [
   { accelerator: 'MediaStop', command: { type: 'stop' } }
 ]
 
-/** Returns a disposer; `globalShortcut` must be released before the app quits. */
+/**
+ * Registers the four accelerators, unless the session cannot support a global
+ * grab (see `hasGlobalMediaKeys`).
+ *
+ * Returns a disposer; `globalShortcut` must be released before the app quits.
+ */
 export function registerMediaKeys(log: Logger): () => void {
+  if (!hasGlobalMediaKeys(process.platform, process.env)) {
+    log.info('media keys are not grabbed on Wayland; the compositor owns them')
+    return () => undefined
+  }
+
   const taken: string[] = []
 
   for (const { accelerator, command } of MEDIA_KEYS) {

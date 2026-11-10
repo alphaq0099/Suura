@@ -1,8 +1,13 @@
 import { app, BrowserWindow, Menu, Tray, nativeImage } from 'electron'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { IPC_EVENTS, type PlayerCommand } from '@shared/ipc'
 import type { Logger } from '@core/logging/logger'
 import { broadcast } from './broadcast'
 import { TRAY_ICON_DATA_URL } from './tray-icon'
+
+const execFileAsync = promisify(execFile)
+const STATUS_NOTIFIER = 'org.kde.StatusNotifierWatcher'
 
 /**
  * The tray icon and its menu.
@@ -25,7 +30,46 @@ export interface TrayOptions {
   log: Logger
 }
 
-export function installTray({ window, log }: TrayOptions): TrayController | null {
+/**
+ * Whether this desktop actually shows a tray icon.
+ *
+ * Electron's Linux tray goes through a StatusNotifier host. KDE provides one,
+ * GNOME needs an AppIndicator extension, and a bare session has none — in that
+ * case `new Tray(...)` still succeeds and the icon is simply invisible, which
+ * would make close-to-tray look like the app vanished. Asking the session bus
+ * first turns that into a clean refusal.
+ *
+ * A probe that cannot run (no `dbus-send`, no session bus in a container) is
+ * "cannot tell", not "no host", so it is allowed through.
+ */
+async function trayHostAvailable(log: Logger): Promise<boolean> {
+  if (process.platform !== 'linux') return true
+  try {
+    const { stdout } = await execFileAsync(
+      'dbus-send',
+      [
+        '--session',
+        '--print-reply',
+        '--dest=org.freedesktop.DBus',
+        '/org/freedesktop/DBus',
+        'org.freedesktop.DBus.NameHasOwner',
+        `string:${STATUS_NOTIFIER}`
+      ],
+      { timeout: 2_000 }
+    )
+    return stdout.includes('boolean true')
+  } catch (error) {
+    log.debug('tray host could not be probed', { error })
+    return true
+  }
+}
+
+export async function installTray({ window, log }: TrayOptions): Promise<TrayController | null> {
+  if (!(await trayHostAvailable(log))) {
+    log.warn('no status-notifier host; close-to-tray stays disabled')
+    return null
+  }
+
   let tray: Tray
   try {
     const image = nativeImage.createFromDataURL(TRAY_ICON_DATA_URL)

@@ -242,6 +242,7 @@ import {
 import { buildArtworkUrl, parseArtworkUrl } from '@shared/artwork-url'
 import { formatAudioSummary, formatCodec } from '@shared/format'
 import { nextDecision, shuffleFrom, shuffled } from '@shared/queue'
+import { hasGlobalMediaKeys } from '@shared/platform'
 import { sanitizeTaskbarState, taskbarControls } from '@shared/taskbar'
 import { parseRangeHeader } from '@shared/range'
 import { isImportedPlaylistTrackId, onlineEntryToTrack, onlinePlaylistItemToTrack } from '@shared/online'
@@ -1181,6 +1182,15 @@ async function main(): Promise<void> {
       sanitizeTaskbarState({ hasTrack: true, isPlaying: true, trackId: -3 })?.trackId === null &&
         sanitizeTaskbarState({ hasTrack: true, isPlaying: true, trackId: 'x' })?.trackId === null
     )
+
+    // --- global media keys ---------------------------------------------------
+    check('media keys are grabbed on Windows', hasGlobalMediaKeys('win32', {}))
+    check('media keys are grabbed on X11', hasGlobalMediaKeys('linux', { XDG_SESSION_TYPE: 'x11' }))
+    check(
+      'media keys are not grabbed on Wayland',
+      !hasGlobalMediaKeys('linux', { XDG_SESSION_TYPE: 'wayland' })
+    )
+    check('a nested Wayland session is recognised', !hasGlobalMediaKeys('linux', { WAYLAND_DISPLAY: 'wayland-0' }))
 
     const sequence = ['a', 'b', 'c', 'd', 'e']
     const shuffling = shuffled(sequence, () => 0.5)

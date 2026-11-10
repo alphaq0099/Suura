@@ -74,6 +74,12 @@ What the run taught us:
 - `package.json` — `npm run package:linux`.
 - `src/engine/sidecar/tar.ts` — a `.tar.gz` reader beside the ZIP one, because
   AcoustID publishes `fpcalc` for Linux only in that shape.
+- `src/shared/platform.ts` and `src/main/media-keys.ts` — Wayland has no global
+  key grab, so the four media keys are not registered there and the desktop's
+  own routing is left in charge.
+- `src/main/tray.ts` — asks the session bus for a StatusNotifier host before
+  creating the icon, so a session without one gets no tray and close-to-tray
+  stays off instead of an invisible window.
 - `tools/smoke.ts` — checks both platform tables, so a wrong Linux digest fails
   on Windows CI rather than on a user's first download.
 
@@ -132,12 +138,14 @@ xvfb-run -a npx electron . --selftest
       editor, the full-window player and the mini player.
 - [x] `fpcalc` on Linux: a `.tar.gz` reader beside the ZIP one, and the pinned row. The member is extracted,
       `chmod 0755` applies like any other sidecar, and the smoke test installs a tar.gz asset end to end.
-- [ ] Media keys on Wayland: `globalShortcut` is not reliable there. Either use
-      the XDG Desktop Portal's GlobalShortcuts interface, or say that Wayland
-      gets no global media keys.
-- [ ] Tray under GNOME: `libappindicator`/AppIndicator extension is required;
-      detect its absence and leave close-to-tray off, as `installTray` already
-      does when the platform refuses a tray.
+- [x] Media keys on Wayland: decided. They are not grabbed there, because a
+      compositor owns the key and `globalShortcut` cannot take it; the app says so
+      in its log and leaves the desktop's own routing alone. The XDG portal's
+      GlobalShortcuts interface is the later upgrade, not a prerequisite.
+- [x] Tray under GNOME: on Linux the app asks the session bus whether a
+      StatusNotifier host exists before creating the icon. No host means no tray
+      and close-to-tray stays off, instead of an invisible icon. A probe that
+      cannot run counts as "cannot tell" and is allowed through.
 - [ ] Updates: publish `latest-linux.yml` beside `latest.yml`, and teach
       `tools/publish-r2.ps1` (or a Linux equivalent) to upload it. An AppImage
       updates only when it is the running file, so the "Restart and install"

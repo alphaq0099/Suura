@@ -132,7 +132,7 @@ function start(): void {
       })
 
       if (!HEADLESS) {
-        tray = installTray({ window, log: appContainer.log.child('tray') })
+        tray = await installTray({ window, log: appContainer.log.child('tray') })
         window.on('close', (event) => {
           if (quitting || !tray) return
           if (!appContainer.settings.get().desktop.closeToTray) return

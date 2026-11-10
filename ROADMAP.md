@@ -1058,8 +1058,10 @@ nothing ships for Linux until the Windows 1.0 tag exists. Details and the build 
 - [x] Settings wording no longer says "Windows sign-in items", and the Windows uninstaller wording is unchanged.
 - [x] `fpcalc` on Linux: `tar.ts` reads the `.tar.gz` member, the row is pinned (2,398,043 bytes), `chmod 0755` applies
       like any other sidecar, and the smoke test installs a tar.gz asset end to end.
-- [ ] Media keys on Wayland: the portal's GlobalShortcuts interface, or an explicit "not available" in Settings.
-- [ ] Tray without AppIndicator: detect the missing host and keep close-to-tray off, instead of an invisible icon.
+- [x] Media keys on Wayland: not grabbed. A compositor owns the key, so `globalShortcut` cannot take it; the app logs
+      that and leaves the desktop's routing alone, with the XDG portal's GlobalShortcuts interface as a later upgrade.
+- [x] Tray without a StatusNotifier host: the app asks the session bus first, and a missing host means no tray icon and
+      close-to-tray stays off rather than an invisible window. A probe that cannot run is treated as "cannot tell".
 
 ### 15.2 Packaging and updates
 
