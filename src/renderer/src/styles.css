@@ -2748,12 +2748,6 @@ input[type='radio'] {
   border-radius: 4px;
 }
 
-/* The bot-check card is last and spans the tab, so "advanced" never pushes the
-   everyday engine and cookie choices out of the first screenful. */
-.cards > .botcheck-card {
-  grid-column: 1 / -1;
-}
-
 /* The About card spans both columns, so keep its prose at a readable line length. */
 .about-card .card-hint {
   max-width: 96ch;

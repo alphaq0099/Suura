@@ -327,6 +327,16 @@ function sourceLabel(source: 'configured' | 'managed' | 'path' | 'well-known' | 
   return 'unknown location'
 }
 
+/**
+ * ffmpeg reports its whole build banner as the version. The status line only
+ * has room for the number that tells a user whether the binary is current.
+ */
+function shortVersion(version: string | null): string {
+  if (!version) return 'found'
+  const match = version.match(/\d+(?:\.\d+)+/)
+  return match?.[0] ?? version.split(/\s+/)[0] ?? version
+}
+
 /** One sentence for the update state, so About never shows a bare code. */
 function describeUpdateStatus(status: UpdateStatus | null): string {
   if (!status) return 'loading…'
@@ -515,7 +525,7 @@ export function SettingsView(props: SettingsViewProps) {
       ? 'Checking the engine…'
       : 'Not checked yet.'
     : playbackReady
-      ? `Ready · yt-dlp ${engineStatus.ytDlp.version ?? 'found'} · ffmpeg ${engineStatus.ffmpeg.version ?? 'found'}`
+      ? `Ready · yt-dlp ${shortVersion(engineStatus.ytDlp.version)} · ffmpeg ${shortVersion(engineStatus.ffmpeg.version)}`
       : missingBinaries.length > 0
         ? `${missingBinaries.join(' and ')} ${missingBinaries.length === 1 ? 'is' : 'are'} missing. Download once${
             engineMissingBytes > 0 ? ` — about ${formatBytes(engineMissingBytes)}` : ''
@@ -1502,117 +1512,6 @@ export function SettingsView(props: SettingsViewProps) {
                 </details>
               </article>
 
-            </div>
-
-            <div className="cards-col">
-              <article className="card">
-                <header className="card-header">
-                  <h2>Cookie fallback</h2>
-                </header>
-                <p className="card-hint">Off by default. A targeted retry, not an account login.</p>
-                <div className="field-grid">
-                  <label className="field">
-                    <span>When to use cookies</span>
-                    <select
-                      value={settings.engine.cookieFallback}
-                      onChange={(event) =>
-                        onUpdate({ engine: { cookieFallback: event.target.value as CookieFallbackMode } })
-                      }
-                    >
-                      {COOKIE_FALLBACK_CHOICES.map((choice) => (
-                        <option key={choice.value} value={choice.value}>
-                          {choice.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field">
-                    <span>
-                      Browser
-                      <InfoHint label="About browser cookies">
-                        Reads YouTube cookies from this browser. The app never signs in.
-                      </InfoHint>
-                    </span>
-                    <select
-                      value={settings.engine.cookiesFromBrowser ?? ''}
-                      disabled={
-                        settings.engine.cookieFallback === 'off' || Boolean(settings.engine.cookiesFile)
-                      }
-                      onChange={(event) =>
-                        onUpdate({ engine: { cookiesFromBrowser: event.target.value || null } })
-                      }
-                    >
-                      {COOKIE_BROWSER_CHOICES.map((choice) => (
-                        <option key={choice.value} value={choice.value}>
-                          {choice.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field wide">
-                    <span>
-                      Browser profile (optional)
-                      <InfoHint label="About the browser profile">
-                        Profile name or path. Blank uses the default profile.
-                      </InfoHint>
-                    </span>
-                    <input
-                      type="text"
-                      value={settings.engine.cookieBrowserProfile ?? ''}
-                      disabled={
-                        settings.engine.cookieFallback === 'off' || Boolean(settings.engine.cookiesFile)
-                      }
-                      placeholder="Default profile"
-                      onChange={(event) =>
-                        onUpdate({ engine: { cookieBrowserProfile: event.target.value || null } })
-                      }
-                    />
-                  </label>
-                  <label className="field wide">
-                    <span>
-                      Cookies file (optional)
-                      <InfoHint label="About a cookies file">
-                        An exported Netscape cookies.txt. Takes priority over the browser.
-                      </InfoHint>
-                    </span>
-                    <div className="field-row">
-                      <input
-                        type="text"
-                        readOnly
-                        value={settings.engine.cookiesFile ?? '(none)'}
-                      />
-                      <button type="button" onClick={onPickCookiesFile}>
-                        Choose
-                      </button>
-                      {settings.engine.cookiesFile ? (
-                        <button
-                          type="button"
-                          onClick={() => onUpdate({ engine: { cookiesFile: null } })}
-                        >
-                          Clear
-                        </button>
-                      ) : null}
-                    </div>
-                  </label>
-                </div>
-                {settings.engine.cookieFallback !== 'off' &&
-                !settings.engine.cookiesFromBrowser &&
-                !settings.engine.cookiesFile ? (
-                  <p className="card-hint status-error">
-                    Choose a browser or a cookies file, or the fallback will be skipped.
-                  </p>
-                ) : null}
-                {settings.engine.cookieFallback !== 'off' &&
-                !settings.engine.cookiesFile &&
-                usesAppBoundEncryption(settings.engine.cookiesFromBrowser) ? (
-                  <p className="card-hint">
-                    Chrome and Edge cookies cannot be decrypted on Windows. Choose Firefox, or leave the
-                    fallback off and use a bot-check helper.
-                  </p>
-                ) : null}
-                <p className="card-hint">The app never signs in; account playlists are unsupported.</p>
-              </article>
-
               <article className="card">
                 <header className="card-header">
                   <h2>Playback &amp; imports</h2>
@@ -1746,6 +1645,117 @@ export function SettingsView(props: SettingsViewProps) {
                 </div>
               </article>
 
+            </div>
+
+            <div className="cards-col">
+              <article className="card">
+                <header className="card-header">
+                  <h2>Cookie fallback</h2>
+                </header>
+                <p className="card-hint">Off by default. A targeted retry, not an account login.</p>
+                <div className="field-grid">
+                  <label className="field">
+                    <span>When to use cookies</span>
+                    <select
+                      value={settings.engine.cookieFallback}
+                      onChange={(event) =>
+                        onUpdate({ engine: { cookieFallback: event.target.value as CookieFallbackMode } })
+                      }
+                    >
+                      {COOKIE_FALLBACK_CHOICES.map((choice) => (
+                        <option key={choice.value} value={choice.value}>
+                          {choice.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>
+                      Browser
+                      <InfoHint label="About browser cookies">
+                        Reads YouTube cookies from this browser. The app never signs in.
+                      </InfoHint>
+                    </span>
+                    <select
+                      value={settings.engine.cookiesFromBrowser ?? ''}
+                      disabled={
+                        settings.engine.cookieFallback === 'off' || Boolean(settings.engine.cookiesFile)
+                      }
+                      onChange={(event) =>
+                        onUpdate({ engine: { cookiesFromBrowser: event.target.value || null } })
+                      }
+                    >
+                      {COOKIE_BROWSER_CHOICES.map((choice) => (
+                        <option key={choice.value} value={choice.value}>
+                          {choice.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field wide">
+                    <span>
+                      Browser profile (optional)
+                      <InfoHint label="About the browser profile">
+                        Profile name or path. Blank uses the default profile.
+                      </InfoHint>
+                    </span>
+                    <input
+                      type="text"
+                      value={settings.engine.cookieBrowserProfile ?? ''}
+                      disabled={
+                        settings.engine.cookieFallback === 'off' || Boolean(settings.engine.cookiesFile)
+                      }
+                      placeholder="Default profile"
+                      onChange={(event) =>
+                        onUpdate({ engine: { cookieBrowserProfile: event.target.value || null } })
+                      }
+                    />
+                  </label>
+                  <label className="field wide">
+                    <span>
+                      Cookies file (optional)
+                      <InfoHint label="About a cookies file">
+                        An exported Netscape cookies.txt. Takes priority over the browser.
+                      </InfoHint>
+                    </span>
+                    <div className="field-row">
+                      <input
+                        type="text"
+                        readOnly
+                        value={settings.engine.cookiesFile ?? '(none)'}
+                      />
+                      <button type="button" onClick={onPickCookiesFile}>
+                        Choose
+                      </button>
+                      {settings.engine.cookiesFile ? (
+                        <button
+                          type="button"
+                          onClick={() => onUpdate({ engine: { cookiesFile: null } })}
+                        >
+                          Clear
+                        </button>
+                      ) : null}
+                    </div>
+                  </label>
+                </div>
+                {settings.engine.cookieFallback !== 'off' &&
+                !settings.engine.cookiesFromBrowser &&
+                !settings.engine.cookiesFile ? (
+                  <p className="card-hint status-error">
+                    Choose a browser or a cookies file, or the fallback will be skipped.
+                  </p>
+                ) : null}
+                {settings.engine.cookieFallback !== 'off' &&
+                !settings.engine.cookiesFile &&
+                usesAppBoundEncryption(settings.engine.cookiesFromBrowser) ? (
+                  <p className="card-hint">
+                    Chrome and Edge cookies cannot be decrypted on Windows. Choose Firefox, or leave the
+                    fallback off and use a bot-check helper.
+                  </p>
+                ) : null}
+                <p className="card-hint">The app never signs in; account playlists are unsupported.</p>
+              </article>
+
               <article className="card">
                 <header className="card-header">
                   <h2>Saving to your library</h2>
@@ -1804,171 +1814,171 @@ export function SettingsView(props: SettingsViewProps) {
                   </label>
                 </div>
               </article>
-            </div>
 
-            <article className="card botcheck-card">
-              <header className="card-header">
-                <h2>YouTube bot check</h2>
-                <button type="button" onClick={onRefreshEngine} disabled={engineLoading}>
-                  {engineLoading ? <SpinnerIcon /> : <RefreshIcon />}
-                  <span>Check</span>
-                </button>
-              </header>
-              <p className="card-hint">YouTube sometimes asks for a bot check before a stream plays.</p>
-              <p className={`engine-status-line ${poTokenStatusTone}`} role="status">
-                <span className="engine-status-dot" aria-hidden="true" />
-                <span>{poTokenStatusText}</span>
-              </p>
-              <label className="field checkbox">
-                <input
-                  type="checkbox"
-                  checked={settings.engine.poTokenEnabled}
-                  onChange={(event) => onUpdate({ engine: { poTokenEnabled: event.target.checked } })}
-                />
-                <span>Use a bot-check helper</span>
-              </label>
-
-              <details className="settings-advanced">
-                <summary>Set up</summary>
-                <p className="card-hint">
-                  Also called a PO Token provider. Suura does not bundle one; install the third-party{' '}
-                  <a
-                    href="https://github.com/Brainicism/bgutil-ytdlp-pot-provider"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    provider and yt-dlp plugin
-                  </a>{' '}
-                  separately.
+              <article className="card botcheck-card">
+                <header className="card-header">
+                  <h2>YouTube bot check</h2>
+                  <button type="button" onClick={onRefreshEngine} disabled={engineLoading}>
+                    {engineLoading ? <SpinnerIcon /> : <RefreshIcon />}
+                    <span>Check</span>
+                  </button>
+                </header>
+                <p className="card-hint">YouTube sometimes asks for a bot check before a stream plays.</p>
+                <p className={`engine-status-line ${poTokenStatusTone}`} role="status">
+                  <span className="engine-status-dot" aria-hidden="true" />
+                  <span>{poTokenStatusText}</span>
                 </p>
+                <label className="field checkbox">
+                  <input
+                    type="checkbox"
+                    checked={settings.engine.poTokenEnabled}
+                    onChange={(event) => onUpdate({ engine: { poTokenEnabled: event.target.checked } })}
+                  />
+                  <span>Use a bot-check helper</span>
+                </label>
 
-                <div className="field-grid">
-                  <label className="field wide">
-                    <span>
-                      Helper URL
-                      <InfoHint label="About the helper URL">
-                        Where the bgutil plugin calls. Keep it on this PC.
-                      </InfoHint>
-                    </span>
-                    <input
-                      type="url"
-                      value={settings.engine.poTokenProviderUrl}
-                      placeholder="http://127.0.0.1:4416"
-                      onChange={(event) => onUpdate({ engine: { poTokenProviderUrl: event.target.value } })}
-                    />
-                  </label>
-                  <label className="field wide">
-                    <span>
-                      Start command (optional)
-                      <InfoHint label="About the helper command">
-                        Command the app can start and stop. Leave it blank to run the server yourself.
-                      </InfoHint>
-                    </span>
-                    <input
-                      type="text"
-                      value={settings.engine.poTokenProviderCommand ?? ''}
-                      placeholder="No command set"
-                      onChange={(event) =>
-                        onUpdate({ engine: { poTokenProviderCommand: event.target.value || null } })
-                      }
-                    />
-                  </label>
-                  <label className="field checkbox">
-                    <input
-                      type="checkbox"
-                      checked={settings.engine.poTokenAutoStart}
-                      title={providerCommandMissing ? 'Add a start command first.' : undefined}
-                      onChange={(event) => onUpdate({ engine: { poTokenAutoStart: event.target.checked } })}
-                    />
-                    <span>
-                      Start the helper automatically
-                      <InfoHint label="About automatic helper start">
-                        Starts the command above, stops only that process, and waits for a slow start.
-                      </InfoHint>
-                    </span>
-                  </label>
-                </div>
-
-                {settings.engine.poTokenEnabled && providerCommandMissing ? (
+                <details className="settings-advanced">
+                  <summary>Set up</summary>
                   <p className="card-hint">
-                    No start command is set. Run the helper yourself, or add one above to use Start and
-                    auto-start.
-                  </p>
-                ) : null}
-
-                {providerUrlInvalid ? (
-                  <p className="card-hint status-error">
-                    That helper URL is not a plain http(s) URL. The default local address will be used until it
-                    is fixed.
-                  </p>
-                ) : null}
-
-                <div className="field-row provider-actions">
-                  <button
-                    type="button"
-                    onClick={() => void runProvider('start')}
-                    title={
-                      !settings.engine.poTokenEnabled
-                        ? 'Turn on Use a bot-check helper first.'
-                        : providerCommandMissing
-                          ? 'Add a start command, or run the helper yourself.'
-                          : undefined
-                    }
-                    disabled={!settings.engine.poTokenEnabled || providerCommandMissing || providerBusy !== null}
-                  >
-                    {providerBusy === 'start' ? <SpinnerIcon /> : null}
-                    <span>Start helper</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void runProvider('stop')}
-                    disabled={!engineStatus?.poToken?.managedRunning || providerBusy !== null}
-                  >
-                    {providerBusy === 'stop' ? <SpinnerIcon /> : null}
-                    <span>Stop helper</span>
-                  </button>
-                </div>
-
-                {providerError ? <p className="card-hint status-error">{providerError}</p> : null}
-                {providerNote ? <p className="card-hint">{providerNote}</p> : null}
-
-                {poToken ? (
-                  <ul className="status-list">
-                    <li className={poToken.enabled ? 'ok' : ''}>
-                      <span className="status-name">App switch</span>
-                      <span className="status-value">{poToken.enabled ? 'enabled' : 'off'}</span>
-                    </li>
-                    <li
-                      className={
-                        poToken.serverReachable ? 'ok' : poToken.managedRunning ? '' : 'bad'
-                      }
+                    Also called a PO Token provider. Suura does not bundle one; install the third-party{' '}
+                    <a
+                      href="https://github.com/Brainicism/bgutil-ytdlp-pot-provider"
+                      target="_blank"
+                      rel="noreferrer"
                     >
-                      <span className="status-name">Helper</span>
-                      <span className="status-value" title={poToken.providerUrl}>
-                        {poToken.serverReachable
-                          ? `reachable at ${poTokenUrlLabel}${poToken.serverVersion ? `, v${poToken.serverVersion}` : ''}`
-                          : poToken.managedRunning
-                            ? `starting at ${poTokenUrlLabel}`
-                            : `no answer at ${poTokenUrlLabel}`}
+                      provider and yt-dlp plugin
+                    </a>{' '}
+                    separately.
+                  </p>
+
+                  <div className="field-grid">
+                    <label className="field wide">
+                      <span>
+                        Helper URL
+                        <InfoHint label="About the helper URL">
+                          Where the bgutil plugin calls. Keep it on this PC.
+                        </InfoHint>
                       </span>
-                    </li>
-                    <li className={poToken.managedRunning ? 'ok' : ''}>
-                      <span className="status-name">Managed process</span>
-                      <span className="status-value">
-                        {poToken.managedRunning ? 'running' : 'not running'}
+                      <input
+                        type="url"
+                        value={settings.engine.poTokenProviderUrl}
+                        placeholder="http://127.0.0.1:4416"
+                        onChange={(event) => onUpdate({ engine: { poTokenProviderUrl: event.target.value } })}
+                      />
+                    </label>
+                    <label className="field wide">
+                      <span>
+                        Start command (optional)
+                        <InfoHint label="About the helper command">
+                          Command the app can start and stop. Leave it blank to run the server yourself.
+                        </InfoHint>
                       </span>
-                    </li>
-                    <li className={poToken.commandConfigured ? 'ok' : ''}>
-                      <span className="status-name">Start command</span>
-                      <span className="status-value">{poToken.commandConfigured ? 'set' : 'not set'}</span>
-                    </li>
-                  </ul>
-                ) : (
-                  <p className="card-hint">Helper status is checked with the engine.</p>
-                )}
-                {poToken?.error ? <p className="card-hint status-error">{poToken.error}</p> : null}
-              </details>
-            </article>
+                      <input
+                        type="text"
+                        value={settings.engine.poTokenProviderCommand ?? ''}
+                        placeholder="No command set"
+                        onChange={(event) =>
+                          onUpdate({ engine: { poTokenProviderCommand: event.target.value || null } })
+                        }
+                      />
+                    </label>
+                    <label className="field checkbox">
+                      <input
+                        type="checkbox"
+                        checked={settings.engine.poTokenAutoStart}
+                        title={providerCommandMissing ? 'Add a start command first.' : undefined}
+                        onChange={(event) => onUpdate({ engine: { poTokenAutoStart: event.target.checked } })}
+                      />
+                      <span>
+                        Start the helper automatically
+                        <InfoHint label="About automatic helper start">
+                          Starts the command above, stops only that process, and waits for a slow start.
+                        </InfoHint>
+                      </span>
+                    </label>
+                  </div>
+
+                  {settings.engine.poTokenEnabled && providerCommandMissing ? (
+                    <p className="card-hint">
+                      No start command is set. Run the helper yourself, or add one above to use Start and
+                      auto-start.
+                    </p>
+                  ) : null}
+
+                  {providerUrlInvalid ? (
+                    <p className="card-hint status-error">
+                      That helper URL is not a plain http(s) URL. The default local address will be used until it
+                      is fixed.
+                    </p>
+                  ) : null}
+
+                  <div className="field-row provider-actions">
+                    <button
+                      type="button"
+                      onClick={() => void runProvider('start')}
+                      title={
+                        !settings.engine.poTokenEnabled
+                          ? 'Turn on Use a bot-check helper first.'
+                          : providerCommandMissing
+                            ? 'Add a start command, or run the helper yourself.'
+                            : undefined
+                      }
+                      disabled={!settings.engine.poTokenEnabled || providerCommandMissing || providerBusy !== null}
+                    >
+                      {providerBusy === 'start' ? <SpinnerIcon /> : null}
+                      <span>Start helper</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void runProvider('stop')}
+                      disabled={!engineStatus?.poToken?.managedRunning || providerBusy !== null}
+                    >
+                      {providerBusy === 'stop' ? <SpinnerIcon /> : null}
+                      <span>Stop helper</span>
+                    </button>
+                  </div>
+
+                  {providerError ? <p className="card-hint status-error">{providerError}</p> : null}
+                  {providerNote ? <p className="card-hint">{providerNote}</p> : null}
+
+                  {poToken ? (
+                    <ul className="status-list">
+                      <li className={poToken.enabled ? 'ok' : ''}>
+                        <span className="status-name">App switch</span>
+                        <span className="status-value">{poToken.enabled ? 'enabled' : 'off'}</span>
+                      </li>
+                      <li
+                        className={
+                          poToken.serverReachable ? 'ok' : poToken.managedRunning ? '' : 'bad'
+                        }
+                      >
+                        <span className="status-name">Helper</span>
+                        <span className="status-value" title={poToken.providerUrl}>
+                          {poToken.serverReachable
+                            ? `reachable at ${poTokenUrlLabel}${poToken.serverVersion ? `, v${poToken.serverVersion}` : ''}`
+                            : poToken.managedRunning
+                              ? `starting at ${poTokenUrlLabel}`
+                              : `no answer at ${poTokenUrlLabel}`}
+                        </span>
+                      </li>
+                      <li className={poToken.managedRunning ? 'ok' : ''}>
+                        <span className="status-name">Managed process</span>
+                        <span className="status-value">
+                          {poToken.managedRunning ? 'running' : 'not running'}
+                        </span>
+                      </li>
+                      <li className={poToken.commandConfigured ? 'ok' : ''}>
+                        <span className="status-name">Start command</span>
+                        <span className="status-value">{poToken.commandConfigured ? 'set' : 'not set'}</span>
+                      </li>
+                    </ul>
+                  ) : (
+                    <p className="card-hint">Helper status is checked with the engine.</p>
+                  )}
+                  {poToken?.error ? <p className="card-hint status-error">{poToken.error}</p> : null}
+                </details>
+              </article>
+            </div>
           </div>
         </section>
 
