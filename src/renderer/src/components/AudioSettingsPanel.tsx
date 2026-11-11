@@ -42,11 +42,7 @@ export function AudioSettingsPanel(props: AudioSettingsPanelProps) {
       <header className="card-header">
         <h2>Audio</h2>
       </header>
-      <p className="card-hint">
-        Ten bands and a preamp for playback, plus ReplayGain leveling for local tracks. The
-        equalizer applies while a track plays; a measured value is stored per file, so leveling is
-        instant after the first analysis. Streams are not measured yet.
-      </p>
+      <p className="card-hint">Ten bands, a preamp, and ReplayGain leveling for local tracks.</p>
 
       <div className="card-actions start">
         <button type="button" className="button" onClick={onOpenEqualizer}>

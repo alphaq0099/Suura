@@ -921,8 +921,7 @@ export function SettingsView(props: SettingsViewProps) {
                 <h2>Mouse behaviour</h2>
               </header>
               <p className="card-hint">
-                What one click does in a list, and how far one wheel notch moves the volume. A double
-                click always receives two single clicks first; Shift always moves one volume percent.
+                What a click does in a list, and how far one wheel notch moves the volume.
               </p>
               <div className="field-grid">
                 <label className="field">
@@ -2031,8 +2030,7 @@ export function SettingsView(props: SettingsViewProps) {
                     <h2>Crash reports</h2>
                   </header>
                   <p className="card-hint">
-                    Off by default. When on, Suura saves a small report if the app or its renderer crashes, so you
-                    can review it or share it yourself.
+                    Off by default. When on, a crash saves a local report you can review or share.
                   </p>
                   <label className="field checkbox">
                     <input
@@ -2389,7 +2387,6 @@ export function SettingsView(props: SettingsViewProps) {
             <article className="card about-card">
               <header className="card-header">
                 <h2>About</h2>
-                <span className="badge">M8 · release</span>
               </header>
               <p className="card-hint">
                 Local library, playlists, queue and YouTube playback. Streams can be saved with tags and cover.
@@ -2521,12 +2518,6 @@ export function SettingsView(props: SettingsViewProps) {
                   </span>
                 </label>
 
-                <p className="card-hint">
-                  Nothing is downloaded until you press Check now. The feed is a static folder serving{' '}
-                  {settings.update.channel === 'beta' ? 'beta.yml' : 'latest.yml'} on Windows (add <code>-linux</code> on
-                  Linux) and the release it names.
-                </p>
-
                 <div className="field-row">
                   <button
                     type="button"
@@ -2558,8 +2549,7 @@ export function SettingsView(props: SettingsViewProps) {
               </div>
 
               <p className="card-hint">
-                Save diagnostics writes this snapshot and the recent log to a text file you choose. Review it before
-                sharing: log lines can contain local file paths.
+                Saves this snapshot and the recent log to a text file. Review it before sharing.
               </p>
               <div className="field-row">
                 <button
@@ -2591,8 +2581,7 @@ export function SettingsView(props: SettingsViewProps) {
               ) : null}
 
               <p className="card-hint">
-                Suura collects nothing: no account, no analytics and no telemetry. Crash reports stay on this PC and
-                are off until you turn them on. The{' '}
+                No account, analytics or telemetry. The{' '}
                 <a
                   href="https://suura-player.pages.dev/privacy"
                   target="_blank"
@@ -2600,11 +2589,11 @@ export function SettingsView(props: SettingsViewProps) {
                 >
                   privacy statement
                 </a>{' '}
-                lists every request the app can make, and the only one it sends on its own is the update check above.
+                lists every request the app can make.
               </p>
               <p className="card-hint">
-                YouTube links play through yt-dlp and are subject to YouTube's Terms of Service. Suura is not
-                affiliated with YouTube: a link plays in the app, and nothing is downloaded unless you save it.
+                YouTube playback uses yt-dlp and is subject to YouTube's Terms of Service. Suura is not affiliated
+                with YouTube.
               </p>
 
               <details className="about-licences">
