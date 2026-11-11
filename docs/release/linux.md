@@ -216,9 +216,11 @@ install without root.
       only" answer, and README's platform table.
 - [x] CI: an `ubuntu-latest` job that installs ffmpeg and the Chromium libraries,
       builds, smokes and runs the self-test under Xvfb, packages the AppImage and
-      the .deb, and checks that `latest-linux.yml` names the AppImage but not the
-      .deb. `--no-sandbox` is passed to Electron there because the runner restricts
-      user namespaces; it is a runner concession, not a shipped default.
+      the .deb, checks that `latest-linux.yml` names the AppImage but not the
+      .deb, and reads the deb's file list to prove it carries no `app-update.yml`
+      or `package-type`. `--no-sandbox` is passed to Electron there because the
+      runner restricts user namespaces; it is a runner concession, not a shipped
+      default.
 - [ ] A Linux hardware pass, mirroring `windows.md`: GNOME/KDE, X11/Wayland,
       100–200% scaling, HiDPI, audio device switching, a 10k-track library.
 

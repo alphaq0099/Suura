@@ -1081,8 +1081,9 @@ for now-playing integration, and platform branches already present in the sideca
       `latest-linux.yml`, and `canUpdateInPlace` tells About that updates come from the package manager. The
       maintainer field is the project's GitHub address; installing one by hand is still part of the hardware pass.
 - [x] `ubuntu-latest` CI job: build, smoke and self-test under Xvfb, with ffmpeg and the Chromium libraries installed.
-      It packages both targets and asserts that `latest-linux.yml` names the AppImage and no `.deb`. It runs beside
-      the Windows job, so a Linux-only break stops a push instead of waiting for a release.
+      It packages both targets, asserts that `latest-linux.yml` names the AppImage and no `.deb`, and reads the deb's
+      own file list to prove it carries no `app-update.yml` or `package-type`. It runs beside the Windows job, so a
+      Linux-only break stops a push instead of waiting for a release.
 
 ### 15.3 Release
 
