@@ -10,8 +10,10 @@ import {
 } from 'react'
 import type {
   AddTracksOutcome,
+  EngineStatus,
   ImportedSearchResult,
   Playlist,
+  SidecarProgress,
   Track,
   YouTubeChannel,
   YouTubeSearchResult
@@ -23,6 +25,7 @@ import { api, messageOf } from '../api'
 import type { DownloadState, UseDownloadsResult } from '../hooks/useDownloads'
 import { AddToPlaylistMenu } from './AddToPlaylistMenu'
 import { ArtworkImage } from './ArtworkImage'
+import { EngineSetupNotice } from './EngineSetupNotice'
 import { FieldContextMenu, useFieldContextMenu } from './FieldContextMenu'
 import { RowMenu, type RowMenuItem } from './RowMenu'
 import { TrackDetails } from './TrackDetails'
@@ -83,6 +86,19 @@ export interface SearchViewProps {
   onQueueSearchSelection: (items: SearchSelectionItem[]) => Promise<void>
   /** The same "prefetch the next track" setting the player uses. */
   prefetchEnabled: boolean
+  /**
+   * The engine probe. Search itself works without the binaries, but every way
+   * out of a result needs them, so the download is offered here too.
+   */
+  engineStatus: EngineStatus | null
+  sidecarInstalling: boolean
+  sidecarProgress: SidecarProgress | null
+  sidecarNote: string | null
+  sidecarError: string | null
+  onInstallSidecars: () => Promise<void>
+  onCancelSidecarInstall: () => Promise<void>
+  /** Opens Settings on the Streaming tab, where the engine folder lives. */
+  onOpenEngineSettings: () => void
 }
 
 /**
@@ -190,7 +206,15 @@ export function SearchView(props: SearchViewProps) {
     onQueueYouTube,
     onPlaySearchSelection,
     onQueueSearchSelection,
-    prefetchEnabled
+    prefetchEnabled,
+    engineStatus,
+    sidecarInstalling,
+    sidecarProgress,
+    sidecarNote,
+    sidecarError,
+    onInstallSidecars,
+    onCancelSidecarInstall,
+    onOpenEngineSettings
   } = props
   const { saved, states, save } = downloads
 
@@ -1088,6 +1112,18 @@ export function SearchView(props: SearchViewProps) {
           </div>
         ) : null}
       </header>
+
+      <EngineSetupNotice
+        compact
+        engineStatus={engineStatus}
+        installing={sidecarInstalling}
+        progress={sidecarProgress}
+        note={sidecarNote}
+        error={sidecarError}
+        onInstall={() => void onInstallSidecars()}
+        onCancel={() => void onCancelSidecarInstall()}
+        onOpenSettings={onOpenEngineSettings}
+      />
 
       {channel ? (
         <>

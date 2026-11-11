@@ -8,7 +8,7 @@ import type {
   SidecarProgress,
   Track
 } from '@shared/types'
-import { formatBytes, formatCount, formatDuration } from '@shared/format'
+import { formatCount, formatDuration } from '@shared/format'
 import { YOUTUBE_QUEUE_SOURCE, tagQueueTracks } from '@shared/queue'
 import { onlineEntryToTrack, onlinePlaylistArtworkTrack, onlinePlaylistItemToTrack } from '@shared/online'
 import type { PlayingList } from '@shared/online'
@@ -17,6 +17,7 @@ import { api, messageOf } from '../api'
 import type { UseDownloadsResult } from '../hooks/useDownloads'
 import { ArtworkImage } from './ArtworkImage'
 import { DownloadsSection, type DownloadsTab } from './DownloadsView'
+import { EngineSetupNotice } from './EngineSetupNotice'
 import { FieldContextMenu } from './FieldContextMenu'
 import { ScrollingText } from './ScrollingText'
 import { TrackDetails } from './TrackDetails'
@@ -24,7 +25,6 @@ import {
   CheckIcon,
   ClipboardIcon,
   CloseIcon,
-  CogIcon,
   CopyIcon,
   DownloadIcon,
   DiscIcon,
@@ -591,17 +591,6 @@ export function OnlineView(props: OnlineViewProps) {
   const listInput = parsed?.kind === 'list'
   const busyLabel = pending?.kind === 'list' ? 'Importing…' : 'Resolving…'
 
-  // Streaming needs both binaries. The probe is read when this view opens; a
-  // `null` status means it has not arrived yet, which is not the same as
-  // missing, so the callout stays away rather than flashing on every visit.
-  const requiredSidecars = (engineStatus?.sidecars ?? []).filter((sidecar) => !sidecar.optional)
-  const missingEngineBytes = requiredSidecars
-    .filter((sidecar) => !sidecar.available)
-    .reduce((sum, sidecar) => sum + sidecar.bytes, 0)
-  const engineMissing =
-    engineStatus !== null &&
-    (engineStatus.ready !== true || requiredSidecars.some((sidecar) => !sidecar.available))
-
   return (
     <main className="main-view online-view">
       <header className="view-header online-header">
@@ -675,66 +664,16 @@ export function OnlineView(props: OnlineViewProps) {
         </div>
       </header>
 
-      {engineMissing ? (
-        <section className="engine-callout" aria-labelledby="engine-callout-title">
-          <div className="engine-callout-copy">
-            <h2 id="engine-callout-title">YouTube playback needs the download engine</h2>
-            <p>
-              Streaming goes through yt-dlp and ffmpeg. Suura downloads them on first use rather than bundling
-              them{missingEngineBytes > 0 ? ` — about ${formatBytes(missingEngineBytes)}` : ''} and verifies each
-              file before installing it. A copy you already have is used instead.
-            </p>
-            {sidecarProgress ? (
-              <div className="engine-progress" role="status">
-                <progress
-                  value={sidecarProgress.receivedBytes}
-                  max={Math.max(1, sidecarProgress.totalBytes)}
-                />
-                <span>
-                  {sidecarProgress.id}: {formatBytes(sidecarProgress.receivedBytes)} of{' '}
-                  {formatBytes(sidecarProgress.totalBytes)}
-                </span>
-              </div>
-            ) : null}
-            {sidecarError ? (
-              <p className="engine-callout-note error" role="status">
-                {sidecarError}
-              </p>
-            ) : sidecarNote ? (
-              <p className="engine-callout-note" role="status">
-                {sidecarNote}
-              </p>
-            ) : null}
-          </div>
-          <div className="engine-callout-actions">
-            <button
-              type="button"
-              className="primary"
-              onClick={() => void onInstallSidecars()}
-              disabled={sidecarInstalling}
-            >
-              {sidecarInstalling ? <SpinnerIcon /> : <DownloadIcon />}
-              <span>
-                {sidecarInstalling
-                  ? 'Downloading engine'
-                  : missingEngineBytes > 0
-                    ? `Download engine (${formatBytes(missingEngineBytes)})`
-                    : 'Download engine'}
-              </span>
-            </button>
-            {sidecarInstalling ? (
-              <button type="button" onClick={() => void onCancelSidecarInstall()}>
-                Cancel
-              </button>
-            ) : (
-              <button type="button" onClick={onOpenEngineSettings}>
-                <CogIcon />
-                <span>Engine settings</span>
-              </button>
-            )}
-          </div>
-        </section>
-      ) : null}
+      <EngineSetupNotice
+        engineStatus={engineStatus}
+        installing={sidecarInstalling}
+        progress={sidecarProgress}
+        note={sidecarNote}
+        error={sidecarError}
+        onInstall={() => void onInstallSidecars()}
+        onCancel={() => void onCancelSidecarInstall()}
+        onOpenSettings={onOpenEngineSettings}
+      />
 
       {tab === 'links' ? (
         <>

@@ -2694,6 +2694,66 @@ input[type='radio'] {
   accent-color: var(--accent);
 }
 
+/* One line under the engine title: ready, or what is missing. The dot carries
+   the same meaning as the old two-row status list without repeating the names. */
+.engine-status-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  color: var(--text-dim);
+  font-size: calc(12.5px * var(--text-scale));
+  line-height: 1.5;
+}
+
+.engine-status-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: var(--text-faint);
+}
+
+.engine-status-line.ok .engine-status-dot {
+  background: var(--ok);
+}
+
+.engine-status-line.bad .engine-status-dot {
+  background: var(--danger);
+}
+
+/* Advanced controls stay one click away. The summary is the only visible row,
+   so the card reads as a single outcome with an optional repair path. */
+.settings-advanced {
+  display: grid;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-advanced > summary {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: calc(12.5px * var(--text-scale));
+  font-weight: 600;
+}
+
+.settings-advanced > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* The bot-check card is last and spans the tab, so "advanced" never pushes the
+   everyday engine and cookie choices out of the first screenful. */
+.cards > .botcheck-card {
+  grid-column: 1 / -1;
+}
+
 /* The About card spans both columns, so keep its prose at a readable line length. */
 .about-card .card-hint {
   max-width: 96ch;
@@ -5753,6 +5813,17 @@ a.np-lyrics-meta:hover {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+/* Search is primarily a search field; the engine note stays one compact row. */
+.engine-callout.compact {
+  gap: 10px 14px;
+  padding: 10px 12px;
+}
+
+.engine-callout.compact .engine-callout-copy {
+  flex-basis: 360px;
+  gap: 3px;
 }
 
 .online-bar {

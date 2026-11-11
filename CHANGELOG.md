@@ -23,6 +23,9 @@ Changes since 0.1.0. Nothing here is in a published build yet.
 ### Settings
 
 - Optional **Start Suura when I sign in**: one Windows sign-in entry, off by default and removed by the uninstaller.
+- Streaming leads with the outcome: one engine status line, one download or repair action, and the folder, update and
+  rollback controls behind **Advanced**. The bot-check card is now **YouTube bot check**, with its setup details behind
+  **Set up**, and Search offers the engine download where a result needs it.
 
 ### Playback
 

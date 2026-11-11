@@ -30,7 +30,6 @@ import type {
   DuplicateMergeOutcome,
   DuplicateReport,
   EngineStatus,
-  ExecutableStatus,
   IconSet,
   LibraryClickAction,
   LyricsAlign,
@@ -328,11 +327,6 @@ function sourceLabel(source: 'configured' | 'managed' | 'path' | 'well-known' | 
   return 'unknown location'
 }
 
-function describeExecutable(status: ExecutableStatus): string {
-  if (!status.found) return status.error ?? 'Not found.'
-  return `${status.version ?? 'version unknown'} · via ${sourceLabel(status.source)}`
-}
-
 /** One sentence for the update state, so About never shows a bare code. */
 function describeUpdateStatus(status: UpdateStatus | null): string {
   if (!status) return 'loading…'
@@ -507,6 +501,27 @@ export function SettingsView(props: SettingsViewProps) {
   const requiredUnavailableBytes = requiredUnavailable.reduce((sum, sidecar) => sum + sidecar.bytes, 0)
   const optionalMissing = sidecars.filter((sidecar) => sidecar.optional && !sidecar.available).length
   const playbackReady = engineStatus?.ready === true
+  const missingBinaries = engineStatus
+    ? [
+        engineStatus.ytDlp.found ? null : 'yt-dlp',
+        engineStatus.ffmpeg.found ? null : 'ffmpeg'
+      ].filter((name): name is string => name !== null)
+    : []
+  const engineMissingBytes = requiredSidecars
+    .filter((sidecar) => !sidecar.installed)
+    .reduce((sum, sidecar) => sum + sidecar.bytes, 0)
+  const engineStatusText = !engineStatus
+    ? engineLoading
+      ? 'Checking the engine…'
+      : 'Not checked yet.'
+    : playbackReady
+      ? `Ready · yt-dlp ${engineStatus.ytDlp.version ?? 'found'} · ffmpeg ${engineStatus.ffmpeg.version ?? 'found'}`
+      : missingBinaries.length > 0
+        ? `${missingBinaries.join(' and ')} ${missingBinaries.length === 1 ? 'is' : 'are'} missing. Download once${
+            engineMissingBytes > 0 ? ` — about ${formatBytes(engineMissingBytes)}` : ''
+          }.`
+        : 'The engine needs attention. Open Advanced for details.'
+  const engineStatusTone = !engineStatus ? '' : playbackReady ? 'ok' : 'bad'
 
   // A tab strip is one tab stop, not five. Arrow keys move between tabs, Home and
   // End jump to the edges, and the newly selected tab takes focus — the pattern
@@ -632,17 +647,17 @@ export function SettingsView(props: SettingsViewProps) {
       if (action === 'stop') {
         setProviderNote(
           status.serverReachable
-            ? 'Stopped the provider this app started; another provider is still answering at that URL.'
-            : 'Provider stopped.'
+            ? 'Stopped the helper this app started; another helper is still answering at that URL.'
+            : 'Helper stopped.'
         )
       } else if (status.serverReachable) {
         setProviderNote(
           status.managedRunning
-            ? `Provider is ready${status.serverVersion ? ` (v${status.serverVersion})` : ''}.`
-            : `A provider was already answering${status.serverVersion ? ` (v${status.serverVersion})` : ''}.`
+            ? `Helper is ready${status.serverVersion ? ` (v${status.serverVersion})` : ''}.`
+            : `A helper was already answering${status.serverVersion ? ` (v${status.serverVersion})` : ''}.`
         )
       } else {
-        setProviderNote('The command started; the provider is still loading and will be used as soon as it answers.')
+        setProviderNote('The command started; the helper is still loading and will be used as soon as it answers.')
       }
     } catch (cause) {
       setProviderError(cause instanceof Error ? cause.message : String(cause))
@@ -656,6 +671,31 @@ export function SettingsView(props: SettingsViewProps) {
     !normalizePoTokenProviderUrl(settings.engine.poTokenProviderUrl)
   const providerCommand = settings.engine.poTokenProviderCommand?.trim() ?? ''
   const providerCommandMissing = providerCommand.length === 0
+  const poToken = engineStatus?.poToken
+  const poTokenUrlLabel = (poToken?.providerUrl ?? settings.engine.poTokenProviderUrl).replace(
+    /^https?:\/\//,
+    ''
+  )
+  const poTokenStatusText = !settings.engine.poTokenEnabled
+    ? 'Off. Try cookies first if a stream is blocked.'
+    : !poToken
+      ? engineLoading
+        ? 'Checking the helper…'
+        : 'On. The helper is checked with the engine.'
+      : poToken.serverReachable
+        ? `Helper ready at ${poTokenUrlLabel}${poToken.serverVersion ? ` · v${poToken.serverVersion}` : ''}`
+        : poToken.managedRunning
+          ? `Starting the helper at ${poTokenUrlLabel}…`
+          : poToken.commandConfigured
+            ? `No helper answered at ${poTokenUrlLabel}.`
+            : `On, but no helper answered at ${poTokenUrlLabel}. Add a start command under Set up.`
+  const poTokenStatusTone = !settings.engine.poTokenEnabled
+    ? ''
+    : !poToken
+      ? ''
+      : poToken.serverReachable
+        ? 'ok'
+        : 'bad'
 
   const copyDiagnostics = async (): Promise<void> => {
     setDiagnosticsBusy('copy')
@@ -1318,7 +1358,7 @@ export function SettingsView(props: SettingsViewProps) {
               <article className="card">
                 <header className="card-header">
                   <h2>
-                    YouTube engine <span className="badge">yt-dlp</span>
+                    YouTube playback <span className="badge">yt-dlp</span>
                   </h2>
                   <button type="button" onClick={onRefreshEngine} disabled={engineLoading}>
                     {engineLoading ? <SpinnerIcon /> : <RefreshIcon />}
@@ -1326,28 +1366,17 @@ export function SettingsView(props: SettingsViewProps) {
                   </button>
                 </header>
                 <p className="card-hint">
-                  Checks the binaries playback and saving need. Suura downloads them on first use rather than
-                  bundling them, and verifies each pinned SHA-256 before a file is installed.
+                  Streaming and saving use yt-dlp and ffmpeg; copies already on this PC are used first.
                 </p>
-
-                {engineStatus ? (
-                  <ul className="status-list">
-                    <li className={engineStatus.ytDlp.found ? 'ok' : 'bad'}>
-                      <span className="status-name">yt-dlp</span>
-                      <span className="status-value">{describeExecutable(engineStatus.ytDlp)}</span>
-                    </li>
-                    <li className={engineStatus.ffmpeg.found ? 'ok' : 'bad'}>
-                      <span className="status-name">ffmpeg</span>
-                      <span className="status-value">{describeExecutable(engineStatus.ffmpeg)}</span>
-                    </li>
-                  </ul>
-                ) : (
-                  <p className="card-hint">{engineLoading ? 'Checking…' : 'Not checked yet.'}</p>
-                )}
+                <p className={`engine-status-line ${engineStatusTone}`} role="status">
+                  <span className="engine-status-dot" aria-hidden="true" />
+                  <span>{engineStatusText}</span>
+                </p>
 
                 <div className="field-row engine-download">
                   <button
                     type="button"
+                    className={playbackReady ? undefined : 'primary'}
                     onClick={() => void onInstallSidecars()}
                     disabled={sidecarInstalling}
                   >
@@ -1359,7 +1388,9 @@ export function SettingsView(props: SettingsViewProps) {
                           ? `Download engine (${formatBytes(requiredUnavailableBytes)})`
                           : requiredMissing.length > 0
                             ? `Download pinned engine (${formatBytes(requiredMissingBytes)})`
-                            : 'Re-download engine'}
+                            : sidecars.length > 0
+                              ? 'Re-download engine'
+                              : 'Download engine'}
                     </span>
                   </button>
                   {sidecarInstalling ? (
@@ -1381,267 +1412,96 @@ export function SettingsView(props: SettingsViewProps) {
                     </span>
                   </div>
                 ) : null}
-
-                {sidecars.length > 0 ? (
-                  <p className="card-hint">
-                    {playbackReady
-                      ? requiredMissing.length === 0
-                        ? `Playback is ready. ${formatCount(
-                            sidecars.length - missingSidecars.length
-                          )} of ${formatCount(sidecars.length)} pinned engine files are current in ${
-                            paths?.engine ?? 'the engine folder'
-                          }.`
-                        : `Playback is ready using copies found outside the engine folder. ${formatCount(
-                            requiredMissing.length
-                          )} pinned engine ${requiredMissing.length === 1 ? 'file is' : 'files are'} not downloaded.`
-                      : `${formatCount(requiredUnavailable.length)} of ${formatCount(
-                          requiredSidecars.length
-                        )} required engine files ${requiredUnavailable.length === 1 ? 'is' : 'are'} missing.`}
-                    {optionalMissing > 0
-                      ? ' Fingerprinting (fpcalc) is not installed.'
-                      : ''}
-                  </p>
-                ) : null}
                 {sidecarNote ? <p className="card-hint">{sidecarNote}</p> : null}
                 {sidecarError ? <p className="card-hint status-error">{sidecarError}</p> : null}
 
-                <div className="field-grid">
-                  <label className="field wide">
-                    <span>
-                      Engine folder (optional)
-                      <InfoHint label="About the engine folder">
-                        Folder holding yt-dlp and ffmpeg. Empty searches PATH.
-                      </InfoHint>
-                    </span>
-                    <div className="field-row">
-                      <input type="text" readOnly value={settings.engine.binDir ?? '(search PATH)'} />
-                      <button type="button" onClick={onPickEngineDir}>
-                        Change
-                      </button>
-                      {settings.engine.binDir ? (
-                        <button type="button" onClick={() => onUpdate({ engine: { binDir: null } })}>
-                          Clear
-                        </button>
-                      ) : null}
-                    </div>
-                  </label>
-                  <label className="field checkbox">
-                    <input
-                      type="checkbox"
-                      checked={settings.engine.autoUpdate}
-                      onChange={(event) => onUpdate({ engine: { autoUpdate: event.target.checked } })}
-                    />
-                    <span>
-                      Keep yt-dlp up to date automatically
-                      <InfoHint label="About automatic updates">
-                        Checks daily and keeps the previous binary, in case the new one breaks.
-                      </InfoHint>
-                    </span>
-                  </label>
-                </div>
-
-                <div className="field-grid">
-                  <div className="field wide">
-                    <span>
-                      Previous yt-dlp
-                      <InfoHint label="About the last-known-good binary">
-                        The yt-dlp that worked before the last update. Restoring it is safe.
-                      </InfoHint>
-                    </span>
-                    <div className="field-row">
-                      <span className="status-value">
-                        {engineStatus?.rollback?.available
-                          ? `Saved ${formatTimestamp(engineStatus.rollback.savedAt)}${
-                              engineStatus.rollback.version ? ` · ${engineStatus.rollback.version}` : ''
-                            }`
-                          : engineStatus?.rollback?.lastRestoredAt
-                            ? `Restored ${formatTimestamp(engineStatus.rollback.lastRestoredAt)}; no fallback is saved now.`
-                            : 'No previous binary saved yet.'}
+                <details className="settings-advanced">
+                  <summary>Advanced</summary>
+                  <div className="field-grid">
+                    <label className="field wide">
+                      <span>
+                        Engine folder (optional)
+                        <InfoHint label="About the engine folder">
+                          Folder holding yt-dlp and ffmpeg. Empty searches PATH.
+                        </InfoHint>
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => void onRestoreYtDlp()}
-                        disabled={!engineStatus?.rollback?.available || sidecarInstalling}
-                      >
-                        Restore previous
-                      </button>
+                      <div className="field-row">
+                        <input type="text" readOnly value={settings.engine.binDir ?? '(search PATH)'} />
+                        <button type="button" onClick={onPickEngineDir}>
+                          Change
+                        </button>
+                        {settings.engine.binDir ? (
+                          <button type="button" onClick={() => onUpdate({ engine: { binDir: null } })}>
+                            Clear
+                          </button>
+                        ) : null}
+                      </div>
+                    </label>
+                    <label className="field checkbox">
+                      <input
+                        type="checkbox"
+                        checked={settings.engine.autoUpdate}
+                        onChange={(event) => onUpdate({ engine: { autoUpdate: event.target.checked } })}
+                      />
+                      <span>
+                        Keep yt-dlp up to date automatically
+                        <InfoHint label="About automatic updates">
+                          Checks daily and keeps the previous binary, in case the new one breaks.
+                        </InfoHint>
+                      </span>
+                    </label>
+                  </div>
+
+                  <div className="field-grid">
+                    <div className="field wide">
+                      <span>
+                        Previous yt-dlp
+                        <InfoHint label="About the last-known-good binary">
+                          The yt-dlp that worked before the last update. Restoring it is safe.
+                        </InfoHint>
+                      </span>
+                      <div className="field-row">
+                        <span className="status-value">
+                          {engineStatus?.rollback?.available
+                            ? `Saved ${formatTimestamp(engineStatus.rollback.savedAt)}${
+                                engineStatus.rollback.version ? ` · ${engineStatus.rollback.version}` : ''
+                              }`
+                            : engineStatus?.rollback?.lastRestoredAt
+                              ? `Restored ${formatTimestamp(engineStatus.rollback.lastRestoredAt)}; no fallback is saved now.`
+                              : 'No previous binary saved yet.'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void onRestoreYtDlp()}
+                          disabled={!engineStatus?.rollback?.available || sidecarInstalling}
+                        >
+                          Restore previous
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
+
+                  {sidecars.length > 0 ? (
+                    <p className="card-hint">
+                      {playbackReady
+                        ? requiredMissing.length === 0
+                          ? `Playback is ready. ${formatCount(
+                              sidecars.length - missingSidecars.length
+                            )} of ${formatCount(sidecars.length)} pinned engine files are current in ${
+                              paths?.engine ?? 'the engine folder'
+                            }.`
+                          : `Playback is ready using copies found outside the engine folder. ${formatCount(
+                              requiredMissing.length
+                            )} pinned engine ${requiredMissing.length === 1 ? 'file is' : 'files are'} not downloaded.`
+                        : `${formatCount(requiredUnavailable.length)} of ${formatCount(
+                            requiredSidecars.length
+                          )} required engine files ${requiredUnavailable.length === 1 ? 'is' : 'are'} missing.`}
+                      {optionalMissing > 0 ? ' Fingerprinting (fpcalc) is not installed.' : ''}
+                    </p>
+                  ) : null}
+                </details>
               </article>
 
-              <article className="card">
-                <header className="card-header">
-                  <h2>PO Token provider</h2>
-                  <button type="button" onClick={onRefreshEngine} disabled={engineLoading}>
-                    {engineLoading ? <SpinnerIcon /> : <RefreshIcon />}
-                    <span>Check status</span>
-                  </button>
-                </header>
-                <p className="card-hint">
-                  Optional external server. Install the third-party{' '}
-                  <a
-                    href="https://github.com/Brainicism/bgutil-ytdlp-pot-provider"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    provider and plugin
-                  </a>{' '}
-                  separately.
-                </p>
-
-                <div className="field-grid">
-                  <label className="field checkbox">
-                    <input
-                      type="checkbox"
-                      checked={settings.engine.poTokenEnabled}
-                      onChange={(event) => onUpdate({ engine: { poTokenEnabled: event.target.checked } })}
-                    />
-                    <span>
-                      Use a PO Token provider
-                      <InfoHint label="About PO Tokens">
-                        Short-lived proofs sent with a YouTube request.
-                      </InfoHint>
-                    </span>
-                  </label>
-                  <label className="field">
-                    <span>
-                      Provider URL
-                      <InfoHint label="About the provider URL">
-                        Where the bgutil plugin calls. Keep it on this PC.
-                      </InfoHint>
-                    </span>
-                    <input
-                      type="url"
-                      value={settings.engine.poTokenProviderUrl}
-                      placeholder="http://127.0.0.1:4416"
-                      onChange={(event) => onUpdate({ engine: { poTokenProviderUrl: event.target.value } })}
-                    />
-                  </label>
-                  <label className="field wide">
-                    <span>
-                      Provider command (optional; needed for Start and auto-start)
-                      <InfoHint label="About the provider command">
-                        Command the app can start and stop. Leave it blank to run the server yourself.
-                      </InfoHint>
-                    </span>
-                    <input
-                      type="text"
-                      value={settings.engine.poTokenProviderCommand ?? ''}
-                      placeholder="No command set"
-                      onChange={(event) =>
-                        onUpdate({ engine: { poTokenProviderCommand: event.target.value || null } })
-                      }
-                    />
-                  </label>
-                  <label className="field checkbox">
-                    <input
-                      type="checkbox"
-                      checked={settings.engine.poTokenAutoStart}
-                      title={
-                        providerCommandMissing
-                          ? 'Add a provider command first.'
-                          : undefined
-                      }
-                      onChange={(event) => onUpdate({ engine: { poTokenAutoStart: event.target.checked } })}
-                    />
-                    <span>
-                      Start the provider automatically
-                      <InfoHint label="About automatic provider start">
-                        Starts the command above, stops only that process, and waits for a slow start.
-                      </InfoHint>
-                    </span>
-                  </label>
-                </div>
-
-                {settings.engine.poTokenEnabled && providerCommandMissing ? (
-                  <p className="card-hint">
-                    No provider command is set. Run the provider yourself, or add one above to use Start and
-                    auto-start.
-                  </p>
-                ) : null}
-
-                {providerUrlInvalid ? (
-                  <p className="card-hint status-error">
-                    That provider URL is not a plain http(s) URL. The default local address will be used until it is
-                    fixed.
-                  </p>
-                ) : null}
-
-                <div className="field-row provider-actions">
-                  <button
-                    type="button"
-                    onClick={() => void runProvider('start')}
-                    title={
-                      !settings.engine.poTokenEnabled
-                        ? 'Turn on Use a PO Token provider first.'
-                        : providerCommandMissing
-                          ? 'Add a provider command, or run the server yourself.'
-                          : undefined
-                    }
-                    disabled={!settings.engine.poTokenEnabled || providerCommandMissing || providerBusy !== null}
-                  >
-                    {providerBusy === 'start' ? <SpinnerIcon /> : null}
-                    <span>Start provider</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void runProvider('stop')}
-                    disabled={!engineStatus?.poToken?.managedRunning || providerBusy !== null}
-                  >
-                    {providerBusy === 'stop' ? <SpinnerIcon /> : null}
-                    <span>Stop provider</span>
-                  </button>
-                </div>
-
-                {engineStatus?.poToken ? (
-                  <ul className="status-list">
-                    <li className={engineStatus.poToken.enabled ? 'ok' : ''}>
-                      <span className="status-name">App switch</span>
-                      <span className="status-value">
-                        {engineStatus.poToken.enabled ? 'enabled' : 'off'}
-                      </span>
-                    </li>
-                    <li
-                      className={
-                        engineStatus.poToken.serverReachable
-                          ? 'ok'
-                          : engineStatus.poToken.managedRunning
-                            ? ''
-                            : 'bad'
-                      }
-                    >
-                      <span className="status-name">Server</span>
-                      <span className="status-value" title={engineStatus.poToken.providerUrl}>
-                        {engineStatus.poToken.serverReachable
-                          ? `reachable at ${engineStatus.poToken.providerUrl.replace(/^https?:\/\//, '')}${engineStatus.poToken.serverVersion ? `, v${engineStatus.poToken.serverVersion}` : ''}`
-                          : engineStatus.poToken.managedRunning
-                            ? `starting at ${engineStatus.poToken.providerUrl.replace(/^https?:\/\//, '')}`
-                            : `no answer at ${engineStatus.poToken.providerUrl.replace(/^https?:\/\//, '')}`}
-                      </span>
-                    </li>
-                    <li className={engineStatus.poToken.managedRunning ? 'ok' : ''}>
-                      <span className="status-name">Managed process</span>
-                      <span className="status-value">
-                        {engineStatus.poToken.managedRunning ? 'running' : 'not running'}
-                      </span>
-                    </li>
-                    <li className={engineStatus.poToken.commandConfigured ? 'ok' : ''}>
-                      <span className="status-name">Start command</span>
-                      <span className="status-value">
-                        {engineStatus.poToken.commandConfigured ? 'set' : 'not set'}
-                      </span>
-                    </li>
-                  </ul>
-                ) : (
-                  <p className="card-hint">Provider status is checked with the engine.</p>
-                )}
-                {engineStatus?.poToken?.error ? (
-                  <p className="card-hint status-error">{engineStatus.poToken.error}</p>
-                ) : null}
-                {providerError ? <p className="card-hint status-error">{providerError}</p> : null}
-                {providerNote ? <p className="card-hint">{providerNote}</p> : null}
-              </article>
             </div>
 
             <div className="cards-col">
@@ -1747,7 +1607,7 @@ export function SettingsView(props: SettingsViewProps) {
                 usesAppBoundEncryption(settings.engine.cookiesFromBrowser) ? (
                   <p className="card-hint">
                     Chrome and Edge cookies cannot be decrypted on Windows. Choose Firefox, or leave the
-                    fallback off and use a PO Token provider.
+                    fallback off and use a bot-check helper.
                   </p>
                 ) : null}
                 <p className="card-hint">The app never signs in; account playlists are unsupported.</p>
@@ -1945,6 +1805,170 @@ export function SettingsView(props: SettingsViewProps) {
                 </div>
               </article>
             </div>
+
+            <article className="card botcheck-card">
+              <header className="card-header">
+                <h2>YouTube bot check</h2>
+                <button type="button" onClick={onRefreshEngine} disabled={engineLoading}>
+                  {engineLoading ? <SpinnerIcon /> : <RefreshIcon />}
+                  <span>Check</span>
+                </button>
+              </header>
+              <p className="card-hint">YouTube sometimes asks for a bot check before a stream plays.</p>
+              <p className={`engine-status-line ${poTokenStatusTone}`} role="status">
+                <span className="engine-status-dot" aria-hidden="true" />
+                <span>{poTokenStatusText}</span>
+              </p>
+              <label className="field checkbox">
+                <input
+                  type="checkbox"
+                  checked={settings.engine.poTokenEnabled}
+                  onChange={(event) => onUpdate({ engine: { poTokenEnabled: event.target.checked } })}
+                />
+                <span>Use a bot-check helper</span>
+              </label>
+
+              <details className="settings-advanced">
+                <summary>Set up</summary>
+                <p className="card-hint">
+                  Also called a PO Token provider. Suura does not bundle one; install the third-party{' '}
+                  <a
+                    href="https://github.com/Brainicism/bgutil-ytdlp-pot-provider"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    provider and yt-dlp plugin
+                  </a>{' '}
+                  separately.
+                </p>
+
+                <div className="field-grid">
+                  <label className="field wide">
+                    <span>
+                      Helper URL
+                      <InfoHint label="About the helper URL">
+                        Where the bgutil plugin calls. Keep it on this PC.
+                      </InfoHint>
+                    </span>
+                    <input
+                      type="url"
+                      value={settings.engine.poTokenProviderUrl}
+                      placeholder="http://127.0.0.1:4416"
+                      onChange={(event) => onUpdate({ engine: { poTokenProviderUrl: event.target.value } })}
+                    />
+                  </label>
+                  <label className="field wide">
+                    <span>
+                      Start command (optional)
+                      <InfoHint label="About the helper command">
+                        Command the app can start and stop. Leave it blank to run the server yourself.
+                      </InfoHint>
+                    </span>
+                    <input
+                      type="text"
+                      value={settings.engine.poTokenProviderCommand ?? ''}
+                      placeholder="No command set"
+                      onChange={(event) =>
+                        onUpdate({ engine: { poTokenProviderCommand: event.target.value || null } })
+                      }
+                    />
+                  </label>
+                  <label className="field checkbox">
+                    <input
+                      type="checkbox"
+                      checked={settings.engine.poTokenAutoStart}
+                      title={providerCommandMissing ? 'Add a start command first.' : undefined}
+                      onChange={(event) => onUpdate({ engine: { poTokenAutoStart: event.target.checked } })}
+                    />
+                    <span>
+                      Start the helper automatically
+                      <InfoHint label="About automatic helper start">
+                        Starts the command above, stops only that process, and waits for a slow start.
+                      </InfoHint>
+                    </span>
+                  </label>
+                </div>
+
+                {settings.engine.poTokenEnabled && providerCommandMissing ? (
+                  <p className="card-hint">
+                    No start command is set. Run the helper yourself, or add one above to use Start and
+                    auto-start.
+                  </p>
+                ) : null}
+
+                {providerUrlInvalid ? (
+                  <p className="card-hint status-error">
+                    That helper URL is not a plain http(s) URL. The default local address will be used until it
+                    is fixed.
+                  </p>
+                ) : null}
+
+                <div className="field-row provider-actions">
+                  <button
+                    type="button"
+                    onClick={() => void runProvider('start')}
+                    title={
+                      !settings.engine.poTokenEnabled
+                        ? 'Turn on Use a bot-check helper first.'
+                        : providerCommandMissing
+                          ? 'Add a start command, or run the helper yourself.'
+                          : undefined
+                    }
+                    disabled={!settings.engine.poTokenEnabled || providerCommandMissing || providerBusy !== null}
+                  >
+                    {providerBusy === 'start' ? <SpinnerIcon /> : null}
+                    <span>Start helper</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void runProvider('stop')}
+                    disabled={!engineStatus?.poToken?.managedRunning || providerBusy !== null}
+                  >
+                    {providerBusy === 'stop' ? <SpinnerIcon /> : null}
+                    <span>Stop helper</span>
+                  </button>
+                </div>
+
+                {providerError ? <p className="card-hint status-error">{providerError}</p> : null}
+                {providerNote ? <p className="card-hint">{providerNote}</p> : null}
+
+                {poToken ? (
+                  <ul className="status-list">
+                    <li className={poToken.enabled ? 'ok' : ''}>
+                      <span className="status-name">App switch</span>
+                      <span className="status-value">{poToken.enabled ? 'enabled' : 'off'}</span>
+                    </li>
+                    <li
+                      className={
+                        poToken.serverReachable ? 'ok' : poToken.managedRunning ? '' : 'bad'
+                      }
+                    >
+                      <span className="status-name">Helper</span>
+                      <span className="status-value" title={poToken.providerUrl}>
+                        {poToken.serverReachable
+                          ? `reachable at ${poTokenUrlLabel}${poToken.serverVersion ? `, v${poToken.serverVersion}` : ''}`
+                          : poToken.managedRunning
+                            ? `starting at ${poTokenUrlLabel}`
+                            : `no answer at ${poTokenUrlLabel}`}
+                      </span>
+                    </li>
+                    <li className={poToken.managedRunning ? 'ok' : ''}>
+                      <span className="status-name">Managed process</span>
+                      <span className="status-value">
+                        {poToken.managedRunning ? 'running' : 'not running'}
+                      </span>
+                    </li>
+                    <li className={poToken.commandConfigured ? 'ok' : ''}>
+                      <span className="status-name">Start command</span>
+                      <span className="status-value">{poToken.commandConfigured ? 'set' : 'not set'}</span>
+                    </li>
+                  </ul>
+                ) : (
+                  <p className="card-hint">Helper status is checked with the engine.</p>
+                )}
+                {poToken?.error ? <p className="card-hint status-error">{poToken.error}</p> : null}
+              </details>
+            </article>
           </div>
         </section>
 

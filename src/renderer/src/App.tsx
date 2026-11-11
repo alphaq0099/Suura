@@ -646,10 +646,10 @@ export function App() {
   }, [])
 
   // The first open reads the saved probe; the Refresh button is the only path
-  // that insists on spawning the binaries again. YouTube asks for the probe too
-  // because it offers the engine download where the need appears.
+  // that insists on spawning the binaries again. YouTube and Search ask for the
+  // probe too because they offer the engine download where the need appears.
   useEffect(() => {
-    if (view !== 'settings' && view !== 'online') return
+    if (view !== 'settings' && view !== 'online' && view !== 'search') return
     if (engineStatus || engineLoading) return
     void refreshEngine()
   }, [view, engineStatus, engineLoading, refreshEngine])
@@ -1454,6 +1454,17 @@ export function App() {
         onPlaySearchSelection={playSearchSelection}
         onQueueSearchSelection={queueSearchSelection}
         prefetchEnabled={settings?.engine.prefetchNext ?? true}
+        engineStatus={engineStatus}
+        sidecarInstalling={sidecarInstalling}
+        sidecarProgress={sidecarProgress}
+        sidecarNote={sidecarNote}
+        sidecarError={sidecarError}
+        onInstallSidecars={installSidecars}
+        onCancelSidecarInstall={cancelSidecarInstall}
+        onOpenEngineSettings={() => {
+          setSettingsTab('streaming')
+          setView('settings')
+        }}
       />
 
       <SavesPanel
