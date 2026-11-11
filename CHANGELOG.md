@@ -26,6 +26,8 @@ Changes since 0.1.0. Nothing here is in a published build yet.
 - Streaming leads with the outcome: one engine status line, one download or repair action, and the folder, update and
   rollback controls behind **Advanced**. The bot-check card is now **YouTube bot check**, with its setup details behind
   **Set up**, and Search offers the engine download where a result needs it.
+- Updates now leads with its status, daily-check switch and **Check now**; the channel and feed folder sit under
+  **Advanced**, and a build with no feed offers **Turn on updates** instead of asking for a URL.
 
 ### Playback
 

@@ -13,7 +13,7 @@ import {
   TEXT_SIZE_CHOICES,
   THEME_CHOICES
 } from '@shared/appearance'
-import { DEFAULT_PREFERENCE_PATCH, SECTION_PREFERENCE_PATCHES } from '@shared/settings-defaults'
+import { DEFAULT_PREFERENCE_PATCH, DEFAULT_SETTINGS, SECTION_PREFERENCE_PATCHES } from '@shared/settings-defaults'
 import { formatBytes, formatCount, formatTimestamp } from '@shared/format'
 import type {
   AccentName,
@@ -2434,7 +2434,7 @@ export function SettingsView(props: SettingsViewProps) {
                           : ''
                     }
                   >
-                    <span className="status-name">Channel</span>
+                    <span className="status-name">Status</span>
                     <span className="status-value">{describeUpdateStatus(updateStatus)}</span>
                   </li>
                   <li>
@@ -2456,58 +2456,29 @@ export function SettingsView(props: SettingsViewProps) {
                   </div>
                 ) : null}
 
-                <div className="field-grid">
-                  <label className="field">
-                    <span>
-                      Channel
-                      <InfoHint label="About update channels">
-                        Stable reads the latest channel file. Beta may receive a release before it is promoted.
-                      </InfoHint>
-                    </span>
-                    <select
-                      value={settings.update.channel}
-                      onChange={(event) =>
+                {!settings.update.feedUrl && updateStatus?.supported ? (
+                  <div className="field-row">
+                    <button
+                      type="button"
+                      onClick={() =>
                         onUpdate({
-                          update: { channel: event.target.value === 'beta' ? 'beta' : 'stable' }
+                          update: {
+                            feedUrl: DEFAULT_SETTINGS.update.feedUrl,
+                            channel: 'stable'
+                          }
                         })
                       }
                     >
-                      <option value="stable">Stable</option>
-                      <option value="beta">Beta (may be ahead)</option>
-                    </select>
-                  </label>
-                  <label className="field wide">
-                    <span>
-                      Feed folder
-                      <InfoHint label="About the update feed">
-                        A static HTTPS folder holding the channel file and the build it names.
-                      </InfoHint>
-                    </span>
-                    <input
-                      type="url"
-                      value={updateFeedDraft}
-                      placeholder="https://updates.example.com/suura"
-                      aria-invalid={!updateFeedDraftValid}
-                      onChange={(event) => setUpdateFeedDraft(event.target.value)}
-                      onBlur={commitUpdateFeed}
-                      onKeyDown={(event) => {
-                        if (event.key !== 'Enter') return
-                        event.preventDefault()
-                        commitUpdateFeed()
-                      }}
-                    />
-                  </label>
-                </div>
-                {!updateFeedDraftValid ? (
-                  <p className="card-hint status-error">
-                    Enter an https:// folder URL. HTTP is accepted only for localhost.
-                  </p>
+                      Turn on updates
+                    </button>
+                  </div>
                 ) : null}
 
                 <label className="field checkbox">
                   <input
                     type="checkbox"
                     checked={settings.update.autoCheck}
+                    disabled={!settings.update.feedUrl}
                     onChange={(event) => onUpdate({ update: { autoCheck: event.target.checked } })}
                   />
                   <span>
@@ -2546,6 +2517,57 @@ export function SettingsView(props: SettingsViewProps) {
                     </button>
                   ) : null}
                 </div>
+
+                <details className="settings-advanced">
+                  <summary>Advanced</summary>
+                  <div className="field-grid">
+                    <label className="field">
+                      <span>
+                        Channel
+                        <InfoHint label="About update channels">
+                          Stable reads the latest channel file. Beta may receive a release before it is promoted.
+                        </InfoHint>
+                      </span>
+                      <select
+                        value={settings.update.channel}
+                        onChange={(event) =>
+                          onUpdate({
+                            update: { channel: event.target.value === 'beta' ? 'beta' : 'stable' }
+                          })
+                        }
+                      >
+                        <option value="stable">Stable</option>
+                        <option value="beta">Beta (may be ahead)</option>
+                      </select>
+                    </label>
+                    <label className="field wide">
+                      <span>
+                        Feed folder
+                        <InfoHint label="About the update feed">
+                          A static HTTPS folder holding the channel file and the build it names.
+                        </InfoHint>
+                      </span>
+                      <input
+                        type="url"
+                        value={updateFeedDraft}
+                        placeholder="https://updates.example.com/suura"
+                        aria-invalid={!updateFeedDraftValid}
+                        onChange={(event) => setUpdateFeedDraft(event.target.value)}
+                        onBlur={commitUpdateFeed}
+                        onKeyDown={(event) => {
+                          if (event.key !== 'Enter') return
+                          event.preventDefault()
+                          commitUpdateFeed()
+                        }}
+                      />
+                    </label>
+                  </div>
+                  {!updateFeedDraftValid ? (
+                    <p className="card-hint status-error">
+                      Enter an https:// folder URL. HTTP is accepted only for localhost.
+                    </p>
+                  ) : null}
+                </details>
               </div>
 
               <p className="card-hint">

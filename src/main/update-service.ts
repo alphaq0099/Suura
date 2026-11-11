@@ -281,7 +281,7 @@ export class UpdateService {
       message: supported
         ? feedUrl
           ? null
-          : 'No update feed is configured. Set the feed URL below to enable updates.'
+          : 'Updates are off. Turn them on below.'
         : this.unsupportedMessage(),
       supported,
       canInstall: false,
@@ -334,7 +334,7 @@ export class UpdateService {
         message: supported
           ? feedUrl
             ? null
-            : 'No update feed is configured. Set the feed URL below to enable updates.'
+            : 'Updates are off. Turn them on below.'
           : this.unsupportedMessage(),
         lastCheckAt: settings.lastCheckAt
       }
