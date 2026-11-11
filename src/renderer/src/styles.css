@@ -1515,7 +1515,9 @@ input[type='radio'] {
 
 .album-detail-head {
   display: flex;
-  align-items: flex-end;
+  /* Same reason as .playlist-hero: a long album or artist name makes this
+     column taller than the sleeve, and bottom alignment would sink it. */
+  align-items: flex-start;
   gap: 24px;
   padding: 22px 24px;
   border: 1px solid var(--border);
@@ -5264,7 +5266,10 @@ a.np-lyrics-meta:hover {
 .playlist-pane-head.playlist-hero {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  align-items: end;
+  /* The sleeve spans both rows, so bottom alignment parks it under a long,
+     wrapped title and opens a hole above it. Start it at the card's top edge;
+     the leftover space then falls below the art, next to the facts. */
+  align-items: start;
   gap: 0 clamp(14px, 2vw, 24px);
   padding: clamp(12px, 1.6vw, 22px) clamp(14px, 2vw, 24px);
   border: 1px solid var(--border);
@@ -5308,6 +5313,9 @@ a.np-lyrics-meta:hover {
 .playlist-pane-head.playlist-hero .header-actions {
   grid-column: 2;
   grid-row: 2;
+  /* With the sleeve at the top, a short title can leave row two taller than
+     the buttons; keep them at the card's bottom edge instead of floating. */
+  align-self: end;
 }
 
 .playlist-pane-head h2 {
