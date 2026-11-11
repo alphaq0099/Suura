@@ -1084,11 +1084,17 @@ for now-playing integration, and platform branches already present in the sideca
       It packages both targets, asserts that `latest-linux.yml` names the AppImage and no `.deb`, and reads the deb's
       own file list to prove it carries no `app-update.yml` or `package-type`. It runs beside the Windows job, so a
       Linux-only break stops a push instead of waiting for a release.
+- [x] Headless Ubuntu 24.04.5 run at `e048891`: build, smoke (1424) and the self-test pass without `--no-sandbox`; the
+      AppImage mounts through FUSE and passes its own self-test; the `.deb` installs with `apt`, writes the expected
+      desktop entry, and its packaged binary passes the self-test as an ordinary user. The box has AppArmor disabled and
+      `apparmor_restrict_unprivileged_userns=0`, so it cannot reproduce a stock 24.04 desktop's user-namespace
+      restriction — the AppImage under that restriction is still open, while the deb ships an AppArmor profile for it.
 
 ### 15.3 Release
 
 - [ ] Linux hardware pass: GNOME and KDE, X11 and Wayland, 100–200% scaling, HiDPI, audio device switching,
-      10k tracks, sleep/resume.
+      10k tracks, sleep/resume, and one AppImage run on a stock Ubuntu 24.04 where unprivileged user namespaces are
+      restricted.
 - [ ] A Linux download on the site with its own checksum, and the FAQ/README platform answers rewritten.
 - [ ] A Linux signing story (AppImage has no Authenticode equivalent; a `.deb` needs a repo key if it is hosted).
 - [ ] Tag the first Linux release only after Windows 1.0 has shipped.

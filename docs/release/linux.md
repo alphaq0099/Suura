@@ -10,27 +10,41 @@ native modules and no Windows-only build step. What is Windows-shaped is the
 *edges*: the engine manifest, the executable bit, the autostart entry, packaging,
 the update channel file and the docs.
 
-## Status: first build, 2026-11-09
+## Status: full build on Ubuntu 24.04, 2026-11-11
 
-Built and tested on Ubuntu 24.04 (kernel 6.8, Node 24.21, Electron 44.10.2):
+Built and tested in a headless cloud box, Ubuntu 24.04.5 (kernel 6.8, Node
+24.21, Electron 44.10.2), cloned at `e048891`:
 
-- `npm run build`, `npm run smoke` (1404/1404) and `npm run selftest` (428/428)
-  pass.
+- `npm run build` and `npm run smoke` pass (1424 checks), and
+  `xvfb-run -a npm run selftest` passes **without** `--no-sandbox`: the box
+  allows unprivileged user namespaces, so Chromium's sandbox starts.
 - `npx electron-builder --linux AppImage` produces `Suura-0.1.0.AppImage`
-  (124 MB) and a `latest-linux.yml` channel file.
-- The packaged AppImage runs its own self-test from `release/` and passes
-  428/428.
-- The window renders, the Home screen lays out correctly, and the app writes to
-  `~/.config/Suura`.
+  (129,573,835 B) and `latest-linux.yml` (362 B). The channel file names the
+  AppImage and no `.deb`.
+- The AppImage mounts through FUSE and runs its own self-test:
+  `ALL CHECKS PASSED`. Its update check requests `latest-linux.yml` — a 404
+  until the feed is published, which is both proof the Linux channel name is
+  right and the reason the channel file has to ship with the first AppImage.
+- `npx electron-builder --config electron-builder.deb.yml --linux deb` produces
+  `Suura-0.1.0.deb` (102,998,344 B). `sudo apt install` succeeds, the desktop
+  entry is `Exec=/opt/Suura/suura`, `StartupWMClass=suura`,
+  `Categories=AudioVideo`, and `/opt/Suura/suura --selftest` passes as an
+  ordinary user.
+- `dpkg-deb -c` lists no `resources/app-update.yml` and no
+  `resources/package-type`: the deb is feedless. Its Maintainer is the project's
+  GitHub address and its Homepage comes from `package.json`, so neither depends
+  on a `.git` folder at build time.
 
-What the run taught us:
+What the runs taught us:
 
-- The test box has no `libfuse2`, so the AppImage was started with
-  `APPIMAGE_EXTRACT_AND_RUN=1`. A normal desktop installs FUSE 2; the fallback
-  belongs in the docs either way.
-- GitHub release downloads returned 504 during the run, and `npm ci` then left
-  Electron uninstalled without failing. `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`
-  fetched it. This is an outage workaround, not a permanent setting.
+- The box image had no FUSE 2, so the AppImage was first run with
+  `--appimage-extract-and-run`; after `libfuse2` was installed it mounted
+  normally. Both paths pass their self-test.
+- GitHub release downloads returned 504 during one run. Electron 44 has no
+  postinstall: it downloads its binary on first use (`install.js`), so an outage
+  shows up at the first `npm run dev` or self-test, not at `npm ci`.
+  `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` fetched it. That is
+  an outage workaround, not a permanent setting.
 - There is no audio device (ALSA reports "Unknown PCM default"), and every check
   still passes: the suite does not depend on a real sink.
 - Media keys are refused as "already held by another app" on XFCE/X11. The app
@@ -39,6 +53,13 @@ What the run taught us:
 - electron-builder warned that `desktopName` was unset, so a running window was
   not grouped under the launcher icon. `package.json` now sets `suura` and
   `linux.syncDesktopName` is on.
+- The box is not a stock desktop: AppArmor is disabled and
+  `kernel.apparmor_restrict_unprivileged_userns` is 0, so it cannot reproduce
+  Ubuntu 24.04's user-namespace restriction. The `.deb` answers that with an
+  AppArmor profile (`resources/apparmor-profile`, installed as
+  `/etc/apparmor.d/suura` by its post-install script when AppArmor is enabled).
+  An AppImage has no post-install step, so whether it starts under the
+  restriction is still unverified and belongs to the hardware pass.
 
 ## Target
 
@@ -160,6 +181,11 @@ the Windows release:
   every request. electron-updater asks for this name on Linux by itself, so no
   setting changes.
 
+Until that file is uploaded, a packaged AppImage's first update check fails with
+`ERR_UPDATER_CHANNEL_FILE_NOT_FOUND`; the box run saw exactly that, requesting
+`<feed>/latest-linux.yml` and getting a 404. Publish the channel file together
+with the first AppImage, not after it.
+
 `tools/publish-r2.ps1` publishes whichever platforms are present in `release/`,
 or one explicitly:
 
@@ -242,3 +268,7 @@ install without root.
 9. Install the `.deb` (`sudo apt install ./Suura-<version>.deb`), launch it from
    the menu, and confirm About says updates come through the package manager
    rather than offering a check.
+10. Run the AppImage on a stock Ubuntu 24.04 (where unprivileged user namespaces
+    are restricted) and record whether it starts without `--no-sandbox`. The deb
+    installs an AppArmor profile; an AppImage has no post-install step, so this
+    is the one sandbox case a headless box cannot answer.
