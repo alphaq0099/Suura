@@ -237,3 +237,6 @@ install without root.
 7. Save a track and confirm it lands in `~/Music/Suura`.
 8. Point the feed at a local `npx http-server release` folder and run one update
    cycle with `latest-linux.yml`.
+9. Install the `.deb` (`sudo apt install ./Suura-<version>.deb`), launch it from
+   the menu, and confirm About says updates come through the package manager
+   rather than offering a check.

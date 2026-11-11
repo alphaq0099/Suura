@@ -111,6 +111,14 @@ jobs:
           grep -q '\.AppImage' release/latest-linux.yml
           ! grep -q '\.deb' release/latest-linux.yml
 
+          # The deb is a package dpkg owns, so it must not carry what would let
+          # electron-updater replace it: no app-update.yml (a feed), no
+          # package-type (which method of update to attempt). This reads the
+          # package itself rather than trusting the config that built it.
+          dpkg-deb -c release/*.deb > "$RUNNER_TEMP/deb-contents.txt"
+          ! grep -q 'resources/app-update.yml' "$RUNNER_TEMP/deb-contents.txt"
+          ! grep -q 'resources/package-type' "$RUNNER_TEMP/deb-contents.txt"
+
   perf:
     name: Performance budgets
     runs-on: windows-latest
